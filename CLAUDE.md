@@ -8,7 +8,7 @@ A microsecond-latency crypto trading system targeting Binance, OKX, and Coinbase
 
 **Critical architecture split:**
 - **C++ hot path**: Order book, execution, risk (latency-critical)
-- **Python cold path**: Research, backtesting, monitoring (no latency constraint)
+- **Python cold path**: Research, backtesting, monitoring (no latency constraint). the goal would be to feed a research with a md file and claude could implement the logic, backtest, approve and deploy the alpha reducing the ttm
 
 ## Build Commands
 
