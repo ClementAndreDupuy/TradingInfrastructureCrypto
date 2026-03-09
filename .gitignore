@@ -1,0 +1,54 @@
+# Build directories
+build/
+*.o
+*.a
+*.so
+*.dylib
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+*.egg-info/
+dist/
+.pytest_cache/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Secrets and credentials
+config/live/
+config/shadow/secrets.yaml
+config/dev/secrets.yaml
+*.key
+*.pem
+.env
+
+# Data files
+*.parquet
+*.csv
+*.h5
+data/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
