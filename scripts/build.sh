@@ -33,9 +33,31 @@ clang++ -std=c++17 \
     build_manual/example_main.o \
     -o build_manual/binance_feed_example
 
+# Compile Kraken feed handler
+echo "Compiling Kraken feed handler..."
+clang++ -std=c++17 -O2 -Wall -I. \
+    -c core/feeds/kraken/kraken_feed_handler.cpp \
+    -o build_manual/kraken_feed_handler.o
+
+# Compile Kraken example
+echo "Compiling Kraken example..."
+clang++ -std=c++17 -O2 -Wall -I. \
+    -c core/feeds/kraken/example_main.cpp \
+    -o build_manual/kraken_example_main.o
+
+# Link Kraken example
+echo "Linking kraken_feed_example..."
+clang++ -std=c++17 \
+    build_manual/kraken_feed_handler.o \
+    build_manual/kraken_example_main.o \
+    -o build_manual/kraken_feed_example
+
 echo "✓ Build complete!"
 echo ""
-echo "Run example:"
+echo "Run Binance example:"
 echo "  export BINANCE_API_KEY='your_key'"
 echo "  export BINANCE_API_SECRET='your_secret'"
 echo "  ./build_manual/binance_feed_example"
+echo ""
+echo "Run Kraken example (public data, no API key required):"
+echo "  ./build_manual/kraken_feed_example"

@@ -34,3 +34,22 @@ set_tests_properties(BinanceFeedTest PROPERTIES
     TIMEOUT 30
     LABELS "unit;feeds"
 )
+
+# Kraken feed unit tests
+add_executable(kraken_feed_test
+    unit/kraken_feed_test.cpp
+)
+
+target_link_libraries(kraken_feed_test
+    kraken_feed
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+add_test(NAME KrakenFeedTest COMMAND kraken_feed_test)
+
+set_tests_properties(KrakenFeedTest PROPERTIES
+    TIMEOUT 30
+    LABELS "unit;feeds"
+)
