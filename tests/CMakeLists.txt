@@ -26,6 +26,10 @@ target_link_libraries(binance_feed_test
     GTest::gtest_main
 )
 
+target_include_directories(binance_feed_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
 # Add test to CTest
 add_test(NAME BinanceFeedTest COMMAND binance_feed_test)
 
@@ -45,6 +49,10 @@ target_link_libraries(kraken_feed_test
     trading_common
     GTest::gtest
     GTest::gtest_main
+)
+
+target_include_directories(kraken_feed_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
 )
 
 add_test(NAME KrakenFeedTest COMMAND kraken_feed_test)
@@ -92,4 +100,27 @@ add_test(NAME ArbRiskManagerTest COMMAND arb_risk_manager_test)
 set_tests_properties(ArbRiskManagerTest PROPERTIES
     TIMEOUT 30
     LABELS "unit;risk"
+)
+
+# Execution layer unit tests (OrderManager + connector WS parsing, no network)
+add_executable(execution_test
+    unit/execution_test.cpp
+)
+
+target_link_libraries(execution_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(execution_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME ExecutionTest COMMAND execution_test)
+
+set_tests_properties(ExecutionTest PROPERTIES
+    TIMEOUT 30
+    LABELS "unit;execution"
 )
