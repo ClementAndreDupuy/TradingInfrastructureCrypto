@@ -1,4 +1,5 @@
 #include "kraken_feed_handler.hpp"
+#include "../../common/rest_client.hpp"
 #include <chrono>
 #include <regex>
 #include <cstdlib>
@@ -20,15 +21,9 @@ KrakenFeedHandler::KrakenFeedHandler(
     LOG_INFO("KrakenFeedHandler created (public data, no auth required)", "symbol", symbol_.c_str());
 }
 
-std::string KrakenFeedHandler::get_api_key_from_env() {
-    const char* key = std::getenv("KRAKEN_API_KEY");
-    return key ? std::string(key) : "";
-}
+std::string KrakenFeedHandler::get_api_key_from_env() { return http::env_var("KRAKEN_API_KEY"); }
 
-std::string KrakenFeedHandler::get_api_secret_from_env() {
-    const char* secret = std::getenv("KRAKEN_API_SECRET");
-    return secret ? std::string(secret) : "";
-}
+std::string KrakenFeedHandler::get_api_secret_from_env() { return http::env_var("KRAKEN_API_SECRET"); }
 
 KrakenFeedHandler::~KrakenFeedHandler() {
     stop();
@@ -79,7 +74,7 @@ Result KrakenFeedHandler::fetch_snapshot() {
 
     LOG_INFO("Fetching snapshot from Kraken REST", "symbol", symbol_.c_str());
 
-    std::string response = http_get(url);
+    std::string response = http::get(url);
 
     if (response.empty()) {
         LOG_ERROR("Failed to fetch snapshot", "symbol", symbol_.c_str());
@@ -96,7 +91,7 @@ Result KrakenFeedHandler::fetch_snapshot() {
     Snapshot snapshot;
     snapshot.symbol = symbol_;
     snapshot.exchange = Exchange::KRAKEN;
-    snapshot.timestamp_local_ns = get_timestamp_ns();
+    snapshot.timestamp_local_ns = http::now_ns();
     snapshot.sequence = 0;  // Kraken REST has no sequence number
 
     // REST price levels: ["price_str","vol_str",timestamp_int]
@@ -162,7 +157,7 @@ Result KrakenFeedHandler::process_message(const std::string& message) {
 }
 
 Result KrakenFeedHandler::process_delta(const std::string& message) {
-    int64_t timestamp = get_timestamp_ns();
+    int64_t timestamp = http::now_ns();
 
     std::regex seq_regex(R"xxx("seq"\s*:\s*(\d+))xxx");
     std::smatch match;
@@ -248,28 +243,6 @@ void KrakenFeedHandler::trigger_resnapshot(const std::string& reason) {
 
     delta_buffer_.clear();
     state_.store(State::BUFFERING, std::memory_order_release);
-}
-
-int64_t KrakenFeedHandler::get_timestamp_ns() {
-    auto now = std::chrono::high_resolution_clock::now();
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(
-        now.time_since_epoch()).count();
-}
-
-std::string KrakenFeedHandler::http_get(const std::string& url) {
-    // Kraken order book is public; no auth header needed.
-    std::string command = "curl -s '" + url + "'";
-
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) return "";
-
-    std::string result;
-    char buffer[4096];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result += buffer;
-    }
-    pclose(pipe);
-    return result;
 }
 
 std::vector<PriceLevel> KrakenFeedHandler::parse_kraken_rest_levels(

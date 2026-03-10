@@ -26,6 +26,10 @@ target_link_libraries(binance_feed_test
     GTest::gtest_main
 )
 
+target_include_directories(binance_feed_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
 # Add test to CTest
 add_test(NAME BinanceFeedTest COMMAND binance_feed_test)
 
@@ -45,6 +49,10 @@ target_link_libraries(kraken_feed_test
     trading_common
     GTest::gtest
     GTest::gtest_main
+)
+
+target_include_directories(kraken_feed_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
 )
 
 add_test(NAME KrakenFeedTest COMMAND kraken_feed_test)

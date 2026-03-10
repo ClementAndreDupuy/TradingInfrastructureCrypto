@@ -1,4 +1,5 @@
 #include "binance_connector.hpp"
+#include "../common/rest_client.hpp"
 #include <chrono>
 #include <regex>
 #include <sstream>
@@ -25,15 +26,9 @@ BinanceConnector::~BinanceConnector() {
     disconnect();
 }
 
-std::string BinanceConnector::get_api_key_from_env() {
-    const char* v = std::getenv("BINANCE_API_KEY");
-    return v ? v : "";
-}
+std::string BinanceConnector::get_api_key_from_env() { return http::env_var("BINANCE_API_KEY"); }
 
-std::string BinanceConnector::get_api_secret_from_env() {
-    const char* v = std::getenv("BINANCE_API_SECRET");
-    return v ? v : "";
-}
+std::string BinanceConnector::get_api_secret_from_env() { return http::env_var("BINANCE_API_SECRET"); }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
@@ -270,64 +265,26 @@ std::string BinanceConnector::build_signed_params(const std::string& params) con
 
 // ── Timestamps ────────────────────────────────────────────────────────────────
 
-int64_t BinanceConnector::timestamp_ms() const {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-}
+int64_t BinanceConnector::timestamp_ms() const { return http::now_ms(); }
 
-int64_t BinanceConnector::now_ns() const {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-}
+int64_t BinanceConnector::now_ns() const { return http::now_ns(); }
 
 // ── HTTP helpers (curl via popen, matching existing feed handler pattern) ─────
 
 std::string BinanceConnector::http_get(const std::string& url) const {
-    std::string cmd = "curl -s -H 'X-MBX-APIKEY: " + api_key_ + "' '" + url + "'";
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "";
-    std::string result;
-    char buf[4096];
-    while (fgets(buf, sizeof(buf), pipe)) result += buf;
-    pclose(pipe);
-    return result;
+    return http::get(url, {"X-MBX-APIKEY: " + api_key_});
 }
 
 std::string BinanceConnector::http_post(const std::string& url, const std::string& body) const {
-    std::string cmd = "curl -s -X POST -H 'X-MBX-APIKEY: " + api_key_ + "'";
-    if (!body.empty()) cmd += " -d '" + body + "'";
-    cmd += " '" + url + "'";
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "";
-    std::string result;
-    char buf[4096];
-    while (fgets(buf, sizeof(buf), pipe)) result += buf;
-    pclose(pipe);
-    return result;
+    return http::post(url, body, {"X-MBX-APIKEY: " + api_key_});
 }
 
 std::string BinanceConnector::http_put(const std::string& url, const std::string& body) const {
-    std::string cmd = "curl -s -X PUT -H 'X-MBX-APIKEY: " + api_key_ + "'";
-    if (!body.empty()) cmd += " -d '" + body + "'";
-    cmd += " '" + url + "'";
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "";
-    std::string result;
-    char buf[4096];
-    while (fgets(buf, sizeof(buf), pipe)) result += buf;
-    pclose(pipe);
-    return result;
+    return http::put(url, body, {"X-MBX-APIKEY: " + api_key_});
 }
 
 std::string BinanceConnector::http_delete(const std::string& url) const {
-    std::string cmd = "curl -s -X DELETE -H 'X-MBX-APIKEY: " + api_key_ + "' '" + url + "'";
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "";
-    std::string result;
-    char buf[4096];
-    while (fgets(buf, sizeof(buf), pipe)) result += buf;
-    pclose(pipe);
-    return result;
+    return http::del(url, {"X-MBX-APIKEY: " + api_key_});
 }
 
 // ── Symbol tracking for cancel_order ─────────────────────────────────────────
@@ -354,23 +311,15 @@ const char* BinanceConnector::find_tracked_symbol(uint64_t client_id) const noex
 // ── JSON helpers ──────────────────────────────────────────────────────────────
 
 std::string BinanceConnector::parse_string(const std::string& json, const std::string& key) const {
-    std::regex re("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"");
-    std::smatch m;
-    return std::regex_search(json, m, re) ? m[1].str() : "";
+    return http::parse_string(json, key);
 }
 
 double BinanceConnector::parse_double(const std::string& json, const std::string& key) const {
-    std::regex re("\"" + key + "\"\\s*:\\s*\"?([0-9.eE+\\-]+)\"?");
-    std::smatch m;
-    if (!std::regex_search(json, m, re)) return 0.0;
-    try { return std::stod(m[1].str()); } catch (...) { return 0.0; }
+    return http::parse_double(json, key);
 }
 
 int64_t BinanceConnector::parse_int64(const std::string& json, const std::string& key) const {
-    std::regex re("\"" + key + "\"\\s*:\\s*([0-9]+)");
-    std::smatch m;
-    if (!std::regex_search(json, m, re)) return 0;
-    try { return std::stoll(m[1].str()); } catch (...) { return 0; }
+    return http::parse_int64(json, key);
 }
 
 OrderState BinanceConnector::map_order_status(const std::string& status) noexcept {

@@ -1,4 +1,5 @@
 #include "binance_feed_handler.hpp"
+#include "../../common/rest_client.hpp"
 #include <chrono>
 #include <regex>
 #include <cstdlib>
@@ -25,15 +26,9 @@ BinanceFeedHandler::BinanceFeedHandler(
     }
 }
 
-std::string BinanceFeedHandler::get_api_key_from_env() {
-    const char* key = std::getenv("BINANCE_API_KEY");
-    return key ? std::string(key) : "";
-}
+std::string BinanceFeedHandler::get_api_key_from_env() { return http::env_var("BINANCE_API_KEY"); }
 
-std::string BinanceFeedHandler::get_api_secret_from_env() {
-    const char* secret = std::getenv("BINANCE_API_SECRET");
-    return secret ? std::string(secret) : "";
-}
+std::string BinanceFeedHandler::get_api_secret_from_env() { return http::env_var("BINANCE_API_SECRET"); }
 
 BinanceFeedHandler::~BinanceFeedHandler() {
     stop();
@@ -84,7 +79,7 @@ Result BinanceFeedHandler::fetch_snapshot() {
 
     LOG_INFO("Fetching snapshot from Binance", "symbol", symbol_.c_str());
 
-    std::string response = http_get(url);
+    std::string response = http::get(url, {"X-MBX-APIKEY: " + api_key_});
 
     if (response.empty()) {
         LOG_ERROR("Failed to fetch snapshot", "symbol", symbol_.c_str());
@@ -94,9 +89,9 @@ Result BinanceFeedHandler::fetch_snapshot() {
     Snapshot snapshot;
     snapshot.symbol = symbol_;
     snapshot.exchange = Exchange::BINANCE;
-    snapshot.timestamp_local_ns = get_timestamp_ns();
+    snapshot.timestamp_local_ns = http::now_ns();
 
-    snapshot.sequence = parse_uint64(response, "lastUpdateId");
+    snapshot.sequence = http::parse_uint64(response, "lastUpdateId");
     if (snapshot.sequence == 0) {
         LOG_ERROR("Failed to parse lastUpdateId", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
@@ -168,7 +163,7 @@ Result BinanceFeedHandler::process_message(const std::string& message) {
 }
 
 Result BinanceFeedHandler::process_delta(const std::string& message) {
-    int64_t timestamp = get_timestamp_ns();
+    int64_t timestamp = http::now_ns();
 
     std::regex u_regex(R"xxx("u"\s*:\s*(\d+))xxx");
     std::smatch match;
@@ -241,40 +236,6 @@ void BinanceFeedHandler::trigger_resnapshot(const std::string& reason) {
 
     delta_buffer_.clear();
     state_.store(State::BUFFERING, std::memory_order_release);
-}
-
-int64_t BinanceFeedHandler::get_timestamp_ns() {
-    auto now = std::chrono::high_resolution_clock::now();
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(
-        now.time_since_epoch()).count();
-}
-
-std::string BinanceFeedHandler::http_get(const std::string& url) {
-    std::string command = "curl -s ";
-    if (!api_key_.empty()) {
-        command += "-H 'X-MBX-APIKEY: " + api_key_ + "' ";
-    }
-    command += "'" + url + "'";
-
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) return "";
-
-    std::string result;
-    char buffer[4096];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result += buffer;
-    }
-    pclose(pipe);
-    return result;
-}
-
-uint64_t BinanceFeedHandler::parse_uint64(const std::string& json, const std::string& key) {
-    std::regex pattern("\"" + key + "\"\\s*:\\s*(\\d+)");
-    std::smatch match;
-    if (std::regex_search(json, match, pattern)) {
-        return std::stoull(match[1].str());
-    }
-    return 0;
 }
 
 std::vector<PriceLevel> BinanceFeedHandler::parse_price_levels(const std::string& json, const std::string& key) {

@@ -1,4 +1,5 @@
 #include "kraken_connector.hpp"
+#include "../common/rest_client.hpp"
 #include <chrono>
 #include <regex>
 #include <sstream>
@@ -33,15 +34,9 @@ KrakenConnector::~KrakenConnector() {
     disconnect();
 }
 
-std::string KrakenConnector::get_api_key_from_env() {
-    const char* v = std::getenv("KRAKEN_API_KEY");
-    return v ? v : "";
-}
+std::string KrakenConnector::get_api_key_from_env() { return http::env_var("KRAKEN_API_KEY"); }
 
-std::string KrakenConnector::get_api_secret_from_env() {
-    const char* v = std::getenv("KRAKEN_API_SECRET");
-    return v ? v : "";
-}
+std::string KrakenConnector::get_api_secret_from_env() { return http::env_var("KRAKEN_API_SECRET"); }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
@@ -309,10 +304,7 @@ std::string KrakenConnector::generate_nonce() {
     return std::to_string(n);
 }
 
-int64_t KrakenConnector::now_ns() const {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-}
+int64_t KrakenConnector::now_ns() const { return http::now_ns(); }
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 
@@ -327,31 +319,15 @@ std::string KrakenConnector::http_post_private(const std::string& path,
     std::string sig = kraken_sign(path, post_data, nonce);
     std::string url = api_url_ + path;
 
-    std::string cmd = "curl -s -X POST"
-                      " -H 'API-Key: " + api_key_ + "'"
-                      " -H 'API-Sign: " + sig + "'"
-                      " -H 'Content-Type: application/x-www-form-urlencoded'"
-                      " -d '" + post_data + "'"
-                      " '" + url + "'";
-
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "";
-    std::string result;
-    char buf[4096];
-    while (fgets(buf, sizeof(buf), pipe)) result += buf;
-    pclose(pipe);
-    return result;
+    return http::post(url, post_data, {
+        "API-Key: " + api_key_,
+        "API-Sign: " + sig,
+        "Content-Type: application/x-www-form-urlencoded"
+    });
 }
 
 std::string KrakenConnector::http_get(const std::string& url) const {
-    std::string cmd = "curl -s '" + url + "'";
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "";
-    std::string result;
-    char buf[4096];
-    while (fgets(buf, sizeof(buf), pipe)) result += buf;
-    pclose(pipe);
-    return result;
+    return http::get(url);
 }
 
 // ── Symbol tracking ───────────────────────────────────────────────────────────
@@ -388,23 +364,15 @@ const char* KrakenConnector::find_txid(uint64_t client_id) const noexcept {
 // ── JSON helpers ──────────────────────────────────────────────────────────────
 
 std::string KrakenConnector::parse_string(const std::string& json, const std::string& key) const {
-    std::regex re("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"");
-    std::smatch m;
-    return std::regex_search(json, m, re) ? m[1].str() : "";
+    return http::parse_string(json, key);
 }
 
 double KrakenConnector::parse_double(const std::string& json, const std::string& key) const {
-    std::regex re("\"" + key + "\"\\s*:\\s*([0-9.eE+\\-]+)");
-    std::smatch m;
-    if (!std::regex_search(json, m, re)) return 0.0;
-    try { return std::stod(m[1].str()); } catch (...) { return 0.0; }
+    return http::parse_double(json, key);
 }
 
 int64_t KrakenConnector::parse_int64(const std::string& json, const std::string& key) const {
-    std::regex re("\"" + key + "\"\\s*:\\s*([0-9]+)");
-    std::smatch m;
-    if (!std::regex_search(json, m, re)) return 0;
-    try { return std::stoll(m[1].str()); } catch (...) { return 0; }
+    return http::parse_int64(json, key);
 }
 
 OrderState KrakenConnector::map_order_status(const std::string& status) noexcept {

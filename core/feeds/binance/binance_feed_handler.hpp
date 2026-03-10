@@ -2,6 +2,7 @@
 
 #include "../../common/types.hpp"
 #include "../../common/logging.hpp"
+#include "../../common/rest_client.hpp"
 #include <string>
 #include <vector>
 #include <deque>
@@ -88,10 +89,7 @@ private:
     Result apply_buffered_deltas();
     bool validate_delta_sequence(uint64_t first_update_id, uint64_t last_update_id);
     void trigger_resnapshot(const std::string& reason);
-    int64_t get_timestamp_ns();
 
-    std::string http_get(const std::string& url);
-    uint64_t parse_uint64(const std::string& json, const std::string& key);
     std::vector<PriceLevel> parse_price_levels(const std::string& json, const std::string& key);
 };
 
