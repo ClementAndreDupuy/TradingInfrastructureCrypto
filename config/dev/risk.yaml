@@ -34,10 +34,22 @@ arb_risk:
 
   # ── Taker fees per exchange (bps) ────────────────────────────────────────
   fees:
-    BINANCE:  7.5
+    BINANCE:  7.5        # spot; for perp use 5.0 (BNB discount off)
     OKX:      8.0
     COINBASE: 6.0
-    KRAKEN:   10.0
+    KRAKEN:   10.0       # spot; for perp futures use 5.0
+
+  # ── Perp futures (Binance fstream / Kraken futures.kraken.com) ───────────
+  perp_arb:
+    binance_perp_maker_fee_bps:  2.0
+    binance_perp_taker_fee_bps:  5.0
+    kraken_futures_maker_fee_bps: 2.0
+    kraken_futures_taker_fee_bps: 5.0
+    taker_threshold_bps:  12.0    # cross spread when gross > this (beats 10 bps taker cost)
+    mm_spread_target_bps:  6.0    # post quotes when avg spread > this (beats 4 bps maker cost)
+    quote_ttl_ms:         500
+    hedge_timeout_ms:    2000
+    default_qty_btc:     0.001    # ~$65 at $65k; start small and scale up after shadow validation
 
   # ── Dead man's switch ────────────────────────────────────────────────────
   heartbeat_timeout_ms:         5000       # kill if no heartbeat for 5 seconds
