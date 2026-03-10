@@ -52,6 +52,19 @@ clang++ -std=c++17 \
     build_manual/kraken_example_main.o \
     -o build_manual/kraken_feed_example
 
+# Compile combined Binance + Kraken example with live order books
+echo "Compiling combined example..."
+clang++ -std=c++17 -O2 -Wall -I. \
+    -c core/feeds/combined_example.cpp \
+    -o build_manual/combined_example.o
+
+echo "Linking combined_example..."
+clang++ -std=c++17 \
+    build_manual/binance_feed_handler.o \
+    build_manual/kraken_feed_handler.o \
+    build_manual/combined_example.o \
+    -o build_manual/combined_example
+
 echo "✓ Build complete!"
 echo ""
 echo "Run Binance example:"
@@ -61,3 +74,6 @@ echo "  ./build_manual/binance_feed_example"
 echo ""
 echo "Run Kraken example (public data, no API key required):"
 echo "  ./build_manual/kraken_feed_example"
+echo ""
+echo "Run combined Binance + Kraken example:"
+echo "  ./build_manual/combined_example"
