@@ -1,4 +1,3 @@
-
 # Automated Crypto Alpha via Order Book Deep Learning (PyTorch)
 
 ## Executive Summary

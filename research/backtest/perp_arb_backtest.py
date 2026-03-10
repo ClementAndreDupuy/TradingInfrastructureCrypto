@@ -46,6 +46,15 @@ from typing import Optional
 import numpy as np
 import polars as pl
 
+# ── C++ engine (optional) ────────────────────────────────────────────────────
+# Built from bindings/ via: python3 bindings/setup.py build_ext --inplace
+try:
+    import perp_arb_sim as _cpp_engine
+    _CPP_AVAILABLE = True
+except ImportError:
+    _cpp_engine = None
+    _CPP_AVAILABLE = False
+
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -193,6 +202,63 @@ class PerpArbBacktest:
         self._mm_quote_ns: int = 0
 
     # ── Public API ───────────────────────────────────────────────────────────
+
+    def run_cpp(self, ticks: pl.DataFrame) -> dict:
+        """
+        Run using the C++ engine (OrderBook + ArbRiskManager).
+        Falls back to pure Python if the extension is not built.
+        """
+        if not _CPP_AVAILABLE:
+            print("[WARN] C++ engine not found, falling back to Python engine.")
+            return self.run(ticks)
+
+        cpp_cfg = _cpp_engine.PerpArbConfig()
+        cpp_cfg.trade_qty            = self.cfg.trade_qty
+        cpp_cfg.taker_threshold_bps  = self.cfg.taker_threshold_bps
+        cpp_cfg.mm_spread_target_bps = self.cfg.mm_spread_target_bps
+        cpp_cfg.quote_offset_ticks   = self.cfg.quote_offset_bps  # 1 tick ≈ 1 bps at this scale
+        cpp_cfg.quote_ttl_ms         = self.cfg.quote_ttl_ns // 1_000_000
+        cpp_cfg.binance_maker_fee    = self.cfg.binance_maker_fee_bps
+        cpp_cfg.binance_taker_fee    = self.cfg.binance_taker_fee_bps
+        cpp_cfg.kraken_maker_fee     = self.cfg.kraken_maker_fee_bps
+        cpp_cfg.kraken_taker_fee     = self.cfg.kraken_taker_fee_bps
+
+        # Relax risk defaults for backtesting
+        risk_cfg = _cpp_engine.ArbRiskConfig()
+        risk_cfg.min_spread_bps      = 0.0
+        risk_cfg.min_profit_usd      = 0.0
+        risk_cfg.max_book_age_ns     = 2_000_000_000   # 2 s (REST polling interval)
+        risk_cfg.max_drawdown_usd    = self.cfg.max_drawdown_usd
+        risk_cfg.max_abs_position_per_symbol = self.cfg.max_position_btc
+
+        engine = _cpp_engine.PerpArbSim(cpp_cfg, risk_cfg,
+                                        self.cfg.latency_ns)
+
+        for row in ticks.iter_rows(named=True):
+            engine.on_tick(
+                row["timestamp_ns"],
+                row["exchange"],
+                row["best_bid"],
+                row["best_ask"],
+                row.get("bid_size_1", 0.0),
+                row.get("ask_size_1", 0.0),
+            )
+
+        metrics  = engine.metrics().to_dict()
+        raw_rows = engine.trades_as_dicts()
+
+        if raw_rows:
+            trades_df = pl.DataFrame(raw_rows)
+            ts   = [r["close_ns"] for r in raw_rows]
+            pnl  = np.cumsum([r["net_pnl"]  for r in raw_rows])
+            equity = pl.DataFrame({"timestamp_ns": ts, "cumulative_pnl": pnl})
+        else:
+            trades_df = pl.DataFrame()
+            equity    = pl.DataFrame()
+
+        metrics["risk_rejections"] = engine.rejections()
+        metrics["engine"] = "C++ (OrderBook + ArbRiskManager)"
+        return {"trades": trades_df, "equity_curve": equity, "metrics": metrics}
 
     def run(self, ticks: pl.DataFrame) -> dict:
         """
