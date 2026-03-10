@@ -56,8 +56,6 @@ Result BinanceFeedHandler::start() {
     if (result != Result::SUCCESS) {
         return result;
     }
-    snapshot_received_.store(true, std::memory_order_release);
-
     state_.store(State::SYNCHRONIZED, std::memory_order_release);
     result = apply_buffered_deltas();
     if (result != Result::SUCCESS) {

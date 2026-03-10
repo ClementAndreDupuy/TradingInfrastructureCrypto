@@ -72,7 +72,6 @@ public:
 private:
     enum class State {
         DISCONNECTED,
-        CONNECTING,
         BUFFERING,
         SYNCHRONIZED,
         STREAMING
@@ -85,7 +84,6 @@ private:
     std::string ws_url_;
 
     std::atomic<bool> running_{false};
-    std::atomic<bool> snapshot_received_{false};
     std::atomic<uint64_t> last_seq_{0};
     std::atomic<State> state_{State::DISCONNECTED};
 

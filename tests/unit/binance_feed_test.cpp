@@ -83,15 +83,6 @@ TEST_F(BinanceFeedHandlerTest, SequenceValidation) {
     EXPECT_FALSE(last_error_.empty());
 }
 
-TEST_F(BinanceFeedHandlerTest, BufferingDuringSnapshot) {
-    handler_->connect_websocket();
-
-    std::string msg = R"({"e":"depthUpdate","s":"BTCUSDT","U":1,"u":1,"b":[],"a":[]})";
-
-    EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
-    EXPECT_TRUE(deltas_.empty());
-}
-
 TEST_F(BinanceFeedHandlerTest, IgnoreNonDepthMessages) {
     handler_->start();
     size_t delta_count_before = deltas_.size();

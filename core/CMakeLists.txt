@@ -54,11 +54,11 @@ target_link_libraries(kraken_feed_example
 # Combined Binance + Kraken example with live order books
 add_executable(combined_example
     feeds/combined_example.cpp
-    feeds/binance/binance_feed_handler.cpp
-    feeds/kraken/kraken_feed_handler.cpp
 )
 
 target_link_libraries(combined_example
+    binance_feed
+    kraken_feed
     trading_common
 )
 
