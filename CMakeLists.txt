@@ -3,6 +3,9 @@ project(ThamesRiverTrading VERSION 1.0.0 LANGUAGES CXX)
 
 # C++17 required
 set(CMAKE_CXX_STANDARD 17)
+
+# OpenSSL — required for HMAC signing in execution connectors
+find_package(OpenSSL REQUIRED)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 

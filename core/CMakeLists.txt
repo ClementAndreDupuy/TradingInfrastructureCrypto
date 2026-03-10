@@ -66,8 +66,23 @@ target_include_directories(combined_example PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+# Execution layer — order manager + exchange connectors (Binance + Kraken)
+add_library(execution
+    execution/binance_connector.cpp
+    execution/kraken_connector.cpp
+)
+
+target_link_libraries(execution
+    trading_common
+    OpenSSL::Crypto
+)
+
+target_include_directories(execution PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
 # Install targets
-install(TARGETS binance_feed kraken_feed
+install(TARGETS binance_feed kraken_feed execution
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
 )
@@ -84,5 +99,10 @@ install(DIRECTORY feeds/binance/
 
 install(DIRECTORY feeds/kraken/
     DESTINATION include/trading/feeds/kraken
+    FILES_MATCHING PATTERN "*.hpp"
+)
+
+install(DIRECTORY execution/
+    DESTINATION include/trading/execution
     FILES_MATCHING PATTERN "*.hpp"
 )

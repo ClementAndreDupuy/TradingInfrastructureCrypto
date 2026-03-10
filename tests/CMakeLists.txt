@@ -93,3 +93,26 @@ set_tests_properties(ArbRiskManagerTest PROPERTIES
     TIMEOUT 30
     LABELS "unit;risk"
 )
+
+# Execution layer unit tests (OrderManager + connector WS parsing, no network)
+add_executable(execution_test
+    unit/execution_test.cpp
+)
+
+target_link_libraries(execution_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(execution_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME ExecutionTest COMMAND execution_test)
+
+set_tests_properties(ExecutionTest PROPERTIES
+    TIMEOUT 30
+    LABELS "unit;execution"
+)
