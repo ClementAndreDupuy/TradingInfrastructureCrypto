@@ -11,6 +11,20 @@ Per-exchange WebSocket feed handlers. Each exchange has different protocols.
 - **Gap handling**: If `U <= lastUpdateId + 1 <= u`, apply delta
 - **Quirk**: Sends buffered updates every 100ms, not real-time ticks
 
+### Kraken (`kraken/`)
+- **Snapshot**: REST `GET /0/public/Depth?pair={symbol}&count=500`
+  - Response: `{"error":[],"result":{"XXBTZUSD":{"bids":[["price","vol",ts],...], "asks":[...]}}}`
+  - **Quirk**: Response key uses internal pair name (e.g. `XXBTZUSD`) regardless of request; parse by finding `"bids"` key, not by pair name
+  - **No sequence number**: REST response has no `lastUpdateId`; `last_seq` starts at 0
+- **Deltas**: WebSocket v2 `wss://ws.kraken.com/v2`, channel `book`
+  - Subscribe: `{"method":"subscribe","params":{"channel":"book","symbol":["BTC/USD"],"depth":10}}`
+  - Snapshot msg: `{"channel":"book","type":"snapshot","seq":1,"data":[{"bids":[{"price":X,"qty":Y}...],"asks":[...]}]}`
+  - Update msg: `{"channel":"book","type":"update","seq":N,"data":[...]}`
+  - Price levels: `{"price":X,"qty":Y}` objects (not arrays like Binance)
+- **Sequence**: Top-level `"seq"` field, strictly +1 per message (no Binance-style `U <= lastId+1 <= u` window)
+- **Gap handling**: `seq != last_seq + 1` → trigger re-snapshot
+- **Checksum**: `"checksum"` field (CRC32) present in every update; not currently validated
+
 ### OKX (`okx/`)
 - **Snapshot**: WebSocket `books` channel with `action: snapshot`
 - **Deltas**: Same channel with `action: update`

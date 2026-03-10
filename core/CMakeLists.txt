@@ -29,8 +29,30 @@ target_link_libraries(binance_feed_example
     trading_common
 )
 
+# Kraken feed handler library
+add_library(kraken_feed
+    feeds/kraken/kraken_feed_handler.cpp
+)
+
+target_link_libraries(kraken_feed
+    trading_common
+)
+
+target_include_directories(kraken_feed PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_executable(kraken_feed_example
+    feeds/kraken/example_main.cpp
+)
+
+target_link_libraries(kraken_feed_example
+    kraken_feed
+    trading_common
+)
+
 # Install targets
-install(TARGETS binance_feed
+install(TARGETS binance_feed kraken_feed
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
 )
@@ -42,5 +64,10 @@ install(DIRECTORY common/
 
 install(DIRECTORY feeds/binance/
     DESTINATION include/trading/feeds/binance
+    FILES_MATCHING PATTERN "*.hpp"
+)
+
+install(DIRECTORY feeds/kraken/
+    DESTINATION include/trading/feeds/kraken
     FILES_MATCHING PATTERN "*.hpp"
 )

@@ -11,6 +11,7 @@ enum class Exchange : uint8_t {
     BINANCE = 0,
     OKX = 1,
     COINBASE = 2,
+    KRAKEN = 3,
     UNKNOWN = 255
 };
 
@@ -77,6 +78,7 @@ inline const char* exchange_to_string(Exchange ex) {
         case Exchange::BINANCE: return "BINANCE";
         case Exchange::OKX: return "OKX";
         case Exchange::COINBASE: return "COINBASE";
+        case Exchange::KRAKEN: return "KRAKEN";
         default: return "UNKNOWN";
     }
 }
