@@ -71,3 +71,25 @@ set_tests_properties(OrderBookTest PROPERTIES
     TIMEOUT 10
     LABELS "unit;orderbook"
 )
+
+# Arbitrage risk manager unit tests (header-only, no extra library needed)
+add_executable(arb_risk_manager_test
+    unit/arb_risk_manager_test.cpp
+)
+
+target_link_libraries(arb_risk_manager_test
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(arb_risk_manager_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME ArbRiskManagerTest COMMAND arb_risk_manager_test)
+
+set_tests_properties(ArbRiskManagerTest PROPERTIES
+    TIMEOUT 30
+    LABELS "unit;risk"
+)
