@@ -1,0 +1,43 @@
+# Arbitrage risk limits — development environment
+# See core/risk/arb_risk_manager.hpp for field descriptions.
+# IMPORTANT: Dev limits are intentionally conservative; tighten for shadow/live.
+
+arb_risk:
+  # ── Position limits ──────────────────────────────────────────────────────
+  max_abs_position_per_symbol:  1.0        # max abs qty per symbol per exchange (e.g. 1 BTC)
+  max_cross_exchange_exposure:  2.0        # sum of abs positions across all exchanges per symbol
+
+  # ── Notional limits (USD) ────────────────────────────────────────────────
+  max_notional_per_symbol:      100000.0   # per single arb leg
+  max_notional_per_exchange:    250000.0   # total open notional on one venue
+  max_portfolio_notional:       500000.0   # total open notional across all venues
+
+  # ── Drawdown ─────────────────────────────────────────────────────────────
+  max_drawdown_usd:             -5000.0    # kill switch triggers below this
+
+  # ── Rate limits ──────────────────────────────────────────────────────────
+  max_orders_per_second:        10
+  max_orders_per_minute:        200
+
+  # ── Arbitrage-specific ───────────────────────────────────────────────────
+  min_spread_bps:               5.0        # gross spread must exceed this
+  min_profit_usd:               0.50       # after-fee expected profit must exceed this
+  max_book_age_ms:              500        # reject if either book older than 500 ms
+  max_open_arb_legs:            10         # simultaneous open legs
+
+  # ── Flash crash / book corruption guard ──────────────────────────────────
+  max_price_deviation_bps:      300.0      # reject if price deviates > 3% from reference
+
+  # ── Circuit breaker ───────────────────────────────────────────────────────
+  circuit_breaker_count:        5          # consecutive per-leg losses before pause
+  circuit_breaker_loss_usd:     -50.0      # per-leg loss threshold
+
+  # ── Taker fees per exchange (bps) ────────────────────────────────────────
+  fees:
+    BINANCE:  7.5
+    OKX:      8.0
+    COINBASE: 6.0
+    KRAKEN:   10.0
+
+  # ── Dead man's switch ────────────────────────────────────────────────────
+  heartbeat_timeout_ms:         5000       # kill if no heartbeat for 5 seconds
