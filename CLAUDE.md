@@ -38,10 +38,12 @@ python3 research/backtest/fetch_and_run.py --ticks 60 --interval-ms 500 --engine
 2. Order book integrity is foundational — all downstream depends on book correctness.
 3. Shadow = live code path — identical code before going live.
 4. Kill switch is non-negotiable — must work at OS/hardware level.
-5. Never mock data — always use real implementations.
+5. Never mock data — always use real data and real implementation
 6. Avoid too many comments in the code, keep it clean and short 
-7. Always write production ready code, so we can iterate on a working env 
-8. Avoid creating too many files, more compact is more readable
+7. Always write production ready code, so we can iterate on a working env
+8. Never write jargon
+9. Never assume technical knowledge
+10. After generating a working code, review it thoroughly
 
 ## Critical Components
 
