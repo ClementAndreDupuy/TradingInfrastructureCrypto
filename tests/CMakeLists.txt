@@ -53,3 +53,21 @@ set_tests_properties(KrakenFeedTest PROPERTIES
     TIMEOUT 30
     LABELS "unit;feeds"
 )
+
+# OrderBook unit tests (pure logic, no network)
+add_executable(orderbook_test
+    unit/orderbook_test.cpp
+)
+
+target_link_libraries(orderbook_test
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+add_test(NAME OrderBookTest COMMAND orderbook_test)
+
+set_tests_properties(OrderBookTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;orderbook"
+)

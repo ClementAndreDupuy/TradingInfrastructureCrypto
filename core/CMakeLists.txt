@@ -51,6 +51,21 @@ target_link_libraries(kraken_feed_example
     trading_common
 )
 
+# Combined Binance + Kraken example with live order books
+add_executable(combined_example
+    feeds/combined_example.cpp
+    feeds/binance/binance_feed_handler.cpp
+    feeds/kraken/kraken_feed_handler.cpp
+)
+
+target_link_libraries(combined_example
+    trading_common
+)
+
+target_include_directories(combined_example PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
 # Install targets
 install(TARGETS binance_feed kraken_feed
     LIBRARY DESTINATION lib
