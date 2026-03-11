@@ -1,11 +1,11 @@
 """
-Daily model retraining job for CryptoAlphaNet on BTCUSDT / PI_XBTUSD.
+Daily model retraining job for CryptoAlphaNet on SOLUSDT.
 
 Run via cron at 00:30 UTC (markets quietest, data from previous day settled):
     30 0 * * * /path/to/venv/bin/python /path/to/deploy/daily_train.py
 
 What it does:
-    1. Collects a fresh window of L5 LOB ticks from Binance + Kraken.
+    1. Collects a fresh window of L5 LOB ticks from Binance SOLUSDT.
     2. Trains CryptoAlphaNet with walk-forward cross-validation.
     3. Compares the new model against the current production model.
     4. Promotes the new model only if it beats current on held-out data.
@@ -134,7 +134,7 @@ def run() -> dict:
             log.info("Loading cached ticks from %s", cached)
             df = pl.read_parquet(cached)
         else:
-            df = collect_l5_ticks(TRAIN_TICKS, TRAIN_INTERVAL_MS, exchanges=["BINANCE", "KRAKEN"])
+            df = collect_l5_ticks(TRAIN_TICKS, TRAIN_INTERVAL_MS, exchanges=["SOLANA"])
             df.write_parquet(cached)
             log.info("Tick data cached → %s  rows=%d", cached, len(df))
 

@@ -26,8 +26,28 @@ import requests
 # ── Data fetcher ──────────────────────────────────────────────────────────────
 
 BINANCE_DEPTH_URL = "https://fapi.binance.com/fapi/v1/depth"
-KRAKEN_DEPTH_URL  = "https://futures.kraken.com/derivatives/api/v3/orderbook"
+BINANCE_SPOT_DEPTH_URL = "https://api.binance.com/api/v3/depth"
+KRAKEN_DEPTH_URL = "https://futures.kraken.com/derivatives/api/v3/orderbook"
 N_LEVELS = 5
+
+
+def _parse_binance_l5(d: dict, symbol: str, exchange_label: str) -> dict:
+    bids = d["bids"][:N_LEVELS]
+    asks = d["asks"][:N_LEVELS]
+    row: dict = {
+        "timestamp_ns": time.time_ns(),
+        "exchange": exchange_label,
+        "symbol": symbol,
+        "best_bid": float(bids[0][0]),
+        "best_ask": float(asks[0][0]),
+    }
+    for i, (bp, bs) in enumerate(bids, 1):
+        row[f"bid_price_{i}"] = float(bp)
+        row[f"bid_size_{i}"] = float(bs)
+    for i, (ap, as_) in enumerate(asks, 1):
+        row[f"ask_price_{i}"] = float(ap)
+        row[f"ask_size_{i}"] = float(as_)
+    return row
 
 
 def _fetch_binance_l5() -> dict | None:
@@ -38,24 +58,24 @@ def _fetch_binance_l5() -> dict | None:
             timeout=5,
         )
         r.raise_for_status()
-        d = r.json()
-        bids = d["bids"][:N_LEVELS]
-        asks = d["asks"][:N_LEVELS]
-        row: dict = {
-            "timestamp_ns": time.time_ns(),
-            "exchange":     "BINANCE",
-            "best_bid":     float(bids[0][0]),
-            "best_ask":     float(asks[0][0]),
-        }
-        for i, (bp, bs) in enumerate(bids, 1):
-            row[f"bid_price_{i}"] = float(bp)
-            row[f"bid_size_{i}"]  = float(bs)
-        for i, (ap, as_) in enumerate(asks, 1):
-            row[f"ask_price_{i}"] = float(ap)
-            row[f"ask_size_{i}"]  = float(as_)
-        return row
+        return _parse_binance_l5(r.json(), "BTCUSDT", "BINANCE")
     except Exception as e:
         print(f"  [WARN] Binance L5 fetch: {e}")
+        return None
+
+
+def _fetch_solana_l5() -> dict | None:
+    """Fetch L5 LOB snapshot for SOLUSDT from Binance spot."""
+    try:
+        r = requests.get(
+            BINANCE_SPOT_DEPTH_URL,
+            params={"symbol": "SOLUSDT", "limit": N_LEVELS},
+            timeout=5,
+        )
+        r.raise_for_status()
+        return _parse_binance_l5(r.json(), "SOLUSDT", "SOLANA")
+    except Exception as e:
+        print(f"  [WARN] Solana L5 fetch: {e}")
         return None
 
 
@@ -69,21 +89,22 @@ def _fetch_kraken_l5() -> dict | None:
         r.raise_for_status()
         d = r.json()
         bids = sorted(d["orderBook"]["bids"], key=lambda x: -float(x[0]))[:N_LEVELS]
-        asks = sorted(d["orderBook"]["asks"], key=lambda x:  float(x[0]))[:N_LEVELS]
+        asks = sorted(d["orderBook"]["asks"], key=lambda x: float(x[0]))[:N_LEVELS]
         if not bids or not asks:
             return None
         row: dict = {
             "timestamp_ns": time.time_ns(),
-            "exchange":     "KRAKEN",
-            "best_bid":     float(bids[0][0]),
-            "best_ask":     float(asks[0][0]),
+            "exchange": "KRAKEN",
+            "symbol": "PI_XBTUSD",
+            "best_bid": float(bids[0][0]),
+            "best_ask": float(asks[0][0]),
         }
         for i, (bp, bs) in enumerate(bids, 1):
             row[f"bid_price_{i}"] = float(bp)
-            row[f"bid_size_{i}"]  = float(bs)
+            row[f"bid_size_{i}"] = float(bs)
         for i, (ap, as_) in enumerate(asks, 1):
             row[f"ask_price_{i}"] = float(ap)
-            row[f"ask_size_{i}"]  = float(as_)
+            row[f"ask_size_{i}"] = float(as_)
         return row
     except Exception as e:
         print(f"  [WARN] Kraken L5 fetch: {e}")
@@ -95,19 +116,28 @@ def collect_l5_ticks(
     interval_ms: int,
     exchanges: list[str] | None = None,
 ) -> pl.DataFrame:
-    """Fetch L5 LOB snapshots from Binance and/or Kraken."""
-    exchanges = exchanges or ["BINANCE", "KRAKEN"]
+    """Fetch L5 LOB snapshots from the specified exchanges.
+
+    Supported exchange labels: BINANCE, KRAKEN, SOLANA.
+    """
+    exchanges = exchanges or ["SOLANA"]
     rows: list[dict] = []
     interval_s = interval_ms / 1000.0
 
+    _fetchers = {
+        "BINANCE": _fetch_binance_l5,
+        "KRAKEN": _fetch_kraken_l5,
+        "SOLANA": _fetch_solana_l5,
+    }
+
     print(f"Collecting {n_ticks} L5 snapshots per exchange (interval {interval_ms} ms)…")
     for i in range(n_ticks):
-        if "BINANCE" in exchanges:
-            row = _fetch_binance_l5()
-            if row:
-                rows.append(row)
-        if "KRAKEN" in exchanges:
-            row = _fetch_kraken_l5()
+        for ex in exchanges:
+            fetcher = _fetchers.get(ex)
+            if fetcher is None:
+                print(f"  [WARN] Unknown exchange: {ex}")
+                continue
+            row = fetcher()
             if row:
                 rows.append(row)
         if (i + 1) % 20 == 0:
@@ -261,7 +291,7 @@ def main() -> None:
     ap.add_argument("--ticks",           type=int,   default=300,
                     help="Ticks to collect per exchange (default 300)")
     ap.add_argument("--interval-ms",     type=int,   default=500,   dest="interval_ms")
-    ap.add_argument("--exchanges",       type=str,   default="BINANCE,KRAKEN")
+    ap.add_argument("--exchanges", type=str, default="SOLANA")
     ap.add_argument("--synthetic",       action="store_true",
                     help="Use synthetic LOB data (offline testing)")
     ap.add_argument("--data-path",       type=str,   default=None,  dest="data_path",
