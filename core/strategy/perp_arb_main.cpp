@@ -22,6 +22,7 @@
 #include "../execution/order_manager.hpp"
 #include "../execution/binance_connector.hpp"
 #include "../execution/kraken_connector.hpp"
+#include "../ipc/alpha_signal.hpp"
 #include "../risk/arb_risk_manager.hpp"
 #include "../shadow/shadow_engine.hpp"
 #include "perp_arb_strategy.hpp"
@@ -176,6 +177,14 @@ int main(int argc, char** argv) {
 
     ShadowEngine shadow_engine(binance_book, kraken_book, shadow_cfg);
 
+    // Neural alpha signal reader (fail-open: if not present, all trades allowed)
+    AlphaSignalReader alpha_signal;
+    if (!alpha_signal.open()) {
+        LOG_INFO("Alpha signal file not found — running without neural gate (fail-open)");
+    } else {
+        LOG_INFO("Neural alpha signal gate active");
+    }
+
     // Strategy
     PerpArbStrategy strategy(
         strat_cfg,
@@ -183,7 +192,8 @@ int main(int argc, char** argv) {
         shadow_engine.binance_connector(),
         shadow_engine.kraken_connector(),
         risk,
-        order_mgr
+        order_mgr,
+        &alpha_signal
     );
 
     // Wire fill callbacks: connector fills → order manager → strategy

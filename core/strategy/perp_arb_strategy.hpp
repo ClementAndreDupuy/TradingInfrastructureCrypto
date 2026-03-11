@@ -24,6 +24,7 @@
 #include "../execution/exchange_connector.hpp"
 #include "../execution/order_manager.hpp"
 #include "../feeds/book_manager.hpp"
+#include "../ipc/alpha_signal.hpp"
 #include "../risk/arb_risk_manager.hpp"
 
 #include <atomic>
@@ -69,14 +70,16 @@ public:
                     ExchangeConnector&   binance_connector,
                     ExchangeConnector&   kraken_connector,
                     ArbRiskManager&      risk,
-                    OrderManager&        order_mgr)
+                    OrderManager&        order_mgr,
+                    AlphaSignalReader*   alpha = nullptr)
         : cfg_(cfg),
           binance_book_(binance_book),
           kraken_book_(kraken_book),
           binance_(binance_connector),
           kraken_(kraken_connector),
           risk_(risk),
-          order_mgr_(order_mgr) {}
+          order_mgr_(order_mgr),
+          alpha_(alpha) {}
 
     // Call from strategy thread on every book update (either exchange).
     void on_book_update() {
@@ -101,11 +104,13 @@ public:
         const double spread_buy_kra  = spread_bps(kra_ask, bin_bid);  // buy Kraken, sell Binance
 
         if (spread_buy_bin >= cfg_.taker_threshold_bps) {
-            run_taker_arb(bin_ask, kra_bid, Exchange::BINANCE, Exchange::KRAKEN);
+            if (!alpha_ || alpha_->allows_long())
+                run_taker_arb(bin_ask, kra_bid, Exchange::BINANCE, Exchange::KRAKEN);
             return;
         }
         if (spread_buy_kra >= cfg_.taker_threshold_bps) {
-            run_taker_arb(kra_ask, bin_bid, Exchange::KRAKEN, Exchange::BINANCE);
+            if (!alpha_ || alpha_->allows_short())
+                run_taker_arb(kra_ask, bin_bid, Exchange::KRAKEN, Exchange::BINANCE);
             return;
         }
 
@@ -115,7 +120,8 @@ public:
                                        (kra_ask - kra_bid) / kra_bid) / 2.0 * 10000.0;
 
         if (avg_spread_bps >= cfg_.mm_spread_target_bps && !hedge_pending_.active)
-            run_market_maker(mid, bin_bid, bin_ask, kra_bid, kra_ask);
+            if (!alpha_ || alpha_->allows_mm())
+                run_market_maker(mid, bin_bid, bin_ask, kra_bid, kra_ask);
     }
 
     // Call from WS fill callback thread(s).
@@ -192,6 +198,8 @@ private:
     uint64_t taker_sell_oid_ = 0;
     uint64_t taker_leg_id_   = 0;
     uint64_t hedge_oid_      = 0;
+
+    AlphaSignalReader*    alpha_ = nullptr;
 
     std::atomic<double>   realized_pnl_{0.0};
     std::atomic<uint64_t> total_trades_{0};
