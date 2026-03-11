@@ -32,42 +32,8 @@ target_include_directories(kraken_feed PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-# Execution layer — order manager + exchange connectors (Binance + Kraken)
-add_library(execution
-    execution/binance_connector.cpp
-    execution/kraken_connector.cpp
-)
-
-target_link_libraries(execution
-    trading_common
-    OpenSSL::Crypto
-)
-
-target_include_directories(execution PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-# Perp futures arbitrage executable (shadow + live modes)
-add_executable(perp_arb
-    strategy/perp_arb_main.cpp
-    execution/binance_connector.cpp
-    execution/kraken_connector.cpp
-)
-
-target_link_libraries(perp_arb
-    binance_feed
-    kraken_feed
-    execution
-    trading_common
-    OpenSSL::Crypto
-)
-
-target_include_directories(perp_arb PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
 # Install targets
-install(TARGETS binance_feed kraken_feed execution perp_arb
+install(TARGETS binance_feed kraken_feed
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
 )
@@ -84,10 +50,5 @@ install(DIRECTORY feeds/binance/
 
 install(DIRECTORY feeds/kraken/
     DESTINATION include/trading/feeds/kraken
-    FILES_MATCHING PATTERN "*.hpp"
-)
-
-install(DIRECTORY execution/
-    DESTINATION include/trading/execution
     FILES_MATCHING PATTERN "*.hpp"
 )
