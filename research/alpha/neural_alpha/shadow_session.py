@@ -43,7 +43,7 @@ import torch
 
 from .features import compute_lob_tensor, compute_scalar_features, normalise_scalar
 from .model import CryptoAlphaNet
-from .pipeline import _fetch_binance_l5, _fetch_kraken_l5, generate_synthetic_lob
+from .pipeline import _fetch_binance_l5, _fetch_kraken_l5, _fetch_solana_l5, generate_synthetic_lob
 from .trainer import TrainerConfig, walk_forward_train
 
 # Shared memory file layout: [float64 signal_bps][float64 risk_score][int64 ts_ns]
@@ -92,7 +92,7 @@ class ShadowSessionConfig:
     train_ticks: int = 0
     train_epochs: int = 10
     synthetic: bool = False
-    exchanges: list[str] = field(default_factory=lambda: ["BINANCE", "KRAKEN"])
+    exchanges: list[str] = field(default_factory=lambda: ["SOLANA"])
     signal_file: str = _SIGNAL_FILE
 
 
@@ -144,11 +144,18 @@ class NeuralAlphaShadowSession:
         else:
             rows: list[dict] = []
             interval_s = self.cfg.interval_ms / 1000.0
+            _fetchers = {
+                "BINANCE": _fetch_binance_l5,
+                "KRAKEN": _fetch_kraken_l5,
+                "SOLANA": _fetch_solana_l5,
+            }
             for i in range(n_ticks):
                 for ex in self.cfg.exchanges:
-                    row = _fetch_binance_l5() if ex == "BINANCE" else _fetch_kraken_l5()
-                    if row:
-                        rows.append(row)
+                    fetcher = _fetchers.get(ex)
+                    if fetcher:
+                        row = fetcher()
+                        if row:
+                            rows.append(row)
                 if i < n_ticks - 1:
                     time.sleep(interval_s)
             if not rows:
@@ -227,10 +234,17 @@ class NeuralAlphaShadowSession:
             row["timestamp_ns"] = time.time_ns()
             ticks.append(row)
             return ticks
+        _fetchers = {
+            "BINANCE": _fetch_binance_l5,
+            "KRAKEN": _fetch_kraken_l5,
+            "SOLANA": _fetch_solana_l5,
+        }
         for ex in self.cfg.exchanges:
-            row = _fetch_binance_l5() if ex == "BINANCE" else _fetch_kraken_l5()
-            if row:
-                ticks.append(row)
+            fetcher = _fetchers.get(ex)
+            if fetcher:
+                row = fetcher()
+                if row:
+                    ticks.append(row)
         return ticks
 
     # ── Logging ───────────────────────────────────────────────────────────────
@@ -333,7 +347,7 @@ def main() -> None:
     ap.add_argument("--train-ticks",     type=int,   default=0,     dest="train_ticks")
     ap.add_argument("--train-epochs",    type=int,   default=10,    dest="train_epochs")
     ap.add_argument("--synthetic",       action="store_true")
-    ap.add_argument("--exchanges",       type=str,   default="BINANCE,KRAKEN")
+    ap.add_argument("--exchanges", type=str, default="SOLANA")
     args = ap.parse_args()
 
     cfg = ShadowSessionConfig(
