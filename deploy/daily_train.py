@@ -1,0 +1,237 @@
+"""
+Daily model retraining job for CryptoAlphaNet on BTCUSDT / PI_XBTUSD.
+
+Run via cron at 00:30 UTC (markets quietest, data from previous day settled):
+    30 0 * * * /path/to/venv/bin/python /path/to/deploy/daily_train.py
+
+What it does:
+    1. Collects a fresh window of L5 LOB ticks from Binance + Kraken.
+    2. Trains CryptoAlphaNet with walk-forward cross-validation.
+    3. Compares the new model against the current production model.
+    4. Promotes the new model only if it beats current on held-out data.
+    5. Writes metrics to logs/train_<date>.json for Prometheus pickup.
+
+Environment variables:
+    MODEL_DIR        Directory for model checkpoints (default: models/)
+    DATA_DIR         Directory for tick data cache (default: data/)
+    TRAIN_TICKS      Ticks to collect per exchange (default: 2000)
+    TRAIN_INTERVAL_MS Polling interval while collecting (default: 500)
+    EPOCHS           Training epochs per fold (default: 30)
+    PROMOTE_IC_MIN   Min IC on held-out data to promote (default: 0.02)
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+import numpy as np
+import torch
+
+ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT))
+
+from research.alpha.neural_alpha.alpha_regression import analyse_alpha
+from research.alpha.neural_alpha.backtest import BacktestConfig, NeuralAlphaBacktest
+from research.alpha.neural_alpha.features import compute_lob_tensor, compute_scalar_features, normalise_scalar
+from research.alpha.neural_alpha.model import CryptoAlphaNet
+from research.alpha.neural_alpha.pipeline import collect_l5_ticks, generate_synthetic_lob
+from research.alpha.neural_alpha.trainer import TrainerConfig, walk_forward_train
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    handlers=[logging.StreamHandler()],
+)
+log = logging.getLogger("daily_train")
+
+MODEL_DIR = Path(os.getenv("MODEL_DIR", ROOT / "models"))
+DATA_DIR = Path(os.getenv("DATA_DIR", ROOT / "data"))
+LOG_DIR = ROOT / "logs"
+
+TRAIN_TICKS = int(os.getenv("TRAIN_TICKS", "2000"))
+TRAIN_INTERVAL_MS = int(os.getenv("TRAIN_INTERVAL_MS", "500"))
+EPOCHS = int(os.getenv("EPOCHS", "30"))
+PROMOTE_IC_MIN = float(os.getenv("PROMOTE_IC_MIN", "0.02"))
+
+PROD_MODEL_PATH = MODEL_DIR / "neural_alpha_latest.pt"
+CANDIDATE_MODEL_PATH = MODEL_DIR / "neural_alpha_candidate.pt"
+NORM_STATS_PATH = MODEL_DIR / "scalar_norm_stats.npz"
+
+
+def _ensure_dirs() -> None:
+    for d in (MODEL_DIR, DATA_DIR, LOG_DIR):
+        d.mkdir(parents=True, exist_ok=True)
+
+
+def _load_prod_model_ic() -> float:
+    """Read the IC of the current production model from its metadata file."""
+    meta_path = MODEL_DIR / "neural_alpha_latest.json"
+    if not meta_path.exists():
+        return -1.0
+    with open(meta_path) as f:
+        meta = json.load(f)
+    return float(meta.get("ic_mean", -1.0))
+
+
+def _save_model_meta(path: Path, metrics: dict) -> None:
+    with open(path.with_suffix(".json"), "w") as f:
+        json.dump(metrics, f, indent=2)
+
+
+def _promote_candidate() -> None:
+    CANDIDATE_MODEL_PATH.replace(PROD_MODEL_PATH)
+    cand_meta = CANDIDATE_MODEL_PATH.with_suffix(".json")
+    prod_meta = PROD_MODEL_PATH.with_suffix(".json")
+    if cand_meta.exists():
+        cand_meta.replace(prod_meta)
+    log.info("Candidate promoted to production: %s", PROD_MODEL_PATH)
+
+
+def _write_train_log(date_str: str, metrics: dict) -> None:
+    out = LOG_DIR / f"train_{date_str}.json"
+    with open(out, "w") as f:
+        json.dump(metrics, f, indent=2)
+    log.info("Train log written: %s", out)
+
+    # Prometheus text format for node_exporter textfile collector
+    prom_out = LOG_DIR / "neural_alpha_train.prom"
+    lines = [
+        "# HELP neural_alpha_train_ic IC of latest trained model",
+        "# TYPE neural_alpha_train_ic gauge",
+        f"neural_alpha_train_ic {metrics.get('ic_mean', 0.0):.6f}",
+        "# HELP neural_alpha_train_icir ICIR of latest trained model",
+        "# TYPE neural_alpha_train_icir gauge",
+        f"neural_alpha_train_icir {metrics.get('icir', 0.0):.6f}",
+        "# HELP neural_alpha_train_sharpe Backtest Sharpe of latest trained model",
+        "# TYPE neural_alpha_train_sharpe gauge",
+        f"neural_alpha_train_sharpe {metrics.get('sharpe', 0.0):.6f}",
+        "# HELP neural_alpha_promoted Whether the candidate was promoted (1=yes)",
+        "# TYPE neural_alpha_promoted gauge",
+        f"neural_alpha_promoted {1 if metrics.get('promoted') else 0}",
+    ]
+    prom_out.write_text("\n".join(lines) + "\n")
+
+
+def run() -> dict:
+    _ensure_dirs()
+    date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    log.info("Daily train started — date=%s  ticks=%d  epochs=%d", date_str, TRAIN_TICKS, EPOCHS)
+
+    # 1. Collect data
+    use_synthetic = os.getenv("SYNTHETIC", "").lower() in ("1", "true", "yes")
+    if use_synthetic:
+        log.info("Using synthetic data (SYNTHETIC env var set)")
+        df = generate_synthetic_lob(n_ticks=TRAIN_TICKS)
+    else:
+        cached = DATA_DIR / f"ticks_{date_str}.parquet"
+        if cached.exists():
+            import polars as pl
+            log.info("Loading cached ticks from %s", cached)
+            df = pl.read_parquet(cached)
+        else:
+            df = collect_l5_ticks(TRAIN_TICKS, TRAIN_INTERVAL_MS, exchanges=["BINANCE", "KRAKEN"])
+            df.write_parquet(cached)
+            log.info("Tick data cached → %s  rows=%d", cached, len(df))
+
+    # 2. Train
+    cfg = TrainerConfig(
+        epochs=EPOCHS,
+        n_folds=4,
+        train_frac=0.75,
+        seq_len=64,
+        d_spatial=64,
+        d_temporal=128,
+        pretrain=True,
+        pretrain_epochs=5,
+    )
+    log.info("Starting walk-forward training (%d folds)…", cfg.n_folds)
+    fold_results = walk_forward_train(df, cfg)
+
+    if not fold_results:
+        log.error("Training produced no fold results — dataset too small.")
+        return {"error": "no_fold_results", "date": date_str}
+
+    # 3. Alpha regression
+    alpha_metrics = analyse_alpha(fold_results, horizon_idx=1)
+    log.info("Alpha: IC=%.4f  ICIR=%.4f  HitRate=%.3f",
+             alpha_metrics.ic_mean, alpha_metrics.icir, alpha_metrics.hit_rate)
+
+    # 4. Backtest on held-out fold
+    bt_cfg = BacktestConfig(entry_threshold_bps=5.0, taker_fee_bps=5.0)
+    last_fold = fold_results[-1]
+    bt = NeuralAlphaBacktest(bt_cfg)
+    signals = last_fold["predictions"][:, 1]
+    import polars as pl
+    fold_size = len(df) // cfg.n_folds
+    test_start = len(df) - fold_size
+    test_df = df[test_start:]
+    T_test = len(test_df)
+    tick_signals = np.zeros(T_test, dtype=np.float32)
+    for i, sig in enumerate(signals):
+        idx = min(i + cfg.seq_len - 1, T_test - 1)
+        tick_signals[idx] = sig
+    bt_result = bt.run(test_df, tick_signals)
+    bt_metrics = bt_result["metrics"]
+    sharpe = bt_metrics.get("sharpe_annualised", 0.0) if "error" not in bt_metrics else 0.0
+    log.info("Backtest: trades=%s  PnL=%.4f  Sharpe=%.3f",
+             bt_metrics.get("total_trades", 0),
+             bt_metrics.get("total_net_pnl", 0.0),
+             sharpe)
+
+    # 5. Save candidate
+    best_fold = min(fold_results, key=lambda f: f["metrics"].get("loss_total", 1e9))
+    torch.save(best_fold["model_state"], CANDIDATE_MODEL_PATH)
+
+    # Save normalisation stats for inference
+    raw_scalar = compute_scalar_features(df)
+    _, scalar_mean, scalar_std = normalise_scalar(raw_scalar)
+    np.savez(NORM_STATS_PATH, mean=scalar_mean, std=scalar_std)
+
+    train_metrics = {
+        "date": date_str,
+        "n_ticks": len(df),
+        "n_folds": len(fold_results),
+        "ic_mean": round(alpha_metrics.ic_mean, 6),
+        "ic_std": round(alpha_metrics.ic_std, 6),
+        "icir": round(alpha_metrics.icir, 6),
+        "hit_rate": round(alpha_metrics.hit_rate, 4),
+        "ols_alpha": round(alpha_metrics.ols_alpha, 8),
+        "ols_t_stat": round(alpha_metrics.ols_t_stat, 4),
+        "backtest_trades": bt_metrics.get("total_trades", 0),
+        "backtest_pnl": round(bt_metrics.get("total_net_pnl", 0.0), 4),
+        "sharpe": round(sharpe, 4),
+        "win_rate": round(bt_metrics.get("win_rate", 0.0), 4),
+    }
+
+    # 6. Promote if better than current production model
+    prod_ic = _load_prod_model_ic()
+    promoted = False
+    if alpha_metrics.ic_mean >= PROMOTE_IC_MIN and alpha_metrics.ic_mean > prod_ic:
+        log.info("Promoting candidate (IC %.4f > prod IC %.4f)", alpha_metrics.ic_mean, prod_ic)
+        _promote_candidate()
+        promoted = True
+    else:
+        reason = (
+            f"IC {alpha_metrics.ic_mean:.4f} < threshold {PROMOTE_IC_MIN}"
+            if alpha_metrics.ic_mean < PROMOTE_IC_MIN
+            else f"IC {alpha_metrics.ic_mean:.4f} <= prod IC {prod_ic:.4f}"
+        )
+        log.info("Candidate not promoted: %s", reason)
+
+    train_metrics["promoted"] = promoted
+    _save_model_meta(CANDIDATE_MODEL_PATH, train_metrics)
+    _write_train_log(date_str, train_metrics)
+
+    log.info("Daily train complete — promoted=%s", promoted)
+    return train_metrics
+
+
+if __name__ == "__main__":
+    result = run()
+    print(json.dumps(result, indent=2))
+    sys.exit(0 if "error" not in result else 1)

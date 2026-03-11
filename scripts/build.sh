@@ -1,4 +1,6 @@
 #!/bin/bash
+# Manual build script (no CMake).
+# For production use CMake: mkdir -p build && cd build && cmake .. && make -j$(nproc)
 
 set -e
 
@@ -7,73 +9,49 @@ cd "$PROJECT_ROOT"
 
 echo "=== Building ThamesRiverTrading ==="
 
-# Clean previous build
 rm -rf build_manual
 mkdir -p build_manual
 
-# Compile common (header-only, no compilation needed)
-echo "✓ Common types (header-only)"
-
-# Compile Binance feed handler
 echo "Compiling Binance feed handler..."
 clang++ -std=c++17 -O2 -Wall -I. \
     -c core/feeds/binance/binance_feed_handler.cpp \
     -o build_manual/binance_feed_handler.o
 
-# Compile example
-echo "Compiling example..."
-clang++ -std=c++17 -O2 -Wall -I. \
-    -c core/feeds/binance/example_main.cpp \
-    -o build_manual/example_main.o
-
-# Link example
-echo "Linking binance_feed_example..."
-clang++ -std=c++17 \
-    build_manual/binance_feed_handler.o \
-    build_manual/example_main.o \
-    -o build_manual/binance_feed_example
-
-# Compile Kraken feed handler
 echo "Compiling Kraken feed handler..."
 clang++ -std=c++17 -O2 -Wall -I. \
     -c core/feeds/kraken/kraken_feed_handler.cpp \
     -o build_manual/kraken_feed_handler.o
 
-# Compile Kraken example
-echo "Compiling Kraken example..."
+echo "Compiling execution connectors..."
 clang++ -std=c++17 -O2 -Wall -I. \
-    -c core/feeds/kraken/example_main.cpp \
-    -o build_manual/kraken_example_main.o
-
-# Link Kraken example
-echo "Linking kraken_feed_example..."
-clang++ -std=c++17 \
-    build_manual/kraken_feed_handler.o \
-    build_manual/kraken_example_main.o \
-    -o build_manual/kraken_feed_example
-
-# Compile combined Binance + Kraken example with live order books
-echo "Compiling combined example..."
+    -c core/execution/binance_connector.cpp \
+    -o build_manual/binance_connector.o
 clang++ -std=c++17 -O2 -Wall -I. \
-    -c core/feeds/combined_example.cpp \
-    -o build_manual/combined_example.o
+    -c core/execution/kraken_connector.cpp \
+    -o build_manual/kraken_connector.o
 
-echo "Linking combined_example..."
+echo "Compiling perp_arb strategy..."
+clang++ -std=c++17 -O2 -Wall -I. \
+    -c core/strategy/perp_arb_main.cpp \
+    -o build_manual/perp_arb_main.o
+
+echo "Linking perp_arb..."
 clang++ -std=c++17 \
     build_manual/binance_feed_handler.o \
     build_manual/kraken_feed_handler.o \
-    build_manual/combined_example.o \
-    -o build_manual/combined_example
+    build_manual/binance_connector.o \
+    build_manual/kraken_connector.o \
+    build_manual/perp_arb_main.o \
+    -lssl -lcrypto \
+    -o build_manual/perp_arb
 
-echo "✓ Build complete!"
 echo ""
-echo "Run Binance example:"
-echo "  export BINANCE_API_KEY='your_key'"
-echo "  export BINANCE_API_SECRET='your_secret'"
-echo "  ./build_manual/binance_feed_example"
+echo "✓ Build complete: build_manual/perp_arb"
 echo ""
-echo "Run Kraken example (public data, no API key required):"
-echo "  ./build_manual/kraken_feed_example"
+echo "Shadow mode (safe default):"
+echo "  ./build_manual/perp_arb --shadow"
 echo ""
-echo "Run combined Binance + Kraken example:"
-echo "  ./build_manual/combined_example"
+echo "Live mode (requires API keys and 2+ weeks shadow):"
+echo "  export BINANCE_API_KEY='...' BINANCE_API_SECRET='...'"
+echo "  export KRAKEN_API_KEY='...'  KRAKEN_API_SECRET='...'"
+echo "  ./build_manual/perp_arb --live"
