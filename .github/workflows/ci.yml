@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    # Daily model retraining at 00:30 UTC
+    - cron: "30 0 * * *"
+  workflow_dispatch:
+    inputs:
+      run_train:
+        description: "Run daily_train.py (1=yes)"
+        default: "0"
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ── Python unit tests ───────────────────────────────────────────────────────
+  python-tests:
+    name: Python tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install polars numpy scipy pytest pytest-cov requests
+
+      - name: Run Python unit tests
+        run: pytest tests/unit/test_neural_alpha.py -v --tb=short
+
+      - name: Check coverage
+        run: pytest tests/unit/test_neural_alpha.py --cov=research --cov-report=term-missing --cov-fail-under=70
+
+  # ── Python linting ──────────────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install linters
+        run: pip install black ruff
+
+      - name: black (format check)
+        run: black --check research/ deploy/ tests/unit/test_neural_alpha.py
+
+      - name: ruff (lint)
+        run: ruff check research/ deploy/
+
+  # ── C++ build ───────────────────────────────────────────────────────────────
+  cpp-build:
+    name: C++ build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get install -y cmake libssl-dev
+
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_BINDINGS=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run C++ unit tests
+        run: cd build && ctest --output-on-failure
+
+  # ── Daily model retraining (cron or manual) ─────────────────────────────────
+  daily-train:
+    name: Daily model retraining
+    runs-on: ubuntu-latest
+    # Only run on schedule or when explicitly triggered
+    if: github.event_name == 'schedule' || github.event.inputs.run_train == '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install polars numpy scipy requests
+
+      - name: Run daily training (synthetic data in CI)
+        env:
+          SYNTHETIC: "1"
+          TRAIN_TICKS: "500"
+          EPOCHS: "5"
+          PROMOTE_IC_MIN: "-1.0"   # always promote in CI to verify pipeline
+        run: python deploy/daily_train.py
+
+      - name: Upload model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: neural-alpha-model-${{ github.run_id }}
+          path: |
+            models/neural_alpha_candidate.pt
+            models/scalar_norm_stats.npz
+            logs/train_*.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # ── Shadow readiness gate ───────────────────────────────────────────────────
+  shadow-metrics:
+    name: Shadow metrics report
+    runs-on: ubuntu-latest
+    # Only run on schedule
+    if: github.event_name == 'schedule'
+    needs: daily-train
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install polars numpy requests
+
+      - name: Download model artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: neural-alpha-model-${{ github.run_id }}
+          path: models/
+        continue-on-error: true
+
+      - name: Run daily metrics report
+        run: python deploy/daily_metrics.py

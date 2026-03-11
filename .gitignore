@@ -33,7 +33,7 @@ dist/
 *~
 
 # Secrets and credentials
-config/live/
+config/live/secrets.yaml
 config/shadow/secrets.yaml
 config/dev/secrets.yaml
 *.key
@@ -49,6 +49,16 @@ data/
 # Logs
 *.log
 logs/
+*.jsonl
+
+# Model weights (tracked via artifacts, not git)
+models/*.pt
+models/*.npz
+
+# Shadow session runtime files
+shadow_decisions*.jsonl
+neural_alpha_shadow*.jsonl
+neural_alpha_live*.jsonl
 
 # OS
 .DS_Store

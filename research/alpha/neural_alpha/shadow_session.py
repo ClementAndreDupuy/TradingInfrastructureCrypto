@@ -5,16 +5,21 @@ Runs the trained CryptoAlphaNet model in real-time alongside the C++ shadow
 engine. Every poll interval it:
     1. Fetches live L5 LOB snapshots from Binance and Kraken.
     2. Runs inference through the loaded (or freshly trained) model.
-    3. Appends the signal + outcome to a JSONL log.
-    4. Optionally prints a rolling summary every report_interval seconds.
+    3. Publishes the signal to shared memory for the C++ strategy to gate trades.
+    4. Appends the signal + outcome to a JSONL log.
+    5. Optionally prints a rolling summary every report_interval seconds.
 
-The C++ shadow engine handles order execution and fill simulation. This process
-only produces signals — it never submits orders.
+Shared memory bridge:
+    Writes to /tmp/neural_alpha_signal.bin (24 bytes):
+        offset  0: float64  signal_bps  — mid-horizon return prediction (bps)
+        offset  8: float64  risk_score  — adverse-selection probability [0, 1]
+        offset 16: int64    ts_ns       — nanosecond timestamp
+    The C++ AlphaSignalReader (core/ipc/alpha_signal.hpp) mmaps this file.
 
 Usage:
-    python -m research.alpha.neural_alpha.shadow_session \\
-        --model-path models/neural_alpha_best.pt \\
-        --duration 3600 \\
+    python -m research.alpha.neural_alpha.shadow_session \
+        --model-path models/neural_alpha_best.pt \
+        --duration 3600 \
         --interval-ms 500
 
     # Train on the fly (no saved model):
@@ -24,7 +29,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import mmap
+import os
 import signal
+import struct
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,6 +46,37 @@ from .model import CryptoAlphaNet
 from .pipeline import _fetch_binance_l5, _fetch_kraken_l5, generate_synthetic_lob
 from .trainer import TrainerConfig, walk_forward_train
 
+# Shared memory file layout: [float64 signal_bps][float64 risk_score][int64 ts_ns]
+_SIGNAL_FILE = "/tmp/neural_alpha_signal.bin"
+_SIGNAL_FMT  = "ddq"   # double, double, long long
+_SIGNAL_SIZE = struct.calcsize(_SIGNAL_FMT)  # 24 bytes
+
+
+class _SignalPublisher:
+    """Writes neural alpha signal to a memory-mapped file every inference tick."""
+
+    def __init__(self, path: str = _SIGNAL_FILE) -> None:
+        self._path = path
+        self._f = open(path, "w+b")
+        self._f.write(b"\x00" * _SIGNAL_SIZE)
+        self._f.flush()
+        self._mm = mmap.mmap(self._f.fileno(), _SIGNAL_SIZE)
+
+    def publish(self, signal_bps: float, risk_score: float) -> None:
+        ts_ns = time.time_ns()
+        packed = struct.pack(_SIGNAL_FMT, signal_bps, risk_score, ts_ns)
+        self._mm.seek(0)
+        self._mm.write(packed)
+        self._mm.flush()
+
+    def close(self) -> None:
+        try:
+            self._mm.close()
+            self._f.close()
+            os.unlink(self._path)
+        except OSError:
+            pass
+
 
 @dataclass
 class ShadowSessionConfig:
@@ -50,18 +89,17 @@ class ShadowSessionConfig:
     entry_threshold_bps: float = 5.0
     d_spatial: int = 64
     d_temporal: int = 128
-    train_ticks: int = 0          # >0 → train in-place before starting session
+    train_ticks: int = 0
     train_epochs: int = 10
-    synthetic: bool = False       # use synthetic data (offline testing)
+    synthetic: bool = False
     exchanges: list[str] = field(default_factory=lambda: ["BINANCE", "KRAKEN"])
+    signal_file: str = _SIGNAL_FILE
 
 
 class NeuralAlphaShadowSession:
     """
-    Runs live neural alpha inference and logs signals to JSONL.
-
-    The ring buffer holds the last seq_len LOB snapshots so inference can
-    run on every new tick without recomputing the whole history.
+    Runs live neural alpha inference and publishes signals to shared memory
+    so the C++ strategy can gate trades in real-time.
     """
 
     def __init__(self, cfg: ShadowSessionConfig) -> None:
@@ -70,11 +108,12 @@ class NeuralAlphaShadowSession:
         self._model: CryptoAlphaNet | None = None
         self._scalar_mean: np.ndarray | None = None
         self._scalar_std:  np.ndarray | None = None
-        self._ring: list[dict] = []          # rolling window of raw tick dicts
+        self._ring: list[dict] = []
         self._log_fp = open(cfg.log_path, "a")
+        self._publisher = _SignalPublisher(cfg.signal_file)
         self._running = False
         self._signals: list[float] = []
-        self._outcomes: list[float] = []     # realised mid-return one tick later
+        self._outcomes: list[float] = []
 
     # ── Model loading / training ──────────────────────────────────────────────
 
@@ -90,10 +129,16 @@ class NeuralAlphaShadowSession:
         state = torch.load(path, map_location=self._device, weights_only=True)
         model.load_state_dict(state)
         self._model = model
+        norm_path = Path(path).with_name("scalar_norm_stats.npz")
+        if norm_path.exists():
+            d = np.load(norm_path)
+            self._scalar_mean = d["mean"]
+            self._scalar_std  = d["std"]
+            print(f"Normalisation stats loaded from {norm_path}")
         print(f"Model loaded from {path}")
 
     def train_on_recent(self, n_ticks: int) -> None:
-        print(f"Collecting {n_ticks} ticks for in-place training…")
+        print(f"Collecting {n_ticks} ticks for in-place training...")
         if self.cfg.synthetic:
             df = generate_synthetic_lob(n_ticks)
         else:
@@ -126,13 +171,11 @@ class NeuralAlphaShadowSession:
         model.load_state_dict(best["model_state"])
         self._model = model
 
-        # Compute normalisation stats from full training set
-        lob = compute_lob_tensor(df)
         scalars = compute_scalar_features(df)
         _, self._scalar_mean, self._scalar_std = normalise_scalar(scalars)
         print(f"In-place training done. Val loss: {best['metrics'].get('loss_total', 'n/a'):.4f}")
 
-    # ── Inference ─────────────────────────────────────────────────────────────
+    # ── Inference + publish ───────────────────────────────────────────────────
 
     def _infer(self) -> dict | None:
         if self._model is None or len(self._ring) < self.cfg.seq_len:
@@ -140,34 +183,39 @@ class NeuralAlphaShadowSession:
 
         window = self._ring[-self.cfg.seq_len :]
         df = pl.DataFrame(window)
-        lob_np = compute_lob_tensor(df)       # (T, N_LEVELS, 4)
-        scalar_np = compute_scalar_features(df)  # (T, D_SCALAR)
+        lob_np = compute_lob_tensor(df)
+        scalar_np = compute_scalar_features(df)
 
         if self._scalar_mean is not None:
             scalar_np = (scalar_np - self._scalar_mean) / (self._scalar_std + 1e-8)
 
-        lob_t    = torch.from_numpy(lob_np).unsqueeze(0).to(self._device)    # (1, T, L, 4)
-        scalar_t = torch.from_numpy(scalar_np).unsqueeze(0).to(self._device) # (1, T, D)
+        lob_t    = torch.from_numpy(lob_np).unsqueeze(0).to(self._device)
+        scalar_t = torch.from_numpy(scalar_np).unsqueeze(0).to(self._device)
 
         with torch.no_grad():
             out = self._model(lob_t, scalar_t)
 
-        ret = out["returns"][0, -1].cpu().numpy()      # (3,) — last tick predictions
+        ret  = out["returns"][0, -1].cpu().numpy()   # (3,)
         risk = float(out["risk"][0, -1].cpu().item())
+
+        signal_bps = float(ret[1]) * 1e4   # mid-horizon in bps
+
+        # Publish to shared memory — C++ reads on next book update (< 100 ns)
+        self._publisher.publish(signal_bps, risk)
 
         last = window[-1]
         mid = (last.get("best_bid", last.get("bid_price_1", 0.0)) +
                last.get("best_ask", last.get("ask_price_1", 0.0))) / 2.0
 
         return {
-            "timestamp_ns":   last["timestamp_ns"],
-            "exchange":       last.get("exchange", "BINANCE"),
-            "mid_price":      mid,
-            "ret_short_bps":  float(ret[0]) * 1e4,
-            "ret_mid_bps":    float(ret[1]) * 1e4,
-            "ret_long_bps":   float(ret[2]) * 1e4,
-            "risk_score":     risk,
-            "signal":         float(ret[1]),    # mid-horizon as primary signal
+            "timestamp_ns":  last["timestamp_ns"],
+            "exchange":      last.get("exchange", "BINANCE"),
+            "mid_price":     mid,
+            "ret_short_bps": float(ret[0]) * 1e4,
+            "ret_mid_bps":   signal_bps,
+            "ret_long_bps":  float(ret[2]) * 1e4,
+            "risk_score":    risk,
+            "signal":        float(ret[1]),
         }
 
     # ── Data collection ───────────────────────────────────────────────────────
@@ -175,7 +223,6 @@ class NeuralAlphaShadowSession:
     def _fetch_tick(self) -> list[dict]:
         ticks: list[dict] = []
         if self.cfg.synthetic:
-            from .pipeline import generate_synthetic_lob
             row = generate_synthetic_lob(1).row(0, named=True)
             row["timestamp_ns"] = time.time_ns()
             ticks.append(row)
@@ -189,8 +236,7 @@ class NeuralAlphaShadowSession:
     # ── Logging ───────────────────────────────────────────────────────────────
 
     def _log(self, signal_info: dict) -> None:
-        line = json.dumps(signal_info)
-        self._log_fp.write(line + "\n")
+        self._log_fp.write(json.dumps(signal_info) + "\n")
         self._log_fp.flush()
 
     # ── Summary ───────────────────────────────────────────────────────────────
@@ -220,51 +266,49 @@ class NeuralAlphaShadowSession:
 
     def run(self) -> None:
         self._running = True
-        interval_s   = self.cfg.interval_ms / 1000.0
-        end_time     = time.time() + self.cfg.duration_s
-        last_report  = time.time()
-        prev_mid     = None
+        interval_s  = self.cfg.interval_ms / 1000.0
+        end_time    = time.time() + self.cfg.duration_s
+        last_report = time.time()
+        prev_mid    = None
 
         print(
             f"Shadow session started — duration={self.cfg.duration_s}s  "
-            f"interval={self.cfg.interval_ms}ms  log={self.cfg.log_path}"
+            f"interval={self.cfg.interval_ms}ms  "
+            f"signal_file={self.cfg.signal_file}"
         )
 
-        while self._running and time.time() < end_time:
-            tick_start = time.time()
+        try:
+            while self._running and time.time() < end_time:
+                tick_start = time.time()
 
-            ticks = self._fetch_tick()
-            for tick in ticks:
-                self._ring.append(tick)
+                ticks = self._fetch_tick()
+                for tick in ticks:
+                    self._ring.append(tick)
 
-            # Keep ring at most 2 * seq_len (enough for one inference pass)
-            max_ring = self.cfg.seq_len * 2
-            if len(self._ring) > max_ring:
-                self._ring = self._ring[-max_ring:]
+                max_ring = self.cfg.seq_len * 2
+                if len(self._ring) > max_ring:
+                    self._ring = self._ring[-max_ring:]
 
-            signal_info = self._infer()
-            if signal_info:
-                # Record outcome from previous signal (realised return)
-                if prev_mid is not None and prev_mid > 0:
-                    realised = (signal_info["mid_price"] - prev_mid) / prev_mid
-                    self._outcomes.append(realised)
+                signal_info = self._infer()
+                if signal_info:
+                    if prev_mid is not None and prev_mid > 0:
+                        realised = (signal_info["mid_price"] - prev_mid) / prev_mid
+                        self._outcomes.append(realised)
 
-                self._signals.append(signal_info["signal"])
-                prev_mid = signal_info["mid_price"]
-                self._log(signal_info)
+                    self._signals.append(signal_info["signal"])
+                    prev_mid = signal_info["mid_price"]
+                    self._log(signal_info)
 
-            # Periodic report
-            if time.time() - last_report >= self.cfg.report_interval_s:
-                self._print_summary()
-                last_report = time.time()
+                if time.time() - last_report >= self.cfg.report_interval_s:
+                    self._print_summary()
+                    last_report = time.time()
 
-            elapsed = time.time() - tick_start
-            sleep_s = max(0.0, interval_s - elapsed)
-            time.sleep(sleep_s)
-
-        self._print_summary()
-        self._log_fp.close()
-        print("Shadow session complete.")
+                time.sleep(max(0.0, interval_s - (time.time() - tick_start)))
+        finally:
+            self._print_summary()
+            self._log_fp.close()
+            self._publisher.close()
+            print("Shadow session complete.")
 
     def stop(self) -> None:
         self._running = False
@@ -274,24 +318,22 @@ class NeuralAlphaShadowSession:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Neural alpha shadow session")
-    ap.add_argument("--model-path",       type=str,   default=None,  dest="model_path",
-                    help="Path to saved model state dict (.pt)")
-    ap.add_argument("--log-path",         type=str,   default="neural_alpha_shadow.jsonl",
+    ap.add_argument("--model-path",      type=str,   default=None,  dest="model_path")
+    ap.add_argument("--log-path",        type=str,   default="neural_alpha_shadow.jsonl",
                     dest="log_path")
-    ap.add_argument("--interval-ms",      type=int,   default=500,   dest="interval_ms")
-    ap.add_argument("--duration",         type=int,   default=3600,
-                    help="Session duration in seconds (default 3600)")
-    ap.add_argument("--report-interval",  type=int,   default=60,    dest="report_interval_s")
-    ap.add_argument("--seq-len",          type=int,   default=64,    dest="seq_len")
-    ap.add_argument("--entry-bps",        type=float, default=5.0,   dest="entry_threshold_bps")
-    ap.add_argument("--d-spatial",        type=int,   default=64,    dest="d_spatial")
-    ap.add_argument("--d-temporal",       type=int,   default=128,   dest="d_temporal")
-    ap.add_argument("--train-ticks",      type=int,   default=0,     dest="train_ticks",
-                    help="Collect N ticks and train before session (0 = skip)")
-    ap.add_argument("--train-epochs",     type=int,   default=10,    dest="train_epochs")
-    ap.add_argument("--synthetic",        action="store_true",
-                    help="Use synthetic LOB data (offline testing)")
-    ap.add_argument("--exchanges",        type=str,   default="BINANCE,KRAKEN")
+    ap.add_argument("--signal-file",     type=str,   default=_SIGNAL_FILE, dest="signal_file",
+                    help="Shared memory file path read by C++ AlphaSignalReader")
+    ap.add_argument("--interval-ms",     type=int,   default=500,   dest="interval_ms")
+    ap.add_argument("--duration",        type=int,   default=3600)
+    ap.add_argument("--report-interval", type=int,   default=60,    dest="report_interval_s")
+    ap.add_argument("--seq-len",         type=int,   default=64,    dest="seq_len")
+    ap.add_argument("--entry-bps",       type=float, default=5.0,   dest="entry_threshold_bps")
+    ap.add_argument("--d-spatial",       type=int,   default=64,    dest="d_spatial")
+    ap.add_argument("--d-temporal",      type=int,   default=128,   dest="d_temporal")
+    ap.add_argument("--train-ticks",     type=int,   default=0,     dest="train_ticks")
+    ap.add_argument("--train-epochs",    type=int,   default=10,    dest="train_epochs")
+    ap.add_argument("--synthetic",       action="store_true")
+    ap.add_argument("--exchanges",       type=str,   default="BINANCE,KRAKEN")
     args = ap.parse_args()
 
     cfg = ShadowSessionConfig(
@@ -308,12 +350,13 @@ def main() -> None:
         train_epochs=args.train_epochs,
         synthetic=args.synthetic,
         exchanges=args.exchanges.split(","),
+        signal_file=args.signal_file,
     )
 
     session = NeuralAlphaShadowSession(cfg)
 
     def _handle_sigint(sig, frame):
-        print("\nInterrupt received — stopping session…")
+        print("\nInterrupt received — stopping session...")
         session.stop()
 
     signal.signal(signal.SIGINT, _handle_sigint)
@@ -325,8 +368,7 @@ def main() -> None:
     else:
         print(
             "WARNING: no model loaded and --train-ticks not set. "
-            "Inference will be skipped until seq_len ticks are buffered "
-            "and a model is available."
+            "Inference skipped until a model is available."
         )
 
     session.run()

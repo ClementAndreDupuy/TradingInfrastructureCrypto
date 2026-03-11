@@ -19,16 +19,6 @@ target_include_directories(binance_feed PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-# Example executable to test feed handler
-add_executable(binance_feed_example
-    feeds/binance/example_main.cpp
-)
-
-target_link_libraries(binance_feed_example
-    binance_feed
-    trading_common
-)
-
 # Kraken feed handler library
 add_library(kraken_feed
     feeds/kraken/kraken_feed_handler.cpp
@@ -39,30 +29,6 @@ target_link_libraries(kraken_feed
 )
 
 target_include_directories(kraken_feed PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
-add_executable(kraken_feed_example
-    feeds/kraken/example_main.cpp
-)
-
-target_link_libraries(kraken_feed_example
-    kraken_feed
-    trading_common
-)
-
-# Combined Binance + Kraken example with live order books
-add_executable(combined_example
-    feeds/combined_example.cpp
-)
-
-target_link_libraries(combined_example
-    binance_feed
-    kraken_feed
-    trading_common
-)
-
-target_include_directories(combined_example PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
