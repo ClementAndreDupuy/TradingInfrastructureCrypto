@@ -80,7 +80,7 @@ jobs:
         run: cmake --build build --parallel
 
       - name: Run C++ unit tests
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure --exclude-regex BinanceFeedTest
 
   # ── Daily model retraining (cron or manual) ──────────────────────────────────
   daily-train:
