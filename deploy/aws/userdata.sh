@@ -20,7 +20,7 @@ pip install --quiet polars numpy scipy requests boto3
 
 # ── 3. Clone repository ───────────────────────────────────────────────────────
 # The deploy key should be pre-loaded from Secrets Manager or baked into the AMI
-git clone https://github.com/YOUR_ORG/ThamesRiverTrading /opt/trading
+git clone https://github.com/C18andre/ThamesRiverTrading /opt/trading
 cd /opt/trading
 
 # ── 4. Build C++ hot path ─────────────────────────────────────────────────────
