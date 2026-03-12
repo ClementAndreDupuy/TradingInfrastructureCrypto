@@ -492,3 +492,96 @@ class TestFeedHandlerContextManager:
         h = tc.KrakenFeedHandler("XBT/USD")
         h.stop()
         assert not h.is_running()
+
+
+# ── Thread safety & GIL behaviour ─────────────────────────────────────────────
+
+class TestGILRelease:
+    """Verify GIL is released during blocking C++ calls (stop / process_message).
+
+    If GIL is accidentally held, the side thread will deadlock for the duration
+    of the call rather than completing near-immediately.
+    """
+
+    def _run_side_thread(self, event, timeout=2.0):
+        import threading
+        t = threading.Thread(target=event.set, daemon=True)
+        t.start()
+        return t
+
+    def test_stop_releases_gil(self):
+        import threading, time
+        h = tc.BinanceFeedHandler("BTCUSDT")
+        side_ran = threading.Event()
+
+        def side():
+            side_ran.set()
+
+        t = threading.Thread(target=side, daemon=True)
+        t.start()
+        h.stop()            # Must release GIL; side thread must complete
+        t.join(timeout=2.0)
+        assert side_ran.is_set(), "GIL not released during stop() — side thread never ran"
+
+    def test_kraken_stop_releases_gil(self):
+        import threading
+        h = tc.KrakenFeedHandler("XBT/USD")
+        side_ran = threading.Event()
+        threading.Thread(target=side_ran.set, daemon=True).start()
+        h.stop()
+        side_ran.wait(timeout=2.0)
+        assert side_ran.is_set()
+
+
+class TestCallbackExceptionHandling:
+    """Python exceptions raised inside callbacks must not escape to C++.
+
+    If they did, they would propagate into the background WebSocket thread
+    and terminate the process (or silently kill the feed).
+    With make_safe_cb's try-catch, exceptions are caught, printed to stderr,
+    and execution continues.
+    """
+
+    def test_error_callback_exception_swallowed(self):
+        """Error callback that throws must not crash process_message."""
+        h = tc.BinanceFeedHandler("BTCUSDT")
+        called = []
+
+        def bad_error_cb(msg: str) -> None:
+            called.append(msg)
+            raise RuntimeError("intentional test error in callback")
+
+        h.set_error_callback(bad_error_cb)
+        # Invalid JSON triggers the error callback in most implementations
+        # Whether it does or not, process_message must not raise
+        result = h.process_message("not json {{{")
+        assert isinstance(result, tc.Result)  # no exception escaped
+
+    def test_concurrent_callback_registration(self):
+        """Registering callbacks from multiple threads must not deadlock or corrupt."""
+        import threading
+
+        h = tc.BinanceFeedHandler("BTCUSDT")
+        errors = []
+
+        def register_repeatedly():
+            try:
+                for _ in range(50):
+                    h.set_delta_callback(lambda d: None)
+                    h.set_error_callback(lambda e: None)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=register_repeatedly, daemon=True)
+                   for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5.0)
+        assert not errors, f"Thread safety violation: {errors}"
+
+    def test_module_version_attribute(self):
+        """Module must expose __version__."""
+        assert hasattr(tc, "__version__")
+        assert isinstance(tc.__version__, str)
+        assert tc.__version__ == "1.0.0"

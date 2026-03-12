@@ -3,6 +3,9 @@ project(ThamesRiverTrading VERSION 1.0.0 LANGUAGES CXX)
 
 # C++17 required
 set(CMAKE_CXX_STANDARD 17)
+
+# Required for shared libraries and pybind11 extension modules
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 

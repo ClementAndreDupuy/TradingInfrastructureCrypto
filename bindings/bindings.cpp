@@ -32,7 +32,16 @@ static std::function<void(Args...)> make_safe_cb(py::object cb) {
     );
     return [safe](Args... args) {
         py::gil_scoped_acquire gil;
-        (*safe)(std::forward<Args>(args)...);
+        try {
+            (*safe)(std::forward<Args>(args)...);
+        } catch (const py::error_already_set& e) {
+            // Python exception in callback — print traceback and clear, do NOT rethrow.
+            // Re-raising from a C++ background WebSocket thread would terminate the process.
+            // The kill switch should be triggered by the caller if the callback is critical.
+            PyErr_PrintEx(0);
+        } catch (const std::exception& e) {
+            fprintf(stderr, "[trading_core] callback exception: %s\n", e.what());
+        }
     };
 }
 
@@ -45,7 +54,9 @@ static std::string fmt_double(double v) {
 }
 
 PYBIND11_MODULE(trading_core, m) {
-    m.doc() = "ThamesRiverTrading C++ pybind11 bridge — OrderBook, FeedHandlers, KillSwitch";
+    m.doc() = "ThamesRiverTrading C++ pybind11 bridge v1.0.0 — OrderBook, FeedHandlers, "
+              "KillSwitch. Requires pybind11>=2.11, Python>=3.10, libwebsockets>=4.0.";
+    m.attr("__version__") = "1.0.0";
 
     // ── Enums ─────────────────────────────────────────────────────────────────
     // Do NOT call export_values() — these are C++ scoped enums (enum class).
@@ -230,19 +241,26 @@ PYBIND11_MODULE(trading_core, m) {
                  h.set_snapshot_callback(
                      make_safe_cb<const Snapshot&>(std::move(cb)));
              },
-             py::arg("callback"))
+             py::arg("callback"),
+             py::keep_alive<1, 2>(),   // keep callback alive as long as handler is alive
+             "Register a callback invoked on each full book snapshot. "
+             "The handler holds a reference to the callable for its lifetime.")
         .def("set_delta_callback",
              [](BinanceFeedHandler& h, py::object cb) {
                  h.set_delta_callback(
                      make_safe_cb<const Delta&>(std::move(cb)));
              },
-             py::arg("callback"))
+             py::arg("callback"),
+             py::keep_alive<1, 2>(),
+             "Register a callback invoked on each incremental book update.")
         .def("set_error_callback",
              [](BinanceFeedHandler& h, py::object cb) {
                  h.set_error_callback(
                      make_safe_cb<const std::string&>(std::move(cb)));
              },
-             py::arg("callback"))
+             py::arg("callback"),
+             py::keep_alive<1, 2>(),
+             "Register a callback invoked on WebSocket errors. Argument is an error string.")
         .def("start", &BinanceFeedHandler::start,
              py::call_guard<py::gil_scoped_release>(),
              "Connect to Binance WebSocket and sync the order book. "
@@ -255,7 +273,9 @@ PYBIND11_MODULE(trading_core, m) {
         .def("get_sequence",    &BinanceFeedHandler::get_sequence)
         .def("process_message", &BinanceFeedHandler::process_message,
              py::arg("message"),
-             "Parse and dispatch a raw WebSocket JSON message (for testing).")
+             "TESTING ONLY — Parse and dispatch a raw WebSocket JSON message directly. "
+             "Bypasses the normal feed state machine. Do not call in production; "
+             "calling with fabricated data will corrupt the order book state.")
         .def("__enter__",
              [](py::object self) -> py::object {
                  BinanceFeedHandler& h = self.cast<BinanceFeedHandler&>();
@@ -290,19 +310,26 @@ PYBIND11_MODULE(trading_core, m) {
                  h.set_snapshot_callback(
                      make_safe_cb<const Snapshot&>(std::move(cb)));
              },
-             py::arg("callback"))
+             py::arg("callback"),
+             py::keep_alive<1, 2>(),
+             "Register a callback invoked on each full book snapshot. "
+             "The handler holds a reference to the callable for its lifetime.")
         .def("set_delta_callback",
              [](KrakenFeedHandler& h, py::object cb) {
                  h.set_delta_callback(
                      make_safe_cb<const Delta&>(std::move(cb)));
              },
-             py::arg("callback"))
+             py::arg("callback"),
+             py::keep_alive<1, 2>(),
+             "Register a callback invoked on each incremental book update.")
         .def("set_error_callback",
              [](KrakenFeedHandler& h, py::object cb) {
                  h.set_error_callback(
                      make_safe_cb<const std::string&>(std::move(cb)));
              },
-             py::arg("callback"))
+             py::arg("callback"),
+             py::keep_alive<1, 2>(),
+             "Register a callback invoked on WebSocket errors. Argument is an error string.")
         .def("start", &KrakenFeedHandler::start,
              py::call_guard<py::gil_scoped_release>(),
              "Connect to Kraken WebSocket v2 and sync the order book. "
@@ -315,7 +342,9 @@ PYBIND11_MODULE(trading_core, m) {
         .def("get_sequence",    &KrakenFeedHandler::get_sequence)
         .def("process_message", &KrakenFeedHandler::process_message,
              py::arg("message"),
-             "Parse and dispatch a raw WebSocket JSON message (for testing).")
+             "TESTING ONLY — Parse and dispatch a raw WebSocket JSON message directly. "
+             "Bypasses the normal feed state machine. Do not call in production; "
+             "calling with fabricated data will corrupt the order book state.")
         .def("__enter__",
              [](py::object self) -> py::object {
                  KrakenFeedHandler& h = self.cast<KrakenFeedHandler&>();

@@ -96,7 +96,7 @@ library_dirs: list[str] = []
 libraries:    list[str] = []
 
 # Release-quality flags; -std=c++17 is required — setuptools does not set it.
-extra_compile_args: list[str] = ["-std=c++17", "-O2", "-fvisibility=hidden", "-DNDEBUG"]
+extra_compile_args: list[str] = ["-std=c++17", "-O2", "-fPIC", "-fvisibility=hidden", "-DNDEBUG"]
 extra_link_args:    list[str] = []
 
 # libwebsockets
