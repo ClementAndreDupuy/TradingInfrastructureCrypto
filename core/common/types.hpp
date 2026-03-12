@@ -88,4 +88,60 @@ inline const char* side_to_string(Side side) {
     return side == Side::BID ? "BID" : "ASK";
 }
 
+// ── Execution types ───────────────────────────────────────────────────────────
+
+enum class OrderType : uint8_t {
+    MARKET     = 0,
+    LIMIT      = 1,
+    STOP_LIMIT = 2,   // posts limit when stop_price is touched
+};
+
+enum class TimeInForce : uint8_t {
+    GTC = 0,   // Good Till Cancelled
+    IOC = 1,   // Immediate Or Cancel
+    FOK = 2,   // Fill Or Kill
+    GTX = 3,   // Post-Only (Good Till Crossing)
+};
+
+enum class OrderState : uint8_t {
+    PENDING          = 0,
+    OPEN             = 1,
+    PARTIALLY_FILLED = 2,
+    FILLED           = 3,
+    CANCELED         = 4,
+    REJECTED         = 5,
+};
+
+enum class ConnectorResult : uint8_t {
+    OK                       = 0,
+    ERROR_RATE_LIMIT         = 1,
+    ERROR_INSUFFICIENT_FUNDS = 2,
+    ERROR_INVALID_ORDER      = 3,
+    ERROR_UNKNOWN            = 255,
+};
+
+struct Order {
+    uint64_t    client_order_id = 0;
+    char        symbol[16]      = {};
+    Exchange    exchange        = Exchange::UNKNOWN;
+    Side        side            = Side::BID;
+    OrderType   type            = OrderType::LIMIT;
+    TimeInForce tif             = TimeInForce::GTC;
+    double      price           = 0.0;
+    double      stop_price      = 0.0;  // STOP_LIMIT trigger level
+    double      quantity        = 0.0;
+    int64_t     submit_ts_ns    = 0;
+};
+
+struct FillUpdate {
+    uint64_t   client_order_id       = 0;
+    double     fill_price            = 0.0;
+    double     fill_qty              = 0.0;
+    double     cumulative_filled_qty = 0.0;
+    double     avg_fill_price        = 0.0;
+    OrderState new_state             = OrderState::PENDING;
+    int64_t    local_ts_ns           = 0;
+    char       reject_reason[64]     = {};
+};
+
 }  // namespace trading

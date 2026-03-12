@@ -19,7 +19,7 @@ import numpy as np
 import polars as pl
 
 N_LEVELS = 5
-D_SCALAR = 10  # number of scalar features per tick
+D_SCALAR = 13  # number of scalar features per tick
 
 
 def _safe_col(df: pl.DataFrame, name: str, default: float = 0.0) -> np.ndarray:
@@ -96,6 +96,11 @@ def compute_lob_tensor(df: pl.DataFrame) -> np.ndarray:
     return lob.astype(np.float32)
 
 
+def _lag_diff(arr: np.ndarray, lag: int) -> np.ndarray:
+    """arr[t] - arr[t-lag], with boundary filled from arr[0]."""
+    return arr - np.concatenate([np.full(lag, arr[0]), arr[:-lag]])
+
+
 def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
     """
     Return (T, D_SCALAR) array of derived features:
@@ -105,10 +110,13 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
         3  obi                — order-book imbalance (bid_depth / total_depth)
         4  depth_bid          — log total bid depth
         5  depth_ask          — log total ask depth
-        6  ofi                — order-flow imbalance (delta bid_depth - delta ask_depth)
+        6  ofi_1              — order-flow imbalance lag-1
         7  signed_flow        — signed trade flow proxy (mid_return * total_depth)
         8  vol_5              — rolling 5-tick std of mid log return
         9  vol_20             — rolling 20-tick std of mid log return
+        10 ofi_5              — order-flow imbalance lag-5
+        11 ofi_10             — order-flow imbalance lag-10
+        12 ofi_20             — order-flow imbalance lag-20
     """
     bp, bs, ap, as_ = _extract_levels(df)
 
@@ -135,10 +143,11 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
     log_depth_bid = np.log1p(depth_bid)
     log_depth_ask = np.log1p(depth_ask)
 
-    # OFI: delta(bid_depth) - delta(ask_depth), shifted by 1
-    d_bid = np.diff(depth_bid, prepend=depth_bid[0])
-    d_ask = np.diff(depth_ask, prepend=depth_ask[0])
-    ofi = d_bid - d_ask
+    # OFI: delta(bid_depth) - delta(ask_depth) at lags 1, 5, 10, 20
+    ofi_1  = _lag_diff(depth_bid, 1)  - _lag_diff(depth_ask, 1)
+    ofi_5  = _lag_diff(depth_bid, 5)  - _lag_diff(depth_ask, 5)
+    ofi_10 = _lag_diff(depth_bid, 10) - _lag_diff(depth_ask, 10)
+    ofi_20 = _lag_diff(depth_bid, 20) - _lag_diff(depth_ask, 20)
 
     # Log mid-price return
     log_mid = np.log(np.where(mid > 0, mid, np.nan))
@@ -154,7 +163,8 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
     features = np.stack([
         log_ret, spread_bps, microprice - mid,
         obi, log_depth_bid, log_depth_ask,
-        ofi, signed_flow, vol_5, vol_20,
+        ofi_1, signed_flow, vol_5, vol_20,
+        ofi_5, ofi_10, ofi_20,
     ], axis=1)
 
     features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)

@@ -27,6 +27,6 @@ Risk limits in `config/{dev,shadow,live}/risk.yaml`. Always tighter in live than
 
 ## Performance
 
-- `evaluate_arb()`: < 500 ns on x86-64
+- Risk evaluation: < 500 ns on x86-64
 - No heap allocation after construction
 - Lock-free atomic operations only

@@ -12,14 +12,13 @@
 
 ## Components
 
-- **common/** — Shared types, enums, constants
-- **orderbook/** — The most critical component; all downstream depends on correctness
-- **feeds/** — Per-exchange WebSocket handlers
-- **ipc/** — Shared memory, ring buffers (LMAX Disruptor pattern)
-- **risk/** — Pre-trade checks, kill switch (< 1 µs)
-- **execution/** — Order manager, exchange connectors
-- **shadow/** — Paper trading with identical code path to live
-- **strategy/** — Strategy implementations
+- **common/** — Shared types: `Order`, `FillUpdate`, `OrderType`, `TimeInForce`, `OrderState`, `ConnectorResult`, `Exchange`, `Side`
+- **orderbook/** — Flat-array O(1) book; all downstream depends on its correctness
+- **feeds/** — Per-exchange WebSocket handlers (Binance, Kraken)
+- **ipc/** — `AlphaSignalReader`: mmaps `/tmp/neural_alpha_signal.bin` written by Python shadow session
+- **risk/** — Pre-trade checks, kill switch (sub-µs, lock-free)
+- **execution/** — `ExchangeConnector` (interface), `OrderManager` (position + fills), `NeuralAlphaMarketMaker` (GTX quotes, alpha skew, stop-limit)
+- **shadow/** — `ShadowConnector` + `ShadowEngine`: paper trading with identical code path to live
 
 ## Performance Requirements
 
