@@ -1,100 +1,131 @@
 #pragma once
 
-// Shared HTTP + JSON parsing utilities for all feed handlers and connectors.
-// HTTP is delegated to curl via popen() — consistent with the codebase.
-// All are free functions in trading::http (header-only).
+// Shared HTTP utilities for all feed handlers and connectors.
+// HTTP via libcurl C API with connection reuse (thread-local handle).
+// JSON parsing is done by callers via nlohmann/json directly.
 
 #include <string>
 #include <vector>
 #include <chrono>
-#include <regex>
-#include <cstdio>
 #include <cstdlib>
+#ifdef __has_include
+#  if __has_include(<curl/curl.h>)
+#    include <curl/curl.h>
+#  else
+#    include "curl_abi.hpp"
+#  endif
+#else
+#  include "curl_abi.hpp"
+#endif
 
 namespace trading {
 namespace http {
 
-// ── HTTP helpers ──────────────────────────────────────────────────────────────
+struct HttpResponse {
+    int         status{0};
+    std::string body;
+    bool        ok() const { return status >= 200 && status < 300; }
+};
 
-inline std::string get(const std::string& url,
-                       const std::vector<std::string>& headers = {}) {
-    std::string cmd = "curl -s";
-    for (const auto& h : headers) cmd += " -H '" + h + "'";
-    cmd += " '" + url + "'";
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "";
-    std::string result; char buf[4096];
-    while (fgets(buf, sizeof(buf), pipe)) result += buf;
-    pclose(pipe); return result;
+namespace detail {
+
+struct CurlGlobal {
+    CurlGlobal()  { curl_global_init(CURL_GLOBAL_DEFAULT); }
+    ~CurlGlobal() { curl_global_cleanup(); }
+};
+inline const CurlGlobal k_curl_global;
+
+struct ThreadCurl {
+    CURL* h{nullptr};
+    ThreadCurl() : h(curl_easy_init()) {}
+    ~ThreadCurl() { if (h) curl_easy_cleanup(h); }
+};
+
+inline CURL* tl_handle() {
+    thread_local ThreadCurl tc;
+    return tc.h;
 }
 
-inline std::string post(const std::string& url,
+inline size_t write_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
+    static_cast<std::string*>(userdata)->append(ptr, size * nmemb);
+    return size * nmemb;
+}
+
+inline HttpResponse perform(CURL* h, const std::vector<std::string>& headers) {
+    HttpResponse resp;
+
+    curl_slist* hlist = nullptr;
+    for (const auto& hdr : headers)
+        hlist = curl_slist_append(hlist, hdr.c_str());
+    if (hlist) curl_easy_setopt(h, CURLOPT_HTTPHEADER, hlist);
+
+    curl_easy_setopt(h, CURLOPT_WRITEFUNCTION, write_cb);
+    curl_easy_setopt(h, CURLOPT_WRITEDATA,     &resp.body);
+    curl_easy_setopt(h, CURLOPT_TIMEOUT,        10L);
+    curl_easy_setopt(h, CURLOPT_CONNECTTIMEOUT,  5L);
+    curl_easy_setopt(h, CURLOPT_TCP_KEEPALIVE,   1L);
+    curl_easy_setopt(h, CURLOPT_FOLLOWLOCATION,  1L);
+
+    CURLcode rc = curl_easy_perform(h);
+    if (rc == CURLE_OK) {
+        long code = 0;
+        curl_easy_getinfo(h, CURLINFO_RESPONSE_CODE, &code);
+        resp.status = static_cast<int>(code);
+    }
+
+    if (hlist) {
+        curl_slist_free_all(hlist);
+        curl_easy_setopt(h, CURLOPT_HTTPHEADER, nullptr);
+    }
+    return resp;
+}
+
+} // namespace detail
+
+// ── HTTP verbs ────────────────────────────────────────────────────────────────
+
+inline HttpResponse get(const std::string& url,
+                        const std::vector<std::string>& headers = {}) {
+    CURL* h = detail::tl_handle();
+    if (!h) return {};
+    curl_easy_setopt(h, CURLOPT_URL,     url.c_str());
+    curl_easy_setopt(h, CURLOPT_HTTPGET, 1L);
+    return detail::perform(h, headers);
+}
+
+inline HttpResponse post(const std::string& url,
+                         const std::string& body = "",
+                         const std::vector<std::string>& headers = {}) {
+    CURL* h = detail::tl_handle();
+    if (!h) return {};
+    curl_easy_setopt(h, CURLOPT_URL,           url.c_str());
+    curl_easy_setopt(h, CURLOPT_POST,          1L);
+    curl_easy_setopt(h, CURLOPT_POSTFIELDS,    body.c_str());
+    curl_easy_setopt(h, CURLOPT_POSTFIELDSIZE, static_cast<long>(body.size()));
+    return detail::perform(h, headers);
+}
+
+inline HttpResponse put(const std::string& url,
                         const std::string& body = "",
                         const std::vector<std::string>& headers = {}) {
-    std::string cmd = "curl -s -X POST";
-    for (const auto& h : headers) cmd += " -H '" + h + "'";
-    if (!body.empty()) cmd += " -d '" + body + "'";
-    cmd += " '" + url + "'";
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "";
-    std::string result; char buf[4096];
-    while (fgets(buf, sizeof(buf), pipe)) result += buf;
-    pclose(pipe); return result;
+    CURL* h = detail::tl_handle();
+    if (!h) return {};
+    curl_easy_setopt(h, CURLOPT_URL,            url.c_str());
+    curl_easy_setopt(h, CURLOPT_CUSTOMREQUEST,  "PUT");
+    curl_easy_setopt(h, CURLOPT_POSTFIELDS,     body.c_str());
+    curl_easy_setopt(h, CURLOPT_POSTFIELDSIZE,  static_cast<long>(body.size()));
+    return detail::perform(h, headers);
 }
 
-inline std::string put(const std::string& url,
-                       const std::string& body = "",
-                       const std::vector<std::string>& headers = {}) {
-    std::string cmd = "curl -s -X PUT";
-    for (const auto& h : headers) cmd += " -H '" + h + "'";
-    if (!body.empty()) cmd += " -d '" + body + "'";
-    cmd += " '" + url + "'";
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "";
-    std::string result; char buf[4096];
-    while (fgets(buf, sizeof(buf), pipe)) result += buf;
-    pclose(pipe); return result;
-}
-
-inline std::string del(const std::string& url,
-                       const std::vector<std::string>& headers = {}) {
-    std::string cmd = "curl -s -X DELETE";
-    for (const auto& h : headers) cmd += " -H '" + h + "'";
-    cmd += " '" + url + "'";
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "";
-    std::string result; char buf[4096];
-    while (fgets(buf, sizeof(buf), pipe)) result += buf;
-    pclose(pipe); return result;
-}
-
-// ── JSON parsing ──────────────────────────────────────────────────────────────
-
-inline std::string parse_string(const std::string& json, const std::string& key) {
-    std::regex re("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"");
-    std::smatch m;
-    return std::regex_search(json, m, re) ? m[1].str() : "";
-}
-
-inline double parse_double(const std::string& json, const std::string& key) {
-    std::regex re("\"" + key + "\"\\s*:\\s*\"?([0-9.eE+\\-]+)\"?");
-    std::smatch m;
-    if (!std::regex_search(json, m, re)) return 0.0;
-    try { return std::stod(m[1].str()); } catch (...) { return 0.0; }
-}
-
-inline uint64_t parse_uint64(const std::string& json, const std::string& key) {
-    std::regex re("\"" + key + "\"\\s*:\\s*(\\d+)");
-    std::smatch m;
-    if (!std::regex_search(json, m, re)) return 0ULL;
-    try { return std::stoull(m[1].str()); } catch (...) { return 0ULL; }
-}
-
-inline int64_t parse_int64(const std::string& json, const std::string& key) {
-    std::regex re("\"" + key + "\"\\s*:\\s*([0-9]+)");
-    std::smatch m;
-    if (!std::regex_search(json, m, re)) return 0LL;
-    try { return std::stoll(m[1].str()); } catch (...) { return 0LL; }
+inline HttpResponse del(const std::string& url,
+                        const std::vector<std::string>& headers = {}) {
+    CURL* h = detail::tl_handle();
+    if (!h) return {};
+    curl_easy_setopt(h, CURLOPT_URL,           url.c_str());
+    curl_easy_setopt(h, CURLOPT_CUSTOMREQUEST, "DELETE");
+    curl_easy_setopt(h, CURLOPT_POSTFIELDS,    nullptr);
+    curl_easy_setopt(h, CURLOPT_POSTFIELDSIZE, 0L);
+    return detail::perform(h, headers);
 }
 
 // ── Timestamps ────────────────────────────────────────────────────────────────

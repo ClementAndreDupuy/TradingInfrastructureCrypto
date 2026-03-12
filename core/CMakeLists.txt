@@ -4,6 +4,23 @@
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBWEBSOCKETS REQUIRED libwebsockets)
 
+# libcurl: prefer system package, fall back to runtime-only link.
+# Install: sudo apt install libcurl4-openssl-dev
+find_package(CURL QUIET)
+if(NOT CURL_FOUND)
+    message(STATUS "libcurl dev headers not found; using runtime-only link via curl_abi.hpp")
+    add_library(CURL::libcurl INTERFACE IMPORTED)
+    target_link_libraries(CURL::libcurl INTERFACE curl)
+endif()
+
+# nlohmann/json: prefer system package, fall back to vendored core/common/json.hpp.
+# Install: sudo apt install nlohmann-json3-dev
+find_package(nlohmann_json QUIET)
+if(NOT nlohmann_json_FOUND)
+    message(STATUS "nlohmann/json not found; using vendored core/common/json.hpp")
+    add_library(nlohmann_json::nlohmann_json INTERFACE IMPORTED)
+endif()
+
 # Common types library (header-only)
 add_library(trading_common INTERFACE)
 target_include_directories(trading_common INTERFACE
@@ -18,6 +35,8 @@ add_library(binance_feed
 target_link_libraries(binance_feed
     trading_common
     ${LIBWEBSOCKETS_LIBRARIES}
+    CURL::libcurl
+    nlohmann_json::nlohmann_json
 )
 
 target_include_directories(binance_feed PUBLIC
@@ -35,6 +54,8 @@ add_library(kraken_feed
 target_link_libraries(kraken_feed
     trading_common
     ${LIBWEBSOCKETS_LIBRARIES}
+    CURL::libcurl
+    nlohmann_json::nlohmann_json
 )
 
 target_include_directories(kraken_feed PUBLIC

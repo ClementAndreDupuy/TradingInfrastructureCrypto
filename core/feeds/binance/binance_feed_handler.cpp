@@ -1,11 +1,20 @@
 #include "binance_feed_handler.hpp"
 #include "../../common/rest_client.hpp"
 #include <libwebsockets.h>
+#ifdef __has_include
+#  if __has_include(<nlohmann/json.hpp>)
+#    include <nlohmann/json.hpp>
+#  else
+#    include "../../common/json.hpp"
+#  endif
+#else
+#  include "../../common/json.hpp"
+#endif
 #include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <cctype>
-#include <regex>
+#include <thread>
 
 namespace trading {
 
@@ -151,8 +160,6 @@ void BinanceFeedHandler::stop() {
 }
 
 // ─── WebSocket event loop (runs in ws_thread_) ────────────────────────────────
-// Cycle: connect → buffer deltas → fetch REST snapshot → sync → stream.
-// On disconnect: exponential-backoff reconnect (100 ms → … → 30 s).
 void BinanceFeedHandler::ws_event_loop() {
     constexpr uint32_t MAX_DELAY_MS = 30000;
     uint32_t delay_ms = 100;
@@ -162,16 +169,20 @@ void BinanceFeedHandler::ws_event_loop() {
     for (auto& c : sym_lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     const std::string ws_path = "/ws/" + sym_lower + "@depth@100ms";
 
-    // Parse host and port from ws_url_ (default: stream.binance.com:9443).
+    // Parse host and port from ws_url_: wss://host:port/...
     std::string ws_host = "stream.binance.com";
     int         ws_port = 9443;
     {
-        // ws_url_ = "wss://host:port/ws"
-        std::regex url_re(R"(wss?://([^:/]+)(?::(\d+))?)");
-        std::smatch m;
-        if (std::regex_search(ws_url_, m, url_re)) {
-            ws_host = m[1].str();
-            if (m[2].matched) ws_port = std::stoi(m[2].str());
+        size_t pos = ws_url_.find("://");
+        if (pos != std::string::npos) pos += 3; else pos = 0;
+        size_t slash = ws_url_.find('/', pos);
+        std::string authority = ws_url_.substr(pos, slash == std::string::npos ? std::string::npos : slash - pos);
+        size_t colon = authority.rfind(':');
+        if (colon != std::string::npos) {
+            ws_host = authority.substr(0, colon);
+            ws_port = std::stoi(authority.substr(colon + 1));
+        } else if (!authority.empty()) {
+            ws_host = authority;
         }
     }
 
@@ -249,14 +260,13 @@ void BinanceFeedHandler::ws_event_loop() {
         ws_cv_.notify_all();
 
         // ── Stream phase ──────────────────────────────────────────────────
-        // lws_service drives receives; we inject periodic pings from outside.
         while (running_.load() && !session.closed) {
             lws_service(ctx, 1000);
 
             if (!session.closed && session.wsi) {
                 int64_t now = http::now_ns();
                 if (now - session.last_ping_ns > 30'000'000'000LL) {
-                    session.send_ping   = true;
+                    session.send_ping    = true;
                     session.last_ping_ns = now;
                     lws_callback_on_writable(session.wsi);
                 }
@@ -277,31 +287,74 @@ void BinanceFeedHandler::ws_event_loop() {
 }
 
 // ─── REST snapshot ────────────────────────────────────────────────────────────
+// Rate limit: Binance allows 1200 weight/min. Snapshot at limit=1000 costs
+// weight 10. Enforce a minimum 1s cooldown between calls so reconnect storms
+// (e.g. rapid disconnect/reconnect) don't ban the IP.
 Result BinanceFeedHandler::fetch_snapshot() {
+    using clock = std::chrono::steady_clock;
+    auto now = clock::now();
+    if (last_snapshot_time_ != clock::time_point{}) {
+        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - last_snapshot_time_).count();
+        if (elapsed_ms < 1000)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000 - elapsed_ms));
+    }
+    last_snapshot_time_ = clock::now();
+
     const std::string url =
         api_url_ + "/api/v3/depth?symbol=" + symbol_ + "&limit=1000";
 
     LOG_INFO("Fetching snapshot", "symbol", symbol_.c_str());
 
-    std::string resp = http::get(url, {"X-MBX-APIKEY: " + api_key_});
-    if (resp.empty()) {
-        LOG_ERROR("Snapshot fetch failed", "symbol", symbol_.c_str());
+    auto resp = http::get(url, {"X-MBX-APIKEY: " + api_key_});
+    if (!resp.ok() || resp.body.empty()) {
+        LOG_ERROR("Snapshot fetch failed", "symbol", symbol_.c_str(),
+                  "status", resp.status);
         return Result::ERROR_CONNECTION_LOST;
     }
 
-    Snapshot snap;
-    snap.symbol           = symbol_;
-    snap.exchange         = Exchange::BINANCE;
-    snap.timestamp_local_ns = http::now_ns();
-    snap.sequence         = http::parse_uint64(resp, "lastUpdateId");
+    // Handle Binance rate-limit response (HTTP 429 / 418).
+    if (resp.status == 429 || resp.status == 418) {
+        LOG_ERROR("Binance rate limit hit, backing off",
+                  "symbol", symbol_.c_str(), "status", resp.status);
+        std::this_thread::sleep_for(std::chrono::seconds(60));
+        return Result::ERROR_CONNECTION_LOST;
+    }
 
-    if (snap.sequence == 0) {
+    auto j = nlohmann::json::parse(resp.body, nullptr, false);
+    if (j.is_discarded()) {
+        LOG_ERROR("Snapshot JSON parse failed", "symbol", symbol_.c_str());
+        return Result::ERROR_BOOK_CORRUPTED;
+    }
+
+    auto lid_it = j.find("lastUpdateId");
+    if (lid_it == j.end() || !lid_it->is_number_unsigned()) {
         LOG_ERROR("Bad lastUpdateId in snapshot", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
 
-    snap.bids = parse_price_levels(resp, "bids");
-    snap.asks = parse_price_levels(resp, "asks");
+    Snapshot snap;
+    snap.symbol             = symbol_;
+    snap.exchange           = Exchange::BINANCE;
+    snap.timestamp_local_ns = http::now_ns();
+    snap.sequence           = lid_it->get<uint64_t>();
+
+    auto parse_levels = [](const nlohmann::json& arr) {
+        std::vector<PriceLevel> levels;
+        if (!arr.is_array()) return levels;
+        levels.reserve(arr.size());
+        for (const auto& lvl : arr) {
+            if (!lvl.is_array() || lvl.size() < 2) continue;
+            try {
+                levels.push_back({std::stod(lvl[0].get<std::string>()),
+                                  std::stod(lvl[1].get<std::string>())});
+            } catch (...) {}
+        }
+        return levels;
+    };
+
+    snap.bids = parse_levels(j.value("bids", nlohmann::json::array()));
+    snap.asks = parse_levels(j.value("asks", nlohmann::json::array()));
 
     if (snap.bids.empty() || snap.asks.empty()) {
         LOG_ERROR("Empty order book in snapshot", "symbol", symbol_.c_str());
@@ -312,26 +365,28 @@ Result BinanceFeedHandler::fetch_snapshot() {
     if (snapshot_callback_) snapshot_callback_(snap);
 
     LOG_INFO("Snapshot received", "symbol", symbol_.c_str(),
-             "sequence", snap.sequence, "bids", snap.bids.size(), "asks", snap.asks.size());
+             "sequence", snap.sequence,
+             "bids", snap.bids.size(), "asks", snap.asks.size());
     return Result::SUCCESS;
 }
 
 // ─── Message dispatch ─────────────────────────────────────────────────────────
 Result BinanceFeedHandler::process_message(const std::string& message) {
-    std::regex event_re(R"xxx("e"\s*:\s*"([^"]+)")xxx");
-    std::smatch m;
-    if (!std::regex_search(message, m, event_re) || m[1].str() != "depthUpdate")
+    auto j = nlohmann::json::parse(message, nullptr, false);
+    if (j.is_discarded()) return Result::SUCCESS;
+
+    auto e_it = j.find("e");
+    if (e_it == j.end() || !e_it->is_string() ||
+        e_it->get<std::string>() != "depthUpdate")
         return Result::SUCCESS;
 
-    std::regex u_first_re(R"xxx("U"\s*:\s*(\d+))xxx");
-    if (!std::regex_search(message, m, u_first_re))
+    auto U_it = j.find("U");
+    auto u_it = j.find("u");
+    if (U_it == j.end() || u_it == j.end())
         return Result::ERROR_INVALID_SEQUENCE;
-    uint64_t first_update_id = std::stoull(m[1].str());
 
-    std::regex u_last_re(R"xxx("u"\s*:\s*(\d+))xxx");
-    if (!std::regex_search(message, m, u_last_re))
-        return Result::ERROR_INVALID_SEQUENCE;
-    uint64_t last_update_id = std::stoull(m[1].str());
+    uint64_t first_update_id = U_it->get<uint64_t>();
+    uint64_t last_update_id  = u_it->get<uint64_t>();
 
     auto cur = state_.load(std::memory_order_acquire);
 
@@ -345,7 +400,8 @@ Result BinanceFeedHandler::process_message(const std::string& message) {
     }
 
     if (!validate_delta_sequence(first_update_id, last_update_id)) {
-        LOG_ERROR("Sequence gap", "expected", last_update_id_.load() + 1, "U", first_update_id);
+        LOG_ERROR("Sequence gap",
+                  "expected", last_update_id_.load() + 1, "U", first_update_id);
         trigger_resnapshot("Sequence gap");
         return Result::ERROR_SEQUENCE_GAP;
     }
@@ -353,35 +409,38 @@ Result BinanceFeedHandler::process_message(const std::string& message) {
     return process_delta(message);
 }
 
-// ─── Delta processing (real bids/asks parsing) ───────────────────────────────
+// ─── Delta processing ─────────────────────────────────────────────────────────
 Result BinanceFeedHandler::process_delta(const std::string& message) {
-    int64_t ts = http::now_ns();
+    auto j = nlohmann::json::parse(message, nullptr, false);
+    if (j.is_discarded()) return Result::ERROR_INVALID_SEQUENCE;
 
-    std::regex u_re(R"xxx("u"\s*:\s*(\d+))xxx");
-    std::smatch m;
-    if (!std::regex_search(message, m, u_re)) return Result::ERROR_INVALID_SEQUENCE;
-    uint64_t seq = std::stoull(m[1].str());
+    auto u_it = j.find("u");
+    if (u_it == j.end()) return Result::ERROR_INVALID_SEQUENCE;
+
+    uint64_t seq = u_it->get<uint64_t>();
     last_update_id_.store(seq, std::memory_order_release);
 
-    // Binance depthUpdate: bids under key "b", asks under key "a".
-    for (const auto& level : parse_price_levels(message, "b")) {
-        Delta d;
-        d.side               = Side::BID;
-        d.price              = level.price;
-        d.size               = level.size;
-        d.sequence           = seq;
-        d.timestamp_local_ns = ts;
-        if (delta_callback_) delta_callback_(d);
-    }
-    for (const auto& level : parse_price_levels(message, "a")) {
-        Delta d;
-        d.side               = Side::ASK;
-        d.price              = level.price;
-        d.size               = level.size;
-        d.sequence           = seq;
-        d.timestamp_local_ns = ts;
-        if (delta_callback_) delta_callback_(d);
-    }
+    int64_t ts = http::now_ns();
+
+    auto emit_levels = [&](const nlohmann::json& arr, Side side) {
+        if (!arr.is_array()) return;
+        for (const auto& lvl : arr) {
+            if (!lvl.is_array() || lvl.size() < 2) continue;
+            try {
+                Delta d;
+                d.side               = side;
+                d.price              = std::stod(lvl[0].get<std::string>());
+                d.size               = std::stod(lvl[1].get<std::string>());
+                d.sequence           = seq;
+                d.timestamp_local_ns = ts;
+                if (delta_callback_) delta_callback_(d);
+            } catch (...) {}
+        }
+    };
+
+    // Binance depthUpdate: bids under "b", asks under "a".
+    emit_levels(j.value("b", nlohmann::json::array()), Side::BID);
+    emit_levels(j.value("a", nlohmann::json::array()), Side::ASK);
 
     LOG_DEBUG("Delta processed", "sequence", seq);
     return Result::SUCCESS;
@@ -393,12 +452,15 @@ Result BinanceFeedHandler::apply_buffered_deltas() {
     uint64_t last_id = last_update_id_.load(std::memory_order_acquire);
 
     for (const auto& msg : delta_buffer_) {
-        std::regex uF(R"xxx("U"\s*:\s*(\d+))xxx"), uL(R"xxx("u"\s*:\s*(\d+))xxx");
-        std::smatch mF, mL;
-        if (!std::regex_search(msg, mF, uF)) continue;
-        if (!std::regex_search(msg, mL, uL)) continue;
-        uint64_t U = std::stoull(mF[1].str());
-        uint64_t u = std::stoull(mL[1].str());
+        auto j = nlohmann::json::parse(msg, nullptr, false);
+        if (j.is_discarded()) continue;
+
+        auto U_it = j.find("U");
+        auto u_it = j.find("u");
+        if (U_it == j.end() || u_it == j.end()) continue;
+
+        uint64_t U = U_it->get<uint64_t>();
+        uint64_t u = u_it->get<uint64_t>();
 
         if (U <= last_id + 1 && last_id + 1 <= u) {
             if (process_delta(msg) == Result::SUCCESS) ++applied;
@@ -428,32 +490,6 @@ void BinanceFeedHandler::trigger_resnapshot(const std::string& reason) {
     if (error_callback_) error_callback_("Re-snapshot: " + reason);
     delta_buffer_.clear();
     state_.store(State::BUFFERING, std::memory_order_release);
-}
-
-std::vector<PriceLevel> BinanceFeedHandler::parse_price_levels(
-    const std::string& json, const std::string& key)
-{
-    std::vector<PriceLevel> levels;
-
-    std::regex key_re("\"" + key + "\"\\s*:\\s*\\[");
-    std::smatch km;
-    if (!std::regex_search(json, km, key_re)) return levels;
-
-    size_t start = km.position() + km.length();
-    size_t depth = 1, pos = start;
-    while (pos < json.size() && depth > 0) {
-        if (json[pos] == '[') ++depth;
-        if (json[pos] == ']') --depth;
-        ++pos;
-    }
-
-    std::string arr = json.substr(start, pos - start - 1);
-    std::regex  lvl_re(R"xxx(\[\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\])xxx");
-    for (auto it = std::sregex_iterator(arr.begin(), arr.end(), lvl_re);
-         it != std::sregex_iterator(); ++it) {
-        levels.emplace_back(std::stod((*it)[1].str()), std::stod((*it)[2].str()));
-    }
-    return levels;
 }
 
 }  // namespace trading

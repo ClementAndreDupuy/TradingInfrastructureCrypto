@@ -93,13 +93,6 @@ private:
     // Kraken: seq must equal last_seq + 1 exactly (no window).
     bool   validate_delta_sequence(uint64_t seq);
     void   trigger_resnapshot(const std::string& reason);
-
-    // Parse Kraken REST depth levels: ["price_str","vol_str",timestamp_int]
-    std::vector<PriceLevel> parse_kraken_rest_levels(const std::string& json,
-                                                     const std::string& key);
-    // Parse Kraken WebSocket v2 levels: {"price":X,"qty":Y}
-    std::vector<PriceLevel> parse_kraken_ws_levels(const std::string& json,
-                                                   const std::string& key);
 };
 
 }  // namespace trading

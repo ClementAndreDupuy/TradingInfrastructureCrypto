@@ -11,6 +11,7 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <chrono>
 
 namespace trading {
 
@@ -84,8 +85,8 @@ private:
     bool   validate_delta_sequence(uint64_t first_update_id, uint64_t last_update_id);
     void   trigger_resnapshot(const std::string& reason);
 
-    std::vector<PriceLevel> parse_price_levels(const std::string& json,
-                                               const std::string& key);
+    // Rate limit: enforces minimum 1s between REST snapshot calls.
+    std::chrono::steady_clock::time_point last_snapshot_time_{};
 };
 
 }  // namespace trading
