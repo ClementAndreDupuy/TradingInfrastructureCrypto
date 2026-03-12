@@ -1,15 +1,6 @@
 #include "kraken_feed_handler.hpp"
 #include "../../common/rest_client.hpp"
 #include <libwebsockets.h>
-#ifdef __has_include
-#  if __has_include(<nlohmann/json.hpp>)
-#    include <nlohmann/json.hpp>
-#  else
-#    include "../../common/json.hpp"
-#  endif
-#else
-#  include "../../common/json.hpp"
-#endif
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -404,20 +395,13 @@ Result KrakenFeedHandler::process_message(const std::string& message) {
         return Result::ERROR_SEQUENCE_GAP;
     }
 
-    return process_delta(message);
+    return process_delta(j, seq);
 }
 
 // ─── Delta processing ─────────────────────────────────────────────────────────
 // Kraken v2 book update: {"channel":"book","type":"update","seq":N,
 //   "data":[{"symbol":"BTC/USD","bids":[{"price":X,"qty":Y}],"asks":[...]}]}
-Result KrakenFeedHandler::process_delta(const std::string& message) {
-    auto j = nlohmann::json::parse(message, nullptr, false);
-    if (j.is_discarded()) return Result::ERROR_INVALID_SEQUENCE;
-
-    auto seq_it = j.find("seq");
-    if (seq_it == j.end()) return Result::ERROR_INVALID_SEQUENCE;
-
-    uint64_t seq = seq_it->get<uint64_t>();
+Result KrakenFeedHandler::process_delta(const nlohmann::json& j, uint64_t seq) {
     last_seq_.store(seq, std::memory_order_release);
 
     int64_t ts = http::now_ns();
@@ -467,7 +451,7 @@ Result KrakenFeedHandler::apply_buffered_deltas() {
         if (seq <= last_seq) {
             ++skipped;
         } else if (seq == last_seq + 1) {
-            if (process_delta(msg) == Result::SUCCESS) ++applied;
+            if (process_delta(j, seq) == Result::SUCCESS) ++applied;
         } else {
             LOG_ERROR("Gap in buffered deltas", "seq", seq, "expected", last_seq + 1);
             delta_buffer_.clear();

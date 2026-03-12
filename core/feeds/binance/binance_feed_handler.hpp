@@ -3,6 +3,15 @@
 #include "../../common/types.hpp"
 #include "../../common/logging.hpp"
 #include "../../common/rest_client.hpp"
+#ifdef __has_include
+#  if __has_include(<nlohmann/json.hpp>)
+#    include <nlohmann/json.hpp>
+#  else
+#    include "../../common/json.hpp"
+#  endif
+#else
+#  include "../../common/json.hpp"
+#endif
 #include <string>
 #include <vector>
 #include <deque>
@@ -80,7 +89,7 @@ private:
     // Launched by start(); handles connect → snapshot → stream → reconnect loop.
     void   ws_event_loop();
     Result fetch_snapshot();
-    Result process_delta(const std::string& message);
+    Result process_delta(const nlohmann::json& j, uint64_t seq);
     Result apply_buffered_deltas();
     bool   validate_delta_sequence(uint64_t first_update_id, uint64_t last_update_id);
     void   trigger_resnapshot(const std::string& reason);

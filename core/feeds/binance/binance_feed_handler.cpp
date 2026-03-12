@@ -1,15 +1,6 @@
 #include "binance_feed_handler.hpp"
 #include "../../common/rest_client.hpp"
 #include <libwebsockets.h>
-#ifdef __has_include
-#  if __has_include(<nlohmann/json.hpp>)
-#    include <nlohmann/json.hpp>
-#  else
-#    include "../../common/json.hpp"
-#  endif
-#else
-#  include "../../common/json.hpp"
-#endif
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -307,17 +298,15 @@ Result BinanceFeedHandler::fetch_snapshot() {
     LOG_INFO("Fetching snapshot", "symbol", symbol_.c_str());
 
     auto resp = http::get(url, {"X-MBX-APIKEY: " + api_key_});
-    if (!resp.ok() || resp.body.empty()) {
-        LOG_ERROR("Snapshot fetch failed", "symbol", symbol_.c_str(),
-                  "status", resp.status);
-        return Result::ERROR_CONNECTION_LOST;
-    }
-
-    // Handle Binance rate-limit response (HTTP 429 / 418).
     if (resp.status == 429 || resp.status == 418) {
         LOG_ERROR("Binance rate limit hit, backing off",
                   "symbol", symbol_.c_str(), "status", resp.status);
         std::this_thread::sleep_for(std::chrono::seconds(60));
+        return Result::ERROR_CONNECTION_LOST;
+    }
+    if (!resp.ok() || resp.body.empty()) {
+        LOG_ERROR("Snapshot fetch failed", "symbol", symbol_.c_str(),
+                  "status", resp.status);
         return Result::ERROR_CONNECTION_LOST;
     }
 
@@ -406,18 +395,11 @@ Result BinanceFeedHandler::process_message(const std::string& message) {
         return Result::ERROR_SEQUENCE_GAP;
     }
 
-    return process_delta(message);
+    return process_delta(j, last_update_id);
 }
 
 // ─── Delta processing ─────────────────────────────────────────────────────────
-Result BinanceFeedHandler::process_delta(const std::string& message) {
-    auto j = nlohmann::json::parse(message, nullptr, false);
-    if (j.is_discarded()) return Result::ERROR_INVALID_SEQUENCE;
-
-    auto u_it = j.find("u");
-    if (u_it == j.end()) return Result::ERROR_INVALID_SEQUENCE;
-
-    uint64_t seq = u_it->get<uint64_t>();
+Result BinanceFeedHandler::process_delta(const nlohmann::json& j, uint64_t seq) {
     last_update_id_.store(seq, std::memory_order_release);
 
     int64_t ts = http::now_ns();
@@ -463,7 +445,7 @@ Result BinanceFeedHandler::apply_buffered_deltas() {
         uint64_t u = u_it->get<uint64_t>();
 
         if (U <= last_id + 1 && last_id + 1 <= u) {
-            if (process_delta(msg) == Result::SUCCESS) ++applied;
+            if (process_delta(j, u) == Result::SUCCESS) ++applied;
         } else if (u <= last_id) {
             ++skipped;
         } else {

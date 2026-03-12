@@ -1,19 +1,5 @@
 #pragma once
-// Minimal JSON parser with nlohmann-compatible API subset.
-// Implements the operations required by Binance/Kraken feed handlers.
-// Drop-in replacement for nlohmann/json.hpp with no external dependencies.
-//
-// Supported API:
-//   json::parse(str, nullptr, false)    -- parse, return discarded on error
-//   j.is_discarded/null/bool/string/array/object/number_unsigned()
-//   j.empty(), j.size()
-//   j.find("key")  -> iterator (end() if not found)
-//   j.begin(), j.end()
-//   iterator->get<T>(), iterator->is_*(), iterator->find(), iterator->value()
-//   it.key(), it.value()           -- for object iterators
-//   j.value("key", default)        -- get with default
-//   j[size_t]                      -- array index
-//   json::array()                  -- empty array factory
+// Vendored minimal nlohmann-compatible JSON parser. No external dependencies.
 
 #include <string>
 #include <vector>
