@@ -1,3 +1,23 @@
+[build-system]
+requires = ["scikit-build-core>=0.9", "pybind11>=2.11", "numpy>=1.24"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "trading-core"
+version = "1.0.0"
+description = "ThamesRiverTrading C++ pybind11 bridge"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24"]
+
+[tool.scikit-build]
+cmake.build-type = "Release"
+# Only install the C extension — no Python packages in this wheel.
+wheel.packages = []
+
+[tool.scikit-build.cmake.define]
+# Skip GTest suite when building the Python wheel.
+BUILD_TESTS = "OFF"
+
 [tool.black]
 line-length = 100
 target-version = ["py310", "py311"]

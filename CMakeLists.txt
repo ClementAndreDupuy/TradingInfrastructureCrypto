@@ -3,6 +3,9 @@ project(ThamesRiverTrading VERSION 1.0.0 LANGUAGES CXX)
 
 # C++17 required
 set(CMAKE_CXX_STANDARD 17)
+
+# Required for shared libraries and pybind11 extension modules
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -27,4 +30,13 @@ option(BUILD_TESTS "Build tests" ON)
 if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+# Python bindings (optional, requires pybind11)
+find_package(pybind11 QUIET)
+if(pybind11_FOUND)
+    add_subdirectory(bindings)
+else()
+    message(STATUS "pybind11 not found — skipping Python bindings. "
+                   "Fix: pip install pybind11  or  pip3 install pybind11")
 endif()
