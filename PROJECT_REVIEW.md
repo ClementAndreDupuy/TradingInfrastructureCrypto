@@ -83,10 +83,10 @@ The design philosophy mirrors how real HFT/crypto quant shops structure systems.
 - **Impact:** Under high message rates, logging introduces microsecond+ spikes on the hot path
 - **Industry standard:** Async ring-buffer logger (spdlog async or custom lock-free SPSC ring); zero allocation in hot path
 
-#### H2 · No Reconnection Logic
-- Any network hiccup kills the feed permanently until manual restart
-- No retry, no backoff, no alerting
-- **Industry standard:** Exponential backoff (100ms → 200ms → 400ms, capped at 30s), dead-letter alerting, state machine recovery
+#### H2 · No Reconnection Logic ✅ FIXED
+- Exponential-backoff reconnect loop in `ws_event_loop()`: 100 ms → 200 ms → … → 30 s cap
+- Full re-snapshot + buffered-delta re-sync on every reconnect
+- Ping/pong keepalive: 30 s (Binance), 20 s (Kraken) — dead connection detected and triggers reconnect
 
 #### H3 · Coinbase and OKX Not Implemented
 - CLAUDE.md lists both as target exchanges; neither has any code
