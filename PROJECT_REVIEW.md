@@ -171,8 +171,8 @@ The design philosophy mirrors how real HFT/crypto quant shops structure systems.
 - [x] **C2** `core/feeds/binance/binance_feed_handler.cpp` — `process_delta()` now parses real bids (`"b"`) and asks (`"a"`) arrays; fake hardcoded data removed
 - [x] **C3** `core/feeds/kraken/kraken_feed_handler.cpp` — Implemented real WebSocket via libwebsockets; sends `{"method":"subscribe","params":{"channel":"book",...}}` after ESTABLISHED
 - [x] **C4** `core/feeds/kraken/kraken_feed_handler.cpp` — Real delta parsing from WebSocket messages was already correct; confirmed working end-to-end
-- [ ] **C5** `core/common/rest_client.hpp` — Replace `popen("curl ...")` with libcurl C API; add connection pooling, timeout, and proper error codes
-- [ ] **C6** `core/common/rest_client.hpp` + all feed handlers — Replace all regex JSON parsing with `nlohmann/json` or `simdjson`; add to `CMakeLists.txt`
+- [x] **C5** `core/common/rest_client.hpp` — Replaced `popen("curl ...")` with libcurl C API; thread-local connection reuse, 10s timeout, 5s connect timeout, TCP keepalive, HTTP status codes. Fallback via `curl_abi.hpp` when dev headers absent.
+- [x] **C6** `core/common/rest_client.hpp` + all feed handlers — Replaced all regex JSON parsing with `nlohmann/json` (falls back to vendored `core/common/json.hpp`); `find_package(CURL)` + `find_package(nlohmann_json)` added to `core/CMakeLists.txt`; `<regex>` removed from both feed handlers.
 - [x] **C7** `core/feeds/binance/binance_feed_handler.cpp` + `kraken_feed_handler.cpp` — Exponential-backoff reconnection implemented (100 ms → 200 ms → … → 30 s cap) in `ws_event_loop()`; re-snapshot + re-sync on every reconnect
 - [ ] **C8** `bindings/` — Create pybind11 bridge directory; write `setup.py` and bindings for OrderBook, FeedHandler, and KillSwitch per CLAUDE.md spec
 
@@ -195,7 +195,7 @@ The design philosophy mirrors how real HFT/crypto quant shops structure systems.
 - [ ] **M4** `research/alpha/neural_alpha/backtest.py` — Add basic market impact model (linear or square-root impact based on order size / ADV)
 - [ ] **M5** `core/common/logging.hpp` — Replace `std::chrono::system_clock` with PTP-synchronized clock or at minimum RDTSC-based timestamps for sub-microsecond precision
 - [ ] **M6** `core/execution/order_manager.hpp` lines 264–272 — Fix entry price VWAP: `new_avg = (old_avg * old_qty + fill_px * fill_qty) / (old_qty + fill_qty)`; remove `1e-12` epsilon hack
-- [ ] **M7** `core/feeds/binance/binance_feed_handler.cpp` — Add REST rate limit tracking (1200 weight/min, 100 orders/10s); back off before hitting limits
+- [x] **M7** `core/feeds/binance/binance_feed_handler.cpp` — Added REST rate limit tracking: minimum 1s between snapshot calls; HTTP 429/418 responses trigger 60s backoff
 - [ ] **M8** `core/shadow/shadow_engine.hpp` — Make fee structure config-driven: read from `config/dev/risk.yaml` instead of hardcoded `2.0 bps` maker / `5.0 bps` taker
 - [ ] **M9** `tests/unit/` — Add negative tests for feed handlers: malformed JSON, out-of-order sequences, duplicate sequence IDs, extreme price levels
 - [ ] **M10** `tests/unit/test_neural_alpha.py` — Add edge case tests: walk-forward with very small dataset, invalid input tensor shapes, NaN propagation through model

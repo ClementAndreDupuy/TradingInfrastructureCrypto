@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
-#include <regex>
 
 namespace trading {
 
@@ -15,7 +14,7 @@ struct KrakenWsSession {
     bool established{false};
     bool closed{false};
     bool send_ping{false};
-    bool send_subscribe{false};   // send subscription after ESTABLISHED
+    bool send_subscribe{false};
     int64_t last_ping_ns{0};
     std::string subscribe_msg;
     char   frag_buf[131072];
@@ -36,7 +35,6 @@ static int kraken_lws_cb(struct lws* wsi,
         s->wsi          = wsi;
         s->established  = true;
         s->last_ping_ns = http::now_ns();
-        // Request writable so we can send the subscription message.
         lws_callback_on_writable(wsi);
         lws_cancel_service(lws_get_context(wsi));
         break;
@@ -159,26 +157,28 @@ void KrakenFeedHandler::stop() {
 }
 
 // ─── WebSocket event loop ─────────────────────────────────────────────────────
-// Kraken v2: connect → subscribe to book channel → buffer deltas → REST snapshot
-// → sync → stream. Reconnects with exponential backoff on disconnect.
 void KrakenFeedHandler::ws_event_loop() {
     constexpr uint32_t MAX_DELAY_MS = 30000;
     uint32_t delay_ms = 100;
 
-    // Parse host/port from ws_url_ (default: ws.kraken.com:443).
+    // Parse host/port from ws_url_: wss://host:port/...
     std::string ws_host = "ws.kraken.com";
     int         ws_port = 443;
     {
-        std::regex url_re(R"(wss?://([^:/]+)(?::(\d+))?)");
-        std::smatch m;
-        if (std::regex_search(ws_url_, m, url_re)) {
-            ws_host = m[1].str();
-            if (m[2].matched) ws_port = std::stoi(m[2].str());
+        size_t pos = ws_url_.find("://");
+        if (pos != std::string::npos) pos += 3; else pos = 0;
+        size_t slash = ws_url_.find('/', pos);
+        std::string authority = ws_url_.substr(pos, slash == std::string::npos ? std::string::npos : slash - pos);
+        size_t colon = authority.rfind(':');
+        if (colon != std::string::npos) {
+            ws_host = authority.substr(0, colon);
+            ws_port = std::stoi(authority.substr(colon + 1));
+        } else if (!authority.empty()) {
+            ws_host = authority;
         }
     }
 
-    // Kraken v2 subscription message.  Symbol format: "XBT/USD" for XBTUSD.
-    // We do a simple heuristic: if no '/' present, insert before last 3 chars.
+    // Kraken v2 subscription: symbol format "XBT/USD" (insert '/' before last 3 chars).
     std::string ws_sym = symbol_;
     if (ws_sym.find('/') == std::string::npos && ws_sym.size() > 3)
         ws_sym.insert(ws_sym.size() - 3, "/");
@@ -227,7 +227,7 @@ void KrakenFeedHandler::ws_event_loop() {
             continue;
         }
 
-        // Wait for ESTABLISHED (subscription is sent in WRITEABLE callback).
+        // Wait for ESTABLISHED (subscription sent in WRITEABLE callback).
         while (running_.load() && !session.established && !session.closed)
             lws_service(ctx, 50);
 
@@ -267,7 +267,6 @@ void KrakenFeedHandler::ws_event_loop() {
 
             if (!session.closed && session.wsi) {
                 int64_t now = http::now_ns();
-                // Kraken recommends a ping every 20s.
                 if (now - session.last_ping_ns > 20'000'000'000LL) {
                     session.send_ping    = true;
                     session.last_ping_ns = now;
@@ -290,31 +289,65 @@ void KrakenFeedHandler::ws_event_loop() {
 }
 
 // ─── REST snapshot ────────────────────────────────────────────────────────────
+// Kraken REST response: {"error":[],"result":{"XXBTZUSD":{"bids":[["px","vol",ts],...],...}}}
+// The result key is the internal pair name (may differ from the requested symbol).
 Result KrakenFeedHandler::fetch_snapshot() {
     const std::string url =
         api_url_ + "/0/public/Depth?pair=" + symbol_ + "&count=500";
 
     LOG_INFO("Fetching Kraken snapshot", "symbol", symbol_.c_str());
 
-    std::string resp = http::get(url);
-    if (resp.empty()) {
-        LOG_ERROR("Snapshot fetch failed", "symbol", symbol_.c_str());
+    auto resp = http::get(url);
+    if (resp.body.empty()) {
+        LOG_ERROR("Snapshot fetch failed", "symbol", symbol_.c_str(),
+                  "status", resp.status);
         return Result::ERROR_CONNECTION_LOST;
     }
 
-    std::regex error_re(R"xxx("error"\s*:\s*\[\s*\])xxx");
-    if (!std::regex_search(resp, error_re)) {
+    auto j = nlohmann::json::parse(resp.body, nullptr, false);
+    if (j.is_discarded()) {
+        LOG_ERROR("Snapshot JSON parse failed", "symbol", symbol_.c_str());
+        return Result::ERROR_BOOK_CORRUPTED;
+    }
+
+    // error must be an empty array
+    auto err_it = j.find("error");
+    if (err_it == j.end() || !err_it->is_array() || !err_it->empty()) {
         LOG_ERROR("Kraken API returned error", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
+
+    auto res_it = j.find("result");
+    if (res_it == j.end() || !res_it->is_object() || res_it->empty()) {
+        LOG_ERROR("No result in snapshot", "symbol", symbol_.c_str());
+        return Result::ERROR_BOOK_CORRUPTED;
+    }
+
+    // result has one key (internal pair name, e.g., XXBTZUSD)
+    const auto& pair_data = res_it->begin().value();
+
+    auto parse_rest_levels = [](const nlohmann::json& arr) {
+        std::vector<PriceLevel> levels;
+        if (!arr.is_array()) return levels;
+        levels.reserve(arr.size());
+        for (const auto& lvl : arr) {
+            // Each entry: ["price_str", "vol_str", timestamp_int]
+            if (!lvl.is_array() || lvl.size() < 2) continue;
+            try {
+                levels.push_back({std::stod(lvl[0].get<std::string>()),
+                                  std::stod(lvl[1].get<std::string>())});
+            } catch (...) {}
+        }
+        return levels;
+    };
 
     Snapshot snap;
     snap.symbol             = symbol_;
     snap.exchange           = Exchange::KRAKEN;
     snap.timestamp_local_ns = http::now_ns();
     snap.sequence           = 0;
-    snap.bids               = parse_kraken_rest_levels(resp, "bids");
-    snap.asks               = parse_kraken_rest_levels(resp, "asks");
+    snap.bids               = parse_rest_levels(pair_data.value("bids", nlohmann::json::array()));
+    snap.asks               = parse_rest_levels(pair_data.value("asks", nlohmann::json::array()));
 
     if (snap.bids.empty() || snap.asks.empty()) {
         LOG_ERROR("Empty order book in snapshot", "symbol", symbol_.c_str());
@@ -332,13 +365,17 @@ Result KrakenFeedHandler::fetch_snapshot() {
 
 // ─── Message dispatch ─────────────────────────────────────────────────────────
 Result KrakenFeedHandler::process_message(const std::string& message) {
-    std::regex channel_re(R"xxx("channel"\s*:\s*"book")xxx");
-    if (!std::regex_search(message, channel_re)) return Result::SUCCESS;
+    auto j = nlohmann::json::parse(message, nullptr, false);
+    if (j.is_discarded()) return Result::SUCCESS;
 
-    std::regex seq_re(R"xxx("seq"\s*:\s*(\d+))xxx");
-    std::smatch m;
-    if (!std::regex_search(message, m, seq_re)) return Result::ERROR_INVALID_SEQUENCE;
-    uint64_t seq = std::stoull(m[1].str());
+    auto ch_it = j.find("channel");
+    if (ch_it == j.end() || !ch_it->is_string() ||
+        ch_it->get<std::string>() != "book")
+        return Result::SUCCESS;
+
+    auto seq_it = j.find("seq");
+    if (seq_it == j.end()) return Result::ERROR_INVALID_SEQUENCE;
+    uint64_t seq = seq_it->get<uint64_t>();
 
     auto cur = state_.load(std::memory_order_acquire);
 
@@ -358,38 +395,41 @@ Result KrakenFeedHandler::process_message(const std::string& message) {
         return Result::ERROR_SEQUENCE_GAP;
     }
 
-    return process_delta(message);
+    return process_delta(j, seq);
 }
 
 // ─── Delta processing ─────────────────────────────────────────────────────────
-Result KrakenFeedHandler::process_delta(const std::string& message) {
-    int64_t ts = http::now_ns();
-
-    std::regex seq_re(R"xxx("seq"\s*:\s*(\d+))xxx");
-    std::smatch m;
-    if (!std::regex_search(message, m, seq_re)) return Result::ERROR_INVALID_SEQUENCE;
-
-    uint64_t seq = std::stoull(m[1].str());
+// Kraken v2 book update: {"channel":"book","type":"update","seq":N,
+//   "data":[{"symbol":"BTC/USD","bids":[{"price":X,"qty":Y}],"asks":[...]}]}
+Result KrakenFeedHandler::process_delta(const nlohmann::json& j, uint64_t seq) {
     last_seq_.store(seq, std::memory_order_release);
 
-    for (const auto& lv : parse_kraken_ws_levels(message, "bids")) {
-        Delta d;
-        d.side               = Side::BID;
-        d.price              = lv.price;
-        d.size               = lv.size;
-        d.sequence           = seq;
-        d.timestamp_local_ns = ts;
-        if (delta_callback_) delta_callback_(d);
-    }
-    for (const auto& lv : parse_kraken_ws_levels(message, "asks")) {
-        Delta d;
-        d.side               = Side::ASK;
-        d.price              = lv.price;
-        d.size               = lv.size;
-        d.sequence           = seq;
-        d.timestamp_local_ns = ts;
-        if (delta_callback_) delta_callback_(d);
-    }
+    int64_t ts = http::now_ns();
+
+    // Levels may be in data[0] (v2 envelope) or at the top level.
+    const nlohmann::json* src = &j;
+    auto data_it = j.find("data");
+    if (data_it != j.end() && data_it->is_array() && !data_it->empty())
+        src = &(*data_it)[0];
+
+    auto emit_levels = [&](const nlohmann::json& arr, Side side) {
+        if (!arr.is_array()) return;
+        for (const auto& lvl : arr) {
+            auto p_it = lvl.find("price");
+            auto q_it = lvl.find("qty");
+            if (p_it == lvl.end() || q_it == lvl.end()) continue;
+            Delta d;
+            d.side               = side;
+            d.price              = p_it->get<double>();
+            d.size               = q_it->get<double>();
+            d.sequence           = seq;
+            d.timestamp_local_ns = ts;
+            if (delta_callback_) delta_callback_(d);
+        }
+    };
+
+    emit_levels(src->value("bids", nlohmann::json::array()), Side::BID);
+    emit_levels(src->value("asks", nlohmann::json::array()), Side::ASK);
 
     return Result::SUCCESS;
 }
@@ -399,16 +439,19 @@ Result KrakenFeedHandler::apply_buffered_deltas() {
     size_t applied = 0, skipped = 0;
 
     for (const auto& msg : delta_buffer_) {
-        std::regex seq_re(R"xxx("seq"\s*:\s*(\d+))xxx");
-        std::smatch m;
-        if (!std::regex_search(msg, m, seq_re)) continue;
-        uint64_t seq      = std::stoull(m[1].str());
+        auto j = nlohmann::json::parse(msg, nullptr, false);
+        if (j.is_discarded()) continue;
+
+        auto seq_it = j.find("seq");
+        if (seq_it == j.end()) continue;
+
+        uint64_t seq      = seq_it->get<uint64_t>();
         uint64_t last_seq = last_seq_.load(std::memory_order_acquire);
 
         if (seq <= last_seq) {
             ++skipped;
         } else if (seq == last_seq + 1) {
-            if (process_delta(msg) == Result::SUCCESS) ++applied;
+            if (process_delta(j, seq) == Result::SUCCESS) ++applied;
         } else {
             LOG_ERROR("Gap in buffered deltas", "seq", seq, "expected", last_seq + 1);
             delta_buffer_.clear();
@@ -431,60 +474,6 @@ void KrakenFeedHandler::trigger_resnapshot(const std::string& reason) {
     if (error_callback_) error_callback_("Re-snapshot: " + reason);
     delta_buffer_.clear();
     state_.store(State::BUFFERING, std::memory_order_release);
-}
-
-std::vector<PriceLevel> KrakenFeedHandler::parse_kraken_rest_levels(
-    const std::string& json, const std::string& key)
-{
-    std::vector<PriceLevel> levels;
-
-    std::regex key_re("\"" + key + "\"\\s*:\\s*\\[");
-    std::smatch km;
-    if (!std::regex_search(json, km, key_re)) return levels;
-
-    size_t start = km.position() + km.length();
-    size_t depth = 1, pos = start;
-    while (pos < json.size() && depth > 0) {
-        if (json[pos] == '[') ++depth;
-        if (json[pos] == ']') --depth;
-        ++pos;
-    }
-
-    std::string arr = json.substr(start, pos - start - 1);
-    // Kraken REST: ["price_str","vol_str",timestamp_int]
-    std::regex lvl_re(R"xxx(\[\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*\d+\s*\])xxx");
-    for (auto it = std::sregex_iterator(arr.begin(), arr.end(), lvl_re);
-         it != std::sregex_iterator(); ++it) {
-        levels.emplace_back(std::stod((*it)[1].str()), std::stod((*it)[2].str()));
-    }
-    return levels;
-}
-
-std::vector<PriceLevel> KrakenFeedHandler::parse_kraken_ws_levels(
-    const std::string& json, const std::string& key)
-{
-    std::vector<PriceLevel> levels;
-
-    std::regex key_re("\"" + key + "\"\\s*:\\s*\\[");
-    std::smatch km;
-    if (!std::regex_search(json, km, key_re)) return levels;
-
-    size_t start = km.position() + km.length();
-    size_t depth = 1, pos = start;
-    while (pos < json.size() && depth > 0) {
-        if (json[pos] == '[') ++depth;
-        if (json[pos] == ']') --depth;
-        ++pos;
-    }
-
-    std::string arr = json.substr(start, pos - start - 1);
-    // Kraken WebSocket v2: {"price":X,"qty":Y}
-    std::regex lvl_re(R"xxx(\{"price"\s*:\s*([\d.]+)\s*,\s*"qty"\s*:\s*([\d.]+)\s*\})xxx");
-    for (auto it = std::sregex_iterator(arr.begin(), arr.end(), lvl_re);
-         it != std::sregex_iterator(); ++it) {
-        levels.emplace_back(std::stod((*it)[1].str()), std::stod((*it)[2].str()));
-    }
-    return levels;
 }
 
 }  // namespace trading
