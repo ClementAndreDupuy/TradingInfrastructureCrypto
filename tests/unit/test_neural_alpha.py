@@ -72,7 +72,7 @@ class TestFeatures:
 
     def test_scalar_feature_shape(self, small_df: pl.DataFrame) -> None:
         scalar = compute_scalar_features(small_df)
-        assert scalar.shape == (200, 10)
+        assert scalar.shape == (200, 21)
 
     def test_scalar_no_inf(self, small_df: pl.DataFrame) -> None:
         scalar = compute_scalar_features(small_df)
@@ -80,16 +80,16 @@ class TestFeatures:
 
     def test_labels_shape(self, small_df: pl.DataFrame) -> None:
         labels = compute_labels(small_df)
-        assert labels.shape == (200, 5)
+        assert labels.shape == (200, 6)
 
     def test_labels_direction_valid(self, small_df: pl.DataFrame) -> None:
         labels = compute_labels(small_df)
-        direction = labels[:, 3]
+        direction = labels[:, 4]
         assert set(direction.astype(int).tolist()).issubset({0, 1, 2})
 
     def test_labels_adv_sel_binary(self, small_df: pl.DataFrame) -> None:
         labels = compute_labels(small_df)
-        adv_sel = labels[:, 4]
+        adv_sel = labels[:, 5]
         assert set(adv_sel.astype(int).tolist()).issubset({0, 1})
 
     def test_normalise_scalar(self, small_df: pl.DataFrame) -> None:
@@ -119,9 +119,9 @@ class TestModel:
     def test_full_model_output_shapes(self) -> None:
         model = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=16)
         lob    = torch.randn(2, 16, 5, 4)
-        scalar = torch.randn(2, 16, 10)
+        scalar = torch.randn(2, 16, 21)
         preds  = model(lob, scalar)
-        assert preds["returns"].shape   == (2, 16, 3)
+        assert preds["returns"].shape   == (2, 16, 4)
         assert preds["direction"].shape == (2, 16, 3)
         assert preds["risk"].shape      == (2, 16)
 
@@ -129,10 +129,10 @@ class TestModel:
         model     = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=16)
         criterion = MultiTaskLoss()
         lob       = torch.randn(2, 16, 5, 4)
-        scalar    = torch.randn(2, 16, 10)
-        labels    = torch.randn(2, 16, 5)
-        labels[..., 3] = torch.randint(0, 3, (2, 16)).float()
-        labels[..., 4] = torch.randint(0, 2, (2, 16)).float()
+        scalar    = torch.randn(2, 16, 21)
+        labels    = torch.randn(2, 16, 6)
+        labels[..., 4] = torch.randint(0, 3, (2, 16)).float()
+        labels[..., 5] = torch.randint(0, 2, (2, 16)).float()
 
         preds = model(lob, scalar)
         loss, _ = criterion(preds, labels)
@@ -145,7 +145,7 @@ class TestModel:
     def test_risk_head_bounded(self) -> None:
         model  = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=8)
         lob    = torch.randn(1, 8, 5, 4)
-        scalar = torch.randn(1, 8, 10)
+        scalar = torch.randn(1, 8, 21)
         preds  = model(lob, scalar)
         risk   = preds["risk"].detach().numpy()
         assert (risk >= 0.0).all() and (risk <= 1.0).all(), "Risk not in [0, 1]"
@@ -158,9 +158,9 @@ class TestLoss:
         model     = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=8)
         criterion = MultiTaskLoss()
         lob       = torch.randn(2, 8, 5, 4)
-        scalar    = torch.randn(2, 8, 10)
-        labels    = torch.zeros(2, 8, 5)
-        labels[..., 3] = torch.randint(0, 3, (2, 8)).float()
+        scalar    = torch.randn(2, 8, 21)
+        labels    = torch.zeros(2, 8, 6)
+        labels[..., 4] = torch.randint(0, 3, (2, 8)).float()
         preds = model(lob, scalar)
         loss, breakdown = criterion(preds, labels)
         assert loss.item() > 0
@@ -172,9 +172,9 @@ class TestLoss:
         criterion = MultiTaskLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
         lob       = torch.randn(4, 8, 5, 4)
-        scalar    = torch.randn(4, 8, 10)
-        labels    = torch.zeros(4, 8, 5)
-        labels[..., 3] = torch.randint(0, 3, (4, 8)).float()
+        scalar    = torch.randn(4, 8, 21)
+        labels    = torch.zeros(4, 8, 6)
+        labels[..., 4] = torch.randint(0, 3, (4, 8)).float()
 
         losses = []
         for _ in range(3):
@@ -200,8 +200,8 @@ class TestDataset:
         ds     = LOBDataset(medium_df, DatasetConfig(seq_len=32))
         sample = ds[0]
         assert sample["lob"].shape    == (32, 5, 4)
-        assert sample["scalar"].shape == (32, 10)
-        assert sample["labels"].shape == (32, 5)
+        assert sample["scalar"].shape == (32, 21)
+        assert sample["labels"].shape == (32, 6)
         assert sample["mask"].shape   == (32,)
 
     def test_walk_forward_no_leakage(self, medium_df: pl.DataFrame) -> None:
@@ -283,8 +283,8 @@ class TestAlphaRegression:
         fold_results = [
             {
                 "fold": 1,
-                "predictions": rng.standard_normal((50, 3)).astype(np.float32),
-                "labels":      rng.standard_normal((50, 5)).astype(np.float32),
+                "predictions": rng.standard_normal((50, 4)).astype(np.float32),
+                "labels":      rng.standard_normal((50, 6)).astype(np.float32),
             }
         ]
         metrics = analyse_alpha(fold_results)

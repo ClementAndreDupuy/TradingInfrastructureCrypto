@@ -25,7 +25,26 @@ from .features import (
 class DatasetConfig:
     seq_len: int = 64        # number of ticks in each window
     stride:  int = 1         # step between windows (1 = maximum overlap)
-    horizons: tuple[int, int, int] = (10, 100, 500)
+    horizons: tuple = (1, 10, 100, 500)
+
+
+def rolling_normalise(x: np.ndarray, window: int = 500) -> np.ndarray:
+    """
+    Rolling z-score normalisation with no future leakage.
+
+    Each tick is normalised using the mean and std of the previous `window` ticks
+    (expanding window for the first `window` ticks).
+    """
+    T, D = x.shape
+    cum  = np.cumsum(x, axis=0)
+    cum2 = np.cumsum(x ** 2, axis=0)
+    pad  = np.zeros((window, D))
+    s1   = cum - np.concatenate([pad, cum[:-window]])
+    s2   = cum2 - np.concatenate([pad, cum2[:-window]])
+    n    = np.minimum(np.arange(1, T + 1), window)[:, None].astype(np.float64)
+    mean = s1 / n
+    var  = (s2 / n - mean ** 2).clip(0)
+    return ((x - mean) / (np.sqrt(var) + 1e-8)).astype(np.float32)
 
 
 class LOBDataset(Dataset):
@@ -35,7 +54,7 @@ class LOBDataset(Dataset):
     Each sample is a dict:
         lob   : (seq_len, N_LEVELS, 4)  float32
         scalar: (seq_len, D_SCALAR)     float32
-        labels: (seq_len, 5)            float32
+        labels: (seq_len, 6)            float32
         mask  : (seq_len,)              bool   True = valid (always True here)
     """
 
@@ -48,17 +67,18 @@ class LOBDataset(Dataset):
     ) -> None:
         self.cfg = cfg or DatasetConfig()
 
-        self.lob_arr    = compute_lob_tensor(df)          # (T, N_LEVELS, 4)
-        raw_scalar      = compute_scalar_features(df)     # (T, D_SCALAR)
-        self.labels_arr = compute_labels(df, self.cfg.horizons)  # (T, 5)
+        self.lob_arr    = compute_lob_tensor(df)                          # (T, N_LEVELS, 4)
+        raw_scalar      = compute_scalar_features(df)                     # (T, D_SCALAR)
+        self.labels_arr = compute_labels(df, self.cfg.horizons)           # (T, 6)
 
-        self.scalar_arr, self.scalar_mean, self.scalar_std = normalise_scalar(
-            raw_scalar, scalar_mean, scalar_std
-        )
+        # Rolling z-score normalisation (no future leakage)
+        self.scalar_arr = rolling_normalise(raw_scalar)
+        # Keep these as None — rolling norm does not use global stats
+        self.scalar_mean: np.ndarray | None = None
+        self.scalar_std:  np.ndarray | None = None
 
         T = len(self.lob_arr)
         S = self.cfg.seq_len
-        # Start indices of valid windows (need S ticks of labels ahead too)
         self.indices = list(range(0, T - S + 1, self.cfg.stride))
 
     def __len__(self) -> int:
@@ -109,19 +129,19 @@ def build_loaders(
     batch_size: int = 32,
     num_workers: int = 0,
 ) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader,
-           np.ndarray, np.ndarray]:
+           np.ndarray | None, np.ndarray | None]:
     """
-    Build train/test DataLoaders. Normalisation statistics are computed on
-    training data only and reused for test.
+    Build train/test DataLoaders. Rolling normalisation is applied per-dataset
+    (no global stats to pass between train and test).
 
     Returns:
-        train_loader, test_loader, scalar_mean, scalar_std
+        train_loader, test_loader, scalar_mean (None), scalar_std (None)
     """
     from torch.utils.data import DataLoader
 
     cfg = cfg or DatasetConfig()
     train_ds = LOBDataset(train_df, cfg)
-    test_ds  = LOBDataset(test_df, cfg, train_ds.scalar_mean, train_ds.scalar_std)
+    test_ds  = LOBDataset(test_df, cfg)
 
     train_loader = DataLoader(
         train_ds, batch_size=batch_size, shuffle=True,
@@ -131,4 +151,4 @@ def build_loaders(
         test_ds, batch_size=batch_size, shuffle=False,
         num_workers=num_workers, pin_memory=torch.cuda.is_available(),
     )
-    return train_loader, test_loader, train_ds.scalar_mean, train_ds.scalar_std
+    return train_loader, test_loader, None, None

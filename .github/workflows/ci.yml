@@ -5,14 +5,6 @@ on:
     branches: ["**"]
   pull_request:
     branches: [main, master]
-  schedule:
-    # Daily model retraining at 00:30 UTC
-    - cron: "30 0 * * *"
-  workflow_dispatch:
-    inputs:
-      run_train:
-        description: "Run daily_train.py (1=yes)"
-        default: "0"
 
 env:
   PYTHON_VERSION: "3.11"
@@ -81,67 +73,3 @@ jobs:
 
       - name: Run C++ unit tests
         run: cd build && ctest --output-on-failure --exclude-regex BinanceFeedTest
-
-  # ── Daily model retraining (cron or manual) ──────────────────────────────────
-  daily-train:
-    name: Daily model retraining
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event.inputs.run_train == '1'
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-
-      - name: Install dependencies
-        run: |
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install polars numpy scipy requests
-
-      - name: Run daily training (synthetic data in CI)
-        env:
-          SYNTHETIC: "1"
-          TRAIN_TICKS: "2000"
-          EPOCHS: "5"
-          PROMOTE_IC_MIN: "-1.0"
-        run: python deploy/daily_train.py
-
-      - name: Upload model artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: neural-alpha-model-${{ github.run_id }}
-          path: |
-            models/neural_alpha_candidate.pt
-            models/scalar_norm_stats.npz
-            logs/train_*.json
-          if-no-files-found: ignore
-          retention-days: 30
-
-  # ── Shadow readiness gate ────────────────────────────────────────────────────
-  shadow-metrics:
-    name: Shadow metrics report
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
-    needs: daily-train
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-
-      - name: Install dependencies
-        run: pip install polars numpy
-
-      - name: Download model artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: neural-alpha-model-${{ github.run_id }}
-          path: models/
-        continue-on-error: true
-
-      - name: Run daily metrics report
-        run: python deploy/daily_metrics.py

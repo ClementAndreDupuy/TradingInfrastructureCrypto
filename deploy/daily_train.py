@@ -39,7 +39,7 @@ from research.alpha.neural_alpha.alpha_regression import analyse_alpha
 from research.alpha.neural_alpha.backtest import BacktestConfig, NeuralAlphaBacktest
 from research.alpha.neural_alpha.features import compute_lob_tensor, compute_scalar_features, normalise_scalar
 from research.alpha.neural_alpha.model import CryptoAlphaNet
-from research.alpha.neural_alpha.pipeline import collect_l5_ticks, generate_synthetic_lob
+from research.alpha.neural_alpha.pipeline import collect_l5_ticks
 from research.alpha.neural_alpha.trainer import TrainerConfig, walk_forward_train
 
 logging.basicConfig(
@@ -60,6 +60,7 @@ PROMOTE_IC_MIN = float(os.getenv("PROMOTE_IC_MIN", "0.02"))
 
 PROD_MODEL_PATH = MODEL_DIR / "neural_alpha_latest.pt"
 CANDIDATE_MODEL_PATH = MODEL_DIR / "neural_alpha_candidate.pt"
+SECONDARY_MODEL_PATH = MODEL_DIR / "neural_alpha_secondary.pt"
 NORM_STATS_PATH = MODEL_DIR / "scalar_norm_stats.npz"
 
 
@@ -123,20 +124,15 @@ def run() -> dict:
     log.info("Daily train started — date=%s  ticks=%d  epochs=%d", date_str, TRAIN_TICKS, EPOCHS)
 
     # 1. Collect data
-    use_synthetic = os.getenv("SYNTHETIC", "").lower() in ("1", "true", "yes")
-    if use_synthetic:
-        log.info("Using synthetic data (SYNTHETIC env var set)")
-        df = generate_synthetic_lob(n_ticks=TRAIN_TICKS)
+    cached = DATA_DIR / f"ticks_{date_str}.parquet"
+    if cached.exists():
+        import polars as pl
+        log.info("Loading cached ticks from %s", cached)
+        df = pl.read_parquet(cached)
     else:
-        cached = DATA_DIR / f"ticks_{date_str}.parquet"
-        if cached.exists():
-            import polars as pl
-            log.info("Loading cached ticks from %s", cached)
-            df = pl.read_parquet(cached)
-        else:
-            df = collect_l5_ticks(TRAIN_TICKS, TRAIN_INTERVAL_MS, exchanges=["SOLANA"])
-            df.write_parquet(cached)
-            log.info("Tick data cached → %s  rows=%d", cached, len(df))
+        df = collect_l5_ticks(TRAIN_TICKS, TRAIN_INTERVAL_MS, exchanges=["SOLANA"])
+        df.write_parquet(cached)
+        log.info("Tick data cached → %s  rows=%d", cached, len(df))
 
     # 2. Train
     cfg = TrainerConfig(
@@ -157,7 +153,7 @@ def run() -> dict:
         return {"error": "no_fold_results", "date": date_str}
 
     # 3. Alpha regression
-    alpha_metrics = analyse_alpha(fold_results, horizon_idx=1)
+    alpha_metrics = analyse_alpha(fold_results, horizon_idx=2)
     log.info("Alpha: IC=%.4f  ICIR=%.4f  HitRate=%.3f",
              alpha_metrics.ic_mean, alpha_metrics.icir, alpha_metrics.hit_rate)
 
@@ -165,7 +161,7 @@ def run() -> dict:
     bt_cfg = BacktestConfig(entry_threshold_bps=5.0, taker_fee_bps=5.0)
     last_fold = fold_results[-1]
     bt = NeuralAlphaBacktest(bt_cfg)
-    signals = last_fold["predictions"][:, 1]
+    signals = last_fold["predictions"][:, 2]  # mid-horizon = index 2 (100t)
     import polars as pl
     fold_size = len(df) // cfg.n_folds
     test_start = len(df) - fold_size
@@ -191,6 +187,24 @@ def run() -> dict:
     raw_scalar = compute_scalar_features(df)
     _, scalar_mean, scalar_std = normalise_scalar(raw_scalar)
     np.savez(NORM_STATS_PATH, mean=scalar_mean, std=scalar_std)
+
+    # Train secondary (smaller) model for ensemble
+    cfg_small = TrainerConfig(
+        epochs=EPOCHS,
+        n_folds=4,
+        train_frac=0.75,
+        seq_len=64,
+        d_spatial=32,
+        d_temporal=64,
+        n_temp_layers=1,
+        pretrain=False,
+    )
+    log.info("Training secondary model (d_spatial=32, d_temporal=64)…")
+    fold_results_small = walk_forward_train(df, cfg_small)
+    if fold_results_small:
+        best_small = min(fold_results_small, key=lambda f: f["metrics"].get("loss_total", 1e9))
+        torch.save(best_small["model_state"], SECONDARY_MODEL_PATH)
+        log.info("Secondary model saved → %s", SECONDARY_MODEL_PATH)
 
     train_metrics = {
         "date": date_str,

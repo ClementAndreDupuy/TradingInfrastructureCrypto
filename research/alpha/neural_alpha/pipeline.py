@@ -250,7 +250,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
     all_bt_metrics: list[dict] = []
     for fold, (start, end) in zip(fold_results, test_slices):
         test_df  = df[start:end]
-        signals  = fold["predictions"][:, 1]  # mid-horizon
+        signals  = fold["predictions"][:, 2]  # mid-horizon (index 2 = 100t)
 
         # Expand per-window predictions to per-tick (last-tick alignment)
         T_test = len(test_df)
