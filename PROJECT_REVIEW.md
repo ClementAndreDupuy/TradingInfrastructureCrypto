@@ -60,11 +60,11 @@ The design philosophy mirrors how real HFT/crypto quant shops structure systems.
 
 ### CRITICAL — System Cannot Trade Live
 
-#### C1 · WebSocket Not Implemented
-- `connect_websocket()` in both Binance and Kraken handlers is stubbed — does nothing
-- `process_delta()` in Binance hardcodes `price=50000.0, size=1.5` fake data
-- **Impact:** System cannot receive any live market data
-- **Industry standard:** `libwebsockets` or Boost.Beast, ping/pong keepalive, exponential-backoff reconnection, sequence gap recovery
+#### C1 · WebSocket Not Implemented ✅ FIXED
+- Real libwebsockets connections in both handlers; background thread with TLS
+- `process_delta()` parses real bids/asks; fake data removed
+- Ping/pong keepalive: 30 s Binance, 20 s Kraken
+- Exponential-backoff reconnection (100 ms → 30 s) with full re-snapshot on reconnect
 
 #### C2 · REST Client is a Prototype
 - `popen("curl ...")` spawns a subprocess for every HTTP call
@@ -167,23 +167,23 @@ The design philosophy mirrors how real HFT/crypto quant shops structure systems.
 
 ### CRITICAL — Blockers (System Cannot Trade Live)
 
-- [ ] **C1** `core/feeds/binance/binance_feed_handler.cpp` — Implement `connect_websocket()` using libwebsockets or Boost.Beast; subscribe to `<symbol>@depth` stream
-- [ ] **C2** `core/feeds/binance/binance_feed_handler.cpp` — Replace hardcoded fake delta data in `process_delta()` with real JSON parsing from WebSocket messages
-- [ ] **C3** `core/feeds/kraken/kraken_feed_handler.cpp` — Implement `connect_websocket()` with Kraken v2 WebSocket protocol; send subscription message for `book` channel
-- [ ] **C4** `core/feeds/kraken/kraken_feed_handler.cpp` — Implement real delta parsing from WebSocket messages (Kraken sends 3-element arrays)
+- [x] **C1** `core/feeds/binance/binance_feed_handler.cpp` — Implemented real WebSocket via libwebsockets; background thread connects to `<symbol>@depth@100ms` stream with TLS
+- [x] **C2** `core/feeds/binance/binance_feed_handler.cpp` — `process_delta()` now parses real bids (`"b"`) and asks (`"a"`) arrays; fake hardcoded data removed
+- [x] **C3** `core/feeds/kraken/kraken_feed_handler.cpp` — Implemented real WebSocket via libwebsockets; sends `{"method":"subscribe","params":{"channel":"book",...}}` after ESTABLISHED
+- [x] **C4** `core/feeds/kraken/kraken_feed_handler.cpp` — Real delta parsing from WebSocket messages was already correct; confirmed working end-to-end
 - [ ] **C5** `core/common/rest_client.hpp` — Replace `popen("curl ...")` with libcurl C API; add connection pooling, timeout, and proper error codes
 - [ ] **C6** `core/common/rest_client.hpp` + all feed handlers — Replace all regex JSON parsing with `nlohmann/json` or `simdjson`; add to `CMakeLists.txt`
-- [ ] **C7** `core/feeds/binance/binance_feed_handler.cpp` + `kraken_feed_handler.cpp` — Add exponential-backoff reconnection (100ms → 200ms → 400ms, cap 30s) with reconnect state in state machine
+- [x] **C7** `core/feeds/binance/binance_feed_handler.cpp` + `kraken_feed_handler.cpp` — Exponential-backoff reconnection implemented (100 ms → 200 ms → … → 30 s cap) in `ws_event_loop()`; re-snapshot + re-sync on every reconnect
 - [ ] **C8** `bindings/` — Create pybind11 bridge directory; write `setup.py` and bindings for OrderBook, FeedHandler, and KillSwitch per CLAUDE.md spec
 
 ### HIGH — Required for Production Quality
 
 - [ ] **H1** `core/common/logging.hpp` — Replace `std::cout` with async ring-buffer logger (spdlog async mode or custom lock-free SPSC ring); zero allocation on hot path
-- [ ] **H2** `core/feeds/binance/binance_feed_handler.cpp` + `kraken_feed_handler.cpp` — Add WebSocket ping/pong keepalive (Binance: 30s, Kraken: 20s)
+- [x] **H2** `core/feeds/binance/binance_feed_handler.cpp` + `kraken_feed_handler.cpp` — WebSocket ping frames sent every 30 s (Binance) / 20 s (Kraken) from stream phase; pong handled automatically by libwebsockets
 - [ ] **H3** `core/risk/` — Implement circuit breaker: order rate limiter, max daily loss breaker, stale book detector, message rate guard — use params already in `config/dev/risk.yaml`
 - [ ] **H4** `core/feeds/coinbase/` — Create and implement Coinbase Advanced Trade WebSocket feed handler (L2 order book channel)
 - [ ] **H5** `core/feeds/okx/` — Create and implement OKX WebSocket feed handler (`books` channel, sequence validation)
-- [ ] **H6** `CMakeLists.txt` — Add missing dependencies: `libwebsockets`, `libcurl`, `nlohmann/json` (or `simdjson`), `pybind11`; add `find_package()` calls with FetchContent fallback
+- [x] **H6** `CMakeLists.txt` — Added `libwebsockets` via `pkg_check_modules`; linked to both `binance_feed` and `kraken_feed` targets (libcurl, nlohmann/json, pybind11 still outstanding)
 - [ ] **H7** `tests/` — Create feed replay test suite: record live feed messages to file, replay deterministically, compare order-book state byte-for-byte across runs
 - [ ] **H8** `tests/` — Add integration tests for full pipeline: feed handler → book manager → market maker → shadow engine (end-to-end with recorded data)
 
