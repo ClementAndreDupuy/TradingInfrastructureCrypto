@@ -18,9 +18,26 @@ pip install --quiet --upgrade pip
 pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
 pip install --quiet polars numpy scipy requests boto3
 
-# ── 3. Clone repository ───────────────────────────────────────────────────────
-# The deploy key should be pre-loaded from Secrets Manager or baked into the AMI
-git clone https://github.com/C18andre/ThamesRiverTrading /opt/trading
+# ── 3. Clone private repository via deploy key from Secrets Manager ──────────
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+
+aws secretsmanager get-secret-value \
+    --secret-id trading/github_deploy_key \
+    --query SecretString \
+    --output text > /root/.ssh/github_deploy_key
+chmod 600 /root/.ssh/github_deploy_key
+
+cat >> /root/.ssh/config <<'SSHCFG'
+Host github.com
+    HostName github.com
+    User git
+    IdentityFile /root/.ssh/github_deploy_key
+    StrictHostKeyChecking no
+SSHCFG
+chmod 600 /root/.ssh/config
+
+git clone git@github.com:C18andre/ThamesRiverTrading.git /opt/trading
 cd /opt/trading
 
 # ── 4. Build C++ hot path ─────────────────────────────────────────────────────

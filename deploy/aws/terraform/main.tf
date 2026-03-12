@@ -61,6 +61,7 @@ resource "aws_iam_role_policy" "trading" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
+        # Covers trading/binance_api_keys and trading/github_deploy_key
         Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:trading/*"
       },
       {
@@ -187,5 +188,22 @@ resource "aws_cloudwatch_log_group" "engine" {
 resource "aws_secretsmanager_secret" "binance_keys" {
   name                    = "trading/binance_api_keys"
   description             = "Binance API key and secret for SOLUSDT trading"
+  recovery_window_in_days = 7
+}
+
+# ── GitHub deploy key (private SSH key for git clone) ─────────────────────────
+# Fill in after terraform apply:
+#   aws secretsmanager put-secret-value \
+#     --secret-id trading/github_deploy_key \
+#     --secret-string file://~/.ssh/thames-trading-deploy
+#
+# Generate the key pair with:
+#   ssh-keygen -t ed25519 -C "trading-ec2-deploy" -f ~/.ssh/thames-trading-deploy -N ""
+#   # Then add ~/.ssh/thames-trading-deploy.pub as a read-only deploy key on GitHub:
+#   # https://github.com/C18andre/ThamesRiverTrading/settings/keys
+
+resource "aws_secretsmanager_secret" "github_deploy_key" {
+  name                    = "trading/github_deploy_key"
+  description             = "SSH private key for read-only git clone of ThamesRiverTrading"
   recovery_window_in_days = 7
 }
