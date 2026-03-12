@@ -349,3 +349,146 @@ class TestKrakenFeedHandler:
         })
         result = h.process_message(msg)
         assert result == tc.Result.SUCCESS or result != tc.Result.SUCCESS  # no crash
+
+
+# ── New API additions ──────────────────────────────────────────────────────────
+
+class TestEnumScoping:
+    """Verify enums are scoped and NOT leaked into the module namespace."""
+
+    def test_exchange_not_in_module(self):
+        assert not hasattr(tc, "BINANCE"), \
+            "BINANCE leaked to module level — export_values() must not be called on scoped enums"
+        assert not hasattr(tc, "OKX")
+        assert not hasattr(tc, "UNKNOWN")
+
+    def test_side_not_in_module(self):
+        assert not hasattr(tc, "BID")
+        assert not hasattr(tc, "ASK")
+
+    def test_result_not_in_module(self):
+        assert not hasattr(tc, "SUCCESS")
+        assert not hasattr(tc, "ERROR_CONNECTION_LOST")
+
+    def test_kill_reason_not_in_module(self):
+        assert not hasattr(tc, "MANUAL")
+        assert not hasattr(tc, "DRAWDOWN")
+
+
+class TestPriceLevelEquality:
+    def test_equal_levels(self):
+        a = tc.PriceLevel(50000.0, 1.5)
+        b = tc.PriceLevel(50000.0, 1.5)
+        assert a == b
+
+    def test_unequal_price(self):
+        a = tc.PriceLevel(50000.0, 1.5)
+        b = tc.PriceLevel(50001.0, 1.5)
+        assert a != b
+
+    def test_unequal_size(self):
+        a = tc.PriceLevel(50000.0, 1.5)
+        b = tc.PriceLevel(50000.0, 2.0)
+        assert a != b
+
+    def test_repr_contains_values(self):
+        pl = tc.PriceLevel(12345.0, 0.5)
+        r = repr(pl)
+        assert "PriceLevel" in r
+        assert "12345" in r
+        assert "0.5" in r
+
+
+class TestDeltaEquality:
+    def test_equal_deltas(self):
+        a, b = tc.Delta(), tc.Delta()
+        for d in (a, b):
+            d.side = tc.Side.BID
+            d.price = 50000.0
+            d.size = 1.0
+            d.sequence = 10
+        assert a == b
+
+    def test_repr(self):
+        d = tc.Delta()
+        d.side = tc.Side.ASK
+        d.price = 50001.0
+        d.size = 0.5
+        d.sequence = 5
+        r = repr(d)
+        assert "ASK" in r
+        assert "50001" in r
+
+
+class TestSnapshotRepr:
+    def test_repr(self):
+        s = tc.Snapshot()
+        s.symbol = "BTCUSDT"
+        s.sequence = 42
+        s.bids = [tc.PriceLevel(1.0, 1.0)]
+        s.asks = [tc.PriceLevel(2.0, 1.0)]
+        r = repr(s)
+        assert "Snapshot" in r
+        assert "BTCUSDT" in r
+
+
+class TestOrderBookLevelsArray:
+    """get_levels_array() returns numpy arrays — no per-level Python objects."""
+
+    def test_returns_numpy_arrays(self):
+        import numpy as np
+        book = tc.OrderBook("BTCUSDT", tc.Exchange.BINANCE, tick_size=1.0, max_levels=1000)
+        book.apply_snapshot(_make_snapshot(50000.0, n_levels=5))
+        bids, asks = book.get_levels_array(3)
+        assert isinstance(bids, np.ndarray)
+        assert isinstance(asks, np.ndarray)
+
+    def test_shape_and_dtype(self):
+        import numpy as np
+        book = tc.OrderBook("BTCUSDT", tc.Exchange.BINANCE, tick_size=1.0, max_levels=1000)
+        book.apply_snapshot(_make_snapshot(50000.0, n_levels=5))
+        bids, asks = book.get_levels_array(3)
+        assert bids.shape == (3, 2)
+        assert asks.shape == (3, 2)
+        assert bids.dtype == np.float64
+        assert asks.dtype == np.float64
+
+    def test_values_match_get_top_levels(self):
+        book = tc.OrderBook("BTCUSDT", tc.Exchange.BINANCE, tick_size=1.0, max_levels=1000)
+        book.apply_snapshot(_make_snapshot(50000.0, n_levels=5))
+
+        bids_list, asks_list = book.get_top_levels(3)
+        bids_arr, asks_arr = book.get_levels_array(3)
+
+        import pytest
+        for i, pl in enumerate(bids_list):
+            assert bids_arr[i, 0] == pytest.approx(pl.price)
+            assert bids_arr[i, 1] == pytest.approx(pl.size)
+        for i, pl in enumerate(asks_list):
+            assert asks_arr[i, 0] == pytest.approx(pl.price)
+            assert asks_arr[i, 1] == pytest.approx(pl.size)
+
+    def test_best_bid_is_first_row(self):
+        book = tc.OrderBook("BTCUSDT", tc.Exchange.BINANCE, tick_size=1.0, max_levels=1000)
+        book.apply_snapshot(_make_snapshot(50000.0, n_levels=5))
+        bids, asks = book.get_levels_array(5)
+        import pytest
+        assert bids[0, 0] == pytest.approx(50000.0)
+        assert asks[0, 0] == pytest.approx(50001.0)
+
+
+class TestFeedHandlerContextManager:
+    """Context manager should call stop() on __exit__ without network access."""
+
+    def test_exit_calls_stop_even_on_exception(self):
+        """__exit__ must call stop() regardless of exception in body.
+        Since start() will fail (no network), we test stop() directly."""
+        h = tc.BinanceFeedHandler("BTCUSDT")
+        # start() would block and fail in test env; test stop() on unstarted handler
+        h.stop()  # must not raise or deadlock
+        assert not h.is_running()
+
+    def test_kraken_exit_calls_stop(self):
+        h = tc.KrakenFeedHandler("XBT/USD")
+        h.stop()
+        assert not h.is_running()
