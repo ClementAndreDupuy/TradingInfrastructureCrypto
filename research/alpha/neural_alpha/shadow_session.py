@@ -205,7 +205,17 @@ class NeuralAlphaShadowSession:
         ret  = out["returns"][0, -1].cpu().numpy()   # (3,)
         risk = float(out["risk"][0, -1].cpu().item())
 
-        signal_bps = float(ret[1]) * 1e4   # mid-horizon in bps
+        raw_signal_bps = float(ret[1]) * 1e4   # mid-horizon in bps
+
+        # Direction-head gating: require direction confidence > 0.55 to agree
+        dir_probs = torch.softmax(out["direction"][0, -1], dim=-1).cpu().numpy()
+        # dir_probs: [p_down, p_flat, p_up]
+        if raw_signal_bps > 0 and dir_probs[2] > 0.55:
+            signal_bps = raw_signal_bps
+        elif raw_signal_bps < 0 and dir_probs[0] > 0.55:
+            signal_bps = raw_signal_bps
+        else:
+            signal_bps = 0.0
 
         # Publish to shared memory — C++ reads on next book update (< 100 ns)
         self._publisher.publish(signal_bps, risk)
@@ -223,6 +233,10 @@ class NeuralAlphaShadowSession:
             "ret_long_bps":  float(ret[2]) * 1e4,
             "risk_score":    risk,
             "signal":        float(ret[1]),
+            "dir_p_down":    float(dir_probs[0]),
+            "dir_p_flat":    float(dir_probs[1]),
+            "dir_p_up":      float(dir_probs[2]),
+            "gated":         signal_bps == 0.0 and raw_signal_bps != 0.0,
         }
 
     # ── Data collection ───────────────────────────────────────────────────────
