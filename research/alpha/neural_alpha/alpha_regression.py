@@ -139,7 +139,7 @@ def compute_turnover(signals: np.ndarray) -> float:
 
 def analyse_alpha(
     fold_results: list[dict],
-    horizon_idx: int = 1,
+    horizon_idx: int = 2,
     rolling_window: int = 20,
 ) -> AlphaMetrics:
     """
@@ -147,7 +147,7 @@ def analyse_alpha(
 
     Args:
         fold_results  : list of fold dicts from walk_forward_train
-        horizon_idx   : which return horizon to use (0=10t, 1=100t, 2=500t)
+        horizon_idx   : which return horizon to use (0=1t, 1=10t, 2=100t, 3=500t)
         rolling_window: window for rolling IC
 
     Returns:
@@ -157,8 +157,8 @@ def analyse_alpha(
     all_returns: list[np.ndarray] = []
 
     for fold in fold_results:
-        preds  = fold["predictions"]   # (N, 3) — return preds
-        labels = fold["labels"]        # (N, 5)
+        preds  = fold["predictions"]   # (N, 4) — return preds
+        labels = fold["labels"]        # (N, 6)
         all_signals.append(preds[:, horizon_idx])
         all_returns.append(labels[:, horizon_idx])
 

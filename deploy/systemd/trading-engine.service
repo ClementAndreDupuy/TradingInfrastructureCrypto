@@ -1,0 +1,26 @@
+[Unit]
+Description=C++ Trading Engine — NeuralAlphaMarketMaker SOLUSDT
+After=network-online.target neural-alpha-shadow.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/trading
+EnvironmentFile=/etc/trading/env
+ExecStart=/opt/trading/build/bin/trading_engine
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trading-engine
+
+# NOTE: Do NOT enable this service automatically.
+# Enable manually after shadow trading validation:
+#   sudo systemctl enable trading-engine.service
+#   sudo systemctl start  trading-engine.service
+# Kill switch:
+#   sudo systemctl stop trading-engine.service
+
+[Install]
+WantedBy=multi-user.target

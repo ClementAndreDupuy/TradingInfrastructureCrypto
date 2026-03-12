@@ -19,7 +19,7 @@ import numpy as np
 import polars as pl
 
 N_LEVELS = 5
-D_SCALAR = 13  # number of scalar features per tick
+D_SCALAR = 21  # number of scalar features per tick
 
 
 def _safe_col(df: pl.DataFrame, name: str, default: float = 0.0) -> np.ndarray:
@@ -101,12 +101,23 @@ def _lag_diff(arr: np.ndarray, lag: int) -> np.ndarray:
     return arr - np.concatenate([np.full(lag, arr[0]), arr[:-lag]])
 
 
+def _rolling_std(x: np.ndarray, window: int) -> np.ndarray:
+    """Vectorized rolling std using cumsum trick. O(T) instead of O(T*window)."""
+    cum  = np.cumsum(x)
+    cum2 = np.cumsum(x ** 2)
+    n    = np.minimum(np.arange(1, len(x) + 1), window).astype(np.float64)
+    s1   = cum - np.concatenate([np.zeros(window), cum[:-window]])
+    s2   = cum2 - np.concatenate([np.zeros(window), cum2[:-window]])
+    var  = (s2 / n - (s1 / n) ** 2).clip(0)
+    return np.sqrt(var)
+
+
 def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
     """
-    Return (T, D_SCALAR) array of derived features:
+    Return (T, D_SCALAR=21) array of derived features:
         0  mid_return_lag1    — tick-to-tick midprice log return
         1  spread_bps         — bid-ask spread in bps
-        2  microprice         — size-weighted price
+        2  microprice         — size-weighted price deviation from mid
         3  obi                — order-book imbalance (bid_depth / total_depth)
         4  depth_bid          — log total bid depth
         5  depth_ask          — log total ask depth
@@ -117,6 +128,14 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
         10 ofi_5              — order-flow imbalance lag-5
         11 ofi_10             — order-flow imbalance lag-10
         12 ofi_20             — order-flow imbalance lag-20
+        13 qi_1               — per-level queue imbalance level 1
+        14 qi_2               — per-level queue imbalance level 2
+        15 qi_3               — per-level queue imbalance level 3
+        16 qi_4               — per-level queue imbalance level 4
+        17 qi_5               — per-level queue imbalance level 5
+        18 vol_60             — rolling 60-tick std of mid log return
+        19 vol_200            — rolling 200-tick std of mid log return
+        20 vol_ratio_5_60     — vol_5 / (vol_60 + 1e-8)
     """
     bp, bs, ap, as_ = _extract_levels(df)
 
@@ -156,33 +175,41 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
 
     signed_flow = log_ret * total_depth
 
-    # Rolling volatility
-    vol_5  = _rolling_std(log_ret, 5)
-    vol_20 = _rolling_std(log_ret, 20)
+    # Rolling volatility (vectorized)
+    vol_5   = _rolling_std(log_ret, 5)
+    vol_20  = _rolling_std(log_ret, 20)
+    vol_60  = _rolling_std(log_ret, 60)
+    vol_200 = _rolling_std(log_ret, 200)
+    vol_ratio_5_60 = vol_5 / (vol_60 + 1e-8)
+
+    # Per-level queue imbalance: (bid_size_i - ask_size_i) / (bid_size_i + ask_size_i + 1e-8)
+    qi = (bs - as_) / (bs + as_ + 1e-8)  # (T, N_LEVELS)
 
     features = np.stack([
         log_ret, spread_bps, microprice - mid,
         obi, log_depth_bid, log_depth_ask,
         ofi_1, signed_flow, vol_5, vol_20,
         ofi_5, ofi_10, ofi_20,
+        qi[:, 0], qi[:, 1], qi[:, 2], qi[:, 3], qi[:, 4],
+        vol_60, vol_200, vol_ratio_5_60,
     ], axis=1)
 
     features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
     return features.astype(np.float32)
 
 
-def compute_labels(df: pl.DataFrame, horizons: tuple[int, int, int] = (10, 100, 500)) -> np.ndarray:
+def compute_labels(df: pl.DataFrame, horizons: tuple[int, ...] = (1, 10, 100, 500)) -> np.ndarray:
     """
     Compute multi-horizon forward log-returns.
 
     Args:
-        horizons: tick offsets for short, mid, long horizon
+        horizons: tick offsets (1-tick, short, mid, long)
 
     Returns:
-        (T, 5) array:
-            col 0-2 : log returns at each horizon (clipped at ±5 bps)
-            col 3   : direction at mid horizon (0=down, 1=flat, 2=up)
-            col 4   : adverse selection proxy (0/1)
+        (T, 6) array:
+            col 0-3 : log returns at each horizon (clipped at ±5 bps)
+            col 4   : direction at mid horizon index 2 (0=down, 1=flat, 2=up)
+            col 5   : adverse selection proxy (0/1) — price reversion within 10 ticks
     """
     bp, _, ap, _ = _extract_levels(df)
     best_bid = bp[:, 0]
@@ -192,38 +219,34 @@ def compute_labels(df: pl.DataFrame, horizons: tuple[int, int, int] = (10, 100, 
     log_mid = np.log(np.where(mid > 0, mid, 1.0))
 
     T = len(df)
-    returns = np.zeros((T, 3), dtype=np.float32)
+    n_horizons = len(horizons)
+    returns = np.zeros((T, n_horizons), dtype=np.float32)
     for i, h in enumerate(horizons):
-        h = min(h, T - 1)  # cap horizon at available data
+        h = min(h, T - 1)
         fwd = np.zeros(T, dtype=np.float32)
         if h > 0 and T > h:
             fwd[: T - h] = log_mid[h:] - log_mid[: T - h]
         returns[:, i] = np.clip(fwd, -0.0005, 0.0005)
 
-    # Direction based on mid horizon
+    # Direction based on mid horizon (index 2 = 100-tick)
     flat_thresh = 2e-5  # ~0.2 bps
-    mid_ret = returns[:, 1]
+    mid_ret = returns[:, 2]
     direction = np.where(mid_ret > flat_thresh, 2,
                 np.where(mid_ret < -flat_thresh, 0, 1)).astype(np.float32)
 
-    # Adverse selection: 1 if spread widens significantly in next 5 ticks
-    spread_bps = np.where(mid > 0, (best_ask - best_bid) / mid * 1e4, 0.0)
+    # Adverse selection: price reversion within 10 ticks
+    # adv_sel[t] = 1 if 1-tick and 10-tick returns have opposite signs
+    fwd_ret_1  = returns[:, 0]
+    fwd_ret_10 = returns[:, 1]
     adv_sel = np.zeros(T, dtype=np.float32)
-    for t in range(T - 5):
-        future_spread = spread_bps[t + 1 : t + 6].mean()
-        if future_spread > spread_bps[t] * 1.5:
+    for t in range(T - 10):
+        r1  = float(fwd_ret_1[t])
+        r10 = float(fwd_ret_10[t])
+        if abs(r1) > 1e-6 and r1 * r10 < 0:
             adv_sel[t] = 1.0
 
     labels = np.concatenate([returns, direction[:, None], adv_sel[:, None]], axis=1)
     return labels.astype(np.float32)
-
-
-def _rolling_std(x: np.ndarray, window: int) -> np.ndarray:
-    out = np.zeros_like(x)
-    for i in range(len(x)):
-        start = max(0, i - window + 1)
-        out[i] = x[start : i + 1].std()
-    return out
 
 
 def normalise_scalar(features: np.ndarray, mean: np.ndarray | None = None,

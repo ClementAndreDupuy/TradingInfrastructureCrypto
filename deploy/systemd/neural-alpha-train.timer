@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Neural Alpha Training at 00:30 UTC
+
+[Timer]
+OnCalendar=*-*-* 00:30:00 UTC
+Persistent=true
+Unit=neural-alpha-train.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,26 @@
+[Unit]
+Description=Neural Alpha Shadow Session (SOLUSDT live inference)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/trading
+EnvironmentFile=/etc/trading/env
+Environment=PYTHONPATH=/opt/trading
+ExecStart=/opt/trading-venv/bin/python -m research.alpha.neural_alpha.shadow_session \
+    --model-path models/neural_alpha_latest.pt \
+    --secondary-model-path models/neural_alpha_secondary.pt \
+    --log-path logs/neural_alpha_shadow.jsonl \
+    --duration 86400 \
+    --interval-ms 500 \
+    --exchanges SOLANA
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=neural-alpha-shadow
+
+[Install]
+WantedBy=multi-user.target

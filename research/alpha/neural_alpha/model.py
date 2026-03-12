@@ -6,7 +6,7 @@ Architecture:
     sequence      →  TemporalEncoder (Transformer)              →  temporal embedding
     concat        →  FusionLayer
     Fusion        →  MultiTaskHead
-        • ReturnHead   : 3-horizon regression   (MSE)
+        • ReturnHead   : 4-horizon regression   (MSE)  [1t, 10t, 100t, 500t]
         • DirectionHead: up/flat/down            (cross-entropy)
         • RiskHead     : adverse-selection prob  (BCE)
 
@@ -129,7 +129,7 @@ class _SinusoidalPE(nn.Module):
 class ReturnHead(nn.Module):
     """Regress multi-horizon log-returns."""
 
-    def __init__(self, d_in: int, n_horizons: int = 3) -> None:
+    def __init__(self, d_in: int, n_horizons: int = 4) -> None:
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(d_in, d_in // 2),
@@ -185,7 +185,7 @@ class CryptoAlphaNet(nn.Module):
         n_lob_layers: transformer layers in spatial encoder
         n_temp_heads: attention heads in temporal encoder
         n_temp_layers: transformer layers in temporal encoder
-        n_horizons  : number of return horizons to predict
+        n_horizons  : number of return horizons (default 4: 1t, 10t, 100t, 500t)
         seq_len     : max sequence length (for positional encoding)
         dropout     : dropout rate
     """
@@ -198,7 +198,7 @@ class CryptoAlphaNet(nn.Module):
         n_lob_layers: int = 2,
         n_temp_heads: int = 4,
         n_temp_layers: int = 3,
-        n_horizons: int = 3,
+        n_horizons: int = 4,
         seq_len: int = 512,
         dropout: float = 0.1,
         d_scalar: int = D_SCALAR,
@@ -241,7 +241,7 @@ class CryptoAlphaNet(nn.Module):
             scalar: (B, T, D_SCALAR)
             mask  : (B, T) padding mask (True = ignore)
         Returns:
-            dict with keys: returns (B,T,3), direction (B,T,3), risk (B,T)
+            dict with keys: returns (B,T,4), direction (B,T,3), risk (B,T)
         """
         spatial = self.spatial_enc(lob)              # (B, T, d_spatial)
         x = torch.cat([spatial, scalar], dim=-1)     # (B, T, d_spatial + D_SCALAR)
@@ -264,6 +264,11 @@ class MultiTaskLoss(nn.Module):
         - Cross-entropy for direction classification
         - BCE for adverse-selection risk
         - Transaction-cost penalty (penalises large predicted returns near zero)
+
+    Targets layout (B, T, 6):
+        cols 0-3: returns at horizons [1t, 10t, 100t, 500t]
+        col  4  : direction (0/1/2)
+        col  5  : adverse selection (0/1)
     """
 
     def __init__(
@@ -293,13 +298,13 @@ class MultiTaskLoss(nn.Module):
         """
         Args:
             preds  : dict from CryptoAlphaNet.forward
-            targets: (B, T, 5) — [ret_10, ret_100, ret_500, direction, adv_sel]
+            targets: (B, T, 6) — [ret_1, ret_10, ret_100, ret_500, direction, adv_sel]
         Returns:
             total_loss, breakdown_dict
         """
-        ret_targets = targets[..., :3]
-        dir_targets = targets[..., 3].long()
-        risk_targets = targets[..., 4]
+        ret_targets  = targets[..., :4]          # 4 horizons
+        dir_targets  = targets[..., 4].long()
+        risk_targets = targets[..., 5]
 
         # Return loss (MSE, average across horizons)
         ret_loss = F.mse_loss(preds["returns"], ret_targets)
@@ -315,7 +320,7 @@ class MultiTaskLoss(nn.Module):
         risk_loss = self.bce_loss(preds["risk"], risk_targets)
 
         # Transaction-cost penalty: penalise predictions too small to trade profitably
-        pred_ret_mid = preds["returns"][..., 1]  # mid-horizon
+        pred_ret_mid = preds["returns"][..., 2]  # mid-horizon (index 2 = 100t)
         tc_penalty = F.relu(self.tc_threshold - pred_ret_mid.abs()).mean()
 
         total = (

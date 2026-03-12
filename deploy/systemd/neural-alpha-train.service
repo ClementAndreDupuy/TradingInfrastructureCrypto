@@ -1,0 +1,24 @@
+[Unit]
+Description=Neural Alpha Daily Training Job (SOLUSDT)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/trading
+EnvironmentFile=/etc/trading/env
+Environment=PYTHONPATH=/opt/trading
+ExecStart=/opt/trading-venv/bin/python deploy/daily_train.py
+ExecStartPost=/opt/trading-venv/bin/python -c "\
+import boto3, os; \
+b = boto3.client('s3'); \
+bucket = os.environ.get('S3_BUCKET', ''); \
+[b.upload_file(f, bucket, f) for f in [\
+'models/neural_alpha_latest.pt', \
+'models/neural_alpha_secondary.pt', \
+'models/scalar_norm_stats.npz'] \
+if os.path.exists(f) and bucket]"
+StandardOutput=journal+console
+StandardError=journal+console
+SyslogIdentifier=neural-alpha-train
