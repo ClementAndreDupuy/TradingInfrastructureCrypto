@@ -174,7 +174,7 @@ The design philosophy mirrors how real HFT/crypto quant shops structure systems.
 - [x] **C5** `core/common/rest_client.hpp` — Replaced `popen("curl ...")` with libcurl C API; thread-local connection reuse, 10s timeout, 5s connect timeout, TCP keepalive, HTTP status codes. Fallback via `curl_abi.hpp` when dev headers absent.
 - [x] **C6** `core/common/rest_client.hpp` + all feed handlers — Replaced all regex JSON parsing with `nlohmann/json` (falls back to vendored `core/common/json.hpp`); `find_package(CURL)` + `find_package(nlohmann_json)` added to `core/CMakeLists.txt`; `<regex>` removed from both feed handlers.
 - [x] **C7** `core/feeds/binance/binance_feed_handler.cpp` + `kraken_feed_handler.cpp` — Exponential-backoff reconnection implemented (100 ms → 200 ms → … → 30 s cap) in `ws_event_loop()`; re-snapshot + re-sync on every reconnect
-- [ ] **C8** `bindings/` — Create pybind11 bridge directory; write `setup.py` and bindings for OrderBook, FeedHandler, and KillSwitch per CLAUDE.md spec
+- [x] **C8** `bindings/` — Created pybind11 bridge: `bindings/bindings.cpp` (OrderBook, KillSwitch, BinanceFeedHandler, KrakenFeedHandler with GIL-safe callbacks) + `bindings/setup.py` (pkg-config driven, links libwebsockets + libcurl + nlohmann/json)
 
 ### HIGH — Required for Production Quality
 
@@ -183,7 +183,7 @@ The design philosophy mirrors how real HFT/crypto quant shops structure systems.
 - [ ] **H3** `core/risk/` — Implement circuit breaker: order rate limiter, max daily loss breaker, stale book detector, message rate guard — use params already in `config/dev/risk.yaml`
 - [ ] **H4** `core/feeds/coinbase/` — Create and implement Coinbase Advanced Trade WebSocket feed handler (L2 order book channel)
 - [ ] **H5** `core/feeds/okx/` — Create and implement OKX WebSocket feed handler (`books` channel, sequence validation)
-- [x] **H6** `CMakeLists.txt` — Added `libwebsockets` via `pkg_check_modules`; linked to both `binance_feed` and `kraken_feed` targets (libcurl, nlohmann/json, pybind11 still outstanding)
+- [x] **H6** `CMakeLists.txt` — Added `libwebsockets` via `pkg_check_modules`; linked to both `binance_feed` and `kraken_feed` targets; libcurl and nlohmann/json handled in `core/CMakeLists.txt`; pybind11 handled via `bindings/setup.py`
 - [ ] **H7** `tests/` — Create feed replay test suite: record live feed messages to file, replay deterministically, compare order-book state byte-for-byte across runs
 - [ ] **H8** `tests/` — Add integration tests for full pipeline: feed handler → book manager → market maker → shadow engine (end-to-end with recorded data)
 
