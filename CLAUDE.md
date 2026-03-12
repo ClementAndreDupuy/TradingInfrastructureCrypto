@@ -40,6 +40,8 @@ python -m research.alpha.neural_alpha.pipeline --synthetic --ticks 400 --epochs 
 5. Never mock data — always use real data and real implementation.
 6. Keep code clean and short — avoid unnecessary comments.
 7. Always write production-ready code.
+8. Run a full audit of the repo every week to identify bugs, grade the compared to industry standard and propose improvements
+9. Always be 100% honest in your review
 
 ## Components
 
