@@ -1,9 +1,14 @@
 """
-Neural alpha execution engine.
+Neural alpha execution simulation — RESEARCH USE ONLY.
 
-Reads the live signal from the shared memory file written by shadow_session.py
-and manages positions accordingly. Runs in shadow (paper) mode by default;
-all order objects are logged but never sent to an exchange.
+This module is a Python-only backtest simulation of the execution layer.
+It is NOT the live execution engine. The production execution engine is:
+    core/execution/market_maker.hpp  (C++ hot path, market maker with stop-limit)
+
+Use this module to:
+- Evaluate signal-to-trade logic during backtest development.
+- Tune thresholds (signal_min_bps, risk_max, stop_loss_bps) before deploying.
+- Generate JSONL trade logs for analysis without touching the C++ layer.
 
 Signal gate logic (mirrors C++ AlphaSignalReader):
     LONG  when signal_bps > signal_min_bps AND risk_score < risk_max AND dir confirmed
