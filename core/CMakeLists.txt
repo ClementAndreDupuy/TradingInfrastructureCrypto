@@ -1,5 +1,9 @@
 # Core library components
 
+# libwebsockets (required for real WebSocket connections)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LIBWEBSOCKETS REQUIRED libwebsockets)
+
 # Common types library (header-only)
 add_library(trading_common INTERFACE)
 target_include_directories(trading_common INTERFACE
@@ -13,11 +17,15 @@ add_library(binance_feed
 
 target_link_libraries(binance_feed
     trading_common
+    ${LIBWEBSOCKETS_LIBRARIES}
 )
 
 target_include_directories(binance_feed PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${LIBWEBSOCKETS_INCLUDE_DIRS}
 )
+
+target_compile_options(binance_feed PRIVATE ${LIBWEBSOCKETS_CFLAGS_OTHER})
 
 # Kraken feed handler library
 add_library(kraken_feed
@@ -26,11 +34,15 @@ add_library(kraken_feed
 
 target_link_libraries(kraken_feed
     trading_common
+    ${LIBWEBSOCKETS_LIBRARIES}
 )
 
 target_include_directories(kraken_feed PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${LIBWEBSOCKETS_INCLUDE_DIRS}
 )
+
+target_compile_options(kraken_feed PRIVATE ${LIBWEBSOCKETS_CFLAGS_OTHER})
 
 # Install targets
 install(TARGETS binance_feed kraken_feed
