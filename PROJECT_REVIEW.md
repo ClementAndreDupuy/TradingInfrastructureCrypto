@@ -92,9 +92,9 @@ The design philosophy mirrors how real HFT/crypto quant shops structure systems.
 
 ### HIGH — Required for Production Quality
 
-- [ ] **H1** `core/common/logging.hpp` — Replace `std::cout` with async ring-buffer logger (spdlog async mode or custom lock-free SPSC ring); zero allocation on hot path
+- [x] **H1** `core/common/logging.hpp` — Replace `std::cout` with async ring-buffer logger (spdlog async mode or custom lock-free SPSC ring); zero allocation on hot path
 - [x] **H2** `core/feeds/binance/binance_feed_handler.cpp` + `kraken_feed_handler.cpp` — WebSocket ping frames sent every 30 s (Binance) / 20 s (Kraken) from stream phase; pong handled automatically by libwebsockets
-- [ ] **H3** `core/risk/` — Implement circuit breaker: order rate limiter, max daily loss breaker, stale book detector, message rate guard — use params already in `config/dev/risk.yaml`
+- [x] **H3** `core/risk/` — Implement circuit breaker: order rate limiter, max daily loss breaker, stale book detector, message rate guard — use params already in `config/dev/risk.yaml`
 - [ ] **H4** `core/feeds/coinbase/` — Create and implement Coinbase Advanced Trade WebSocket feed handler (L2 order book channel)
 - [ ] **H5** `core/feeds/okx/` — Create and implement OKX WebSocket feed handler (`books` channel, sequence validation)
 - [x] **H6** `CMakeLists.txt` — Added `libwebsockets` via `pkg_check_modules`; linked to both `binance_feed` and `kraken_feed` targets; libcurl and nlohmann/json handled in `core/CMakeLists.txt`; pybind11 handled via `bindings/setup.py`
@@ -107,10 +107,10 @@ The design philosophy mirrors how real HFT/crypto quant shops structure systems.
 - [ ] **M2** `research/alpha/neural_alpha/backtest.py` — Add queue position simulation (Poisson arrival model, fill probability by queue depth and size)
 - [ ] **M3** `research/alpha/neural_alpha/features.py` — Improve adverse-selection label: replace sign-flip heuristic with fill-reversion model (check if price reverts against fill direction within N ticks)
 - [ ] **M4** `research/alpha/neural_alpha/backtest.py` — Add basic market impact model (linear or square-root impact based on order size / ADV)
-- [ ] **M5** `core/common/logging.hpp` — Replace `std::chrono::system_clock` with PTP-synchronized clock or at minimum RDTSC-based timestamps for sub-microsecond precision
+- [x] **M5** `core/common/logging.hpp` — Replace `std::chrono::system_clock` with PTP-synchronized clock or at minimum RDTSC-based timestamps for sub-microsecond precision
 - [ ] **M6** `core/execution/order_manager.hpp` lines 264–272 — Fix entry price VWAP: `new_avg = (old_avg * old_qty + fill_px * fill_qty) / (old_qty + fill_qty)`; remove `1e-12` epsilon hack
 - [x] **M7** `core/feeds/binance/binance_feed_handler.cpp` — Added REST rate limit tracking: minimum 1s between snapshot calls; HTTP 429/418 responses trigger 60s backoff
-- [ ] **M8** `core/shadow/shadow_engine.hpp` — Make fee structure config-driven: read from `config/dev/risk.yaml` instead of hardcoded `2.0 bps` maker / `5.0 bps` taker
+- [x] **M8** `core/shadow/shadow_engine.hpp` — Make fee structure config-driven: read from `config/dev/risk.yaml` instead of hardcoded `2.0 bps` maker / `5.0 bps` taker
 - [ ] **M9** `tests/unit/` — Add negative tests for feed handlers: malformed JSON, out-of-order sequences, duplicate sequence IDs, extreme price levels
 - [ ] **M10** `tests/unit/test_neural_alpha.py` — Add edge case tests: walk-forward with very small dataset, invalid input tensor shapes, NaN propagation through model
 
