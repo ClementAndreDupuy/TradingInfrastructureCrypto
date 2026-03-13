@@ -1,67 +1,324 @@
 #pragma once
 
-#include <iostream>
-#include <sstream>
+// Async ring-buffer logger.
+//
+// Hot path: formats a fixed-size entry directly into an SPSC ring slot
+// (stack allocation only), then advances the tail pointer atomically.
+// No heap allocation, no mutex, no syscall on the hot path.
+//
+// RDTSC is used for nanosecond-precision timestamps.
+// A one-time startup calibration maps TSC cycles → wall-clock nanoseconds.
+//
+// Background writer thread pops entries and writes to stderr.
+
+#include <atomic>
 #include <chrono>
-#include <iomanip>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
+#include <thread>
+
+#ifdef __x86_64__
+#  include <x86intrin.h>
+#  define TRADING_RDTSC() __rdtsc()
+#else
+// Fallback: steady_clock nanoseconds (not a TSC but same type)
+#  define TRADING_RDTSC() static_cast<uint64_t>(                          \
+       std::chrono::steady_clock::now().time_since_epoch().count())
+#endif
 
 namespace trading {
 
-enum class LogLevel {
+enum class LogLevel : uint8_t {
     DEBUG = 0,
-    INFO = 1,
-    WARN = 2,
+    INFO  = 1,
+    WARN  = 2,
     ERROR = 3
 };
 
-class Logger {
+// ── RDTSC calibration ─────────────────────────────────────────────────────────
+
+struct TscCalibration {
+    uint64_t tsc_base;      // TSC at calibration time
+    int64_t  ns_base;       // wall-clock ns at calibration time
+    double   ns_per_cycle;  // nanoseconds per TSC cycle
+
+    static TscCalibration calibrate() noexcept {
+        // Sample wall clock + TSC twice, ~50ms apart, to measure frequency.
+        TscCalibration c;
+        using Clock = std::chrono::steady_clock;
+
+        auto t0_wall = Clock::now();
+        uint64_t t0_tsc = TRADING_RDTSC();
+
+        // Spin-wait ~50 ms to get a stable frequency sample.
+        while (std::chrono::duration_cast<std::chrono::milliseconds>(
+                   Clock::now() - t0_wall).count() < 50) {}
+
+        uint64_t t1_tsc = TRADING_RDTSC();
+        auto t1_wall = Clock::now();
+
+        int64_t  elapsed_ns    = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                     t1_wall - t0_wall).count();
+        uint64_t elapsed_tsc   = t1_tsc - t0_tsc;
+
+        c.tsc_base     = t0_tsc;
+        c.ns_base      = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                             t0_wall.time_since_epoch()).count();
+        c.ns_per_cycle = (elapsed_tsc > 0)
+                         ? static_cast<double>(elapsed_ns) / static_cast<double>(elapsed_tsc)
+                         : 1.0;
+        return c;
+    }
+
+    int64_t tsc_to_ns(uint64_t tsc) const noexcept {
+        return ns_base + static_cast<int64_t>(
+            static_cast<double>(tsc - tsc_base) * ns_per_cycle);
+    }
+};
+
+// ── Ring-buffer entry ─────────────────────────────────────────────────────────
+
+static constexpr size_t LOG_MSG_SIZE = 224;  // total entry = 256 bytes
+
+struct alignas(256) LogEntry {
+    uint64_t  tsc;
+    LogLevel  level;
+    char      msg[LOG_MSG_SIZE];
+    char      _pad[256 - sizeof(uint64_t) - sizeof(LogLevel) - LOG_MSG_SIZE];
+};
+static_assert(sizeof(LogEntry) == 256, "LogEntry must be 256 bytes");
+
+// ── SPSC ring buffer ──────────────────────────────────────────────────────────
+
+static constexpr size_t LOG_RING_SIZE = 4096;  // must be power of 2
+
+struct LogRing {
+    alignas(64) std::atomic<uint64_t> head{0};  // writer advances tail
+    alignas(64) std::atomic<uint64_t> tail{0};  // reader advances head
+    alignas(64) LogEntry entries[LOG_RING_SIZE];
+};
+
+// ── Async logger singleton ────────────────────────────────────────────────────
+
+class AsyncLogger {
 public:
-    static LogLevel& min_level() {
-        static LogLevel level = LogLevel::INFO;
-        return level;
+    static AsyncLogger& instance() noexcept {
+        static AsyncLogger inst;
+        return inst;
     }
 
-    template<typename... Args>
-    static void log(LogLevel level, const char* msg, Args&&... args) {
-        if (level < min_level()) return;
+    void set_level(LogLevel lvl) noexcept { min_level_.store(lvl, std::memory_order_relaxed); }
+    LogLevel min_level() const noexcept   { return min_level_.load(std::memory_order_relaxed); }
 
-        auto now = std::chrono::system_clock::now();
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            now.time_since_epoch()) % 1000;
-        auto timer = std::chrono::system_clock::to_time_t(now);
+    // Hot-path: push a log entry into the ring (zero heap allocation).
+    // If the ring is full the entry is dropped (never blocks).
+    void push(LogLevel level, const char* msg, size_t msg_len) noexcept {
+        uint64_t tail = ring_.tail.load(std::memory_order_relaxed);
+        uint64_t head = ring_.head.load(std::memory_order_acquire);
 
-        std::ostringstream oss;
-        oss << std::put_time(std::localtime(&timer), "%Y-%m-%d %H:%M:%S");
-        oss << '.' << std::setfill('0') << std::setw(3) << ms.count();
-        oss << " [" << level_to_string(level) << "] " << msg;
+        if (tail - head >= LOG_RING_SIZE) {
+            dropped_.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
 
-        append_fields(oss, std::forward<Args>(args)...);
-        std::cout << oss.str() << std::endl;
+        LogEntry& e = ring_.entries[tail & (LOG_RING_SIZE - 1)];
+        e.tsc   = TRADING_RDTSC();
+        e.level = level;
+
+        size_t copy_len = (msg_len < LOG_MSG_SIZE - 1) ? msg_len : (LOG_MSG_SIZE - 1);
+        std::memcpy(e.msg, msg, copy_len);
+        e.msg[copy_len] = '\0';
+
+        ring_.tail.store(tail + 1, std::memory_order_release);
     }
+
+    uint64_t dropped() const noexcept { return dropped_.load(std::memory_order_relaxed); }
+
+    void stop() noexcept {
+        if (!running_.exchange(false, std::memory_order_acq_rel)) return;
+        if (writer_thread_.joinable()) writer_thread_.join();
+        // Drain remaining entries synchronously
+        drain(/*force=*/true);
+    }
+
+    ~AsyncLogger() { stop(); }
 
 private:
-    static const char* level_to_string(LogLevel level) {
-        switch (level) {
+    AsyncLogger()
+        : min_level_(LogLevel::INFO), running_(true),
+          calib_(TscCalibration::calibrate()) {
+        writer_thread_ = std::thread(&AsyncLogger::writer_loop, this);
+    }
+
+    void writer_loop() noexcept {
+        while (running_.load(std::memory_order_acquire)) {
+            drain(/*force=*/false);
+            // Brief sleep when ring is empty to yield CPU
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
+        }
+    }
+
+    void drain(bool force) noexcept {
+        for (;;) {
+            uint64_t head = ring_.head.load(std::memory_order_relaxed);
+            uint64_t tail = ring_.tail.load(std::memory_order_acquire);
+            if (head == tail) break;
+
+            const LogEntry& e = ring_.entries[head & (LOG_RING_SIZE - 1)];
+            write_entry(e);
+
+            ring_.head.store(head + 1, std::memory_order_release);
+            (void)force;
+        }
+    }
+
+    void write_entry(const LogEntry& e) noexcept {
+        int64_t ns = calib_.tsc_to_ns(e.tsc);
+
+        // Convert ns → seconds + subsecond ns
+        time_t sec  = static_cast<time_t>(ns / 1'000'000'000LL);
+        int    nsub = static_cast<int>(ns % 1'000'000'000LL);
+        if (nsub < 0) { sec--; nsub += 1'000'000'000; }
+
+        struct tm tm_buf;
+        gmtime_r(&sec, &tm_buf);
+
+        char ts[32];
+        std::snprintf(ts, sizeof(ts),
+            "%04d-%02d-%02d %02d:%02d:%02d.%09d",
+            tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
+            tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec, nsub);
+
+        const char* lvl = level_to_string(e.level);
+        std::fprintf(stderr, "%s [%s] %s\n", ts, lvl, e.msg);
+    }
+
+    static const char* level_to_string(LogLevel l) noexcept {
+        switch (l) {
             case LogLevel::DEBUG: return "DEBUG";
             case LogLevel::INFO:  return "INFO ";
             case LogLevel::WARN:  return "WARN ";
             case LogLevel::ERROR: return "ERROR";
-            default: return "UNKNOWN";
+            default:              return "?????";
         }
     }
 
-    template<typename Key, typename Value, typename... Rest>
-    static void append_fields(std::ostringstream& oss, Key&& key, Value&& value, Rest&&... rest) {
-        oss << " " << key << "=" << value;
-        append_fields(oss, std::forward<Rest>(rest)...);
-    }
-
-    static void append_fields(std::ostringstream&) {}
+    std::atomic<LogLevel>  min_level_;
+    std::atomic<bool>      running_;
+    std::atomic<uint64_t>  dropped_{0};
+    LogRing                ring_;
+    TscCalibration         calib_;
+    std::thread            writer_thread_;
 };
+
+// ── Format helpers (stack-only, no heap) ─────────────────────────────────────
+
+namespace detail {
+
+inline void fmt_append(char* buf, size_t& pos, size_t cap, const char* s) noexcept {
+    if (!s) return;
+    while (pos < cap - 1 && *s) buf[pos++] = *s++;
+}
+
+inline void fmt_append_int(char* buf, size_t& pos, size_t cap, long long v) noexcept {
+    char tmp[32];
+    int  n = std::snprintf(tmp, sizeof(tmp), "%lld", v);
+    for (int i = 0; i < n && pos < cap - 1; ++i) buf[pos++] = tmp[i];
+}
+
+inline void fmt_append_uint(char* buf, size_t& pos, size_t cap, unsigned long long v) noexcept {
+    char tmp[32];
+    int  n = std::snprintf(tmp, sizeof(tmp), "%llu", v);
+    for (int i = 0; i < n && pos < cap - 1; ++i) buf[pos++] = tmp[i];
+}
+
+inline void fmt_append_double(char* buf, size_t& pos, size_t cap, double v) noexcept {
+    char tmp[32];
+    int  n = std::snprintf(tmp, sizeof(tmp), "%.6g", v);
+    for (int i = 0; i < n && pos < cap - 1; ++i) buf[pos++] = tmp[i];
+}
+
+// Terminal case
+inline void fmt_fields(char*, size_t&, size_t) noexcept {}
+
+template<typename V, typename... Rest>
+void fmt_fields(char* buf, size_t& pos, size_t cap,
+                const char* key, V&& val, Rest&&... rest) noexcept;
+
+// Value dispatch
+inline void fmt_value(char* buf, size_t& pos, size_t cap, const char* v) noexcept {
+    fmt_append(buf, pos, cap, v);
+}
+inline void fmt_value(char* buf, size_t& pos, size_t cap, char* v) noexcept {
+    fmt_append(buf, pos, cap, v);
+}
+inline void fmt_value(char* buf, size_t& pos, size_t cap, bool v) noexcept {
+    fmt_append(buf, pos, cap, v ? "true" : "false");
+}
+inline void fmt_value(char* buf, size_t& pos, size_t cap, int v) noexcept {
+    fmt_append_int(buf, pos, cap, v);
+}
+inline void fmt_value(char* buf, size_t& pos, size_t cap, long v) noexcept {
+    fmt_append_int(buf, pos, cap, v);
+}
+inline void fmt_value(char* buf, size_t& pos, size_t cap, long long v) noexcept {
+    fmt_append_int(buf, pos, cap, v);
+}
+inline void fmt_value(char* buf, size_t& pos, size_t cap, unsigned v) noexcept {
+    fmt_append_uint(buf, pos, cap, v);
+}
+inline void fmt_value(char* buf, size_t& pos, size_t cap, unsigned long v) noexcept {
+    fmt_append_uint(buf, pos, cap, v);
+}
+inline void fmt_value(char* buf, size_t& pos, size_t cap, unsigned long long v) noexcept {
+    fmt_append_uint(buf, pos, cap, v);
+}
+inline void fmt_value(char* buf, size_t& pos, size_t cap, double v) noexcept {
+    fmt_append_double(buf, pos, cap, v);
+}
+inline void fmt_value(char* buf, size_t& pos, size_t cap, float v) noexcept {
+    fmt_append_double(buf, pos, cap, static_cast<double>(v));
+}
+
+template<typename V, typename... Rest>
+void fmt_fields(char* buf, size_t& pos, size_t cap,
+                const char* key, V&& val, Rest&&... rest) noexcept {
+    buf[pos++] = ' ';
+    fmt_append(buf, pos, cap, key);
+    buf[pos++] = '=';
+    fmt_value(buf, pos, cap, std::forward<V>(val));
+    fmt_fields(buf, pos, cap, std::forward<Rest>(rest)...);
+}
+
+}  // namespace detail
+
+// ── Public log function (zero heap allocation on hot path) ────────────────────
+
+template<typename... Args>
+inline void log(LogLevel level, const char* msg, Args&&... args) noexcept {
+    AsyncLogger& logger = AsyncLogger::instance();
+    if (level < logger.min_level()) return;
+
+    // Format entirely on the stack
+    char   buf[LOG_MSG_SIZE];
+    size_t pos = 0;
+
+    detail::fmt_append(buf, pos, sizeof(buf), msg);
+    detail::fmt_fields(buf, pos, sizeof(buf), std::forward<Args>(args)...);
+    buf[pos] = '\0';
+
+    logger.push(level, buf, pos);
+}
+
+inline void set_log_level(LogLevel lvl) noexcept {
+    AsyncLogger::instance().set_level(lvl);
+}
 
 }  // namespace trading
 
-#define LOG_DEBUG(msg, ...) trading::Logger::log(trading::LogLevel::DEBUG, msg, ##__VA_ARGS__)
-#define LOG_INFO(msg, ...)  trading::Logger::log(trading::LogLevel::INFO, msg, ##__VA_ARGS__)
-#define LOG_WARN(msg, ...)  trading::Logger::log(trading::LogLevel::WARN, msg, ##__VA_ARGS__)
-#define LOG_ERROR(msg, ...) trading::Logger::log(trading::LogLevel::ERROR, msg, ##__VA_ARGS__)
+#define LOG_DEBUG(msg, ...) ::trading::log(::trading::LogLevel::DEBUG, msg, ##__VA_ARGS__)
+#define LOG_INFO(msg, ...)  ::trading::log(::trading::LogLevel::INFO,  msg, ##__VA_ARGS__)
+#define LOG_WARN(msg, ...)  ::trading::log(::trading::LogLevel::WARN,  msg, ##__VA_ARGS__)
+#define LOG_ERROR(msg, ...) ::trading::log(::trading::LogLevel::ERROR, msg, ##__VA_ARGS__)

@@ -35,12 +35,32 @@
 
 namespace trading {
 
+// Fee values are read from config/*/risk.yaml (arb_risk.perp_arb section).
+// Construct via ShadowConfig::from_yaml_values() at startup rather than
+// relying on the in-source defaults, which may diverge from the live config.
 struct ShadowConfig {
-    double binance_maker_fee_bps = 2.0;
-    double binance_taker_fee_bps = 5.0;
-    double kraken_maker_fee_bps  = 2.0;
-    double kraken_taker_fee_bps  = 5.0;
+    double binance_maker_fee_bps = 2.0;   // arb_risk.perp_arb.binance_perp_maker_fee_bps
+    double binance_taker_fee_bps = 5.0;   // arb_risk.perp_arb.binance_perp_taker_fee_bps
+    double kraken_maker_fee_bps  = 2.0;   // arb_risk.perp_arb.kraken_futures_maker_fee_bps
+    double kraken_taker_fee_bps  = 5.0;   // arb_risk.perp_arb.kraken_futures_taker_fee_bps
     char   log_path[256]         = "shadow_decisions.jsonl";
+
+    // Named constructor — prefer this over relying on defaults.
+    // All fee values in basis points (1 bps = 0.01%).
+    static ShadowConfig from_yaml_values(
+        double bin_maker_bps, double bin_taker_bps,
+        double kra_maker_bps, double kra_taker_bps,
+        const char* log_file = "shadow_decisions.jsonl") noexcept
+    {
+        ShadowConfig c;
+        c.binance_maker_fee_bps = bin_maker_bps;
+        c.binance_taker_fee_bps = bin_taker_bps;
+        c.kraken_maker_fee_bps  = kra_maker_bps;
+        c.kraken_taker_fee_bps  = kra_taker_bps;
+        std::strncpy(c.log_path, log_file, sizeof(c.log_path) - 1);
+        c.log_path[sizeof(c.log_path) - 1] = '\0';
+        return c;
+    }
 };
 
 // ── Virtual order slot ────────────────────────────────────────────────────────
