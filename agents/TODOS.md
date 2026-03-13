@@ -1,82 +1,3 @@
-# ThamesRiverTrading — Project Review vs Industry Standard
-
-> Audit date: 2026-03-12. Compared against production HFT/crypto trading systems
-> (Jump Trading, Wintermute, GSR, and similar quant trading operations).
-
----
-
-## Overall Verdict
-
-**Architecturally ambitious. Python ML pipeline is production-ready. C++ hot path is a well-designed skeleton that cannot trade live.**
-
-The design philosophy mirrors how real HFT/crypto quant shops structure systems. The design decisions throughout are correct and reflect real industry knowledge. The gap is between design and a runnable system.
-
----
-
-## What's Genuinely Strong (Industry-Comparable)
-
-### Order Book — A+
-- Flat-array with O(1) price-to-index lookup — textbook HFT order book design
-- Pre-allocated, no heap allocation in hot path
-- Atomic sequence tracking, stale delta rejection
-- Comparable to how Binance's own matching engine works
-
-### Kill Switch — A+
-- Lock-free, atomic-only, <10ns on x86-64
-- Dead man's switch with heartbeat timeout (5s default)
-- Multiple trigger reasons (MANUAL, DRAWDOWN, CIRCUIT_BREAKER, HEARTBEAT_MISSED, BOOK_CORRUPTED)
-- Better than many boutique crypto shops
-
-### Shared-Memory IPC — A
-- mmap 24-byte fixed-layout signal with atomic reads, stale detection, fail-open fallback
-- Correct pattern used by firms like Jump Trading for Python→C++ signal bridges
-- Python writes asynchronously at ~500ms; C++ reads in <100ns
-
-### Neural Alpha Model — A
-- GNN spatial (self-attention over LOB levels) + Transformer temporal is a legitimate research architecture
-- Multi-task heads (return regression, direction classification, adverse-selection risk)
-- Transaction-cost penalty term in loss function — shows real understanding of signal economics
-- Not a toy model
-
-### Walk-Forward Validation — A
-- Rolling z-score normalization with expanding windows, no future leakage
-- Proper IC / ICIR metrics
-- Separates real quant work from retail backtesting
-
-### Shadow Trading — A
-- Identical code path to live (not a mock)
-- Fill simulation at bid/ask, maker/taker fee discrimination, JSONL audit trail
-- Atomic PnL tracking across exchanges
-
-### Operational Infrastructure — A-
-- Daily retraining with IC-gated model promotion (only promotes if IC improves over production)
-- Prometheus-compatible metrics export
-- Per-environment config separation (dev / shadow / live)
-- Training job caching to avoid re-fetching same day's data
-
-
-## Industry Comparison Table
-
-| Dimension | This Project | Boutique Crypto Shop | Tier-1 HFT Firm |
-|---|---|---|---|
-| Architecture philosophy | ✅ Correct | ✅ | ✅ |
-| Order book design | ✅ Production-quality | ✅ | ✅ |
-| Kill switch | ✅ Excellent | ✅ | ✅ |
-| Feed handler completeness | ❌ Stubbed | ✅ | ✅ |
-| WebSocket resilience | ❌ None | ✅ | ✅ |
-| JSON parsing | ❌ Regex | ✅ | ✅ |
-| Hardware timestamps | ❌ No | Sometimes | ✅ |
-| Kernel bypass networking | ❌ No | Rarely | ✅ |
-| ML signal quality | ✅ Good | Varies | Varies |
-| Walk-forward validation | ✅ Yes | Rarely | ✅ |
-| Shadow trading | ✅ Yes | Rarely | ✅ |
-| Market impact modeling | ❌ No | Sometimes | ✅ |
-| Operational monitoring | ✅ Good | Varies | ✅ |
-| Test coverage | ⚠️ Partial | Varies | ✅ |
-| Exchange count live | ❌ 0/3 | Typically 2–5 | 10+ |
-
----
-
 ## Complete TODO List
 
 ### CRITICAL — Blockers (System Cannot Trade Live)
@@ -124,18 +45,10 @@ The design philosophy mirrors how real HFT/crypto quant shops structure systems.
 - [ ] **L6** `tests/` — Add C++ latency benchmark tests that measure actual order-book delta and risk check timing; fail CI if over budget defined in CLAUDE.md
 - [ ] **L7** General — Add `.clang-tidy` and `.clang-format` configs; enforce in CI pre-commit hook
 
----
+### RESEARCH - Needs investigating, come with a plan to implement it for our server
 
-## Immediate Action Plan (to go live)
-
-Priority order for a single engineer:
-
-1. **C5 + C6** — Replace REST client and JSON parsing first (unblocks everything else)
-2. **C1 + C2** — Binance WebSocket connection + real delta parsing
-3. **C3 + C4** — Kraken WebSocket connection + real delta parsing
-4. **C7** — Reconnection logic for both handlers
-5. **H6** — Update CMakeLists.txt with real dependencies
-6. **C8** — pybind11 bindings directory
-7. **H1** — Async logging (prevents hot-path latency regression under load)
-8. **H3** — Circuit breaker implementation
-9. **H7 + H8** — Replay and integration test suite
+- [ ] **R1** — Research on integrate On-Chain metrics (Netflow, Spent Output Profit Ratio, Net Unrealised Profit/Loss, Whale transaction analysis, Defi Protocol metrics...)
+- [ ] **R2** — Research on Real-Time market regime identification (Clustering algorithms, Hiden Markov Models) to allow dynamic strategy change
+- [ ] **R3** — Research on deep reinforcement learning for autonomous execution (State Space Design, Action Space design, Reward function formulation)
+- [ ] **R4** — Research on improving our execution engine with Smart Order Routing (real-time depth, liquidity and fees) to identify the best exchanges to do the trade (Require several exchanges)
+- [ ] **R5** — Research on hardware execution with Field-Programmable Gate Arrays and co-locating servers in the same clusters as exchanges 

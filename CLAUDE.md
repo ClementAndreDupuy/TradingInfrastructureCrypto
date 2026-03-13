@@ -1,10 +1,10 @@
 # CLAUDE.md
 
-Guidance for Claude Code in this repository.
+Guidance for Agents in this repository.
 
 ## System Overview
 
-Microsecond-latency crypto trading system targeting Binance, OKX, and Coinbase.
+Microsecond-latency crypto trading system targeting Binance, Kraken, OKX, and Coinbase.
 
 **Architecture split:**
 - **C++ hot path** — order book, execution, risk (latency-critical, no Python)
@@ -31,17 +31,20 @@ python -m research.alpha.neural_alpha.pipeline --exchanges KRAKEN --ticks 300 --
 python -m research.alpha.neural_alpha.pipeline --synthetic --ticks 400 --epochs 5
 ```
 
-## Key Principles
+## Perform an audit of the codebase
+Audit guidelines of the project
 
-1. C++ owns the hot path — Python never touches live execution or risk.
-2. Order book integrity is foundational — all downstream depends on book correctness.
-3. Shadow = live code path — identical code before going live.
-4. Kill switch is non-negotiable — must work at OS/hardware level.
-5. Never mock data — always use real data and real implementation.
-6. Keep code clean and short — avoid unnecessary comments.
-7. Always write production-ready code.
-8. Run a full audit of the repo every week to identify bugs, grade the compared to industry standard and propose improvements
-9. Always be 100% honest in your review
+[Audit guidelines](/agents/AUDIT.md)
+
+## Development Guidelines
+Development guidelines of the project.
+
+[Development guidelines](/agents/DEVELOPMENT_GUIDELINES.md)
+
+## Project TODOs
+All the project todos should be placed in the TODO file below, ranked by priority and severity.
+
+[TODOS file](/agents/TODOS.md)
 
 ## Components
 
@@ -101,9 +104,3 @@ tests/         unit / integration / replay
 
 - Credentials in `config/live/secrets.yaml` (gitignored). Never hardcode.
 - Separate API keys per environment (dev / shadow / live).
-
-## Pre-Commit Checklist
-
-- [ ] Unit tests pass (`make test` + `pytest tests/unit/`)
-- [ ] Linters clean (`clang-format`, `black`, `ruff`)
-- [ ] No performance regression on hot path
