@@ -60,6 +60,53 @@ set_tests_properties(KrakenFeedTest PROPERTIES
     LABELS "unit;feeds"
 )
 
+
+# Coinbase feed unit tests
+add_executable(coinbase_feed_test
+    unit/coinbase_feed_test.cpp
+)
+
+target_link_libraries(coinbase_feed_test
+    coinbase_feed
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(coinbase_feed_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME CoinbaseFeedTest COMMAND coinbase_feed_test)
+
+set_tests_properties(CoinbaseFeedTest PROPERTIES
+    TIMEOUT 30
+    LABELS "unit;feeds"
+)
+
+# OKX feed unit tests
+add_executable(okx_feed_test
+    unit/okx_feed_test.cpp
+)
+
+target_link_libraries(okx_feed_test
+    okx_feed
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(okx_feed_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME OkxFeedTest COMMAND okx_feed_test)
+
+set_tests_properties(OkxFeedTest PROPERTIES
+    TIMEOUT 30
+    LABELS "unit;feeds"
+)
+
 # OrderBook unit tests (pure logic, no network)
 add_executable(orderbook_test
     unit/orderbook_test.cpp
