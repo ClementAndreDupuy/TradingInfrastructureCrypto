@@ -7,9 +7,11 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <stdexcept>
 #include <vector>
 
 using namespace trading;
@@ -24,8 +26,27 @@ struct RecordedEvent {
     double size = 0.0;
 };
 
+
+std::string resolve_fixture_path(const std::string& relative) {
+    namespace fs = std::filesystem;
+
+    const fs::path direct(relative);
+    if (fs::exists(direct)) return direct.string();
+
+    const fs::path from_file = fs::path(__FILE__).parent_path().parent_path() / "data" / "replay" / "binance_btcusdt_replay.csv";
+    if (fs::exists(from_file)) return from_file.string();
+
+    const fs::path from_cwd = fs::current_path() / "tests" / "data" / "replay" / "binance_btcusdt_replay.csv";
+    if (fs::exists(from_cwd)) return from_cwd.string();
+
+    const fs::path from_build = fs::current_path().parent_path() / "tests" / "data" / "replay" / "binance_btcusdt_replay.csv";
+    if (fs::exists(from_build)) return from_build.string();
+
+    throw std::runtime_error("Unable to open replay fixture: " + relative);
+}
+
 std::vector<RecordedEvent> load_events(const std::string& path) {
-    std::ifstream in(path);
+    std::ifstream in(resolve_fixture_path(path));
     if (!in.is_open()) {
         throw std::runtime_error("Unable to open replay fixture: " + path);
     }
