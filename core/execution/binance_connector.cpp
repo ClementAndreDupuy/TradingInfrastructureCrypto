@@ -1,0 +1,50 @@
+#include "binance_connector.hpp"
+
+#include <string>
+
+namespace trading {
+namespace {
+
+std::string order_payload(const Order& o) {
+    return std::string("{\"symbol\":\"") + o.symbol +
+           "\",\"side\":\"" + (o.side == Side::BID ? "BUY" : "SELL") +
+           "\",\"type\":\"" + (o.type == OrderType::MARKET ? "MARKET" : "LIMIT") +
+           "\",\"quantity\":" + std::to_string(o.quantity) +
+           ",\"price\":" + std::to_string(o.price) + "}";
+}
+
+}  // namespace
+
+ConnectorResult BinanceConnector::submit_to_venue(const Order& order,
+                                                  const std::string& idempotency_key,
+                                                  std::string& venue_order_id) {
+    if (api_url().rfind("mock://", 0) == 0) {
+        venue_order_id = std::string("BN-") + std::to_string(order.client_order_id);
+        return ConnectorResult::OK;
+    }
+
+    const std::string payload = order_payload(order);
+    const auto headers = auth_headers(payload, idempotency_key);
+    const auto resp = http::post(api_url() + "/api/v3/order", payload, headers);
+    if (resp.ok()) {
+        venue_order_id = std::string("BN-") + std::to_string(order.client_order_id);
+        return ConnectorResult::OK;
+    }
+    if (resp.status == 429) return ConnectorResult::ERROR_RATE_LIMIT;
+    if (resp.status >= 400 && resp.status < 500) return ConnectorResult::ERROR_INVALID_ORDER;
+    return ConnectorResult::ERROR_UNKNOWN;
+}
+
+ConnectorResult BinanceConnector::cancel_at_venue(const VenueOrderEntry& entry) {
+    if (api_url().rfind("mock://", 0) == 0) return ConnectorResult::OK;
+    const auto resp = http::del(api_url() + "/api/v3/order?origClientOrderId=" + std::to_string(entry.client_order_id));
+    return resp.ok() ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
+}
+
+ConnectorResult BinanceConnector::cancel_all_at_venue(const char* symbol) {
+    if (api_url().rfind("mock://", 0) == 0) return ConnectorResult::OK;
+    const auto resp = http::del(api_url() + "/api/v3/openOrders?symbol=" + std::string(symbol ? symbol : ""));
+    return resp.ok() ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
+}
+
+}  // namespace trading

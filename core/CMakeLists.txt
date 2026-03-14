@@ -7,6 +7,7 @@ pkg_check_modules(LIBWEBSOCKETS REQUIRED libwebsockets)
 # libcurl: prefer system package, fall back to runtime-only link.
 # Install: sudo apt install libcurl4-openssl-dev
 find_package(CURL QUIET)
+find_package(OpenSSL QUIET)
 if(NOT CURL_FOUND)
     message(STATUS "libcurl dev headers not found; using runtime-only link via curl_abi.hpp")
     add_library(CURL::libcurl INTERFACE IMPORTED)
@@ -105,6 +106,42 @@ target_compile_options(okx_feed PRIVATE ${LIBWEBSOCKETS_CFLAGS_OTHER})
 
 # Install targets
 install(TARGETS binance_feed kraken_feed coinbase_feed okx_feed
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+)
+
+add_library(execution
+    execution/binance_connector.cpp
+    execution/kraken_connector.cpp
+    execution/okx_connector.cpp
+    execution/coinbase_connector.cpp
+    execution/smart_order_router.cpp
+)
+
+target_link_libraries(execution
+    trading_common
+    CURL::libcurl
+)
+
+if(OpenSSL_FOUND)
+    target_link_libraries(execution OpenSSL::Crypto)
+endif()
+
+target_include_directories(execution PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_executable(trading_engine
+    app/trading_engine_main.cpp
+)
+
+target_link_libraries(trading_engine
+    execution
+    trading_common
+)
+
+install(TARGETS execution trading_engine
+    RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
 )
