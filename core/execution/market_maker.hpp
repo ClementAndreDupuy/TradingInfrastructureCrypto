@@ -220,9 +220,14 @@ private:
 
     // ── Order helpers ────────────────────────────────────────────────────────
 
+    static void copy_symbol(char (&dst)[16], const char (&src)[16]) noexcept {
+        std::memcpy(dst, src, sizeof(dst));
+        dst[sizeof(dst) - 1] = '\0';
+    }
+
     uint64_t submit_limit(Side side, double price, double qty) {
         Order o;
-        std::strncpy(o.symbol, cfg_.symbol, 15);
+        copy_symbol(o.symbol, cfg_.symbol);
         o.exchange = cfg_.exchange;
         o.side     = side;
         o.type     = OrderType::LIMIT;
@@ -234,7 +239,7 @@ private:
 
     uint64_t submit_stop_limit(Side side, double stop_px, double limit_px, double qty) {
         Order o;
-        std::strncpy(o.symbol, cfg_.symbol, 15);
+        copy_symbol(o.symbol, cfg_.symbol);
         o.exchange   = cfg_.exchange;
         o.side       = side;
         o.type       = OrderType::STOP_LIMIT;

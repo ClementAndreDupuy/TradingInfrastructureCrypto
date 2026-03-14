@@ -6,7 +6,7 @@ using namespace trading;
 class CoinbaseFeedHandlerTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        Logger::min_level() = LogLevel::ERROR;
+        set_log_level(LogLevel::ERROR);
         handler_ = std::make_unique<CoinbaseFeedHandler>("BTC-USD");
 
         handler_->set_snapshot_callback([this](const Snapshot& s) {

@@ -63,3 +63,8 @@ neural_alpha_live*.jsonl
 # OS
 .DS_Store
 Thumbs.db
+
+# Small deterministic replay fixture committed for tests
+!tests/data/
+!tests/data/replay/
+!tests/data/replay/binance_btcusdt_replay.csv

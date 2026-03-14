@@ -260,7 +260,7 @@ public:
     void reset_daily() noexcept {
         realized_pnl_.store(0.0, std::memory_order_release);
         consec_losses_.store(0, std::memory_order_release);
-        LOG_INFO("CircuitBreaker: daily counters reset");
+        LOG_INFO("CircuitBreaker: daily counters reset", "component", "circuit_breaker");
     }
 
 private:

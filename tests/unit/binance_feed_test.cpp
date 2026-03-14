@@ -7,7 +7,7 @@ using namespace trading;
 class BinanceFeedHandlerTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        Logger::min_level() = LogLevel::ERROR;
+        set_log_level(LogLevel::ERROR);
         handler_ = std::make_unique<BinanceFeedHandler>("BTCUSDT");
 
         handler_->set_snapshot_callback([this](const Snapshot& snapshot) {
