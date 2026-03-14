@@ -1,7 +1,7 @@
 """
 Performance benchmarks for trading_core pybind11 bindings.
 
-Validates latency budgets from CLAUDE.md:
+Validates latency budgets from AGENTS.md:
     apply_delta      < 1 µs
     apply_snapshot   < 100 µs  (one-shot, not on hot path)
     get_mid_price    < 1 µs
