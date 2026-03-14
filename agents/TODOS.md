@@ -42,7 +42,7 @@
 - [ ] **L3** `research/alpha/neural_alpha/features.py` — Expand per-level queue imbalance to all N price levels beyond top 5 (already noted in feature TODO comments)
 - [ ] **L4** `deploy/daily_train.py` — Add alerting webhook (Slack/PagerDuty) when model fails to promote or IC drops below floor
 - [ ] **L5** `core/execution/market_maker.hpp` — Add inventory skew decay: reduce skew magnitude as position approaches zero to avoid over-trading a flat book
-- [ ] **L6** `tests/` — Add C++ latency benchmark tests that measure actual order-book delta and risk check timing; fail CI if over budget defined in CLAUDE.md
+- [ ] **L6** `tests/` — Add C++ latency benchmark tests that measure actual order-book delta and risk check timing; fail CI if over budget defined in AGENTS.md
 - [ ] **L7** General — Add `.clang-tidy` and `.clang-format` configs; enforce in CI pre-commit hook
 
 ### RESEARCH - Needs investigating, come with a plan to implement it for our server
