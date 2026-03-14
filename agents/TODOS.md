@@ -2,6 +2,10 @@
 
 ### CRITICAL — Blockers (System Cannot Trade Live)
 
+- [ ] **A1** `core/execution/` — Implement live exchange connectors for **Binance/OKX/Kraken/Coinbase** (`submit_order`, `cancel_order`, `cancel_all`, `reconcile`) with authenticated signing, retries, idempotency keys, and exchange order-id mapping
+- [ ] **A2** `CMakeLists.txt` + `core/` + `deploy/systemd/trading-engine.service` — Add a real `trading_engine` executable target and entrypoint (`main`) that wires feeds + books + risk + execution for live mode; service currently points to missing binary
+- [ ] **A3** `deploy/run_live.sh` + `deploy/run_shadow.sh` + deployment configs — Replace single-venue/SOLANA assumptions with explicit four-exchange orchestration (BINANCE/KRAKEN/OKX/COINBASE) and venue-specific credentials
+
 - [x] **C1** `core/feeds/binance/binance_feed_handler.cpp` — Implemented real WebSocket via libwebsockets; background thread connects to `<symbol>@depth@100ms` stream with TLS
 - [x] **C2** `core/feeds/binance/binance_feed_handler.cpp` — `process_delta()` now parses real bids (`"b"`) and asks (`"a"`) arrays; fake hardcoded data removed
 - [x] **C3** `core/feeds/kraken/kraken_feed_handler.cpp` — Implemented real WebSocket via libwebsockets; sends `{"method":"subscribe","params":{"channel":"book",...}}` after ESTABLISHED
@@ -13,6 +17,10 @@
 
 ### HIGH — Required for Production Quality
 
+- [ ] **A4** `core/feeds/okx/okx_feed_handler.cpp` — Add required OKX `books` checksum (CRC32) verification and forced resync on mismatch
+- [ ] **A5** `core/feeds/coinbase/` — Align Coinbase market-data protocol with project standard (full depth fidelity target vs current level2 stream); document chosen protocol and invariants
+- [ ] **A6** `core/execution/market_maker.hpp` + `core/risk/circuit_breaker.hpp` — Wire `CircuitBreaker` checks directly into pre-submit order path (rate, stale book, drawdown, price-deviation, consecutive-loss guards)
+
 - [x] **H1** `core/common/logging.hpp` — Replace `std::cout` with async ring-buffer logger (spdlog async mode or custom lock-free SPSC ring); zero allocation on hot path
 - [x] **H2** `core/feeds/binance/binance_feed_handler.cpp` + `kraken_feed_handler.cpp` — WebSocket ping frames sent every 30 s (Binance) / 20 s (Kraken) from stream phase; pong handled automatically by libwebsockets
 - [x] **H3** `core/risk/` — Implement circuit breaker: order rate limiter, max daily loss breaker, stale book detector, message rate guard — use params already in `config/dev/risk.yaml`
@@ -23,6 +31,10 @@
 - [x] **H8** `tests/` — Add integration tests for full pipeline: feed handler → book manager → market maker → shadow engine (end-to-end with recorded data)
 
 ### MEDIUM — Quality and Correctness Gaps
+
+- [ ] **A7** `tests/` + CI — Add deterministic connector contract tests (submit/cancel/reconcile state machine) and replay-based disconnect/reconnect chaos tests per exchange
+- [ ] **A8** `tests/perf/` + CI — Add latency benchmark gates enforcing documented budgets (`orderbook<1us`, `risk<1us`, `feed<10us`) with fail thresholds
+- [ ] **A9** `scripts/` + docs — Add preflight dependency checker for local/prod builds (libwebsockets/libcurl/json) and fail-fast bootstrap diagnostics
 
 - [ ] **M1** `research/alpha/neural_alpha/backtest.py` — Fix Sharpe calculation: use actual timestamp-based equity curve returns (annualize on time elapsed, not trade count proxy)
 - [ ] **M2** `research/alpha/neural_alpha/backtest.py` — Add queue position simulation (Poisson arrival model, fill probability by queue depth and size)
