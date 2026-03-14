@@ -1,4 +1,4 @@
-# Deployment Guide — SOLUSDT on Binance (AWS)
+# Deployment Guide — Multi-venue BTCUSDT (Binance/Kraken/OKX/Coinbase on AWS)
 
 ## Overview
 
@@ -104,11 +104,35 @@ Note the outputs — you will need:
 ## Step 4 — Upload secrets to Secrets Manager
 
 ```bash
-# Binance API keys — use a key with Spot Trading only, NO withdrawal permission
+# Exchange API keys — trading-only keys, NO withdrawal permission
 aws secretsmanager put-secret-value \
   --region ap-northeast-1 \
-  --secret-id trading/binance_api_keys \
-  --secret-string '{"api_key":"YOUR_BINANCE_KEY","api_secret":"YOUR_BINANCE_SECRET"}'
+  --secret-id trading/exchange_api_keys \
+  --secret-string '{
+    "binance_api_key":"YOUR_BINANCE_KEY",
+    "binance_api_secret":"YOUR_BINANCE_SECRET",
+    "kraken_api_key":"YOUR_KRAKEN_KEY",
+    "kraken_api_secret":"YOUR_KRAKEN_SECRET",
+    "okx_api_key":"YOUR_OKX_KEY",
+    "okx_api_secret":"YOUR_OKX_SECRET",
+    "coinbase_api_key":"YOUR_COINBASE_KEY",
+    "coinbase_api_secret":"YOUR_COINBASE_SECRET"
+  }'
+
+# (Alternative) keep per-venue values directly in /etc/trading/env using
+# deploy/run_live.sh + config/live/trading.env format.
+cat >/tmp/trading.env <<'EOF'
+LIVE_BINANCE_API_KEY=YOUR_BINANCE_KEY
+LIVE_BINANCE_API_SECRET=YOUR_BINANCE_SECRET
+LIVE_KRAKEN_API_KEY=YOUR_KRAKEN_KEY
+LIVE_KRAKEN_API_SECRET=YOUR_KRAKEN_SECRET
+LIVE_OKX_API_KEY=YOUR_OKX_KEY
+LIVE_OKX_API_SECRET=YOUR_OKX_SECRET
+LIVE_COINBASE_API_KEY=YOUR_COINBASE_KEY
+LIVE_COINBASE_API_SECRET=YOUR_COINBASE_SECRET
+EOF
+
+sudo install -m 600 -o root -g root /tmp/trading.env /etc/trading/env
 
 # GitHub deploy key (private key)
 aws secretsmanager put-secret-value \

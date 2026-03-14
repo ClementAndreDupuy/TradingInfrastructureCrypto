@@ -186,7 +186,30 @@ class NeuralAlphaShadowSession:
         model = self._build_model(self.cfg.d_spatial, self.cfg.d_temporal)
         model.load_state_dict(best["model_state"])
         self._model = model
-        print(f"In-place training done. Val loss: {best['metrics'].get('loss_total', 'n/a'):.4f}")
+
+        out_path = Path(self.cfg.model_path) if self.cfg.model_path else Path("models/neural_alpha_latest.pt")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_out = out_path.with_suffix(out_path.suffix + ".tmp")
+        torch.save(best["model_state"], tmp_out)
+        tmp_out.replace(out_path)
+
+        meta = {
+            "trained_at_ns": time.time_ns(),
+            "train_ticks": n_ticks,
+            "train_epochs": self.cfg.train_epochs,
+            "seq_len": self.cfg.seq_len,
+            "d_spatial": self.cfg.d_spatial,
+            "d_temporal": self.cfg.d_temporal,
+            "metrics": best.get("metrics", {}),
+        }
+        out_meta = out_path.with_suffix(".json")
+        out_meta.write_text(json.dumps(meta, indent=2))
+
+        print(
+            "In-place training done. "
+            f"Val loss: {best['metrics'].get('loss_total', 'n/a'):.4f} "
+            f"saved={out_path}"
+        )
 
     # ── Inference + publish ───────────────────────────────────────────────────
 

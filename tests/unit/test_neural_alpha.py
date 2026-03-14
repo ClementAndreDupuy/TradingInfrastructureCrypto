@@ -45,6 +45,7 @@ from research.alpha.neural_alpha.model import (
     TemporalEncoder,
 )
 from research.alpha.neural_alpha.pipeline import generate_synthetic_lob
+from research.alpha.neural_alpha.shadow_session import NeuralAlphaShadowSession, ShadowSessionConfig
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -329,3 +330,73 @@ class TestAlphaRegression:
         ]
         metrics = analyse_alpha(fold_results)
         assert metrics.n_samples == 50
+
+
+class TestShadowSessionTraining:
+    def test_train_on_recent_persists_model_weights(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        model_path = tmp_path / "neural_alpha_latest.pt"
+        signal_path = tmp_path / "alpha_signal.bin"
+        log_path = tmp_path / "shadow.jsonl"
+
+        cfg = ShadowSessionConfig(
+            model_path=str(model_path),
+            log_path=str(log_path),
+            signal_file=str(signal_path),
+            exchanges=["BINANCE"],
+            train_epochs=1,
+            seq_len=8,
+            d_spatial=16,
+            d_temporal=32,
+        )
+        session = NeuralAlphaShadowSession(cfg)
+
+        tick = {
+            "timestamp_ns": 1,
+            "exchange": "BINANCE",
+            "best_bid": 100.0,
+            "best_ask": 100.1,
+            "bid_price_1": 100.0,
+            "ask_price_1": 100.1,
+            "bid_size_1": 1.0,
+            "ask_size_1": 1.0,
+            "bid_price_2": 99.9,
+            "ask_price_2": 100.2,
+            "bid_size_2": 1.0,
+            "ask_size_2": 1.0,
+            "bid_price_3": 99.8,
+            "ask_price_3": 100.3,
+            "bid_size_3": 1.0,
+            "ask_size_3": 1.0,
+            "bid_price_4": 99.7,
+            "ask_price_4": 100.4,
+            "bid_size_4": 1.0,
+            "ask_size_4": 1.0,
+            "bid_price_5": 99.6,
+            "ask_price_5": 100.5,
+            "bid_size_5": 1.0,
+            "ask_size_5": 1.0,
+        }
+
+        def _fake_fetch() -> dict:
+            nonlocal tick
+            tick = {**tick, "timestamp_ns": tick["timestamp_ns"] + 1}
+            return tick
+
+        def _fake_walk_forward_train(df: pl.DataFrame, cfg_local: object) -> list[dict]:
+            model = CryptoAlphaNet(d_spatial=16, d_temporal=32, seq_len=8)
+            return [{"metrics": {"loss_total": 0.1234}, "model_state": model.state_dict()}]
+
+        monkeypatch.setattr("research.alpha.neural_alpha.shadow_session._fetch_binance_l5", _fake_fetch)
+        monkeypatch.setattr("research.alpha.neural_alpha.shadow_session.walk_forward_train", _fake_walk_forward_train)
+
+        session.train_on_recent(n_ticks=4)
+
+        assert model_path.exists()
+        assert model_path.with_suffix(".json").exists()
+
+        state = torch.load(model_path, map_location="cpu", weights_only=True)
+        assert isinstance(state, dict)
+        assert any(k.startswith("spatial_enc.") for k in state.keys())
+
+        session._log_fp.close()
+        session._publisher.close()
