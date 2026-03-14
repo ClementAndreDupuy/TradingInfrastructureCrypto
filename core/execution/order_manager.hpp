@@ -43,7 +43,7 @@ public:
     uint64_t submit(Order order) {
         ManagedOrder* slot = find_free_slot();
         if (!slot) {
-            LOG_ERROR("OrderManager: pool full — order rejected");
+            LOG_ERROR("OrderManager: pool full — order rejected", "component", "order_manager");
             return 0;
         }
 

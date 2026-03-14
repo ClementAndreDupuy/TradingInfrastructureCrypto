@@ -94,7 +94,6 @@ TEST(OrderBook, PriceToIndexRoundTrip) {
     for (double price : {49000.0, 50000.0, 50500.0, 51234.0, 58000.0}) {
         Delta d = make_delta(Side::BID, price, 1.0, book.get_sequence() + 1);
         if (book.apply_delta(d) == Result::SUCCESS) {
-            double best = book.get_best_bid();
             // best_bid scan may return a different price if there are others,
             // so just check the specific level via get_top_levels
             std::vector<PriceLevel> bids, asks;

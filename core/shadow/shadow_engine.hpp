@@ -110,13 +110,13 @@ public:
             if (!s.active) { slot = &s; break; }
         }
         if (!slot) {
-            LOG_ERROR("Shadow order pool full");
+            LOG_ERROR("Shadow order pool full", "component", "shadow_connector");
             return ConnectorResult::ERROR_UNKNOWN;
         }
 
         *slot = {};
         slot->client_order_id = order.client_order_id;
-        std::strncpy(slot->symbol, order.symbol, 15);
+        copy_symbol(slot->symbol, order.symbol);
         slot->exchange    = order.exchange;
         slot->side        = order.side;
         slot->type        = order.type;
@@ -190,6 +190,11 @@ public:
     }
 
 private:
+    static void copy_symbol(char (&dst)[16], const char (&src)[16]) noexcept {
+        std::memcpy(dst, src, sizeof(dst));
+        dst[sizeof(dst) - 1] = '\0';
+    }
+
     Exchange              ex_;
     ShadowConfig          cfg_;
     BookManager&          book_;

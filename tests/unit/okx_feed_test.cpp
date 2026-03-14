@@ -6,7 +6,7 @@ using namespace trading;
 class OkxFeedHandlerTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        Logger::min_level() = LogLevel::ERROR;
+        set_log_level(LogLevel::ERROR);
         handler_ = std::make_unique<OkxFeedHandler>("BTC-USDT");
 
         handler_->set_snapshot_callback([this](const Snapshot& s) {
