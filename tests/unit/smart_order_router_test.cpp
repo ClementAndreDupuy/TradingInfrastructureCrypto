@@ -40,4 +40,31 @@ TEST(SmartOrderRouterTest, SkipsUnhealthyOrEmptyVenues) {
     EXPECT_NEAR(d.children[0].quantity, 0.5, 1e-12);
 }
 
+TEST(SmartOrderRouterTest, AlphaGateBlocksHighRiskAndScalesQty) {
+    SmartOrderRouter sor;
+    std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venues{ {
+        {Exchange::BINANCE, 100.0, 100.1, 10.0, 2.0, 0.1, 0.1, true},
+        {Exchange::KRAKEN, 100.0, 100.2, 10.0, 4.0, 0.1, 0.1, true},
+        {Exchange::OKX, 100.0, 100.3, 10.0, 4.0, 0.1, 0.1, true},
+        {Exchange::COINBASE, 100.0, 100.4, 10.0, 4.0, 0.1, 0.1, true},
+    } };
+
+    AlphaSignal blocked;
+    blocked.signal_bps = 10.0;
+    blocked.risk_score = 0.80;
+    RoutingDecision blocked_decision = sor.route_with_alpha(Side::BID, 1.0, blocked, venues);
+    EXPECT_TRUE(blocked_decision.blocked_by_alpha);
+    EXPECT_EQ(blocked_decision.child_count, 0u);
+
+    AlphaSignal allowed;
+    allowed.signal_bps = 5.0;
+    allowed.risk_score = 0.20;
+    RoutingConstraints cfg;
+    cfg.alpha_qty_scale = 0.10;
+    RoutingDecision allowed_decision = sor.route_with_alpha(Side::BID, 1.0, allowed, venues, cfg);
+    ASSERT_FALSE(allowed_decision.blocked_by_alpha);
+    ASSERT_EQ(allowed_decision.child_count, 1u);
+    EXPECT_NEAR(allowed_decision.children[0].quantity, 1.5, 1e-12);
+}
+
 }  // namespace trading

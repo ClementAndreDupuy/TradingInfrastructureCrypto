@@ -1,5 +1,7 @@
 #include "smart_order_router.hpp"
 
+#include <cmath>
+
 namespace trading {
 
 double SmartOrderRouter::effective_price_bps(const VenueQuote& v, Side side) noexcept {
@@ -50,6 +52,32 @@ RoutingDecision SmartOrderRouter::route(Side side,
     }
 
     return out;
+}
+
+RoutingDecision SmartOrderRouter::route_with_alpha(
+    Side side,
+    double base_quantity,
+    const AlphaSignal& alpha_signal,
+    const std::array<VenueQuote, MAX_VENUES>& venues,
+    const RoutingConstraints& cfg) const noexcept {
+    RoutingDecision out;
+
+    if (alpha_signal.risk_score >= cfg.alpha_risk_max) {
+        out.blocked_by_alpha = true;
+        return out;
+    }
+
+    const bool direction_allowed =
+        (side == Side::BID && alpha_signal.signal_bps >= cfg.alpha_min_signal_bps) ||
+        (side == Side::ASK && alpha_signal.signal_bps <= -cfg.alpha_min_signal_bps);
+    if (!direction_allowed) {
+        out.blocked_by_alpha = true;
+        return out;
+    }
+
+    const double signal_mag = std::abs(alpha_signal.signal_bps);
+    const double scale = 1.0 + cfg.alpha_qty_scale * signal_mag;
+    return route(side, base_quantity * scale, venues);
 }
 
 }  // namespace trading

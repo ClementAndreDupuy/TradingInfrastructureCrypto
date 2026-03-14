@@ -5,7 +5,6 @@
 #include "../common/rest_client.hpp"
 #include "../common/logging.hpp"
 
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -13,6 +12,18 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#if defined(__has_include)
+#  if __has_include(<openssl/hmac.h>) && __has_include(<openssl/evp.h>)
+#    include <openssl/hmac.h>
+#    include <openssl/evp.h>
+#    define TRT_HAS_OPENSSL 1
+#  else
+#    define TRT_HAS_OPENSSL 0
+#  endif
+#else
+#  define TRT_HAS_OPENSSL 0
+#endif
 
 namespace trading {
 
@@ -104,7 +115,7 @@ protected:
     std::vector<std::string> auth_headers(const std::string& payload, const std::string& idempotency_key) const {
         const int64_t ts_ms = http::now_ms();
         const std::string ts = std::to_string(ts_ms);
-        const std::string signature = pseudo_sign(ts + payload + api_secret_);
+        const std::string signature = sign_payload(ts + payload);
         return {
             "X-API-KEY: " + api_key_,
             "X-TS: " + ts,
@@ -128,9 +139,30 @@ private:
         return ConnectorResult::ERROR_UNKNOWN;
     }
 
-    static std::string pseudo_sign(const std::string& data) {
-        const size_t h = std::hash<std::string>{}(data);
+    std::string sign_payload(const std::string& payload) const {
+#if TRT_HAS_OPENSSL
+        unsigned char digest[EVP_MAX_MD_SIZE] = {};
+        unsigned int digest_len = 0;
+        HMAC(EVP_sha256(),
+             api_secret_.data(),
+             static_cast<int>(api_secret_.size()),
+             reinterpret_cast<const unsigned char*>(payload.data()),
+             payload.size(),
+             digest,
+             &digest_len);
+
+        static const char* hex = "0123456789abcdef";
+        std::string out;
+        out.resize(digest_len * 2);
+        for (unsigned int i = 0; i < digest_len; ++i) {
+            out[2 * i] = hex[(digest[i] >> 4) & 0xF];
+            out[2 * i + 1] = hex[digest[i] & 0xF];
+        }
+        return out;
+#else
+        const size_t h = std::hash<std::string>{}(api_secret_ + payload);
         return std::to_string(static_cast<unsigned long long>(h));
+#endif
     }
 
     Exchange            exchange_;

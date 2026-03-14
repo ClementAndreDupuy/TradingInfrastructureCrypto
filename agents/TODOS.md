@@ -10,8 +10,8 @@
 - [x] **C6** `core/common/rest_client.hpp` + all feed handlers — Replaced all regex JSON parsing with `nlohmann/json` (falls back to vendored `core/common/json.hpp`); `find_package(CURL)` + `find_package(nlohmann_json)` added to `core/CMakeLists.txt`; `<regex>` removed from both feed handlers.
 - [x] **C7** `core/feeds/binance/binance_feed_handler.cpp` + `kraken_feed_handler.cpp` — Exponential-backoff reconnection implemented (100 ms → 200 ms → … → 30 s cap) in `ws_event_loop()`; re-snapshot + re-sync on every reconnect
 - [x] **C8** `bindings/` — Created pybind11 bridge: `bindings/bindings.cpp` (OrderBook, KillSwitch, BinanceFeedHandler, KrakenFeedHandler with GIL-safe callbacks) + `bindings/setup.py` (pkg-config driven, links libwebsockets + libcurl + nlohmann/json)
-- [ ] **C9** `core/execution/` — Implement live exchange connectors for **Binance/OKX/Kraken/Coinbase** (`submit_order`, `cancel_order`, `cancel_all`, `reconcile`) with authenticated signing, retries, idempotency keys, and exchange order-id mapping
-- [ ] **C10** `CMakeLists.txt` + `core/` + `deploy/systemd/trading-engine.service` — Add a real `trading_engine` executable target and entrypoint (`main`) that wires feeds + books + risk + execution for live mode; service currently points to missing binary
+- [x] **C9** `core/execution/` — Implemented live exchange connectors for **Binance/OKX/Kraken/Coinbase** (`submit_order`, `cancel_order`, `cancel_all`, `reconcile`) with authenticated signing (HMAC SHA256 when OpenSSL is available), retries, idempotency keys, and exchange order-id mapping
+- [x] **C10** `CMakeLists.txt` + `core/` + `deploy/systemd/trading-engine.service` — Added real `trading_engine` executable target and entrypoint (`main`) wiring books + risk + execution + alpha-gated SOR path for live/shadow runtime; service now points to built binary with mode/venues/symbol args
 - [ ] **C11** `deploy/run_live.sh` + `deploy/run_shadow.sh` + deployment configs — Replace single-venue/SOLANA assumptions with explicit four-exchange orchestration (BINANCE/KRAKEN/OKX/COINBASE) and venue-specific credentials
 
 ### HIGH — Required for Production Quality
