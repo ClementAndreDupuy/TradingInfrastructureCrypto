@@ -2,10 +2,6 @@
 
 ### CRITICAL — Blockers (System Cannot Trade Live)
 
-- [ ] **A1** `core/execution/` — Implement live exchange connectors for **Binance/OKX/Kraken/Coinbase** (`submit_order`, `cancel_order`, `cancel_all`, `reconcile`) with authenticated signing, retries, idempotency keys, and exchange order-id mapping
-- [ ] **A2** `CMakeLists.txt` + `core/` + `deploy/systemd/trading-engine.service` — Add a real `trading_engine` executable target and entrypoint (`main`) that wires feeds + books + risk + execution for live mode; service currently points to missing binary
-- [ ] **A3** `deploy/run_live.sh` + `deploy/run_shadow.sh` + deployment configs — Replace single-venue/SOLANA assumptions with explicit four-exchange orchestration (BINANCE/KRAKEN/OKX/COINBASE) and venue-specific credentials
-
 - [x] **C1** `core/feeds/binance/binance_feed_handler.cpp` — Implemented real WebSocket via libwebsockets; background thread connects to `<symbol>@depth@100ms` stream with TLS
 - [x] **C2** `core/feeds/binance/binance_feed_handler.cpp` — `process_delta()` now parses real bids (`"b"`) and asks (`"a"`) arrays; fake hardcoded data removed
 - [x] **C3** `core/feeds/kraken/kraken_feed_handler.cpp` — Implemented real WebSocket via libwebsockets; sends `{"method":"subscribe","params":{"channel":"book",...}}` after ESTABLISHED
@@ -14,12 +10,11 @@
 - [x] **C6** `core/common/rest_client.hpp` + all feed handlers — Replaced all regex JSON parsing with `nlohmann/json` (falls back to vendored `core/common/json.hpp`); `find_package(CURL)` + `find_package(nlohmann_json)` added to `core/CMakeLists.txt`; `<regex>` removed from both feed handlers.
 - [x] **C7** `core/feeds/binance/binance_feed_handler.cpp` + `kraken_feed_handler.cpp` — Exponential-backoff reconnection implemented (100 ms → 200 ms → … → 30 s cap) in `ws_event_loop()`; re-snapshot + re-sync on every reconnect
 - [x] **C8** `bindings/` — Created pybind11 bridge: `bindings/bindings.cpp` (OrderBook, KillSwitch, BinanceFeedHandler, KrakenFeedHandler with GIL-safe callbacks) + `bindings/setup.py` (pkg-config driven, links libwebsockets + libcurl + nlohmann/json)
+- [ ] **C9** `core/execution/` — Implement live exchange connectors for **Binance/OKX/Kraken/Coinbase** (`submit_order`, `cancel_order`, `cancel_all`, `reconcile`) with authenticated signing, retries, idempotency keys, and exchange order-id mapping
+- [ ] **C10** `CMakeLists.txt` + `core/` + `deploy/systemd/trading-engine.service` — Add a real `trading_engine` executable target and entrypoint (`main`) that wires feeds + books + risk + execution for live mode; service currently points to missing binary
+- [ ] **C11** `deploy/run_live.sh` + `deploy/run_shadow.sh` + deployment configs — Replace single-venue/SOLANA assumptions with explicit four-exchange orchestration (BINANCE/KRAKEN/OKX/COINBASE) and venue-specific credentials
 
 ### HIGH — Required for Production Quality
-
-- [ ] **A4** `core/feeds/okx/okx_feed_handler.cpp` — Add required OKX `books` checksum (CRC32) verification and forced resync on mismatch
-- [ ] **A5** `core/feeds/coinbase/` — Align Coinbase market-data protocol with project standard (full depth fidelity target vs current level2 stream); document chosen protocol and invariants
-- [ ] **A6** `core/execution/market_maker.hpp` + `core/risk/circuit_breaker.hpp` — Wire `CircuitBreaker` checks directly into pre-submit order path (rate, stale book, drawdown, price-deviation, consecutive-loss guards)
 
 - [x] **H1** `core/common/logging.hpp` — Replace `std::cout` with async ring-buffer logger (spdlog async mode or custom lock-free SPSC ring); zero allocation on hot path
 - [x] **H2** `core/feeds/binance/binance_feed_handler.cpp` + `kraken_feed_handler.cpp` — WebSocket ping frames sent every 30 s (Binance) / 20 s (Kraken) from stream phase; pong handled automatically by libwebsockets
@@ -29,12 +24,11 @@
 - [x] **H6** `CMakeLists.txt` — Added `libwebsockets` via `pkg_check_modules`; linked to both `binance_feed` and `kraken_feed` targets; libcurl and nlohmann/json handled in `core/CMakeLists.txt`; pybind11 handled via `bindings/setup.py`
 - [x] **H7** `tests/` — Create feed replay test suite: record live feed messages to file, replay deterministically, compare order-book state byte-for-byte across runs
 - [x] **H8** `tests/` — Add integration tests for full pipeline: feed handler → book manager → market maker → shadow engine (end-to-end with recorded data)
+- [ ] **H9** `core/feeds/okx/okx_feed_handler.cpp` — Add required OKX `books` checksum (CRC32) verification and forced resync on mismatch
+- [ ] **H10** `core/feeds/coinbase/` — Align Coinbase market-data protocol with project standard (full depth fidelity target vs current level2 stream); document chosen protocol and invariants
+- [ ] **H11** `core/execution/market_maker.hpp` + `core/risk/circuit_breaker.hpp` — Wire `CircuitBreaker` checks directly into pre-submit order path (rate, stale book, drawdown, price-deviation, consecutive-loss guards)
 
 ### MEDIUM — Quality and Correctness Gaps
-
-- [ ] **A7** `tests/` + CI — Add deterministic connector contract tests (submit/cancel/reconcile state machine) and replay-based disconnect/reconnect chaos tests per exchange
-- [ ] **A8** `tests/perf/` + CI — Add latency benchmark gates enforcing documented budgets (`orderbook<1us`, `risk<1us`, `feed<10us`) with fail thresholds
-- [ ] **A9** `scripts/` + docs — Add preflight dependency checker for local/prod builds (libwebsockets/libcurl/json) and fail-fast bootstrap diagnostics
 
 - [ ] **M1** `research/alpha/neural_alpha/backtest.py` — Fix Sharpe calculation: use actual timestamp-based equity curve returns (annualize on time elapsed, not trade count proxy)
 - [ ] **M2** `research/alpha/neural_alpha/backtest.py` — Add queue position simulation (Poisson arrival model, fill probability by queue depth and size)
@@ -46,6 +40,9 @@
 - [x] **M8** `core/shadow/shadow_engine.hpp` — Make fee structure config-driven: read from `config/dev/risk.yaml` instead of hardcoded `2.0 bps` maker / `5.0 bps` taker
 - [ ] **M9** `tests/unit/` — Add negative tests for feed handlers: malformed JSON, out-of-order sequences, duplicate sequence IDs, extreme price levels
 - [ ] **M10** `tests/unit/test_neural_alpha.py` — Add edge case tests: walk-forward with very small dataset, invalid input tensor shapes, NaN propagation through model
+- [ ] **M11** `tests/` + CI — Add deterministic connector contract tests (submit/cancel/reconcile state machine) and replay-based disconnect/reconnect chaos tests per exchange
+- [ ] **M12** `tests/perf/` + CI — Add latency benchmark gates enforcing documented budgets (`orderbook<1us`, `risk<1us`, `feed<10us`) with fail thresholds
+- [ ] **M13** `scripts/` + docs — Add preflight dependency checker for local/prod builds (libwebsockets/libcurl/json) and fail-fast bootstrap diagnostics
 
 ### LOW — Nice-to-Have
 
