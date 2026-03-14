@@ -12,7 +12,7 @@
 - [x] **C8** `bindings/` — Created pybind11 bridge: `bindings/bindings.cpp` (OrderBook, KillSwitch, BinanceFeedHandler, KrakenFeedHandler with GIL-safe callbacks) + `bindings/setup.py` (pkg-config driven, links libwebsockets + libcurl + nlohmann/json)
 - [x] **C9** `core/execution/` — Implemented live exchange connectors for **Binance/OKX/Kraken/Coinbase** (`submit_order`, `cancel_order`, `cancel_all`, `reconcile`) with authenticated signing (HMAC SHA256 when OpenSSL is available), retries, idempotency keys, and exchange order-id mapping
 - [x] **C10** `CMakeLists.txt` + `core/` + `deploy/systemd/trading-engine.service` — Added real `trading_engine` executable target and entrypoint (`main`) wiring books + risk + execution + alpha-gated SOR path for live/shadow runtime; service now points to built binary with mode/venues/symbol args
-- [ ] **C11** `deploy/run_live.sh` + `deploy/run_shadow.sh` + deployment configs — Replace single-venue/SOLANA assumptions with explicit four-exchange orchestration (BINANCE/KRAKEN/OKX/COINBASE) and venue-specific credentials
+- [x] **C11** `deploy/run_live.sh` + `deploy/run_shadow.sh` + deployment configs — Replace single-venue/SOLANA assumptions with explicit four-exchange orchestration (BINANCE/KRAKEN/OKX/COINBASE) and venue-specific credentials
 
 ### HIGH — Required for Production Quality
 
