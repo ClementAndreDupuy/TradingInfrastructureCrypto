@@ -185,11 +185,11 @@ private:
         struct tm tm_buf;
         gmtime_r(&sec, &tm_buf);
 
-        char ts[32];
-        std::snprintf(ts, sizeof(ts),
-            "%04d-%02d-%02d %02d:%02d:%02d.%09d",
-            tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
-            tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec, nsub);
+        char ts[64] = {};
+        size_t written = std::strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm_buf);
+        if (written > 0 && written < sizeof(ts)) {
+            std::snprintf(ts + written, sizeof(ts) - written, ".%09d", nsub);
+        }
 
         const char* lvl = level_to_string(e.level);
         std::fprintf(stderr, "%s [%s] %s\n", ts, lvl, e.msg);
@@ -217,27 +217,31 @@ private:
 
 namespace detail {
 
+inline bool can_append(size_t pos, size_t cap) noexcept {
+    return cap > 0 && pos < (cap - 1);
+}
+
 inline void fmt_append(char* buf, size_t& pos, size_t cap, const char* s) noexcept {
     if (!s) return;
-    while (pos < cap - 1 && *s) buf[pos++] = *s++;
+    while (can_append(pos, cap) && *s) buf[pos++] = *s++;
 }
 
 inline void fmt_append_int(char* buf, size_t& pos, size_t cap, long long v) noexcept {
     char tmp[32];
     int  n = std::snprintf(tmp, sizeof(tmp), "%lld", v);
-    for (int i = 0; i < n && pos < cap - 1; ++i) buf[pos++] = tmp[i];
+    for (int i = 0; i < n && can_append(pos, cap); ++i) buf[pos++] = tmp[i];
 }
 
 inline void fmt_append_uint(char* buf, size_t& pos, size_t cap, unsigned long long v) noexcept {
     char tmp[32];
     int  n = std::snprintf(tmp, sizeof(tmp), "%llu", v);
-    for (int i = 0; i < n && pos < cap - 1; ++i) buf[pos++] = tmp[i];
+    for (int i = 0; i < n && can_append(pos, cap); ++i) buf[pos++] = tmp[i];
 }
 
 inline void fmt_append_double(char* buf, size_t& pos, size_t cap, double v) noexcept {
     char tmp[32];
     int  n = std::snprintf(tmp, sizeof(tmp), "%.6g", v);
-    for (int i = 0; i < n && pos < cap - 1; ++i) buf[pos++] = tmp[i];
+    for (int i = 0; i < n && can_append(pos, cap); ++i) buf[pos++] = tmp[i];
 }
 
 // Terminal case
@@ -285,9 +289,9 @@ inline void fmt_value(char* buf, size_t& pos, size_t cap, float v) noexcept {
 template<typename V, typename... Rest>
 void fmt_fields(char* buf, size_t& pos, size_t cap,
                 const char* key, V&& val, Rest&&... rest) noexcept {
-    buf[pos++] = ' ';
+    if (can_append(pos, cap)) buf[pos++] = ' ';
     fmt_append(buf, pos, cap, key);
-    buf[pos++] = '=';
+    if (can_append(pos, cap)) buf[pos++] = '=';
     fmt_value(buf, pos, cap, std::forward<V>(val));
     fmt_fields(buf, pos, cap, std::forward<Rest>(rest)...);
 }
@@ -307,7 +311,7 @@ inline void log(LogLevel level, const char* msg, Args&&... args) noexcept {
 
     detail::fmt_append(buf, pos, sizeof(buf), msg);
     detail::fmt_fields(buf, pos, sizeof(buf), std::forward<Args>(args)...);
-    buf[pos] = '\0';
+    buf[(pos < sizeof(buf)) ? pos : (sizeof(buf) - 1)] = '\0';
 
     logger.push(level, buf, pos);
 }
