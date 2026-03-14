@@ -124,3 +124,46 @@ set_tests_properties(OrderBookTest PROPERTIES
     TIMEOUT 10
     LABELS "unit;orderbook"
 )
+
+
+# Replay tests (deterministic book-state regression)
+add_executable(feed_replay_test
+    replay/feed_replay_test.cpp
+)
+
+target_link_libraries(feed_replay_test
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(feed_replay_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME FeedReplayTest COMMAND feed_replay_test)
+set_tests_properties(FeedReplayTest PROPERTIES
+    TIMEOUT 30
+    LABELS "replay;feeds"
+)
+
+# Integration replay test: feed -> book -> market maker -> shadow
+add_executable(full_pipeline_replay_test
+    integration/full_pipeline_replay_test.cpp
+)
+
+target_link_libraries(full_pipeline_replay_test
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(full_pipeline_replay_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME FullPipelineReplayTest COMMAND full_pipeline_replay_test)
+set_tests_properties(FullPipelineReplayTest PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;replay"
+)
