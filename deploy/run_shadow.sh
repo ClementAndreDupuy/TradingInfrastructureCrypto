@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shadow trading runner — four-venue orchestration for local validation.
+# Shadow trading runner — local four-venue validation (alpha publisher + C++ engine).
 
 set -euo pipefail
 
@@ -12,13 +12,25 @@ usage() {
 Usage: ./deploy/run_shadow.sh [options] [-- <extra trading_engine args>]
 
 Options:
-  --symbol <SYMBOL>         Trading symbol (default: BTCUSDT)
-  --venues <CSV>            Venues CSV (default: BINANCE,KRAKEN,OKX,COINBASE)
-  --duration <SECONDS>      Loop duration in seconds (default: 60)
-  --interval-ms <MS>        Delay between engine runs (default: 1000)
-  --env-file <PATH>         Optional env file to source (default: config/shadow/trading.env if present)
-  --once                    Run exactly one iteration and exit
-  -h, --help                Show this help
+  --symbol <SYMBOL>             Trading symbol (default: BTCUSDT)
+  --venues <CSV>                Venues CSV (default: BINANCE,KRAKEN,OKX,COINBASE)
+  --duration <SECONDS>          Total runtime (default: 900)
+  --interval-ms <MS>            Delay between engine runs (default: 1000)
+  --env-file <PATH>             Optional env file (default: config/shadow/trading.env if present)
+  --signal-file <PATH>          Alpha mmap file for Python->C++ bridge
+                                (default: /tmp/neural_alpha_signal.bin)
+  --model-path <PATH>           Primary model checkpoint path
+                                (default: models/neural_alpha_latest.pt)
+  --secondary-model-path <PATH> Secondary model checkpoint path
+                                (default: models/neural_alpha_secondary.pt)
+  --train-ticks <N>             Train if model missing (default: 400)
+  --train-epochs <N>            Train epochs when bootstrap training (default: 5)
+  --report-interval <SEC>       Python shadow summary cadence (default: 60)
+  --alpha-exchanges <CSV>       Exchanges for neural alpha feed polling
+                                (default: BINANCE,KRAKEN)
+  --skip-alpha                  Do not launch Python shadow session
+  --once                        Run exactly one C++ engine iteration and exit
+  -h, --help                    Show this help
 
 Credential resolution per venue (first non-empty wins):
   SHADOW_<VENUE>_API_KEY, <VENUE>_API_KEY, fallback=local-shadow-key
@@ -28,10 +40,18 @@ USAGE
 
 SYMBOL="BTCUSDT"
 VENUES="BINANCE,KRAKEN,OKX,COINBASE"
-DURATION_SECS=60
+DURATION_SECS=900
 INTERVAL_MS=1000
 RUN_ONCE=0
 ENV_FILE="$ENV_FILE_DEFAULT"
+SIGNAL_FILE="/tmp/neural_alpha_signal.bin"
+MODEL_PATH="$REPO_ROOT/models/neural_alpha_latest.pt"
+SECONDARY_MODEL_PATH="$REPO_ROOT/models/neural_alpha_secondary.pt"
+TRAIN_TICKS=400
+TRAIN_EPOCHS=5
+REPORT_INTERVAL=60
+ALPHA_EXCHANGES="BINANCE,KRAKEN"
+SKIP_ALPHA=0
 EXTRA_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -41,6 +61,14 @@ while [[ $# -gt 0 ]]; do
         --duration) DURATION_SECS="$2"; shift 2 ;;
         --interval-ms) INTERVAL_MS="$2"; shift 2 ;;
         --env-file) ENV_FILE="$2"; shift 2 ;;
+        --signal-file) SIGNAL_FILE="$2"; shift 2 ;;
+        --model-path) MODEL_PATH="$2"; shift 2 ;;
+        --secondary-model-path) SECONDARY_MODEL_PATH="$2"; shift 2 ;;
+        --train-ticks) TRAIN_TICKS="$2"; shift 2 ;;
+        --train-epochs) TRAIN_EPOCHS="$2"; shift 2 ;;
+        --report-interval) REPORT_INTERVAL="$2"; shift 2 ;;
+        --alpha-exchanges) ALPHA_EXCHANGES="$2"; shift 2 ;;
+        --skip-alpha) SKIP_ALPHA=1; shift ;;
         --once) RUN_ONCE=1; shift ;;
         -h|--help) usage; exit 0 ;;
         --) shift; EXTRA_ARGS=("$@"); break ;;
@@ -83,7 +111,38 @@ run_engine_once() {
     "$ENGINE_BIN" --mode shadow --venues "$VENUES" --symbol "$SYMBOL" "${EXTRA_ARGS[@]}"
 }
 
-echo "[shadow] Starting shadow runner symbol=$SYMBOL venues=$VENUES duration=${DURATION_SECS}s interval=${INTERVAL_MS}ms"
+PY_PID=""
+cleanup() {
+    if [[ -n "$PY_PID" ]]; then
+        kill "$PY_PID" 2>/dev/null || true
+        wait "$PY_PID" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT INT TERM
+
+if [[ "$SKIP_ALPHA" -eq 0 ]]; then
+    mkdir -p "$REPO_ROOT/logs" "$REPO_ROOT/models"
+    ALPHA_ARGS=(
+        -m research.alpha.neural_alpha.shadow_session
+        --signal-file "$SIGNAL_FILE"
+        --duration "$DURATION_SECS"
+        --interval-ms "$INTERVAL_MS"
+        --report-interval "$REPORT_INTERVAL"
+        --seq-len 64
+        --exchanges "$ALPHA_EXCHANGES"
+        --model-path "$MODEL_PATH"
+        --secondary-model-path "$SECONDARY_MODEL_PATH"
+        --train-ticks "$TRAIN_TICKS"
+        --train-epochs "$TRAIN_EPOCHS"
+        --log-path "$REPO_ROOT/logs/neural_alpha_shadow.jsonl"
+    )
+
+    echo "[shadow] Starting python shadow session (signals -> $SIGNAL_FILE)"
+    (cd "$REPO_ROOT" && python3 "${ALPHA_ARGS[@]}") &
+    PY_PID=$!
+fi
+
+echo "[shadow] Starting C++ shadow runner symbol=$SYMBOL venues=$VENUES duration=${DURATION_SECS}s interval=${INTERVAL_MS}ms"
 
 if [[ "$RUN_ONCE" -eq 1 ]]; then
     run_engine_once
