@@ -65,8 +65,46 @@ target_include_directories(kraken_feed PUBLIC
 
 target_compile_options(kraken_feed PRIVATE ${LIBWEBSOCKETS_CFLAGS_OTHER})
 
+# Coinbase feed handler library
+add_library(coinbase_feed
+    feeds/coinbase/coinbase_feed_handler.cpp
+)
+
+target_link_libraries(coinbase_feed
+    trading_common
+    ${LIBWEBSOCKETS_LIBRARIES}
+    CURL::libcurl
+    nlohmann_json::nlohmann_json
+)
+
+target_include_directories(coinbase_feed PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${LIBWEBSOCKETS_INCLUDE_DIRS}
+)
+
+target_compile_options(coinbase_feed PRIVATE ${LIBWEBSOCKETS_CFLAGS_OTHER})
+
+# OKX feed handler library
+add_library(okx_feed
+    feeds/okx/okx_feed_handler.cpp
+)
+
+target_link_libraries(okx_feed
+    trading_common
+    ${LIBWEBSOCKETS_LIBRARIES}
+    CURL::libcurl
+    nlohmann_json::nlohmann_json
+)
+
+target_include_directories(okx_feed PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${LIBWEBSOCKETS_INCLUDE_DIRS}
+)
+
+target_compile_options(okx_feed PRIVATE ${LIBWEBSOCKETS_CFLAGS_OTHER})
+
 # Install targets
-install(TARGETS binance_feed kraken_feed
+install(TARGETS binance_feed kraken_feed coinbase_feed okx_feed
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
 )
@@ -83,5 +121,15 @@ install(DIRECTORY feeds/binance/
 
 install(DIRECTORY feeds/kraken/
     DESTINATION include/trading/feeds/kraken
+    FILES_MATCHING PATTERN "*.hpp"
+)
+
+install(DIRECTORY feeds/coinbase/
+    DESTINATION include/trading/feeds/coinbase
+    FILES_MATCHING PATTERN "*.hpp"
+)
+
+install(DIRECTORY feeds/okx/
+    DESTINATION include/trading/feeds/okx
     FILES_MATCHING PATTERN "*.hpp"
 )

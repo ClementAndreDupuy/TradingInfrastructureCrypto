@@ -16,8 +16,8 @@
 - [x] **H1** `core/common/logging.hpp` — Replace `std::cout` with async ring-buffer logger (spdlog async mode or custom lock-free SPSC ring); zero allocation on hot path
 - [x] **H2** `core/feeds/binance/binance_feed_handler.cpp` + `kraken_feed_handler.cpp` — WebSocket ping frames sent every 30 s (Binance) / 20 s (Kraken) from stream phase; pong handled automatically by libwebsockets
 - [x] **H3** `core/risk/` — Implement circuit breaker: order rate limiter, max daily loss breaker, stale book detector, message rate guard — use params already in `config/dev/risk.yaml`
-- [ ] **H4** `core/feeds/coinbase/` — Create and implement Coinbase Advanced Trade WebSocket feed handler (L2 order book channel)
-- [ ] **H5** `core/feeds/okx/` — Create and implement OKX WebSocket feed handler (`books` channel, sequence validation)
+- [x] **H4** `core/feeds/coinbase/` — Created Coinbase Advanced Trade WebSocket feed handler (L2 order book channel) with snapshot/delta sync and strict sequence continuity checks
+- [x] **H5** `core/feeds/okx/` — Created OKX WebSocket feed handler (`books` channel) with REST snapshot + WebSocket delta sync and sequence continuity validation
 - [x] **H6** `CMakeLists.txt` — Added `libwebsockets` via `pkg_check_modules`; linked to both `binance_feed` and `kraken_feed` targets; libcurl and nlohmann/json handled in `core/CMakeLists.txt`; pybind11 handled via `bindings/setup.py`
 - [ ] **H7** `tests/` — Create feed replay test suite: record live feed messages to file, replay deterministically, compare order-book state byte-for-byte across runs
 - [ ] **H8** `tests/` — Add integration tests for full pipeline: feed handler → book manager → market maker → shadow engine (end-to-end with recorded data)
