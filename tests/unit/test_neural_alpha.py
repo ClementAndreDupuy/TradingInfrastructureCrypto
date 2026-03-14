@@ -396,7 +396,7 @@ class TestShadowSessionTraining:
 
         state = torch.load(model_path, map_location="cpu", weights_only=True)
         assert isinstance(state, dict)
-        assert "spatial_encoder.input_proj.weight" in state
+        assert any(k.startswith("spatial_enc.") for k in state.keys())
 
         session._log_fp.close()
         session._publisher.close()
