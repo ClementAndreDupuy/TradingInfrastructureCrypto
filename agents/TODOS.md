@@ -59,5 +59,5 @@
 - [ ] **R1** — Research on integrate On-Chain metrics (Netflow, Spent Output Profit Ratio, Net Unrealised Profit/Loss, Whale transaction analysis, Defi Protocol metrics...)
 - [ ] **R2** — Research on Real-Time market regime identification (Clustering algorithms, Hiden Markov Models) to allow dynamic strategy change
 - [ ] **R3** — Research on deep reinforcement learning for autonomous execution (State Space Design, Action Space design, Reward function formulation)
-- [ ] **R4** — Research on improving our execution engine with Smart Order Routing (real-time depth, liquidity and fees) to identify the best exchanges to do the trade (Require several exchanges)
+- [x] **R4** — Research completed in `agents/reports/RESEARCH_R4_SMART_ORDER_ROUTING_2026-03-14.md`: Smart Order Routing plan (Binance/Kraken/OKX/Coinbase) and implementation path unblocking C9/C10
 - [ ] **R5** — Research on hardware execution with Field-Programmable Gate Arrays and co-locating servers in the same clusters as exchanges 
