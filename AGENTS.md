@@ -51,9 +51,9 @@ All the project todos should be placed in the TODO file below, ranked by priorit
 ## Components
 
 - **`core/orderbook/`** — Flat-array book keyed by price tick grid (O(1), cache-local).
-- **`core/feeds/`** — Per-exchange WebSocket handlers (Binance, Kraken). Sequence validation + gap detection.
+- **`core/feeds/`** — Per-exchange WebSocket handlers (Binance, Kraken, OKX, Coinbase) with snapshot/delta sync, sequence validation, and reconnect backoff.
 - **`core/risk/`** — Pre-trade checks, kill switch, circuit breaker. Sub-microsecond, no Python.
-- **`core/execution/`** — `ExchangeConnector` interface, `OrderManager` (position tracking), `NeuralAlphaMarketMaker` (GTX limit orders, signal skew, stop-limit stop-loss).
+- **`core/execution/`** — `ExchangeConnector` interface + live connectors (Binance/Kraken/OKX/Coinbase), `OrderManager` (position tracking), `NeuralAlphaMarketMaker` (GTX limit orders, signal skew, stop-limit stop-loss).
 - **`core/ipc/`** — Shared memory bridge: Python publishes neural alpha signal → C++ reads via `AlphaSignalReader`.
 - **`core/shadow/`** — `ShadowConnector` + `ShadowEngine` — paper trading with identical code path to live. Run ≥ 2 weeks before live.
 - **`research/alpha/neural_alpha/`** — GNN spatial + Transformer temporal model, walk-forward training, backtest, shadow session.
@@ -71,7 +71,7 @@ All the project todos should be placed in the TODO file below, ranked by priorit
 core/          C++ hot path
   common/      Shared types (Order, FillUpdate, OrderType, etc.)
   orderbook/   Book structure
-  feeds/       Exchange WebSocket handlers
+  feeds/       Exchange WebSocket handlers (Binance/Kraken/OKX/Coinbase)
   ipc/         Shared memory (neural alpha signal bridge)
   risk/        Pre-trade checks, kill switch
   execution/   Market maker, order manager, exchange connector

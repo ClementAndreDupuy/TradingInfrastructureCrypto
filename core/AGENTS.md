@@ -14,10 +14,10 @@
 
 - **common/** — Shared types: `Order`, `FillUpdate`, `OrderType`, `TimeInForce`, `OrderState`, `ConnectorResult`, `Exchange`, `Side`
 - **orderbook/** — Flat-array O(1) book; all downstream depends on its correctness
-- **feeds/** — Per-exchange WebSocket handlers (Binance, Kraken)
+- **feeds/** — Per-exchange WebSocket handlers (Binance, Kraken, OKX, Coinbase) with snapshot/delta sync, continuity checks, and reconnect backoff
 - **ipc/** — `AlphaSignalReader`: mmaps `/tmp/neural_alpha_signal.bin` written by Python shadow session
 - **risk/** — Pre-trade checks, kill switch (sub-µs, lock-free)
-- **execution/** — `ExchangeConnector` (interface), `OrderManager` (position + fills), `NeuralAlphaMarketMaker` (GTX quotes, alpha skew, stop-limit)
+- **execution/** — `ExchangeConnector` (interface), live venue connectors (Binance/Kraken/OKX/Coinbase), `OrderManager` (position + fills), `NeuralAlphaMarketMaker` (GTX quotes, alpha skew, stop-limit)
 - **shadow/** — `ShadowConnector` + `ShadowEngine`: paper trading with identical code path to live
 
 ## Performance Requirements

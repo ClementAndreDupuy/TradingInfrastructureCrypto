@@ -20,7 +20,7 @@ Built from `bindings/`. Run `python3 bindings/setup.py build_ext --inplace` to c
 
 ## Required Backtest Outputs
 
-Trade log, equity curve, fill rate, slippage, Sharpe ratio, max drawdown.
+Trade log, equity curve, queue-aware fill rate, slippage, Sharpe ratio (timestamp-based annualization), market impact attribution, max drawdown.
 
 ## Walk-Forward Validation
 
