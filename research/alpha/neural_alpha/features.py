@@ -234,15 +234,25 @@ def compute_labels(df: pl.DataFrame, horizons: tuple[int, ...] = (1, 10, 100, 50
     direction = np.where(mid_ret > flat_thresh, 2,
                 np.where(mid_ret < -flat_thresh, 0, 1)).astype(np.float32)
 
-    # Adverse selection: price reversion within 10 ticks
-    # adv_sel[t] = 1 if 1-tick and 10-tick returns have opposite signs
-    fwd_ret_1  = returns[:, 0]
-    fwd_ret_10 = returns[:, 1]
+    # Adverse selection using fill-reversion model:
+    # infer fill direction from immediate move, then mark adverse if
+    # price reverts against that direction within next N ticks.
+    reversion_h = 10
+    fwd_ret_1 = returns[:, 0]
     adv_sel = np.zeros(T, dtype=np.float32)
-    for t in range(T - 10):
-        r1  = float(fwd_ret_1[t])
-        r10 = float(fwd_ret_10[t])
-        if abs(r1) > 1e-6 and r1 * r10 < 0:
+    for t in range(T - reversion_h):
+        r1 = float(fwd_ret_1[t])
+        if abs(r1) <= 1e-6:
+            continue
+        fill_dir = 1.0 if r1 > 0 else -1.0
+        path = log_mid[t + 1: t + 1 + reversion_h] - log_mid[t]
+        if path.size == 0:
+            continue
+        if fill_dir > 0:
+            reversion = np.min(path)
+        else:
+            reversion = -np.max(path)
+        if reversion < -2e-5:
             adv_sel[t] = 1.0
 
     labels = np.concatenate([returns, direction[:, None], adv_sel[:, None]], axis=1)
