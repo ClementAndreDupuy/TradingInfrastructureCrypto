@@ -44,7 +44,7 @@ Medium effort:
 
 - [ ] **Per-level queue imbalance** (`features.py`) — `(bid_size_i - ask_size_i) / (bid_size_i + ask_size_i + 1e-8)` for each LOB level; adds 5 scalar features
 - [ ] **Wider volatility windows + vol ratio** (`features.py`) — add `vol_60`, `vol_200`, `vol_5 / vol_60`
-- [ ] **Better adverse selection label** (`features.py`) — replace spread-widening proxy with price reversion after fill within 10 ticks
+- [x] **Better adverse selection label** (`features.py`) — replaced spread-widening proxy with price reversion after fill within 10 ticks
 
 Higher effort:
 
