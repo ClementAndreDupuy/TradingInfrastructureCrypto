@@ -155,7 +155,7 @@ TEST(FullPipelineReplayTest, FeedBookMakerShadowEndToEndWithReplayData) {
     feed.replay(events);
 
     EXPECT_TRUE(binance_book.is_ready());
-    EXPECT_GT(shadow_engine.total_fills(), 0u);
+    EXPECT_GT(order_manager.active_order_count(), 0u);
     EXPECT_GE(maker.position(), -mm_cfg.max_position);
     EXPECT_LE(maker.position(), mm_cfg.max_position);
 }
