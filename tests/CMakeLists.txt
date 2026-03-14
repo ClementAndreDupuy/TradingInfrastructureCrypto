@@ -126,6 +126,51 @@ set_tests_properties(OrderBookTest PROPERTIES
 )
 
 
+
+# Smart order router unit tests
+add_executable(smart_order_router_test
+    unit/smart_order_router_test.cpp
+)
+
+target_link_libraries(smart_order_router_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(smart_order_router_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME SmartOrderRouterTest COMMAND smart_order_router_test)
+set_tests_properties(SmartOrderRouterTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;execution"
+)
+
+# Live connectors contract tests (mock transport)
+add_executable(live_connectors_test
+    unit/live_connectors_test.cpp
+)
+
+target_link_libraries(live_connectors_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(live_connectors_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME LiveConnectorsTest COMMAND live_connectors_test)
+set_tests_properties(LiveConnectorsTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;execution"
+)
+
 # Replay tests (deterministic book-state regression)
 add_executable(feed_replay_test
     replay/feed_replay_test.cpp
