@@ -100,6 +100,24 @@ class TestFeatures:
         # After normalisation, mean should be near 0
         assert abs(normed.mean(axis=0).mean()) < 0.5
 
+    def test_labels_adverse_selection_fill_reversion_model(self) -> None:
+        n = 25
+        ts = (np.arange(n) * 1_000_000).astype(np.int64)
+        mid = np.ones(n, dtype=np.float64) * 100.0
+        mid[1] = 100.2
+        mid[2:8] = np.linspace(100.1, 99.7, 6)
+
+        data: dict[str, np.ndarray] = {"timestamp_ns": ts}
+        for lvl in range(1, 6):
+            data[f"bid_price_{lvl}"] = mid - 0.01 * lvl
+            data[f"ask_price_{lvl}"] = mid + 0.01 * lvl
+            data[f"bid_size_{lvl}"] = np.ones(n, dtype=np.float64) * (1.0 + lvl)
+            data[f"ask_size_{lvl}"] = np.ones(n, dtype=np.float64) * (1.0 + lvl)
+        df = pl.DataFrame(data)
+
+        labels = compute_labels(df, horizons=(1, 10, 12, 20))
+        assert labels[0, 5] == pytest.approx(1.0)
+
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 
@@ -239,6 +257,28 @@ class TestBacktest:
         res = bt.run(small_df, sig)
         for key in ("total_trades", "total_net_pnl", "sharpe_annualised", "win_rate"):
             assert key in res["metrics"]
+
+    def test_market_impact_moves_price_by_side(self) -> None:
+        bt = NeuralAlphaBacktest(BacktestConfig(impact_coeff=0.5, adv_usd=10_000, random_seed=1))
+        buy_px = bt._apply_market_impact(100.0, 0.5)
+        sell_px = bt._apply_market_impact(100.0, -0.5)
+        assert buy_px > 100.0
+        assert sell_px < 100.0
+
+    def test_queue_fill_probability_bounded(self) -> None:
+        bt = NeuralAlphaBacktest(BacktestConfig(queue_min_fill_prob=0.05, queue_max_fill_prob=0.9))
+        p = bt._queue_fill_probability(level_price=100.0, qty=0.001)
+        assert 0.05 <= p <= 0.9
+
+    def test_time_aware_sharpe_is_finite(self, small_df: pl.DataFrame) -> None:
+        ts = np.array(small_df["timestamp_ns"].to_list(), dtype=np.int64)
+        ts[1:] += np.arange(1, len(ts)) * 137
+        df = small_df.with_columns(pl.Series("timestamp_ns", ts))
+        cfg = BacktestConfig(entry_threshold_bps=0.1, random_seed=7)
+        bt = NeuralAlphaBacktest(cfg)
+        sig = np.ones(len(df), dtype=np.float64) * 0.01
+        res = bt.run(df, sig)
+        assert np.isfinite(res["metrics"]["sharpe_annualised"])
 
 
 # ── Alpha regression ──────────────────────────────────────────────────────────

@@ -36,6 +36,15 @@ class BacktestConfig:
     max_position: float = 0.01           # max position magnitude
     latency_ticks: int = 1               # ticks between signal and execution
     stop_loss_bps: float = 20.0          # per-trade stop loss
+    maker_fee_bps: float = 2.0           # one-way maker fee
+    initial_capital_usd: float = 100_000.0
+    adv_usd: float = 5_000_000.0         # average daily dollar volume
+    impact_coeff: float = 0.2            # linear impact coefficient
+    impact_square_root: bool = False     # square-root impact if True
+    queue_decay_lambda: float = 1.5      # Poisson intensity multiplier
+    queue_min_fill_prob: float = 0.01
+    queue_max_fill_prob: float = 0.99
+    random_seed: int = 42
 
 
 class NeuralAlphaBacktest:
@@ -47,6 +56,7 @@ class NeuralAlphaBacktest:
 
     def __init__(self, cfg: BacktestConfig | None = None) -> None:
         self.cfg = cfg or BacktestConfig()
+        self._rng = np.random.default_rng(self.cfg.random_seed)
         self._reset()
 
     def _reset(self) -> None:
@@ -71,6 +81,7 @@ class NeuralAlphaBacktest:
         Returns:
             dict with keys: trades, equity_curve, metrics
         """
+        self._rng = np.random.default_rng(self.cfg.random_seed)
         self._reset()
 
         entry_thresh = self.cfg.entry_threshold_bps * 1e-4
@@ -78,6 +89,7 @@ class NeuralAlphaBacktest:
         stop_loss    = self.cfg.stop_loss_bps        * 1e-4
         lat          = self.cfg.latency_ticks
         fee_rate     = self.cfg.taker_fee_bps * 1e-4
+        maker_fee_rate = self.cfg.maker_fee_bps * 1e-4
 
         # Extract bid/ask arrays
         best_bid = self._get_col(df, "best_bid")
@@ -123,10 +135,16 @@ class NeuralAlphaBacktest:
 
                 if net_long_sig > entry_thresh:
                     qty = min(self.cfg.trade_qty, self.cfg.max_position)
-                    self._open_position(t, ask, qty, "LONG", ts, fee_rate)
+                    fill_prob = self._queue_fill_probability(bid, qty)
+                    if self._rng.random() <= fill_prob:
+                        fill_px = self._apply_market_impact(bid, qty)
+                        self._open_position(t, fill_px, qty, "LONG", ts, maker_fee_rate)
                 elif net_short_sig > entry_thresh:
                     qty = min(self.cfg.trade_qty, self.cfg.max_position)
-                    self._open_position(t, bid, -qty, "SHORT", ts, fee_rate)
+                    fill_prob = self._queue_fill_probability(ask, qty)
+                    if self._rng.random() <= fill_prob:
+                        fill_px = self._apply_market_impact(ask, -qty)
+                        self._open_position(t, fill_px, -qty, "SHORT", ts, maker_fee_rate)
 
         # Close any open position at end
         if self._position != 0.0 and T > 0:
@@ -208,6 +226,23 @@ class NeuralAlphaBacktest:
         ts_arr, pnl_arr = zip(*self._equity)
         return pl.DataFrame({"timestamp_ns": list(ts_arr), "cumulative_pnl": list(pnl_arr)})
 
+    def _apply_market_impact(self, fill_px: float, qty: float) -> float:
+        notional = abs(qty) * fill_px
+        adv = max(self.cfg.adv_usd, 1e-9)
+        participation = notional / adv
+        if self.cfg.impact_square_root:
+            impact = self.cfg.impact_coeff * math.sqrt(participation)
+        else:
+            impact = self.cfg.impact_coeff * participation
+        signed_impact = impact if qty > 0 else -impact
+        return fill_px * (1.0 + signed_impact)
+
+    def _queue_fill_probability(self, level_price: float, qty: float) -> float:
+        queue_depth = max(level_price * qty, 1e-9)
+        expected_flow = self.cfg.queue_decay_lambda * (self.cfg.trade_qty * level_price)
+        prob = 1.0 - math.exp(-(expected_flow / queue_depth))
+        return float(np.clip(prob, self.cfg.queue_min_fill_prob, self.cfg.queue_max_fill_prob))
+
     def _compute_metrics(self, signals: np.ndarray) -> dict:
         trades_df = self._build_trades_df()
 
@@ -218,11 +253,8 @@ class NeuralAlphaBacktest:
         wins   = net_pnls[net_pnls > 0]
         losses = net_pnls[net_pnls <= 0]
 
-        mean_pnl  = np.mean(net_pnls)
-        std_pnl   = np.std(net_pnls, ddof=1) if len(net_pnls) > 1 else 1e-9
-        # Annualised Sharpe: assume ~252 trading days, scale by sqrt of daily trade count
-        trades_per_day = max(len(net_pnls), 1)   # minimum 1 to avoid division by zero
-        sharpe = (mean_pnl / std_pnl) * math.sqrt(min(trades_per_day, 252 * 24))
+        mean_pnl = np.mean(net_pnls)
+        sharpe = self._compute_time_aware_sharpe()
 
         slippage = 0.0
         if "gross_pnl" in trades_df.columns and "net_pnl" in trades_df.columns:
@@ -240,6 +272,36 @@ class NeuralAlphaBacktest:
             "signal_mean":       float(np.mean(signals)),
             "signal_std":        float(np.std(signals)),
         }
+
+    def _compute_time_aware_sharpe(self) -> float:
+        equity_df = self._build_equity_df()
+        if equity_df.is_empty() or len(equity_df) < 3:
+            return 0.0
+
+        ts_ns = equity_df["timestamp_ns"].to_numpy()
+        pnl = equity_df["cumulative_pnl"].to_numpy().astype(np.float64, copy=False)
+        capital_curve = self.cfg.initial_capital_usd + pnl
+        if np.any(capital_curve <= 0):
+            return 0.0
+
+        dt_s = np.diff(ts_ns.astype(np.float64)) / 1e9
+        valid = dt_s > 0
+        if not np.any(valid):
+            return 0.0
+
+        capital_returns = np.diff(capital_curve) / capital_curve[:-1]
+        r = capital_returns[valid]
+        dt_s = dt_s[valid]
+        if len(r) < 2:
+            return 0.0
+
+        mean_r = float(np.mean(r))
+        std_r = float(np.std(r, ddof=1))
+        if std_r <= 1e-12:
+            return 0.0
+
+        steps_per_year = (365.25 * 24 * 60 * 60) / float(np.mean(dt_s))
+        return (mean_r / std_r) * math.sqrt(max(steps_per_year, 1.0))
 
 
 def run_backtest_on_fold(
