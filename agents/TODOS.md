@@ -19,8 +19,8 @@
 - [x] **H4** `core/feeds/coinbase/` — Created Coinbase Advanced Trade WebSocket feed handler (L2 order book channel) with snapshot/delta sync and strict sequence continuity checks
 - [x] **H5** `core/feeds/okx/` — Created OKX WebSocket feed handler (`books` channel) with REST snapshot + WebSocket delta sync and sequence continuity validation
 - [x] **H6** `CMakeLists.txt` — Added `libwebsockets` via `pkg_check_modules`; linked to both `binance_feed` and `kraken_feed` targets; libcurl and nlohmann/json handled in `core/CMakeLists.txt`; pybind11 handled via `bindings/setup.py`
-- [ ] **H7** `tests/` — Create feed replay test suite: record live feed messages to file, replay deterministically, compare order-book state byte-for-byte across runs
-- [ ] **H8** `tests/` — Add integration tests for full pipeline: feed handler → book manager → market maker → shadow engine (end-to-end with recorded data)
+- [x] **H7** `tests/` — Create feed replay test suite: record live feed messages to file, replay deterministically, compare order-book state byte-for-byte across runs
+- [x] **H8** `tests/` — Add integration tests for full pipeline: feed handler → book manager → market maker → shadow engine (end-to-end with recorded data)
 
 ### MEDIUM — Quality and Correctness Gaps
 
