@@ -279,7 +279,7 @@ class NeuralAlphaBacktest:
             return 0.0
 
         ts_ns = equity_df["timestamp_ns"].to_numpy()
-        pnl = equity_df["cumulative_pnl"].to_numpy(dtype=np.float64)
+        pnl = equity_df["cumulative_pnl"].to_numpy().astype(np.float64, copy=False)
         capital_curve = self.cfg.initial_capital_usd + pnl
         if np.any(capital_curve <= 0):
             return 0.0
