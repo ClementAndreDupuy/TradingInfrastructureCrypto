@@ -10,7 +10,7 @@ Checks: >
   cppcoreguidelines-pro-type-const-cast,
   cppcoreguidelines-pro-bounds-pointer-arithmetic
 WarningsAsErrors: ''
-HeaderFilterRegex: '^core/'
+HeaderFilterRegex: '^(core|bindings)/'
 FormatStyle: file
 CheckOptions:
   - key: readability-identifier-naming.VariableCase
