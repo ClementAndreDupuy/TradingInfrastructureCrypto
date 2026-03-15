@@ -10,7 +10,7 @@ namespace {
 
 TEST(FeedDisconnectChaosTest, BinanceGapThenRecoveryMessageSucceeds) {
     BinanceFeedHandler h("BTCUSDT");
-    ASSERT_EQ(h.start(), Result::SUCCESS);
+    // Stay offline: deterministic gap/recovery validation without network I/O.
     const uint64_t base = h.get_sequence();
 
     const std::string gap =
@@ -23,12 +23,11 @@ TEST(FeedDisconnectChaosTest, BinanceGapThenRecoveryMessageSucceeds) {
         R"(,"u":)" + std::to_string(base + 1) +
         R"(,"b":[["50000.0","1.0"]],"a":[["50001.0","1.0"]]})";
     EXPECT_EQ(h.process_message(recover), Result::SUCCESS);
-    h.stop();
 }
 
 TEST(FeedDisconnectChaosTest, KrakenGapThenRecoveryMessageSucceeds) {
     KrakenFeedHandler h("XBTUSD");
-    ASSERT_EQ(h.start(), Result::SUCCESS);
+    // Stay offline: deterministic gap/recovery validation without network I/O.
 
     const std::string gap =
         R"({"channel":"book","type":"update","seq":100,"data":[{"symbol":"XBTUSD","bids":[],"asks":[],"checksum":0}]})";
@@ -37,7 +36,6 @@ TEST(FeedDisconnectChaosTest, KrakenGapThenRecoveryMessageSucceeds) {
     const std::string recover =
         R"({"channel":"book","type":"update","seq":1,"data":[{"symbol":"XBTUSD","bids":[{"price":50000.0,"qty":1.0}],"asks":[],"checksum":0}]})";
     EXPECT_EQ(h.process_message(recover), Result::SUCCESS);
-    h.stop();
 }
 
 TEST(FeedDisconnectChaosTest, CoinbaseGapThenRecoveryViaSnapshot) {
