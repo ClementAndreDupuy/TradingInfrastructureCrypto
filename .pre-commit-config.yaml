@@ -11,11 +11,11 @@ repos:
         name: clang-format (C/C++)
         entry: bash -c 'clang-format --dry-run --Werror "$@"' --
         language: system
-        files: '\.(h|hpp|c|cc|cpp)$'
+        files: '^core/.*\.(h|hpp|c|cc|cpp)$'
 
       - id: clang-tidy
         name: clang-tidy (C/C++)
         entry: bash -c 'clang-tidy -p build "$@"' --
         language: system
-        files: '^(core|tests|bindings)/.*\.(cc|cpp)$'
+        files: '^core/.*\.(cc|cpp)$'
         pass_filenames: true

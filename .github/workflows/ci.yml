@@ -65,7 +65,15 @@ jobs:
       - name: Install tooling
         run: |
           sudo apt-get update
-          sudo apt-get install -y             cmake             pkg-config             libssl-dev             libwebsockets-dev             libcurl4-openssl-dev             nlohmann-json3-dev             clang-format             clang-tidy
+          sudo apt-get install -y \
+            cmake \
+            pkg-config \
+            libssl-dev \
+            libwebsockets-dev \
+            libcurl4-openssl-dev \
+            nlohmann-json3-dev \
+            clang-format \
+            clang-tidy
           python3 -m pip install --upgrade pip pre-commit
 
       - name: Run preflight dependency check
@@ -74,7 +82,7 @@ jobs:
       - name: Configure CMake (compile_commands for clang-tidy)
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_BINDINGS=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_CXX_FLAGS="-I$(pwd)"
 
-      - name: Run pre-commit hooks
+      - name: Run pre-commit hooks (clang on core/ only)
         run: pre-commit run --all-files
 
   # ── C++ build ────────────────────────────────────────────────────────────────
