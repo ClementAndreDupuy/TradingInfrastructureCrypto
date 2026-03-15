@@ -2,7 +2,7 @@
 
 ### CRITICAL
 - [ ] **C1** `core/execution/live_connector_base.hpp` + venue connectors — Replace generic auth/signature flow with exchange-spec canonical signing, remove non-cryptographic signature fallback in live path, and enforce hard-fail when cryptographic backend is unavailable
-- [ ] **C2** `core/execution/*_connector.cpp` — Implement authenticated cancel/replace/query endpoints with strict response parsing; stop using synthetic venue order IDs and persist real exchange IDs *(submit/cancel + real venue IDs done; replace/query still pending)*
+- [x] **C2** `core/execution/*_connector.cpp` — Implement authenticated cancel/replace/query endpoints with strict response parsing; stop using synthetic venue order IDs and persist real exchange IDs *(submit/cancel/replace/query now implemented with strict parsing and real venue IDs persisted in `VenueOrderMap`)*
 - [ ] **C3** `core/execution/` — Build full reconciliation service (open orders, fills, balances, positions) on reconnect + periodic drift checks with automated quarantine on mismatch
 - [ ] **C4** `core/execution/` + `core/risk/` — Add durable idempotency journal and deterministic recovery for retry storms, duplicate acks, and cancel/replace race conditions
 

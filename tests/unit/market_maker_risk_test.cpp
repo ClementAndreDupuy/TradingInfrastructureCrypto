@@ -30,6 +30,8 @@ class MockConnector final : public ExchangeConnector {
     }
 
     ConnectorResult cancel_order(uint64_t) override { return ConnectorResult::OK; }
+    ConnectorResult replace_order(uint64_t, const Order&) override { return ConnectorResult::OK; }
+    ConnectorResult query_order(uint64_t, FillUpdate&) override { return ConnectorResult::OK; }
     ConnectorResult cancel_all(const char*) override { return ConnectorResult::OK; }
     ConnectorResult reconcile() override { return ConnectorResult::OK; }
 
