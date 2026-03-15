@@ -1,9 +1,9 @@
 #include "coinbase_feed_handler.hpp"
 #include "../../common/rest_client.hpp"
-#include <libwebsockets.h>
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <libwebsockets.h>
 
 namespace trading {
 
@@ -20,11 +20,11 @@ struct CoinbaseWsSession {
     size_t frag_len{0};
 };
 
-static int coinbase_lws_cb(struct lws* wsi,
-                           enum lws_callback_reasons reason,
-                           void* /*user*/, void* in, size_t len) {
+static int coinbase_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* /*user*/,
+                           void* in, size_t len) {
     auto* s = static_cast<CoinbaseWsSession*>(lws_context_user(lws_get_context(wsi)));
-    if (!s) return 0;
+    if (!s)
+        return 0;
 
     switch (reason) {
     case LWS_CALLBACK_CLIENT_ESTABLISHED:
@@ -82,17 +82,16 @@ static struct lws_protocols k_coinbase_protocols[] = {
     {nullptr, nullptr, 0, 0, 0, nullptr, 0},
 };
 
-CoinbaseFeedHandler::CoinbaseFeedHandler(const std::string& symbol,
-                                         const std::string& ws_url)
-    : symbol_(symbol),
-      ws_url_(ws_url) {
+CoinbaseFeedHandler::CoinbaseFeedHandler(const std::string& symbol, const std::string& ws_url)
+    : symbol_(symbol), ws_url_(ws_url) {
     LOG_INFO("CoinbaseFeedHandler created", "symbol", symbol_.c_str());
 }
 
 CoinbaseFeedHandler::~CoinbaseFeedHandler() { stop(); }
 
 Result CoinbaseFeedHandler::start() {
-    if (running_.load(std::memory_order_acquire)) return Result::SUCCESS;
+    if (running_.load(std::memory_order_acquire))
+        return Result::SUCCESS;
 
     LOG_INFO("Starting Coinbase feed handler", "symbol", symbol_.c_str());
     running_.store(true, std::memory_order_release);
@@ -110,11 +109,13 @@ Result CoinbaseFeedHandler::start() {
 
     if (!ready || !running_.load(std::memory_order_acquire)) {
         running_.store(false, std::memory_order_release);
-        if (auto* ctx = static_cast<struct lws_context*>(lws_ctx_.load(std::memory_order_acquire))) {
+        if (auto* ctx =
+                static_cast<struct lws_context*>(lws_ctx_.load(std::memory_order_acquire))) {
             lws_cancel_service(ctx);
         }
         ws_cv_.notify_all();
-        if (ws_thread_.joinable()) ws_thread_.join();
+        if (ws_thread_.joinable())
+            ws_thread_.join();
         return Result::ERROR_CONNECTION_LOST;
     }
 
@@ -123,7 +124,8 @@ Result CoinbaseFeedHandler::start() {
 }
 
 void CoinbaseFeedHandler::stop() {
-    if (!running_.load(std::memory_order_acquire) && !ws_thread_.joinable()) return;
+    if (!running_.load(std::memory_order_acquire) && !ws_thread_.joinable())
+        return;
 
     LOG_INFO("Stopping Coinbase feed handler", "symbol", symbol_.c_str());
     running_.store(false, std::memory_order_release);
@@ -134,7 +136,8 @@ void CoinbaseFeedHandler::stop() {
     }
     ws_cv_.notify_all();
 
-    if (ws_thread_.joinable()) ws_thread_.join();
+    if (ws_thread_.joinable())
+        ws_thread_.join();
 }
 
 void CoinbaseFeedHandler::ws_event_loop() {
@@ -147,12 +150,16 @@ void CoinbaseFeedHandler::ws_event_loop() {
 
     {
         size_t pos = ws_url_.find("://");
-        if (pos != std::string::npos) pos += 3;
-        else pos = 0;
+        if (pos != std::string::npos)
+            pos += 3;
+        else
+            pos = 0;
 
         size_t slash = ws_url_.find('/', pos);
-        std::string authority = ws_url_.substr(pos, slash == std::string::npos ? std::string::npos : slash - pos);
-        if (slash != std::string::npos) ws_path = ws_url_.substr(slash);
+        std::string authority =
+            ws_url_.substr(pos, slash == std::string::npos ? std::string::npos : slash - pos);
+        if (slash != std::string::npos)
+            ws_path = ws_url_.substr(slash);
 
         size_t colon = authority.rfind(':');
         if (colon != std::string::npos) {
@@ -208,7 +215,8 @@ void CoinbaseFeedHandler::ws_event_loop() {
             continue;
         }
 
-        while (running_.load() && !session.established && !session.closed) lws_service(ctx, 50);
+        while (running_.load() && !session.established && !session.closed)
+            lws_service(ctx, 50);
 
         if (!running_.load() || session.closed) {
             lws_context_destroy(ctx);
@@ -237,8 +245,8 @@ void CoinbaseFeedHandler::ws_event_loop() {
         state_.store(State::BUFFERING, std::memory_order_release);
 
         if (running_.load(std::memory_order_acquire)) {
-            LOG_WARN("Coinbase stream disconnected, reconnecting",
-                     "symbol", symbol_.c_str(), "backoff_ms", delay_ms);
+            LOG_WARN("Coinbase stream disconnected, reconnecting", "symbol", symbol_.c_str(),
+                     "backoff_ms", delay_ms);
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
         }
@@ -255,17 +263,20 @@ Result CoinbaseFeedHandler::process_snapshot(const nlohmann::json& j, uint64_t s
     snap.timestamp_local_ns = http::now_ns();
 
     auto events_it = j.find("events");
-    if (events_it == j.end() || !events_it->is_array()) return Result::ERROR_BOOK_CORRUPTED;
+    if (events_it == j.end() || !events_it->is_array())
+        return Result::ERROR_BOOK_CORRUPTED;
 
     for (const auto& event : *events_it) {
         auto updates_it = event.find("updates");
-        if (updates_it == event.end() || !updates_it->is_array()) continue;
+        if (updates_it == event.end() || !updates_it->is_array())
+            continue;
 
         for (const auto& upd : *updates_it) {
             auto side_it = upd.find("side");
             auto px_it = upd.find("price_level");
             auto qty_it = upd.find("new_quantity");
-            if (side_it == upd.end() || px_it == upd.end() || qty_it == upd.end()) continue;
+            if (side_it == upd.end() || px_it == upd.end() || qty_it == upd.end())
+                continue;
 
             PriceLevel level;
             level.price = std::stod(px_it->get<std::string>());
@@ -285,7 +296,8 @@ Result CoinbaseFeedHandler::process_snapshot(const nlohmann::json& j, uint64_t s
     }
 
     last_sequence_.store(seq, std::memory_order_release);
-    if (snapshot_callback_) snapshot_callback_(snap);
+    if (snapshot_callback_)
+        snapshot_callback_(snap);
 
     return Result::SUCCESS;
 }
@@ -295,17 +307,20 @@ Result CoinbaseFeedHandler::process_update(const nlohmann::json& j, uint64_t seq
     int64_t ts = http::now_ns();
 
     auto events_it = j.find("events");
-    if (events_it == j.end() || !events_it->is_array()) return Result::SUCCESS;
+    if (events_it == j.end() || !events_it->is_array())
+        return Result::SUCCESS;
 
     for (const auto& event : *events_it) {
         auto updates_it = event.find("updates");
-        if (updates_it == event.end() || !updates_it->is_array()) continue;
+        if (updates_it == event.end() || !updates_it->is_array())
+            continue;
 
         for (const auto& upd : *updates_it) {
             auto side_it = upd.find("side");
             auto px_it = upd.find("price_level");
             auto qty_it = upd.find("new_quantity");
-            if (side_it == upd.end() || px_it == upd.end() || qty_it == upd.end()) continue;
+            if (side_it == upd.end() || px_it == upd.end() || qty_it == upd.end())
+                continue;
 
             Delta d;
             d.side = (side_it->get<std::string>() == "bid") ? Side::BID : Side::ASK;
@@ -313,7 +328,8 @@ Result CoinbaseFeedHandler::process_update(const nlohmann::json& j, uint64_t seq
             d.size = std::stod(qty_it->get<std::string>());
             d.sequence = seq;
             d.timestamp_local_ns = ts;
-            if (delta_callback_) delta_callback_(d);
+            if (delta_callback_)
+                delta_callback_(d);
         }
     }
 
@@ -322,14 +338,17 @@ Result CoinbaseFeedHandler::process_update(const nlohmann::json& j, uint64_t seq
 
 Result CoinbaseFeedHandler::process_message(const std::string& message) {
     auto j = nlohmann::json::parse(message, nullptr, false);
-    if (j.is_discarded()) return Result::SUCCESS;
+    if (j.is_discarded())
+        return Result::SUCCESS;
 
     auto channel_it = j.find("channel");
     auto type_it = j.find("type");
-    if (channel_it == j.end() || type_it == j.end()) return Result::SUCCESS;
+    if (channel_it == j.end() || type_it == j.end())
+        return Result::SUCCESS;
 
     const std::string channel = channel_it->get<std::string>();
-    if (channel != "l2_data") return Result::SUCCESS;
+    if (channel != "l2_data")
+        return Result::SUCCESS;
 
     uint64_t seq = 0;
     auto seq_it = j.find("sequence_num");
@@ -356,7 +375,8 @@ Result CoinbaseFeedHandler::process_message(const std::string& message) {
 
     if (has_snapshot) {
         Result r = process_snapshot(j, seq);
-        if (r != Result::SUCCESS) return r;
+        if (r != Result::SUCCESS)
+            return r;
 
         if (apply_buffered_deltas() != Result::SUCCESS) {
             trigger_resnapshot("Buffered Coinbase deltas invalid after snapshot");
@@ -392,7 +412,8 @@ Result CoinbaseFeedHandler::apply_buffered_deltas() {
 
     for (const auto& msg : delta_buffer_) {
         auto j = nlohmann::json::parse(msg, nullptr, false);
-        if (j.is_discarded()) continue;
+        if (j.is_discarded())
+            continue;
 
         uint64_t seq = 0;
         auto seq_it = j.find("sequence_num");
@@ -415,7 +436,8 @@ Result CoinbaseFeedHandler::apply_buffered_deltas() {
             return Result::ERROR_SEQUENCE_GAP;
         }
 
-        if (process_update(j, seq) == Result::SUCCESS) ++applied;
+        if (process_update(j, seq) == Result::SUCCESS)
+            ++applied;
     }
 
     delta_buffer_.clear();
@@ -430,9 +452,10 @@ bool CoinbaseFeedHandler::validate_delta_sequence(uint64_t seq) const {
 
 void CoinbaseFeedHandler::trigger_resnapshot(const std::string& reason) {
     LOG_WARN("Triggering Coinbase re-sync", "reason", reason.c_str());
-    if (error_callback_) error_callback_("Re-sync: " + reason);
+    if (error_callback_)
+        error_callback_("Re-sync: " + reason);
     delta_buffer_.clear();
     state_.store(State::BUFFERING, std::memory_order_release);
 }
 
-}  // namespace trading
+} // namespace trading

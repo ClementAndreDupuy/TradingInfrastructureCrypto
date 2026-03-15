@@ -1,6 +1,6 @@
 # R2 Research — State-of-the-Art Real-Time Market Regime Identification
 
-Date: 2026-03-14  
+Date: 2026-03-14
 Scope: Research + implementation blueprint for dynamic regime-aware strategy switching in ThamesRiverTrading.
 
 ## 1) Objective

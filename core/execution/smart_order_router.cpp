@@ -6,15 +6,16 @@ namespace trading {
 
 double SmartOrderRouter::effective_price_bps(const VenueQuote& v, Side side) noexcept {
     const double px = (side == Side::BID) ? v.best_ask : v.best_bid;
-    if (px <= 0.0) return 1e12;
+    if (px <= 0.0)
+        return 1e12;
 
     const double px_component = px * 1e4;
     return px_component + v.taker_fee_bps + v.latency_penalty_bps + v.risk_penalty_bps;
 }
 
-RoutingDecision SmartOrderRouter::route(Side side,
-                                        double quantity,
-                                        const std::array<VenueQuote, MAX_VENUES>& venues) const noexcept {
+RoutingDecision
+SmartOrderRouter::route(Side side, double quantity,
+                        const std::array<VenueQuote, MAX_VENUES>& venues) const noexcept {
     RoutingDecision out;
 
     std::array<bool, MAX_VENUES> used{};
@@ -25,9 +26,11 @@ RoutingDecision SmartOrderRouter::route(Side side,
         double best_score = 1e18;
 
         for (size_t i = 0; i < venues.size(); ++i) {
-            if (used[i]) continue;
+            if (used[i])
+                continue;
             const auto& v = venues[i];
-            if (!v.healthy || v.depth_qty <= 0.0) continue;
+            if (!v.healthy || v.depth_qty <= 0.0)
+                continue;
 
             const double score = effective_price_bps(v, side);
             if (score < best_score) {
@@ -36,7 +39,8 @@ RoutingDecision SmartOrderRouter::route(Side side,
             }
         }
 
-        if (best_idx < 0) break;
+        if (best_idx < 0)
+            break;
 
         const VenueQuote& winner = venues[best_idx];
         const double clip = (remaining < winner.depth_qty) ? remaining : winner.depth_qty;
@@ -54,12 +58,10 @@ RoutingDecision SmartOrderRouter::route(Side side,
     return out;
 }
 
-RoutingDecision SmartOrderRouter::route_with_alpha(
-    Side side,
-    double base_quantity,
-    const AlphaSignal& alpha_signal,
-    const std::array<VenueQuote, MAX_VENUES>& venues,
-    const RoutingConstraints& cfg) const noexcept {
+RoutingDecision SmartOrderRouter::route_with_alpha(Side side, double base_quantity,
+                                                   const AlphaSignal& alpha_signal,
+                                                   const std::array<VenueQuote, MAX_VENUES>& venues,
+                                                   const RoutingConstraints& cfg) const noexcept {
     RoutingDecision out;
 
     if (alpha_signal.risk_score >= cfg.alpha_risk_max) {
@@ -80,4 +82,4 @@ RoutingDecision SmartOrderRouter::route_with_alpha(
     return route(side, base_quantity * scale, venues);
 }
 
-}  // namespace trading
+} // namespace trading

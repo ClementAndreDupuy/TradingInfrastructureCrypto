@@ -16,18 +16,18 @@
 namespace trading {
 
 class ExchangeConnector {
-public:
+  public:
     virtual ~ExchangeConnector() = default;
 
-    virtual Exchange        exchange_id()  const = 0;
-    virtual bool            is_connected() const = 0;
+    virtual Exchange exchange_id() const = 0;
+    virtual bool is_connected() const = 0;
 
-    virtual ConnectorResult connect()    = 0;
-    virtual void            disconnect() = 0;
+    virtual ConnectorResult connect() = 0;
+    virtual void disconnect() = 0;
 
-    virtual ConnectorResult submit_order(const Order& order)        = 0;
-    virtual ConnectorResult cancel_order(uint64_t client_order_id)  = 0;
-    virtual ConnectorResult cancel_all(const char* symbol)          = 0;
+    virtual ConnectorResult submit_order(const Order& order) = 0;
+    virtual ConnectorResult cancel_order(uint64_t client_order_id) = 0;
+    virtual ConnectorResult cancel_all(const char* symbol) = 0;
 
     // Reconcile local order state with exchange state (called on reconnect).
     virtual ConnectorResult reconcile() = 0;
@@ -35,10 +35,11 @@ public:
     // Fill/cancel/reject notifications — set by the order manager.
     std::function<void(const FillUpdate&)> on_fill;
 
-protected:
+  protected:
     void emit_fill(const FillUpdate& u) {
-        if (on_fill) on_fill(u);
+        if (on_fill)
+            on_fill(u);
     }
 };
 
-}  // namespace trading
+} // namespace trading

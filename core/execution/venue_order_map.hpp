@@ -9,23 +9,23 @@ namespace trading {
 
 struct VenueOrderEntry {
     uint64_t client_order_id = 0;
-    char     venue_order_id[48] = {};
+    char venue_order_id[48] = {};
     Exchange exchange = Exchange::UNKNOWN;
-    char     symbol[16] = {};
-    bool     active = false;
+    char symbol[16] = {};
+    bool active = false;
 };
 
 class VenueOrderMap {
-public:
+  public:
     static constexpr size_t MAX_ENTRIES = 512;
 
-    bool upsert(uint64_t client_order_id,
-                const char* venue_order_id,
-                Exchange exchange,
+    bool upsert(uint64_t client_order_id, const char* venue_order_id, Exchange exchange,
                 const char* symbol) noexcept {
         VenueOrderEntry* slot = find(client_order_id);
-        if (!slot) slot = find_free_slot();
-        if (!slot) return false;
+        if (!slot)
+            slot = find_free_slot();
+        if (!slot)
+            return false;
 
         slot->client_order_id = client_order_id;
         copy_str(slot->venue_order_id, venue_order_id);
@@ -37,41 +37,45 @@ public:
 
     const VenueOrderEntry* get(uint64_t client_order_id) const noexcept {
         for (const auto& entry : entries_) {
-            if (entry.active && entry.client_order_id == client_order_id) return &entry;
+            if (entry.active && entry.client_order_id == client_order_id)
+                return &entry;
         }
         return nullptr;
     }
 
     VenueOrderEntry* find(uint64_t client_order_id) noexcept {
         for (auto& entry : entries_) {
-            if (entry.active && entry.client_order_id == client_order_id) return &entry;
+            if (entry.active && entry.client_order_id == client_order_id)
+                return &entry;
         }
         return nullptr;
     }
 
     bool erase(uint64_t client_order_id) noexcept {
         VenueOrderEntry* slot = find(client_order_id);
-        if (!slot) return false;
+        if (!slot)
+            return false;
         *slot = {};
         return true;
     }
 
     void clear() noexcept {
-        for (auto& entry : entries_) entry = {};
+        for (auto& entry : entries_)
+            entry = {};
     }
 
-private:
+  private:
     std::array<VenueOrderEntry, MAX_ENTRIES> entries_{};
 
     VenueOrderEntry* find_free_slot() noexcept {
         for (auto& entry : entries_) {
-            if (!entry.active) return &entry;
+            if (!entry.active)
+                return &entry;
         }
         return nullptr;
     }
 
-    template <size_t N>
-    static void copy_str(char (&dst)[N], const char* src) noexcept {
+    template <size_t N> static void copy_str(char (&dst)[N], const char* src) noexcept {
         if (!src) {
             dst[0] = '\0';
             return;
@@ -86,4 +90,4 @@ private:
     }
 };
 
-}  // namespace trading
+} // namespace trading

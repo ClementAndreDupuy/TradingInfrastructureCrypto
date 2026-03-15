@@ -25,19 +25,18 @@ CliOptions parse_args(int argc, char** argv) {
     CliOptions out;
     for (int i = 1; i < argc; ++i) {
         const std::string arg(argv[i]);
-        if (arg == "--mode" && i + 1 < argc) out.mode = argv[++i];
-        else if (arg == "--venues" && i + 1 < argc) out.venues = argv[++i];
-        else if (arg == "--symbol" && i + 1 < argc) out.symbol = argv[++i];
+        if (arg == "--mode" && i + 1 < argc)
+            out.mode = argv[++i];
+        else if (arg == "--venues" && i + 1 < argc)
+            out.venues = argv[++i];
+        else if (arg == "--symbol" && i + 1 < argc)
+            out.symbol = argv[++i];
     }
     return out;
 }
 
-trading::Order make_child_order(const char* symbol,
-                                trading::Exchange exchange,
-                                trading::Side side,
-                                double qty,
-                                double price,
-                                uint64_t client_order_id) {
+trading::Order make_child_order(const char* symbol, trading::Exchange exchange, trading::Side side,
+                                double qty, double price, uint64_t client_order_id) {
     trading::Order o;
     std::strncpy(o.symbol, symbol, sizeof(o.symbol) - 1);
     o.symbol[sizeof(o.symbol) - 1] = '\0';
@@ -51,7 +50,7 @@ trading::Order make_child_order(const char* symbol,
     return o;
 }
 
-}  // namespace
+} // namespace
 
 int main(int argc, char** argv) {
     using namespace trading;
@@ -62,7 +61,8 @@ int main(int argc, char** argv) {
     CircuitBreakerConfig cb_cfg;
     CircuitBreaker circuit_breaker(cb_cfg, kill_switch);
 
-    if (kill_switch.is_active()) return 2;
+    if (kill_switch.is_active())
+        return 2;
 
     BookManager binance_book(opts.symbol, Exchange::BINANCE, 0.1, 10000);
     BookManager kraken_book(opts.symbol, Exchange::KRAKEN, 0.1, 10000);
@@ -74,30 +74,27 @@ int main(int argc, char** argv) {
     (void)okx_book;
     (void)coinbase_book;
 
-    BinanceConnector binance(http::env_var("BINANCE_API_KEY"),
-                             http::env_var("BINANCE_API_SECRET"),
+    BinanceConnector binance(http::env_var("BINANCE_API_KEY"), http::env_var("BINANCE_API_SECRET"),
                              opts.mode == "shadow" ? "mock://binance" : "https://api.binance.com");
-    KrakenConnector kraken(http::env_var("KRAKEN_API_KEY"),
-                           http::env_var("KRAKEN_API_SECRET"),
+    KrakenConnector kraken(http::env_var("KRAKEN_API_KEY"), http::env_var("KRAKEN_API_SECRET"),
                            opts.mode == "shadow" ? "mock://kraken" : "https://api.kraken.com");
-    OkxConnector okx(http::env_var("OKX_API_KEY"),
-                     http::env_var("OKX_API_SECRET"),
+    OkxConnector okx(http::env_var("OKX_API_KEY"), http::env_var("OKX_API_SECRET"),
                      opts.mode == "shadow" ? "mock://okx" : "https://www.okx.com");
-    CoinbaseConnector coinbase(http::env_var("COINBASE_API_KEY"),
-                               http::env_var("COINBASE_API_SECRET"),
-                               opts.mode == "shadow" ? "mock://coinbase" : "https://api.coinbase.com");
+    CoinbaseConnector coinbase(
+        http::env_var("COINBASE_API_KEY"), http::env_var("COINBASE_API_SECRET"),
+        opts.mode == "shadow" ? "mock://coinbase" : "https://api.coinbase.com");
 
     binance.connect();
     kraken.connect();
     okx.connect();
     coinbase.connect();
 
-    std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venues{ {
-        {Exchange::BINANCE,  100.0, 100.1, 0.40, 5.0, 0.5, 0.2, true},
-        {Exchange::KRAKEN,   100.0, 100.2, 0.40, 4.0, 0.7, 0.3, true},
-        {Exchange::OKX,      100.0, 100.0, 0.30, 5.0, 0.4, 0.4, true},
+    std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venues{{
+        {Exchange::BINANCE, 100.0, 100.1, 0.40, 5.0, 0.5, 0.2, true},
+        {Exchange::KRAKEN, 100.0, 100.2, 0.40, 4.0, 0.7, 0.3, true},
+        {Exchange::OKX, 100.0, 100.0, 0.30, 5.0, 0.4, 0.4, true},
         {Exchange::COINBASE, 100.0, 100.3, 3.00, 6.0, 0.9, 0.5, true},
-    } };
+    }};
 
     AlphaSignalReader alpha_reader;
     alpha_reader.open();
@@ -119,31 +116,32 @@ int main(int argc, char** argv) {
     uint64_t next_id = 1;
     for (size_t i = 0; i < decision.child_count; ++i) {
         const auto& child = decision.children[i];
-        const Order child_order = make_child_order(opts.symbol.c_str(),
-                                                   child.exchange,
-                                                   Side::BID,
-                                                   child.quantity,
-                                                   child.limit_price,
-                                                   next_id++);
+        const Order child_order = make_child_order(opts.symbol.c_str(), child.exchange, Side::BID,
+                                                   child.quantity, child.limit_price, next_id++);
 
         ConnectorResult res = ConnectorResult::ERROR_UNKNOWN;
         switch (child.exchange) {
-            case Exchange::BINANCE: res = binance.submit_order(child_order); break;
-            case Exchange::KRAKEN: res = kraken.submit_order(child_order); break;
-            case Exchange::OKX: res = okx.submit_order(child_order); break;
-            case Exchange::COINBASE: res = coinbase.submit_order(child_order); break;
-            default: break;
+        case Exchange::BINANCE:
+            res = binance.submit_order(child_order);
+            break;
+        case Exchange::KRAKEN:
+            res = kraken.submit_order(child_order);
+            break;
+        case Exchange::OKX:
+            res = okx.submit_order(child_order);
+            break;
+        case Exchange::COINBASE:
+            res = coinbase.submit_order(child_order);
+            break;
+        default:
+            break;
         }
 
-        std::cout << "child=" << i
-                  << " venue=" << exchange_to_string(child.exchange)
-                  << " qty=" << child.quantity
-                  << " result=" << static_cast<int>(res) << "\n";
+        std::cout << "child=" << i << " venue=" << exchange_to_string(child.exchange)
+                  << " qty=" << child.quantity << " result=" << static_cast<int>(res) << "\n";
     }
 
-    std::cout << "mode=" << opts.mode
-              << " venues=" << opts.venues
-              << " symbol=" << opts.symbol
+    std::cout << "mode=" << opts.mode << " venues=" << opts.venues << " symbol=" << opts.symbol
               << " child_count=" << decision.child_count << "\n";
 
     return 0;

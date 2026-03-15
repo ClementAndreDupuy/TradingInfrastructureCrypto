@@ -1,17 +1,17 @@
-#include "core/feeds/common/book_manager.hpp"
 #include "core/execution/market_maker.hpp"
+#include "core/feeds/common/book_manager.hpp"
 #include "core/risk/kill_switch.hpp"
 #include "core/shadow/shadow_engine.hpp"
 #include <gtest/gtest.h>
 
 #include <cstdio>
 #include <cstring>
-#include <functional>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <sstream>
-#include <string>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 using namespace trading;
@@ -26,21 +26,27 @@ struct RecordedEvent {
     double size = 0.0;
 };
 
-
 std::string resolve_fixture_path(const std::string& relative) {
     namespace fs = std::filesystem;
 
     const fs::path direct(relative);
-    if (fs::exists(direct)) return direct.string();
+    if (fs::exists(direct))
+        return direct.string();
 
-    const fs::path from_file = fs::path(__FILE__).parent_path().parent_path() / "data" / "replay" / "binance_btcusdt_replay.csv";
-    if (fs::exists(from_file)) return from_file.string();
+    const fs::path from_file = fs::path(__FILE__).parent_path().parent_path() / "data" / "replay" /
+                               "binance_btcusdt_replay.csv";
+    if (fs::exists(from_file))
+        return from_file.string();
 
-    const fs::path from_cwd = fs::current_path() / "tests" / "data" / "replay" / "binance_btcusdt_replay.csv";
-    if (fs::exists(from_cwd)) return from_cwd.string();
+    const fs::path from_cwd =
+        fs::current_path() / "tests" / "data" / "replay" / "binance_btcusdt_replay.csv";
+    if (fs::exists(from_cwd))
+        return from_cwd.string();
 
-    const fs::path from_build = fs::current_path().parent_path() / "tests" / "data" / "replay" / "binance_btcusdt_replay.csv";
-    if (fs::exists(from_build)) return from_build.string();
+    const fs::path from_build = fs::current_path().parent_path() / "tests" / "data" / "replay" /
+                                "binance_btcusdt_replay.csv";
+    if (fs::exists(from_build))
+        return from_build.string();
 
     throw std::runtime_error("Unable to open replay fixture: " + relative);
 }
@@ -54,13 +60,16 @@ std::vector<RecordedEvent> load_events(const std::string& path) {
     std::vector<RecordedEvent> events;
     std::string line;
     while (std::getline(in, line)) {
-        if (line.empty() || line[0] == '#') continue;
+        if (line.empty() || line[0] == '#')
+            continue;
 
         std::stringstream ss(line);
         std::string token;
         std::vector<std::string> fields;
-        while (std::getline(ss, token, ',')) fields.push_back(token);
-        if (fields.size() != 5) continue;
+        while (std::getline(ss, token, ','))
+            fields.push_back(token);
+        if (fields.size() != 5)
+            continue;
 
         RecordedEvent event;
         event.type = fields[0][0];
@@ -75,7 +84,7 @@ std::vector<RecordedEvent> load_events(const std::string& path) {
 }
 
 class RecordedFeedHandler {
-public:
+  public:
     using SnapshotCallback = std::function<void(const Snapshot&)>;
     using DeltaCallback = std::function<void(const Delta&)>;
 
@@ -91,8 +100,10 @@ public:
         for (const auto& event : events) {
             if (event.type == 'S') {
                 snapshot.sequence = event.sequence;
-                if (event.side == Side::BID) snapshot.bids.emplace_back(event.price, event.size);
-                else snapshot.asks.emplace_back(event.price, event.size);
+                if (event.side == Side::BID)
+                    snapshot.bids.emplace_back(event.price, event.size);
+                else
+                    snapshot.asks.emplace_back(event.price, event.size);
                 continue;
             }
 
@@ -111,15 +122,16 @@ public:
             }
         }
 
-        if (!snapshot_sent && snapshot_cb_) snapshot_cb_(snapshot);
+        if (!snapshot_sent && snapshot_cb_)
+            snapshot_cb_(snapshot);
     }
 
-private:
+  private:
     SnapshotCallback snapshot_cb_;
     DeltaCallback delta_cb_;
 };
 
-}  // namespace
+} // namespace
 
 TEST(FullPipelineReplayTest, FeedBookMakerShadowEndToEndWithReplayData) {
     const auto events = load_events("tests/data/replay/binance_btcusdt_replay.csv");
@@ -142,7 +154,7 @@ TEST(FullPipelineReplayTest, FeedBookMakerShadowEndToEndWithReplayData) {
     mm_cfg.half_spread_bps = 1.0;
 
     NeuralAlphaMarketMaker maker(order_manager, binance_book, kill_switch, mm_cfg);
-    maker.set_alpha_signal(10.0, 0.1);  // strong bullish + low risk
+    maker.set_alpha_signal(10.0, 0.1); // strong bullish + low risk
 
     RecordedFeedHandler feed;
     feed.set_snapshot_callback(binance_book.snapshot_handler());

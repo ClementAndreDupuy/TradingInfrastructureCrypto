@@ -1,37 +1,36 @@
 #pragma once
 
-#include "../../common/types.hpp"
 #include "../../common/logging.hpp"
+#include "../../common/types.hpp"
 #ifdef __has_include
-#  if __has_include(<nlohmann/json.hpp>)
-#    include <nlohmann/json.hpp>
-#  else
-#    include "../../common/json.hpp"
-#  endif
+#if __has_include(<nlohmann/json.hpp>)
+#include <nlohmann/json.hpp>
 #else
-#  include "../../common/json.hpp"
+#include "../../common/json.hpp"
 #endif
-#include <string>
-#include <vector>
+#else
+#include "../../common/json.hpp"
+#endif
+#include <atomic>
+#include <condition_variable>
 #include <deque>
 #include <functional>
-#include <atomic>
-#include <thread>
 #include <mutex>
-#include <condition_variable>
+#include <string>
+#include <thread>
+#include <vector>
 
 namespace trading {
 
 class CoinbaseFeedHandler {
-public:
+  public:
     using SnapshotCallback = std::function<void(const Snapshot&)>;
     using DeltaCallback = std::function<void(const Delta&)>;
     using ErrorCallback = std::function<void(const std::string&)>;
 
     explicit CoinbaseFeedHandler(
         const std::string& symbol,
-        const std::string& ws_url = "wss://advanced-trade-ws.coinbase.com"
-    );
+        const std::string& ws_url = "wss://advanced-trade-ws.coinbase.com");
 
     ~CoinbaseFeedHandler();
 
@@ -50,7 +49,7 @@ public:
 
     Result process_message(const std::string& message);
 
-private:
+  private:
     enum class State { DISCONNECTED, BUFFERING, STREAMING };
 
     std::string symbol_;
@@ -80,4 +79,4 @@ private:
     void trigger_resnapshot(const std::string& reason);
 };
 
-}  // namespace trading
+} // namespace trading

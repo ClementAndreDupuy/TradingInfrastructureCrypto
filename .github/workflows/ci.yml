@@ -55,6 +55,28 @@ jobs:
       - name: ruff (lint)
         run: ruff check --select E,F,W,I --ignore E501,E402,F401,I001 research/ deploy/
 
+
+  cpp-style-hooks:
+    name: C++ style hooks (pre-commit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y             cmake             pkg-config             libssl-dev             libwebsockets-dev             libcurl4-openssl-dev             nlohmann-json3-dev             clang-format             clang-tidy
+          python3 -m pip install --upgrade pip pre-commit
+
+      - name: Run preflight dependency check
+        run: python3 scripts/preflight_check.py
+
+      - name: Configure CMake (compile_commands for clang-tidy)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_BINDINGS=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_CXX_FLAGS="-I$(pwd)"
+
+      - name: Run pre-commit hooks
+        run: pre-commit run --all-files
+
   # ── C++ build ────────────────────────────────────────────────────────────────
   cpp-build:
     name: C++ build
@@ -77,7 +99,7 @@ jobs:
         run: python3 scripts/preflight_check.py
 
       - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_BINDINGS=OFF -DCMAKE_CXX_FLAGS="-I$(pwd)"
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_BINDINGS=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_CXX_FLAGS="-I$(pwd)"
 
       - name: Build
         run: cmake --build build --parallel

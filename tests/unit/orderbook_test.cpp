@@ -1,34 +1,32 @@
 #include "core/orderbook/orderbook.hpp"
-#include <gtest/gtest.h>
 #include <cmath>
 #include <cstdint>
+#include <gtest/gtest.h>
 
 using namespace trading;
 
 // Build a synthetic snapshot centered around a given best bid.
-static Snapshot make_snapshot(double best_bid, double best_ask,
-                               int n_levels = 5, double tick = 1.0,
-                               uint64_t seq = 100) {
+static Snapshot make_snapshot(double best_bid, double best_ask, int n_levels = 5, double tick = 1.0,
+                              uint64_t seq = 100) {
     Snapshot s;
-    s.symbol   = "BTCUSDT";
+    s.symbol = "BTCUSDT";
     s.exchange = Exchange::BINANCE;
     s.sequence = seq;
     for (int i = 0; i < n_levels; ++i) {
-        s.bids.push_back(PriceLevel(best_bid  - i * tick, 1.0 + i));
-        s.asks.push_back(PriceLevel(best_ask  + i * tick, 1.0 + i));
+        s.bids.push_back(PriceLevel(best_bid - i * tick, 1.0 + i));
+        s.asks.push_back(PriceLevel(best_ask + i * tick, 1.0 + i));
     }
     return s;
 }
 
 static Delta make_delta(Side side, double price, double size, uint64_t seq) {
     Delta d;
-    d.side     = side;
-    d.price    = price;
-    d.size     = size;
+    d.side = side;
+    d.price = price;
+    d.size = size;
     d.sequence = seq;
     return d;
 }
-
 
 static uint32_t snapshot_checksum(const Snapshot& s) {
     auto fnv1a_bytes = [](const char* data, size_t len, uint32_t seed) {
@@ -46,8 +44,10 @@ static uint32_t snapshot_checksum(const Snapshot& s) {
         hash = fnv1a_bytes(reinterpret_cast<const char*>(&level.size), sizeof(level.size), hash);
     };
 
-    for (const auto& l : s.bids) hash_level(l);
-    for (const auto& l : s.asks) hash_level(l);
+    for (const auto& l : s.bids)
+        hash_level(l);
+    for (const auto& l : s.asks)
+        hash_level(l);
     return hash;
 }
 // ─────────────────────────────────────────────
@@ -90,7 +90,7 @@ TEST(OrderBook, PriceGridNoCollisions) {
 
     // Apply two deltas at different prices
     Delta d50 = make_delta(Side::BID, 50000.0, 2.5, 101);
-    Delta d60 = make_delta(Side::BID, 55000.0, 3.7, 102);  // within 20k range
+    Delta d60 = make_delta(Side::BID, 55000.0, 3.7, 102); // within 20k range
     EXPECT_EQ(book.apply_delta(d50), Result::SUCCESS);
     EXPECT_EQ(book.apply_delta(d60), Result::SUCCESS);
 
@@ -100,8 +100,14 @@ TEST(OrderBook, PriceGridNoCollisions) {
 
     bool found50 = false, found55 = false;
     for (const auto& l : bids) {
-        if (std::fabs(l.price - 50000.0) < 0.01) { found50 = true; EXPECT_DOUBLE_EQ(l.size, 2.5); }
-        if (std::fabs(l.price - 55000.0) < 0.01) { found55 = true; EXPECT_DOUBLE_EQ(l.size, 3.7); }
+        if (std::fabs(l.price - 50000.0) < 0.01) {
+            found50 = true;
+            EXPECT_DOUBLE_EQ(l.size, 2.5);
+        }
+        if (std::fabs(l.price - 55000.0) < 0.01) {
+            found55 = true;
+            EXPECT_DOUBLE_EQ(l.size, 3.7);
+        }
     }
     EXPECT_TRUE(found50) << "50000 level not found";
     EXPECT_TRUE(found55) << "55000 level not found";
@@ -122,7 +128,10 @@ TEST(OrderBook, PriceToIndexRoundTrip) {
             book.get_top_levels(20000, bids, asks);
             bool found = false;
             for (const auto& l : bids) {
-                if (std::fabs(l.price - price) < 0.01) { found = true; break; }
+                if (std::fabs(l.price - price) < 0.01) {
+                    found = true;
+                    break;
+                }
             }
             EXPECT_TRUE(found) << "round-trip failed for price " << price;
         }
@@ -194,11 +203,11 @@ TEST(OrderBook, GetTopLevelsSorted) {
 
     // Bids: descending
     for (size_t i = 1; i < bids.size(); ++i) {
-        EXPECT_GT(bids[i-1].price, bids[i].price);
+        EXPECT_GT(bids[i - 1].price, bids[i].price);
     }
     // Asks: ascending
     for (size_t i = 1; i < asks.size(); ++i) {
-        EXPECT_LT(asks[i-1].price, asks[i].price);
+        EXPECT_LT(asks[i - 1].price, asks[i].price);
     }
 
     EXPECT_DOUBLE_EQ(bids[0].price, 50000.0);
@@ -216,7 +225,7 @@ TEST(OrderBook, OldDeltaSequenceIgnored) {
     // Stale delta (seq=50, older than snapshot seq=100) must be ignored
     auto result = book.apply_delta(make_delta(Side::BID, 49999.0, 99.0, 50));
     EXPECT_EQ(result, Result::SUCCESS);
-    EXPECT_EQ(book.get_sequence(), 101u);  // unchanged
+    EXPECT_EQ(book.get_sequence(), 101u); // unchanged
 }
 
 TEST(OrderBook, ReSnapshotRecentersGrid) {
@@ -233,7 +242,6 @@ TEST(OrderBook, ReSnapshotRecentersGrid) {
     EXPECT_DOUBLE_EQ(book.get_best_bid(), 80000.0);
     EXPECT_EQ(book.get_sequence(), 200u);
 }
-
 
 TEST(OrderBook, RejectsPathologicallyWideSpreadSnapshot) {
     OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);

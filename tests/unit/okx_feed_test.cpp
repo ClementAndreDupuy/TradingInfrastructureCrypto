@@ -4,7 +4,7 @@
 using namespace trading;
 
 class OkxFeedHandlerTest : public ::testing::Test {
-protected:
+  protected:
     void SetUp() override {
         set_log_level(LogLevel::ERROR);
         handler_ = std::make_unique<OkxFeedHandler>("BTC-USDT");
@@ -14,17 +14,14 @@ protected:
             snapshot_count_++;
         });
 
-        handler_->set_delta_callback([this](const Delta& d) {
-            deltas_.push_back(d);
-        });
+        handler_->set_delta_callback([this](const Delta& d) { deltas_.push_back(d); });
 
-        handler_->set_error_callback([this](const std::string& e) {
-            last_error_ = e;
-        });
+        handler_->set_error_callback([this](const std::string& e) { last_error_ = e; });
     }
 
     void TearDown() override {
-        if (handler_) handler_->stop();
+        if (handler_)
+            handler_->stop();
     }
 
     std::unique_ptr<OkxFeedHandler> handler_;
@@ -45,7 +42,6 @@ TEST_F(OkxFeedHandlerTest, IgnoresNonBookMessages) {
     EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
     EXPECT_TRUE(deltas_.empty());
 }
-
 
 TEST_F(OkxFeedHandlerTest, MalformedJsonIsIgnored) {
     EXPECT_EQ(handler_->process_message("{oops"), Result::SUCCESS);
@@ -77,7 +73,6 @@ TEST_F(OkxFeedHandlerTest, BuffersBookDeltasBeforeStreaming) {
     EXPECT_TRUE(deltas_.empty());
     EXPECT_TRUE(last_error_.empty());
 }
-
 
 TEST_F(OkxFeedHandlerTest, ChecksumMismatchTriggersResnapshot) {
     handler_->set_streaming_state_for_test(100);

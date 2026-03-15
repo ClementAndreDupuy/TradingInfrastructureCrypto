@@ -1,100 +1,129 @@
 #pragma once
 // Vendored minimal nlohmann-compatible JSON parser. No external dependencies.
 
-#include <string>
-#include <vector>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace nlohmann {
 
 class json {
-public:
+  public:
     enum class value_t : uint8_t {
-        null, boolean, number_integer, number_unsigned, number_float,
-        string, array, object, discarded
+        null,
+        boolean,
+        number_integer,
+        number_unsigned,
+        number_float,
+        string,
+        array,
+        object,
+        discarded
     };
 
-    using array_t  = std::vector<json>;
+    using array_t = std::vector<json>;
     using object_t = std::vector<std::pair<std::string, json>>;
 
     // ── Constructors ────────────────────────────────────────────────────────
-    json()                    : type_(value_t::null)             {}
-    json(std::nullptr_t)      : type_(value_t::null)             {}
-    json(bool v)              : type_(value_t::boolean)          { b_ = v; }
-    json(int64_t v)           : type_(value_t::number_integer)   { i_ = v; }
-    json(uint64_t v)          : type_(value_t::number_unsigned)  { u_ = v; }
-    json(double v)            : type_(value_t::number_float)     { d_ = v; }
-    json(const std::string& v): type_(value_t::string), s_(v)   {}
-    json(std::string&& v)     : type_(value_t::string), s_(std::move(v)) {}
+    json() : type_(value_t::null) {}
+    json(std::nullptr_t) : type_(value_t::null) {}
+    json(bool v) : type_(value_t::boolean) { b_ = v; }
+    json(int64_t v) : type_(value_t::number_integer) { i_ = v; }
+    json(uint64_t v) : type_(value_t::number_unsigned) { u_ = v; }
+    json(double v) : type_(value_t::number_float) { d_ = v; }
+    json(const std::string& v) : type_(value_t::string), s_(v) {}
+    json(std::string&& v) : type_(value_t::string), s_(std::move(v)) {}
 
-    json(const json& o)  { copy_from(o); }
+    json(const json& o) { copy_from(o); }
     json(json&& o) noexcept { move_from(std::move(o)); }
 
-    json& operator=(const json& o)  { if (this != &o) { clear(); copy_from(o); } return *this; }
-    json& operator=(json&& o) noexcept { if (this != &o) { clear(); move_from(std::move(o)); } return *this; }
+    json& operator=(const json& o) {
+        if (this != &o) {
+            clear();
+            copy_from(o);
+        }
+        return *this;
+    }
+    json& operator=(json&& o) noexcept {
+        if (this != &o) {
+            clear();
+            move_from(std::move(o));
+        }
+        return *this;
+    }
 
     ~json() { clear(); }
 
     // ── Factories ───────────────────────────────────────────────────────────
-    static json array()  { json j; j.type_ = value_t::array;  return j; }
-    static json object() { json j; j.type_ = value_t::object; return j; }
+    static json array() {
+        json j;
+        j.type_ = value_t::array;
+        return j;
+    }
+    static json object() {
+        json j;
+        j.type_ = value_t::object;
+        return j;
+    }
 
     // ── Type checks ─────────────────────────────────────────────────────────
-    bool is_null()            const noexcept { return type_ == value_t::null; }
-    bool is_boolean()         const noexcept { return type_ == value_t::boolean; }
-    bool is_number_integer()  const noexcept { return type_ == value_t::number_integer; }
+    bool is_null() const noexcept { return type_ == value_t::null; }
+    bool is_boolean() const noexcept { return type_ == value_t::boolean; }
+    bool is_number_integer() const noexcept { return type_ == value_t::number_integer; }
     bool is_number_unsigned() const noexcept { return type_ == value_t::number_unsigned; }
-    bool is_number_float()    const noexcept { return type_ == value_t::number_float; }
-    bool is_number()          const noexcept {
-        return type_ == value_t::number_integer ||
-               type_ == value_t::number_unsigned ||
+    bool is_number_float() const noexcept { return type_ == value_t::number_float; }
+    bool is_number() const noexcept {
+        return type_ == value_t::number_integer || type_ == value_t::number_unsigned ||
                type_ == value_t::number_float;
     }
-    bool is_string()          const noexcept { return type_ == value_t::string; }
-    bool is_array()           const noexcept { return type_ == value_t::array; }
-    bool is_object()          const noexcept { return type_ == value_t::object; }
-    bool is_discarded()       const noexcept { return type_ == value_t::discarded; }
+    bool is_string() const noexcept { return type_ == value_t::string; }
+    bool is_array() const noexcept { return type_ == value_t::array; }
+    bool is_object() const noexcept { return type_ == value_t::object; }
+    bool is_discarded() const noexcept { return type_ == value_t::discarded; }
 
     size_t size() const noexcept {
-        if (is_array())  return arr_ ? arr_->size() : 0;
-        if (is_object()) return obj_ ? obj_->size() : 0;
+        if (is_array())
+            return arr_ ? arr_->size() : 0;
+        if (is_object())
+            return obj_ ? obj_->size() : 0;
         return 0;
     }
     bool empty() const noexcept { return size() == 0; }
 
     // ── get<T> ──────────────────────────────────────────────────────────────
-    template<typename T> T get() const;
+    template <typename T> T get() const;
 
     // ── Array index ─────────────────────────────────────────────────────────
     const json& operator[](size_t idx) const {
         static const json null_j;
-        if (!is_array() || !arr_ || idx >= arr_->size()) return null_j;
+        if (!is_array() || !arr_ || idx >= arr_->size())
+            return null_j;
         return (*arr_)[idx];
     }
     // Disambiguate int literals (e.g. arr[0]) from string keys.
-    const json& operator[](int idx) const {
-        return operator[](static_cast<size_t>(idx));
-    }
+    const json& operator[](int idx) const { return operator[](static_cast<size_t>(idx)); }
 
     const json& operator[](const char* key) const { return at_key(key); }
     const json& operator[](const std::string& key) const { return at_key(key); }
 
     // ── Iterator ────────────────────────────────────────────────────────────
     class iterator {
-    public:
+      public:
         iterator() = default;
-        explicit iterator(const json* j, size_t idx)
-            : j_(j), idx_(idx) {}
+        explicit iterator(const json* j, size_t idx) : j_(j), idx_(idx) {}
 
         bool operator==(const iterator& o) const { return j_ == o.j_ && idx_ == o.idx_; }
         bool operator!=(const iterator& o) const { return !(*this == o); }
 
-        iterator& operator++() { ++idx_; return *this; }
+        iterator& operator++() {
+            ++idx_;
+            return *this;
+        }
 
-        const json& operator*()  const { return deref(); }
+        const json& operator*() const { return deref(); }
         const json* operator->() const { return &deref(); }
 
         // For object iterators
@@ -106,13 +135,14 @@ public:
         }
         const json& value() const { return deref(); }
 
-    private:
+      private:
         const json* j_{nullptr};
-        size_t      idx_{0};
+        size_t idx_{0};
 
         const json& deref() const {
             static const json null_j;
-            if (!j_) return null_j;
+            if (!j_)
+                return null_j;
             if (j_->is_array() && j_->arr_ && idx_ < j_->arr_->size())
                 return (*j_->arr_)[idx_];
             if (j_->is_object() && j_->obj_ && idx_ < j_->obj_->size())
@@ -126,9 +156,7 @@ public:
             return iterator(this, 0);
         return end();
     }
-    iterator end() const {
-        return iterator(this, size());
-    }
+    iterator end() const { return iterator(this, size()); }
 
     // ── find ────────────────────────────────────────────────────────────────
     iterator find(const std::string& key) const {
@@ -148,85 +176,131 @@ public:
         return (it != end()) ? *it : def;
     }
 
-    template<typename T>
-    T value(const std::string& key, const T& def) const {
+    template <typename T> T value(const std::string& key, const T& def) const {
         auto it = find(key);
-        if (it == end()) return def;
-        try { return it->get<T>(); } catch (...) { return def; }
+        if (it == end())
+            return def;
+        try {
+            return it->get<T>();
+        } catch (...) {
+            return def;
+        }
     }
 
     // ── parse ────────────────────────────────────────────────────────────────
     // If allow_exceptions=false: returns discarded value on parse error.
-    static json parse(const std::string& s,
-                      std::nullptr_t /*cb*/ = nullptr,
-                      bool allow_exceptions = true)
-    {
-        const char* p   = s.c_str();
+    static json parse(const std::string& s, std::nullptr_t /*cb*/ = nullptr,
+                      bool allow_exceptions = true) {
+        const char* p = s.c_str();
         const char* end = p + s.size();
         try {
             Parser pr(p, end);
             json result = pr.parse_value();
             pr.skip_ws();
-            if (pr.pos != end) throw std::invalid_argument("trailing chars");
+            if (pr.pos != end)
+                throw std::invalid_argument("trailing chars");
             return result;
         } catch (...) {
-            if (allow_exceptions) throw;
-            json d; d.type_ = value_t::discarded;
+            if (allow_exceptions)
+                throw;
+            json d;
+            d.type_ = value_t::discarded;
             return d;
         }
     }
 
-private:
+  private:
     // ── Storage ─────────────────────────────────────────────────────────────
-    value_t      type_{value_t::null};
-    std::string  s_;                     // string value
-    union { bool b_; int64_t i_; uint64_t u_; double d_; };
-    array_t*     arr_{nullptr};          // heap-allocated to keep sizeof small
-    object_t*    obj_{nullptr};
+    value_t type_{value_t::null};
+    std::string s_; // string value
+    union {
+        bool b_;
+        int64_t i_;
+        uint64_t u_;
+        double d_;
+    };
+    array_t* arr_{nullptr}; // heap-allocated to keep sizeof small
+    object_t* obj_{nullptr};
 
     void clear() noexcept {
-        if (arr_) { delete arr_; arr_ = nullptr; }
-        if (obj_) { delete obj_; obj_ = nullptr; }
+        if (arr_) {
+            delete arr_;
+            arr_ = nullptr;
+        }
+        if (obj_) {
+            delete obj_;
+            obj_ = nullptr;
+        }
         type_ = value_t::null;
         s_.clear();
     }
 
     void copy_from(const json& o) {
         type_ = o.type_;
-        s_    = o.s_;
+        s_ = o.s_;
         switch (type_) {
-        case value_t::boolean:          b_ = o.b_; break;
-        case value_t::number_integer:   i_ = o.i_; break;
-        case value_t::number_unsigned:  u_ = o.u_; break;
-        case value_t::number_float:     d_ = o.d_; break;
+        case value_t::boolean:
+            b_ = o.b_;
+            break;
+        case value_t::number_integer:
+            i_ = o.i_;
+            break;
+        case value_t::number_unsigned:
+            u_ = o.u_;
+            break;
+        case value_t::number_float:
+            d_ = o.d_;
+            break;
         case value_t::array:
-            if (o.arr_) arr_ = new array_t(*o.arr_); break;
+            if (o.arr_)
+                arr_ = new array_t(*o.arr_);
+            break;
         case value_t::object:
-            if (o.obj_) obj_ = new object_t(*o.obj_); break;
-        default: break;
+            if (o.obj_)
+                obj_ = new object_t(*o.obj_);
+            break;
+        default:
+            break;
         }
     }
 
     void move_from(json&& o) noexcept {
         type_ = o.type_;
-        s_    = std::move(o.s_);
+        s_ = std::move(o.s_);
         switch (type_) {
-        case value_t::boolean:          b_ = o.b_; break;
-        case value_t::number_integer:   i_ = o.i_; break;
-        case value_t::number_unsigned:  u_ = o.u_; break;
-        case value_t::number_float:     d_ = o.d_; break;
-        case value_t::array:   arr_ = o.arr_; o.arr_ = nullptr; break;
-        case value_t::object:  obj_ = o.obj_; o.obj_ = nullptr; break;
-        default: break;
+        case value_t::boolean:
+            b_ = o.b_;
+            break;
+        case value_t::number_integer:
+            i_ = o.i_;
+            break;
+        case value_t::number_unsigned:
+            u_ = o.u_;
+            break;
+        case value_t::number_float:
+            d_ = o.d_;
+            break;
+        case value_t::array:
+            arr_ = o.arr_;
+            o.arr_ = nullptr;
+            break;
+        case value_t::object:
+            obj_ = o.obj_;
+            o.obj_ = nullptr;
+            break;
+        default:
+            break;
         }
         o.type_ = value_t::null;
     }
 
     const json& at_key(const std::string& key) const {
         static const json null_j;
-        if (!is_object() || !obj_) return null_j;
+        if (!is_object() || !obj_)
+            return null_j;
         for (const auto& kv : *obj_)
-            if (kv.first == key) return kv.second;
+            if (kv.first == key)
+                return kv.second;
         return null_j;
     }
 
@@ -242,18 +316,36 @@ private:
                 ++pos;
         }
 
-        char peek() { skip_ws(); return (pos < end) ? *pos : '\0'; }
+        char peek() {
+            skip_ws();
+            return (pos < end) ? *pos : '\0';
+        }
         char consume() { return (pos < end) ? *pos++ : '\0'; }
 
         json parse_value() {
             char c = peek();
-            if (c == '{') return parse_object();
-            if (c == '[') return parse_array();
-            if (c == '"') return json(parse_string());
-            if (c == 't') { expect("true");  json j(true);  return j; }
-            if (c == 'f') { expect("false"); json j(false); return j; }
-            if (c == 'n') { expect("null");  return json(); }
-            if (c == '-' || (c >= '0' && c <= '9')) return parse_number();
+            if (c == '{')
+                return parse_object();
+            if (c == '[')
+                return parse_array();
+            if (c == '"')
+                return json(parse_string());
+            if (c == 't') {
+                expect("true");
+                json j(true);
+                return j;
+            }
+            if (c == 'f') {
+                expect("false");
+                json j(false);
+                return j;
+            }
+            if (c == 'n') {
+                expect("null");
+                return json();
+            }
+            if (c == '-' || (c >= '0' && c <= '9'))
+                return parse_number();
             throw std::invalid_argument(std::string("unexpected char: ") + c);
         }
 
@@ -262,19 +354,26 @@ private:
             json j = json::object();
             j.obj_ = new object_t();
             skip_ws();
-            if (peek() == '}') { consume(); return j; }
+            if (peek() == '}') {
+                consume();
+                return j;
+            }
             while (true) {
                 skip_ws();
-                if (peek() != '"') throw std::invalid_argument("expected key");
+                if (peek() != '"')
+                    throw std::invalid_argument("expected key");
                 std::string key = parse_string();
                 skip_ws();
-                if (consume() != ':') throw std::invalid_argument("expected ':'");
+                if (consume() != ':')
+                    throw std::invalid_argument("expected ':'");
                 json val = parse_value();
                 j.obj_->emplace_back(std::move(key), std::move(val));
                 skip_ws();
                 char sep = consume();
-                if (sep == '}') break;
-                if (sep != ',') throw std::invalid_argument("expected ',' or '}'");
+                if (sep == '}')
+                    break;
+                if (sep != ',')
+                    throw std::invalid_argument("expected ',' or '}'");
             }
             return j;
         }
@@ -284,13 +383,18 @@ private:
             json j = json::array();
             j.arr_ = new array_t();
             skip_ws();
-            if (peek() == ']') { consume(); return j; }
+            if (peek() == ']') {
+                consume();
+                return j;
+            }
             while (true) {
                 j.arr_->push_back(parse_value());
                 skip_ws();
                 char sep = consume();
-                if (sep == ']') break;
-                if (sep != ',') throw std::invalid_argument("expected ',' or ']'");
+                if (sep == ']')
+                    break;
+                if (sep != ',')
+                    throw std::invalid_argument("expected ',' or ']'");
             }
             return j;
         }
@@ -300,30 +404,53 @@ private:
             std::string s;
             while (pos < end) {
                 char c = *pos++;
-                if (c == '"') return s;
+                if (c == '"')
+                    return s;
                 if (c == '\\') {
-                    if (pos >= end) break;
+                    if (pos >= end)
+                        break;
                     char esc = *pos++;
                     switch (esc) {
-                    case '"':  s += '"';  break;
-                    case '\\': s += '\\'; break;
-                    case '/':  s += '/';  break;
-                    case 'b':  s += '\b'; break;
-                    case 'f':  s += '\f'; break;
-                    case 'n':  s += '\n'; break;
-                    case 'r':  s += '\r'; break;
-                    case 't':  s += '\t'; break;
+                    case '"':
+                        s += '"';
+                        break;
+                    case '\\':
+                        s += '\\';
+                        break;
+                    case '/':
+                        s += '/';
+                        break;
+                    case 'b':
+                        s += '\b';
+                        break;
+                    case 'f':
+                        s += '\f';
+                        break;
+                    case 'n':
+                        s += '\n';
+                        break;
+                    case 'r':
+                        s += '\r';
+                        break;
+                    case 't':
+                        s += '\t';
+                        break;
                     case 'u': {
                         // 4-hex unicode: decode BMP codepoint to UTF-8
-                        if (pos + 4 > end) throw std::invalid_argument("short \\uXXXX");
+                        if (pos + 4 > end)
+                            throw std::invalid_argument("short \\uXXXX");
                         uint32_t cp = 0;
                         for (int k = 0; k < 4; ++k) {
                             char h = *pos++;
                             uint32_t nib;
-                            if (h >= '0' && h <= '9') nib = h - '0';
-                            else if (h >= 'a' && h <= 'f') nib = 10 + h - 'a';
-                            else if (h >= 'A' && h <= 'F') nib = 10 + h - 'A';
-                            else throw std::invalid_argument("bad hex");
+                            if (h >= '0' && h <= '9')
+                                nib = h - '0';
+                            else if (h >= 'a' && h <= 'f')
+                                nib = 10 + h - 'a';
+                            else if (h >= 'A' && h <= 'F')
+                                nib = 10 + h - 'A';
+                            else
+                                throw std::invalid_argument("bad hex");
                             cp = (cp << 4) | nib;
                         }
                         if (cp < 0x80) {
@@ -338,7 +465,9 @@ private:
                         }
                         break;
                     }
-                    default: s += esc; break;
+                    default:
+                        s += esc;
+                        break;
                     }
                 } else {
                     s += c;
@@ -350,14 +479,26 @@ private:
         json parse_number() {
             const char* start = pos;
             bool neg = false;
-            if (*pos == '-') { neg = true; ++pos; }
+            if (*pos == '-') {
+                neg = true;
+                ++pos;
+            }
             bool is_float = false;
-            while (pos < end && *pos >= '0' && *pos <= '9') ++pos;
-            if (pos < end && *pos == '.') { is_float = true; ++pos; while (pos < end && *pos >= '0' && *pos <= '9') ++pos; }
+            while (pos < end && *pos >= '0' && *pos <= '9')
+                ++pos;
+            if (pos < end && *pos == '.') {
+                is_float = true;
+                ++pos;
+                while (pos < end && *pos >= '0' && *pos <= '9')
+                    ++pos;
+            }
             if (pos < end && (*pos == 'e' || *pos == 'E')) {
-                is_float = true; ++pos;
-                if (pos < end && (*pos == '+' || *pos == '-')) ++pos;
-                while (pos < end && *pos >= '0' && *pos <= '9') ++pos;
+                is_float = true;
+                ++pos;
+                if (pos < end && (*pos == '+' || *pos == '-'))
+                    ++pos;
+                while (pos < end && *pos >= '0' && *pos <= '9')
+                    ++pos;
             }
             std::string tok(start, pos - start);
             if (is_float) {
@@ -381,37 +522,44 @@ private:
 
 // ── get<T> specializations ──────────────────────────────────────────────────
 
-template<> inline std::string json::get<std::string>() const {
-    if (is_string()) return s_;
+template <> inline std::string json::get<std::string>() const {
+    if (is_string())
+        return s_;
     throw std::bad_cast();
 }
-template<> inline bool json::get<bool>() const {
-    if (is_boolean()) return b_;
+template <> inline bool json::get<bool>() const {
+    if (is_boolean())
+        return b_;
     throw std::bad_cast();
 }
-template<> inline int64_t json::get<int64_t>() const {
-    if (is_number_integer())  return i_;
-    if (is_number_unsigned()) return static_cast<int64_t>(u_);
-    if (is_number_float())    return static_cast<int64_t>(d_);
+template <> inline int64_t json::get<int64_t>() const {
+    if (is_number_integer())
+        return i_;
+    if (is_number_unsigned())
+        return static_cast<int64_t>(u_);
+    if (is_number_float())
+        return static_cast<int64_t>(d_);
     throw std::bad_cast();
 }
-template<> inline uint64_t json::get<uint64_t>() const {
-    if (is_number_unsigned()) return u_;
-    if (is_number_integer())  return static_cast<uint64_t>(i_);
-    if (is_number_float())    return static_cast<uint64_t>(d_);
+template <> inline uint64_t json::get<uint64_t>() const {
+    if (is_number_unsigned())
+        return u_;
+    if (is_number_integer())
+        return static_cast<uint64_t>(i_);
+    if (is_number_float())
+        return static_cast<uint64_t>(d_);
     throw std::bad_cast();
 }
-template<> inline double json::get<double>() const {
-    if (is_number_float())    return d_;
-    if (is_number_unsigned()) return static_cast<double>(u_);
-    if (is_number_integer())  return static_cast<double>(i_);
+template <> inline double json::get<double>() const {
+    if (is_number_float())
+        return d_;
+    if (is_number_unsigned())
+        return static_cast<double>(u_);
+    if (is_number_integer())
+        return static_cast<double>(i_);
     throw std::bad_cast();
 }
-template<> inline float json::get<float>() const {
-    return static_cast<float>(get<double>());
-}
-template<> inline int json::get<int>() const {
-    return static_cast<int>(get<int64_t>());
-}
+template <> inline float json::get<float>() const { return static_cast<float>(get<double>()); }
+template <> inline int json::get<int>() const { return static_cast<int>(get<int64_t>()); }
 
 } // namespace nlohmann
