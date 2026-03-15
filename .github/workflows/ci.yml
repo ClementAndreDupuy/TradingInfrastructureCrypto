@@ -1,10 +1,8 @@
 name: CI
 
 on:
-  push:
-    branches: ["**"]
   pull_request:
-    branches: [main, master]
+    branches: ["**"]
 
 env:
   PYTHON_VERSION: "3.11"
@@ -65,17 +63,30 @@ jobs:
       - name: Install tooling
         run: |
           sudo apt-get update
-          sudo apt-get install -y             cmake             pkg-config             libssl-dev             libwebsockets-dev             libcurl4-openssl-dev             nlohmann-json3-dev             clang-format             clang-tidy
-          python3 -m pip install --upgrade pip pre-commit
+          sudo apt-get install -y \
+            cmake \
+            pkg-config \
+            libssl-dev \
+            libwebsockets-dev \
+            libcurl4-openssl-dev \
+            nlohmann-json3-dev \
+            clang-format \
+            clang-tidy
+          python3 -m pip install --upgrade pip pre-commit pybind11
 
       - name: Run preflight dependency check
         run: python3 scripts/preflight_check.py
 
       - name: Configure CMake (compile_commands for clang-tidy)
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_BINDINGS=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_CXX_FLAGS="-I$(pwd)"
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_BINDINGS=ON -Dpybind11_DIR="$(python3 -m pybind11 --cmakedir)" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_CXX_FLAGS="-I$(pwd)"
 
-      - name: Run pre-commit hooks
-        run: pre-commit run --all-files
+      - name: Run clang-format on core/ and bindings/
+        run: |
+          pre-commit run clang-format --files $(git ls-files 'core/**/*.[ch]' 'core/**/*.cc' 'core/**/*.cpp' 'core/**/*.hpp' 'bindings/*.[ch]' 'bindings/*.cc' 'bindings/*.cpp' 'bindings/*.hpp' 'bindings/**/*.cc' 'bindings/**/*.cpp' 'bindings/**/*.hpp')
+
+      - name: Run clang-tidy on core/ and bindings/
+        run: |
+          pre-commit run clang-tidy --files $(git ls-files 'core/**/*.cc' 'core/**/*.cpp' 'bindings/*.cc' 'bindings/*.cpp' 'bindings/**/*.cc' 'bindings/**/*.cpp')
 
   # ── C++ build ────────────────────────────────────────────────────────────────
   cpp-build:
