@@ -42,19 +42,19 @@ TEST(FeedDisconnectChaosTest, CoinbaseGapThenRecoveryViaSnapshot) {
     CoinbaseFeedHandler h("BTC-USD");
 
     const std::string snap =
-        R"({"channel":"l2_data","sequence_num":100,"events":[{"type":"snapshot","updates":[{"side":"bid","price_level":"50000.0","new_quantity":"1.0"},{"side":"offer","price_level":"50001.0","new_quantity":"1.0"}]}]})";
+        R"({"channel":"l2_data","type":"l2_data","sequence_num":100,"events":[{"type":"snapshot","updates":[{"side":"bid","price_level":"50000.0","new_quantity":"1.0"},{"side":"offer","price_level":"50001.0","new_quantity":"1.0"}]}]})";
     ASSERT_EQ(h.process_message(snap), Result::SUCCESS);
 
     const std::string gap =
-        R"({"channel":"l2_data","sequence_num":103,"events":[{"type":"update","updates":[{"side":"bid","price_level":"50000.5","new_quantity":"1.0"}]}]})";
+        R"({"channel":"l2_data","type":"l2_data","sequence_num":103,"events":[{"type":"update","updates":[{"side":"bid","price_level":"50000.5","new_quantity":"1.0"}]}]})";
     EXPECT_EQ(h.process_message(gap), Result::ERROR_SEQUENCE_GAP);
 
     const std::string resnap =
-        R"({"channel":"l2_data","sequence_num":200,"events":[{"type":"snapshot","updates":[{"side":"bid","price_level":"50010.0","new_quantity":"1.0"},{"side":"offer","price_level":"50011.0","new_quantity":"1.0"}]}]})";
+        R"({"channel":"l2_data","type":"l2_data","sequence_num":200,"events":[{"type":"snapshot","updates":[{"side":"bid","price_level":"50010.0","new_quantity":"1.0"},{"side":"offer","price_level":"50011.0","new_quantity":"1.0"}]}]})";
     EXPECT_EQ(h.process_message(resnap), Result::SUCCESS);
 
     const std::string update =
-        R"({"channel":"l2_data","sequence_num":201,"events":[{"type":"update","updates":[{"side":"bid","price_level":"50010.5","new_quantity":"1.5"}]}]})";
+        R"({"channel":"l2_data","type":"l2_data","sequence_num":201,"events":[{"type":"update","updates":[{"side":"bid","price_level":"50010.5","new_quantity":"1.5"}]}]})";
     EXPECT_EQ(h.process_message(update), Result::SUCCESS);
 }
 
@@ -64,7 +64,7 @@ TEST(FeedDisconnectChaosTest, OkxGapThenRecoveryWithStreamingState) {
     h.seed_book_state_for_test({PriceLevel{50000.0, 1.0}}, {PriceLevel{50001.0, 1.0}});
 
     const std::string gap =
-        R"({"arg":{"channel":"books","instId":"BTC-USDT"},"data":[{"seqId":"105","prevSeqId":"100","bids":[["50000","1.0","0","1"]],"asks":[["50001","1.0","0","1"]]}]})";
+        R"({"arg":{"channel":"books","instId":"BTC-USDT"},"data":[{"seqId":"105","prevSeqId":"104","bids":[["50000","1.0","0","1"]],"asks":[["50001","1.0","0","1"]]}]})";
     EXPECT_EQ(h.process_message(gap), Result::ERROR_SEQUENCE_GAP);
 
     h.set_streaming_state_for_test(100);
