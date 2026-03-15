@@ -23,8 +23,14 @@ import torch.nn.functional as F
 
 warnings.filterwarnings(
     "ignore",
-    message=r"enable_nested_tensor is True, but self\.use_nested_tensor is False.*",
+    message=r"enable_nested_tensor is True, but self\.use_nested_tensor is False.*norm_first was True",
     category=UserWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r"enable_nested_tensor is True, but self.use_nested_tensor is False.*norm_first was True",
+    category=UserWarning,
+    module=r"torch\.nn\.modules\.transformer",
 )
 
 from .features import N_LEVELS, D_SCALAR

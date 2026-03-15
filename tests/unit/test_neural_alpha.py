@@ -37,6 +37,7 @@ from research.alpha.neural_alpha.features import (
     compute_lob_tensor,
     compute_scalar_features,
     normalise_scalar,
+    rolling_normalise,
 )
 from research.alpha.neural_alpha.model import (
     CryptoAlphaNet,
@@ -222,6 +223,12 @@ class TestDataset:
         assert sample["scalar"].shape == (32, 21)
         assert sample["labels"].shape == (32, 6)
         assert sample["mask"].shape   == (32,)
+
+    def test_rolling_normalise_handles_short_series(self) -> None:
+        x = np.arange(24, dtype=np.float64).reshape(12, 2)
+        out = rolling_normalise(x, window=20)
+        assert out.shape == x.shape
+        assert np.isfinite(out).all()
 
     def test_walk_forward_no_leakage(self, medium_df: pl.DataFrame) -> None:
         splits = split_walk_forward(medium_df, n_folds=3, train_frac=0.75)
