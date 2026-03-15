@@ -36,12 +36,20 @@ def rolling_normalise(x: np.ndarray, window: int = 500) -> np.ndarray:
     (expanding window for the first `window` ticks).
     """
     T, D = x.shape
-    cum  = np.cumsum(x, axis=0)
-    cum2 = np.cumsum(x ** 2, axis=0)
-    pad  = np.zeros((window, D))
-    s1   = cum - np.concatenate([pad, cum[:-window]])
-    s2   = cum2 - np.concatenate([pad, cum2[:-window]])
-    n    = np.minimum(np.arange(1, T + 1), window)[:, None].astype(np.float64)
+    if T == 0:
+        return x.astype(np.float32)
+
+    # Prefix sums with leading zero row so window sums are valid for any
+    # series length (including T < window).
+    cum = np.vstack([np.zeros((1, D), dtype=np.float64), np.cumsum(x, axis=0)])
+    cum2 = np.vstack([np.zeros((1, D), dtype=np.float64), np.cumsum(x ** 2, axis=0)])
+
+    end = np.arange(1, T + 1)
+    start = np.maximum(0, end - window)
+
+    s1 = cum[end] - cum[start]
+    s2 = cum2[end] - cum2[start]
+    n = (end - start)[:, None].astype(np.float64)
     mean = s1 / n
     var  = (s2 / n - mean ** 2).clip(0)
     return ((x - mean) / (np.sqrt(var) + 1e-8)).astype(np.float32)
