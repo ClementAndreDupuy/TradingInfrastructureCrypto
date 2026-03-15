@@ -319,7 +319,7 @@ Result KrakenFeedHandler::fetch_snapshot() {
     }
 
     // result has one key (internal pair name, e.g., XXBTZUSD)
-    const auto& pair_data = res_it->begin().value();
+    const auto pair_data = res_it->begin().value();
 
     auto parse_rest_levels = [](const nlohmann::json& arr) {
         std::vector<PriceLevel> levels;

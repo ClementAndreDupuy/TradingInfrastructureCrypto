@@ -135,3 +135,77 @@ ConnectorResult CoinbaseConnector::cancel_all_at_venue(const char* symbol) {
 }
 
 } // namespace trading
+
+namespace trading {
+
+ConnectorResult CoinbaseConnector::fetch_reconciliation_snapshot(
+    ReconciliationSnapshot& snapshot) {
+    snapshot.clear();
+
+    const auto open_orders = http::get(api_url() + "/api/v3/brokerage/orders/historical/batch",
+                                       auth_headers("historical_batch"));
+    if (!open_orders.ok())
+        return classify_error(open_orders.status);
+
+    const auto open_json = nlohmann::json::parse(open_orders.body, nullptr, false);
+    const auto& orders = open_json["orders"];
+    if (!orders.is_array())
+        return ConnectorResult::ERROR_UNKNOWN;
+
+    for (const auto& item : orders) {
+        ReconciledOrder order;
+        copy_cstr(order.venue_order_id, sizeof(order.venue_order_id),
+                  item.value("order_id", std::string("")));
+        copy_cstr(order.symbol, sizeof(order.symbol), item.value("product_id", std::string("")));
+        order.side = item.value("side", std::string("BUY")) == "SELL" ? Side::ASK : Side::BID;
+        order.quantity = item.value("base_size", 0.0);
+        order.filled_quantity = item.value("filled_size", 0.0);
+        order.price = item.value("limit_price", 0.0);
+        order.state = parse_coinbase_status(item.value("status", std::string("")));
+        if (!snapshot.open_orders.push(order))
+            return ConnectorResult::ERROR_UNKNOWN;
+    }
+
+    const auto account_resp =
+        http::get(api_url() + "/api/v3/brokerage/accounts", auth_headers("accounts"));
+    if (!account_resp.ok())
+        return classify_error(account_resp.status);
+
+    const auto account_json = nlohmann::json::parse(account_resp.body, nullptr, false);
+    const auto& accounts = account_json["accounts"];
+    if (!accounts.is_array())
+        return ConnectorResult::ERROR_UNKNOWN;
+
+    for (const auto& item : accounts) {
+        ReconciledBalance balance;
+        copy_cstr(balance.asset, sizeof(balance.asset), item.value("currency", std::string("")));
+        balance.total = item["available_balance"].value("value", 0.0) +
+                        item["hold"].value("value", 0.0);
+        balance.available = item["available_balance"].value("value", 0.0);
+        if (!snapshot.balances.push(balance))
+            return ConnectorResult::ERROR_UNKNOWN;
+    }
+
+    const auto pos_resp =
+        http::get(api_url() + "/api/v3/brokerage/positions", auth_headers("positions"));
+    if (!pos_resp.ok())
+        return classify_error(pos_resp.status);
+
+    const auto pos_json = nlohmann::json::parse(pos_resp.body, nullptr, false);
+    const auto& positions = pos_json["positions"];
+    if (!positions.is_array())
+        return ConnectorResult::ERROR_UNKNOWN;
+
+    for (const auto& item : positions) {
+        ReconciledPosition position;
+        copy_cstr(position.symbol, sizeof(position.symbol), item.value("product_id", std::string("")));
+        position.quantity = item.value("size", 0.0);
+        position.avg_entry_price = item.value("average_entry_price", 0.0);
+        if (!snapshot.positions.push(position))
+            return ConnectorResult::ERROR_UNKNOWN;
+    }
+
+    return ConnectorResult::OK;
+}
+
+} // namespace trading

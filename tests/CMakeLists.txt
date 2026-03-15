@@ -313,3 +313,26 @@ set_tests_properties(FeedDisconnectChaosTest PROPERTIES
     TIMEOUT 30
     LABELS "replay;feeds;chaos"
 )
+
+
+# Reconciliation service unit tests
+add_executable(reconciliation_service_test
+    unit/reconciliation_service_test.cpp
+)
+
+target_link_libraries(reconciliation_service_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(reconciliation_service_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME ReconciliationServiceTest COMMAND reconciliation_service_test)
+set_tests_properties(ReconciliationServiceTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;execution"
+)

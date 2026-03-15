@@ -135,3 +135,58 @@ ConnectorResult KrakenConnector::cancel_all_at_venue(const char* symbol) {
 }
 
 } // namespace trading
+
+namespace trading {
+
+ConnectorResult KrakenConnector::fetch_reconciliation_snapshot(
+    ReconciliationSnapshot& snapshot) {
+    snapshot.clear();
+
+    const auto open_resp =
+        http::post(api_url() + "/0/private/OpenOrders", "", auth_headers(""));
+    if (!open_resp.ok())
+        return classify_error(open_resp.status);
+
+    const auto open_json = nlohmann::json::parse(open_resp.body, nullptr, false);
+    const auto& open_map = open_json["result"]["open"];
+    if (!open_map.is_object())
+        return ConnectorResult::ERROR_UNKNOWN;
+
+    for (auto it = open_map.begin(); it != open_map.end(); ++it) {
+        const auto& order_obj = it.value();
+        const auto& descr = order_obj["descr"];
+        ReconciledOrder order;
+        copy_cstr(order.venue_order_id, sizeof(order.venue_order_id), it.key());
+        copy_cstr(order.symbol, sizeof(order.symbol), descr.value("pair", std::string("")));
+        order.side = descr.value("type", std::string("buy")) == "sell" ? Side::ASK : Side::BID;
+        order.quantity = order_obj.value("vol", 0.0);
+        order.filled_quantity = order_obj.value("vol_exec", 0.0);
+        order.price = descr.value("price", 0.0);
+        order.state = parse_kraken_status(order_obj.value("status", std::string("")));
+        if (!snapshot.open_orders.push(order))
+            return ConnectorResult::ERROR_UNKNOWN;
+    }
+
+    const auto balance_resp =
+        http::post(api_url() + "/0/private/Balance", "", auth_headers(""));
+    if (!balance_resp.ok())
+        return classify_error(balance_resp.status);
+
+    const auto balance_json = nlohmann::json::parse(balance_resp.body, nullptr, false);
+    const auto& result = balance_json["result"];
+    if (!result.is_object())
+        return ConnectorResult::ERROR_UNKNOWN;
+
+    for (auto it = result.begin(); it != result.end(); ++it) {
+        ReconciledBalance balance;
+        copy_cstr(balance.asset, sizeof(balance.asset), it.key());
+        balance.total = it.value().get<double>();
+        balance.available = balance.total;
+        if (!snapshot.balances.push(balance))
+            return ConnectorResult::ERROR_UNKNOWN;
+    }
+
+    return ConnectorResult::OK;
+}
+
+} // namespace trading
