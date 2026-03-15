@@ -24,9 +24,9 @@
 - [x] **H6** `CMakeLists.txt` — Added `libwebsockets` via `pkg_check_modules`; linked to both `binance_feed` and `kraken_feed` targets; libcurl and nlohmann/json handled in `core/CMakeLists.txt`; pybind11 handled via `bindings/setup.py`
 - [x] **H7** `tests/` — Create feed replay test suite: record live feed messages to file, replay deterministically, compare order-book state byte-for-byte across runs
 - [x] **H8** `tests/` — Add integration tests for full pipeline: feed handler → book manager → market maker → shadow engine (end-to-end with recorded data)
-- [ ] **H9** `core/feeds/okx/okx_feed_handler.cpp` — Add required OKX `books` checksum (CRC32) verification and forced resync on mismatch
-- [ ] **H10** `core/feeds/coinbase/` — Align Coinbase market-data protocol with project standard (full depth fidelity target vs current level2 stream); document chosen protocol and invariants
-- [ ] **H11** `core/execution/market_maker.hpp` + `core/risk/circuit_breaker.hpp` — Wire `CircuitBreaker` checks directly into pre-submit order path (rate, stale book, drawdown, price-deviation, consecutive-loss guards)
+- [x] **H9** `core/feeds/okx/okx_feed_handler.cpp` — Add required OKX `books` checksum (CRC32) verification and forced resync on mismatch
+- [x] **H10** `core/feeds/coinbase/` — Align Coinbase market-data protocol with project standard (full depth fidelity target vs current level2 stream); document chosen protocol and invariants
+- [x] **H11** `core/execution/market_maker.hpp` + `core/risk/circuit_breaker.hpp` — Wire `CircuitBreaker` checks directly into pre-submit order path (rate, stale book, drawdown, price-deviation, consecutive-loss guards)
 
 ### MEDIUM — Quality and Correctness Gaps
 

@@ -31,6 +31,7 @@
 #include "../ipc/alpha_signal.hpp"
 #include "../feeds/common/book_manager.hpp"
 #include "../risk/kill_switch.hpp"
+#include "../risk/circuit_breaker.hpp"
 #include "../common/logging.hpp"
 
 #include <chrono>
@@ -72,8 +73,9 @@ public:
     NeuralAlphaMarketMaker(OrderManager&      order_mgr,
                            const BookManager& book,
                            KillSwitch&        kill,
+                           CircuitBreaker*    circuit_breaker = nullptr,
                            const MarketMakerConfig& cfg = {})
-        : om_(order_mgr), book_(book), kill_(kill), cfg_(cfg) {
+        : om_(order_mgr), book_(book), kill_(kill), circuit_breaker_(circuit_breaker), cfg_(cfg) {
 
         om_.on_fill = [this](const ManagedOrder& mo, const FillUpdate& u) {
             on_fill(mo, u);
@@ -121,6 +123,7 @@ private:
     OrderManager&            om_;
     const BookManager&       book_;
     KillSwitch&              kill_;
+    CircuitBreaker*          circuit_breaker_ = nullptr;
     MarketMakerConfig        cfg_;
     AlphaSignalReader        alpha_reader_;
 
@@ -226,6 +229,8 @@ private:
     }
 
     uint64_t submit_limit(Side side, double price, double qty) {
+        if (!run_pre_submit_checks(price)) return 0;
+
         Order o;
         copy_symbol(o.symbol, cfg_.symbol);
         o.exchange = cfg_.exchange;
@@ -238,6 +243,8 @@ private:
     }
 
     uint64_t submit_stop_limit(Side side, double stop_px, double limit_px, double qty) {
+        if (!run_pre_submit_checks(limit_px)) return 0;
+
         Order o;
         copy_symbol(o.symbol, cfg_.symbol);
         o.exchange   = cfg_.exchange;
@@ -262,6 +269,8 @@ private:
         }
 
         const bool is_bid  = mo.order.side == Side::BID;
+        const bool is_stop_fill = (mo.order.client_order_id == stop_id_);
+        const double stop_entry_px = entry_price_;
         const double qty   = u.fill_qty;
         const double px    = u.fill_price;
         const double pos   = om_.position();
@@ -287,6 +296,13 @@ private:
         if (mo.order.client_order_id == bid_id_) bid_id_ = 0;
         if (mo.order.client_order_id == ask_id_) ask_id_ = 0;
 
+        if (circuit_breaker_ && is_stop_fill) {
+            const double realized_leg_pnl = (mo.order.side == Side::ASK)
+                ? (px - stop_entry_px) * qty
+                : (stop_entry_px - px) * qty;
+            circuit_breaker_->record_leg_result(realized_leg_pnl);
+        }
+
         LOG_INFO("Fill",
                  "side",    is_bid ? "BID" : "ASK",
                  "qty",     qty,
@@ -295,6 +311,27 @@ private:
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    bool run_pre_submit_checks(double order_price) {
+        if (!circuit_breaker_) return true;
+
+        auto rate = circuit_breaker_->check_order_rate();
+        if (rate != CircuitCheckResult::OK) return false;
+
+        auto stale = circuit_breaker_->check_book_age(book_);
+        if (stale != CircuitCheckResult::OK) return false;
+
+        auto drawdown = circuit_breaker_->check_drawdown(om_.realized_pnl());
+        if (drawdown != CircuitCheckResult::OK) return false;
+
+        auto deviation = circuit_breaker_->check_price_deviation(order_price);
+        if (deviation != CircuitCheckResult::OK) return false;
+
+        auto losses = circuit_breaker_->check_consecutive_losses();
+        if (losses != CircuitCheckResult::OK) return false;
+
+        return true;
+    }
 
     bool is_stale(const AlphaSignal& s) const noexcept {
         if (s.ts_ns == 0) return true;

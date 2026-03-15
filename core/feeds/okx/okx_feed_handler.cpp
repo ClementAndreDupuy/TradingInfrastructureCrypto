@@ -4,8 +4,23 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <sstream>
+#include <iomanip>
 
 namespace trading {
+
+static uint32_t crc32_bytes(const std::string& data) {
+    uint32_t crc = 0xFFFFFFFFu;
+    for (unsigned char byte : data) {
+        crc ^= static_cast<uint32_t>(byte);
+        for (int i = 0; i < 8; ++i) {
+            uint32_t mask = static_cast<uint32_t>(-(static_cast<int32_t>(crc & 1u)));
+            crc = (crc >> 1u) ^ (0xEDB88320u & mask);
+        }
+    }
+    return ~crc;
+}
+
 
 struct OkxWsSession {
     OkxFeedHandler* handler;
@@ -304,6 +319,10 @@ Result OkxFeedHandler::fetch_snapshot() {
 
     if (snap.bids.empty() || snap.asks.empty()) return Result::ERROR_BOOK_CORRUPTED;
 
+    bids_.clear();
+    asks_.clear();
+    apply_local_book_levels(book);
+
     last_sequence_.store(snap.sequence, std::memory_order_release);
     if (snapshot_callback_) snapshot_callback_(snap);
 
@@ -317,6 +336,8 @@ Result OkxFeedHandler::process_delta(const nlohmann::json& j, uint64_t seq) {
     const nlohmann::json* src = &j;
     auto data_it = j.find("data");
     if (data_it != j.end() && data_it->is_array() && !data_it->empty()) src = &(*data_it)[0];
+
+    apply_local_book_levels(*src);
 
     auto emit_levels = [&](const nlohmann::json& arr, Side side) {
         if (!arr.is_array()) return;
@@ -384,6 +405,11 @@ Result OkxFeedHandler::process_message(const std::string& message) {
         return Result::ERROR_SEQUENCE_GAP;
     }
 
+    if (!validate_checksum(*data_src)) {
+        trigger_resnapshot("OKX checksum mismatch");
+        return Result::ERROR_BOOK_CORRUPTED;
+    }
+
     return process_delta(j, seq);
 }
 
@@ -424,6 +450,11 @@ Result OkxFeedHandler::apply_buffered_deltas() {
             return Result::ERROR_SEQUENCE_GAP;
         }
 
+        if (!validate_checksum(data)) {
+            delta_buffer_.clear();
+            return Result::ERROR_BOOK_CORRUPTED;
+        }
+
         if (process_delta(j, seq) == Result::SUCCESS) ++applied;
     }
 
@@ -436,6 +467,78 @@ bool OkxFeedHandler::validate_delta_sequence(uint64_t seq, uint64_t prev_seq) co
     uint64_t last = last_sequence_.load(std::memory_order_acquire);
     if (prev_seq != 0) return prev_seq == last;
     return seq > last;
+}
+
+bool OkxFeedHandler::validate_checksum(const nlohmann::json& data) const {
+    auto checksum_it = data.find("checksum");
+    if (checksum_it == data.end()) return true;
+
+    int64_t remote_checksum = 0;
+    if (checksum_it->is_string()) remote_checksum = std::stoll(checksum_it->get<std::string>());
+    else remote_checksum = checksum_it->get<int64_t>();
+
+    auto test_bids = bids_;
+    auto test_asks = asks_;
+    auto apply_side = [](const nlohmann::json& arr, auto& book_side) {
+        if (!arr.is_array()) return;
+        for (const auto& lvl : arr) {
+            if (!lvl.is_array() || lvl.size() < 2) continue;
+            const double price = std::stod(lvl[0].get<std::string>());
+            const std::string size = lvl[1].get<std::string>();
+            if (size == "0" || size == "0.0" || std::stod(size) == 0.0) book_side.erase(price);
+            else book_side[price] = size;
+        }
+    };
+
+    apply_side(data.value("bids", nlohmann::json::array()), test_bids);
+    apply_side(data.value("asks", nlohmann::json::array()), test_asks);
+
+    std::ostringstream oss;
+    auto bid_it = test_bids.begin();
+    auto ask_it = test_asks.begin();
+    for (size_t i = 0; i < 25 && (bid_it != test_bids.end() || ask_it != test_asks.end()); ++i) {
+        if (i > 0) oss << ':';
+        if (bid_it != test_bids.end()) {
+            oss << std::setprecision(15) << bid_it->first << ':' << bid_it->second;
+            ++bid_it;
+        }
+        if (ask_it != test_asks.end()) {
+            if (oss.tellp() > 0) oss << ':';
+            oss << std::setprecision(15) << ask_it->first << ':' << ask_it->second;
+            ++ask_it;
+        }
+    }
+
+    const auto serialized = oss.str();
+    const uint32_t local = crc32_bytes(serialized);
+    const int64_t local_signed = static_cast<int32_t>(local);
+
+    if (local_signed != remote_checksum) {
+        LOG_ERROR("OKX checksum mismatch",
+                  "symbol", symbol_.c_str(),
+                  "local", local_signed,
+                  "remote", remote_checksum);
+        return false;
+    }
+
+    return true;
+}
+
+void OkxFeedHandler::apply_local_book_levels(const nlohmann::json& data) {
+    auto apply_side = [](const nlohmann::json& arr, auto& book_side) {
+        if (!arr.is_array()) return;
+        for (const auto& lvl : arr) {
+            if (!lvl.is_array() || lvl.size() < 2) continue;
+            double price = std::stod(lvl[0].get<std::string>());
+            std::string size = lvl[1].get<std::string>();
+
+            if (size == "0" || size == "0.0" || std::stod(size) == 0.0) book_side.erase(price);
+            else book_side[price] = size;
+        }
+    };
+
+    apply_side(data.value("bids", nlohmann::json::array()), bids_);
+    apply_side(data.value("asks", nlohmann::json::array()), asks_);
 }
 
 void OkxFeedHandler::trigger_resnapshot(const std::string& reason) {

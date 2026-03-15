@@ -170,7 +170,7 @@ void CoinbaseFeedHandler::ws_event_loop() {
         nlohmann::json sub = {
             {"type", "subscribe"},
             {"product_ids", nlohmann::json::array({symbol_})},
-            {"channel", "level2"},
+            {"channel", "l2_data"},
         };
         session.subscribe_msg = sub.dump();
 
@@ -329,7 +329,7 @@ Result CoinbaseFeedHandler::process_message(const std::string& message) {
     if (channel_it == j.end() || type_it == j.end()) return Result::SUCCESS;
 
     const std::string channel = channel_it->get<std::string>();
-    if (channel != "l2_data" && channel != "level2") return Result::SUCCESS;
+    if (channel != "l2_data") return Result::SUCCESS;
 
     uint64_t seq = 0;
     auto seq_it = j.find("sequence_num");

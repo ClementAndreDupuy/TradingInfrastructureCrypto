@@ -20,6 +20,7 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <map>
 
 namespace trading {
 
@@ -80,7 +81,12 @@ private:
     Result process_delta(const nlohmann::json& j, uint64_t seq);
     Result apply_buffered_deltas();
     bool validate_delta_sequence(uint64_t seq, uint64_t prev_seq) const;
+    bool validate_checksum(const nlohmann::json& data) const;
+    void apply_local_book_levels(const nlohmann::json& data);
     void trigger_resnapshot(const std::string& reason);
+
+    std::map<double, std::string, std::greater<double>> bids_;
+    std::map<double, std::string> asks_;
 };
 
 }  // namespace trading

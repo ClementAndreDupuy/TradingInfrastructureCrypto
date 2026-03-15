@@ -59,6 +59,16 @@ TEST_F(CoinbaseFeedHandlerTest, ProcessSnapshotThenUpdate) {
     EXPECT_EQ(handler_->get_sequence(), 101u);
 }
 
+
+TEST_F(CoinbaseFeedHandlerTest, IgnoresLegacyLevel2Channel) {
+    std::string snapshot =
+        R"({"channel":"level2","sequence_num":100,"events":[{"type":"snapshot","updates":[{"side":"bid","price_level":"50000.0","new_quantity":"1.2"},{"side":"offer","price_level":"50001.0","new_quantity":"0.8"}]}]})";
+
+    EXPECT_EQ(handler_->process_message(snapshot), Result::SUCCESS);
+    EXPECT_EQ(snapshot_count_, 0);
+    EXPECT_EQ(handler_->get_sequence(), 0u);
+}
+
 TEST_F(CoinbaseFeedHandlerTest, SequenceGapTriggersError) {
     std::string snapshot =
         R"({"channel":"l2_data","sequence_num":100,"events":[{"type":"snapshot","updates":[{"side":"bid","price_level":"50000.0","new_quantity":"1.2"},{"side":"offer","price_level":"50001.0","new_quantity":"0.8"}]}]})";
