@@ -1,3 +1,4 @@
+#include "core/common/rest_client.hpp"
 #include "core/execution/binance/binance_connector.hpp"
 #include "core/execution/coinbase/coinbase_connector.hpp"
 #include "core/execution/kraken/kraken_connector.hpp"
@@ -6,9 +7,16 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <utility>
 
 namespace trading {
 namespace {
+
+class ScopedMockTransport {
+  public:
+    explicit ScopedMockTransport(http::MockTransport handler) { http::set_mock_transport(std::move(handler)); }
+    ~ScopedMockTransport() { http::clear_mock_transport(); }
+};
 
 template <typename Connector>
 Order make_order(Exchange ex, uint64_t id, const char* symbol, Side side = Side::BID) {
@@ -26,7 +34,20 @@ Order make_order(Exchange ex, uint64_t id, const char* symbol, Side side = Side:
 }
 
 template <typename Connector>
-void run_state_machine_contract(Connector& c, Exchange ex, const char* symbol) {
+void run_state_machine_contract(Connector& c, Exchange ex, const char* symbol,
+                                const char* submit_body, const char* cancel_body) {
+    ScopedMockTransport transport([submit_body, cancel_body](const char* method, const std::string& url,
+                                                             const std::string&, const std::vector<std::string>&) {
+        if (std::strcmp(method, "POST") == 0 && url.find("order") != std::string::npos)
+            return http::HttpResponse{200, submit_body};
+        if (std::strcmp(method, "DELETE") == 0 ||
+            (std::strcmp(method, "POST") == 0 && url.find("cancel") != std::string::npos) ||
+            (std::strcmp(method, "POST") == 0 && url.find("Cancel") != std::string::npos)) {
+            return http::HttpResponse{200, cancel_body};
+        }
+        return http::HttpResponse{404, ""};
+    });
+
     EXPECT_EQ(c.connect(), ConnectorResult::OK);
 
     const Order first = make_order<Connector>(ex, 101, symbol, Side::BID);
@@ -46,7 +67,6 @@ void run_state_machine_contract(Connector& c, Exchange ex, const char* symbol) {
     EXPECT_EQ(c.reconcile(), ConnectorResult::OK);
     EXPECT_EQ(c.order_map().get(102), nullptr);
 
-    // After reconcile, a fresh order should still succeed deterministically.
     const Order third = make_order<Connector>(ex, 103, symbol, Side::BID);
     EXPECT_EQ(c.submit_order(third), ConnectorResult::OK);
     ASSERT_NE(c.order_map().get(103), nullptr);
@@ -56,23 +76,44 @@ void run_state_machine_contract(Connector& c, Exchange ex, const char* symbol) {
 } // namespace
 
 TEST(ConnectorContractTest, BinanceStateMachineDeterministic) {
-    BinanceConnector c("", "", "mock://binance");
-    run_state_machine_contract(c, Exchange::BINANCE, "BTCUSDT");
+    BinanceConnector c("", "", "https://binance.test");
+    run_state_machine_contract(c, Exchange::BINANCE, "BTCUSDT", R"({"orderId":"bn-101"})",
+                               R"({"orderId":"bn-101","status":"CANCELED"})");
 }
 
 TEST(ConnectorContractTest, KrakenStateMachineDeterministic) {
-    KrakenConnector c("", "", "mock://kraken");
-    run_state_machine_contract(c, Exchange::KRAKEN, "XBTUSD");
+    KrakenConnector c("", "", "https://kraken.test");
+    run_state_machine_contract(c, Exchange::KRAKEN, "XBTUSD",
+                               R"({"result":{"txid":["kr-101"]}})",
+                               R"({"result":{"count":1}})");
 }
 
 TEST(ConnectorContractTest, OkxStateMachineDeterministic) {
-    OkxConnector c("", "", "mock://okx");
-    run_state_machine_contract(c, Exchange::OKX, "BTC-USDT-SWAP");
+    OkxConnector c("", "", "https://okx.test");
+    run_state_machine_contract(c, Exchange::OKX, "BTC-USDT-SWAP", R"({"data":[{"ordId":"ok-101"}]})",
+                               R"({"data":[{"sCode":"0"}]})");
 }
 
 TEST(ConnectorContractTest, CoinbaseStateMachineDeterministic) {
-    CoinbaseConnector c("", "", "mock://coinbase");
-    run_state_machine_contract(c, Exchange::COINBASE, "BTC-USD");
+    CoinbaseConnector c("", "", "https://coinbase.test");
+    run_state_machine_contract(c, Exchange::COINBASE, "BTC-USD",
+                               R"({"success_response":{"order_id":"cb-101"}})",
+                               R"({"results":[{"success":true}]})");
+}
+
+TEST(ConnectorContractTest, RejectsMalformedVenueResponses) {
+    ScopedMockTransport transport([](const char* method, const std::string&,
+                                     const std::string&, const std::vector<std::string>&) {
+        if (std::strcmp(method, "POST") == 0)
+            return http::HttpResponse{200, "{}"};
+        return http::HttpResponse{200, "{}"};
+    });
+
+    BinanceConnector c("", "", "https://binance.test");
+    EXPECT_EQ(c.connect(), ConnectorResult::OK);
+
+    const Order o = make_order<BinanceConnector>(Exchange::BINANCE, 501, "BTCUSDT");
+    EXPECT_EQ(c.submit_order(o), ConnectorResult::ERROR_UNKNOWN);
 }
 
 } // namespace trading
