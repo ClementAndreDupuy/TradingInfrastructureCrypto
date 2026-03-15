@@ -1,16 +1,16 @@
 ## TODO List
 
 ### CRITICAL
-- [ ] Add prioritized critical tasks.
 
 ### HIGH
-- [ ] Add prioritized high-impact tasks.
 
 ### MEDIUM
-- [ ] Add prioritized medium-impact tasks.
 
 ### LOW
-- [ ] Add prioritized low-impact tasks.
+- [ ] **L1** `deploy/daily_train.py` — Add alerting webhook (Slack/PagerDuty) when model fails to promote or IC drops below floor (mail-only fallback is acceptable interim mitigation)
 
 ### RESEARCH
-- [ ] Add research tasks with implementation plans.
+- [ ] **R1** — Research on integrate On-Chain metrics (Netflow, Spent Output Profit Ratio, Net Unrealised Profit/Loss, Whale transaction analysis, Defi Protocol metrics...)
+- [x] **R2** — Research completed in `agents/reports/RESEARCH_R2_MARKET_REGIME_IDENTIFICATION_2026-03-14.md`: State-of-the-art real-time market regime identification and implementation blueprint for hybrid CPD + HMM/HSMM + microstructure overlays
+- [ ] **R3** — Research on deep reinforcement learning for autonomous execution (State Space Design, Action Space design, Reward function formulation)
+- [ ] **R4** — Research on hardware execution with Field-Programmable Gate Arrays and co-locating servers in the same clusters as exchanges
