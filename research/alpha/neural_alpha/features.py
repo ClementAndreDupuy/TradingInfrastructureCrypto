@@ -98,16 +98,28 @@ def compute_lob_tensor(df: pl.DataFrame) -> np.ndarray:
 
 def _lag_diff(arr: np.ndarray, lag: int) -> np.ndarray:
     """arr[t] - arr[t-lag], with boundary filled from arr[0]."""
+    if lag <= 0:
+        return np.zeros_like(arr)
+    if lag >= len(arr):
+        return arr - arr[0]
     return arr - np.concatenate([np.full(lag, arr[0]), arr[:-lag]])
 
 
 def _rolling_std(x: np.ndarray, window: int) -> np.ndarray:
     """Vectorized rolling std using cumsum trick. O(T) instead of O(T*window)."""
-    cum  = np.cumsum(x)
-    cum2 = np.cumsum(x ** 2)
-    n    = np.minimum(np.arange(1, len(x) + 1), window).astype(np.float64)
-    s1   = cum - np.concatenate([np.zeros(window), cum[:-window]])
-    s2   = cum2 - np.concatenate([np.zeros(window), cum2[:-window]])
+    T = len(x)
+    if T == 0:
+        return np.zeros(0, dtype=np.float64)
+
+    cum = np.concatenate([[0.0], np.cumsum(x)])
+    cum2 = np.concatenate([[0.0], np.cumsum(x ** 2)])
+
+    end = np.arange(1, T + 1)
+    start = np.maximum(0, end - max(1, window))
+
+    s1 = cum[end] - cum[start]
+    s2 = cum2[end] - cum2[start]
+    n = (end - start).astype(np.float64)
     var  = (s2 / n - (s1 / n) ** 2).clip(0)
     return np.sqrt(var)
 
