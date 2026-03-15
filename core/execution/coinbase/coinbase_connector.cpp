@@ -138,8 +138,7 @@ ConnectorResult CoinbaseConnector::cancel_all_at_venue(const char* symbol) {
 
 namespace trading {
 
-ConnectorResult CoinbaseConnector::fetch_reconciliation_snapshot(
-    ReconciliationSnapshot& snapshot) {
+ConnectorResult CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot) {
     snapshot.clear();
 
     const auto open_orders = http::get(api_url() + "/api/v3/brokerage/orders/historical/batch",
@@ -179,8 +178,8 @@ ConnectorResult CoinbaseConnector::fetch_reconciliation_snapshot(
     for (const auto& item : accounts) {
         ReconciledBalance balance;
         copy_cstr(balance.asset, sizeof(balance.asset), item.value("currency", std::string("")));
-        balance.total = item["available_balance"].value("value", 0.0) +
-                        item["hold"].value("value", 0.0);
+        balance.total =
+            item["available_balance"].value("value", 0.0) + item["hold"].value("value", 0.0);
         balance.available = item["available_balance"].value("value", 0.0);
         if (!snapshot.balances.push(balance))
             return ConnectorResult::ERROR_UNKNOWN;
@@ -198,13 +197,36 @@ ConnectorResult CoinbaseConnector::fetch_reconciliation_snapshot(
 
     for (const auto& item : positions) {
         ReconciledPosition position;
-        copy_cstr(position.symbol, sizeof(position.symbol), item.value("product_id", std::string("")));
+        copy_cstr(position.symbol, sizeof(position.symbol),
+                  item.value("product_id", std::string("")));
         position.quantity = item.value("size", 0.0);
         position.avg_entry_price = item.value("average_entry_price", 0.0);
         if (!snapshot.positions.push(position))
             return ConnectorResult::ERROR_UNKNOWN;
     }
 
+    const auto fills_resp = http::get(api_url() + "/api/v3/brokerage/orders/historical/fills",
+                                      auth_headers("historical_fills"));
+    if (!fills_resp.ok())
+        return classify_error(fills_resp.status);
+
+    const auto fills_json = nlohmann::json::parse(fills_resp.body, nullptr, false);
+    const auto& fills = fills_json["fills"];
+    if (!fills.is_array())
+        return ConnectorResult::ERROR_UNKNOWN;
+
+    for (const auto& item : fills) {
+        ReconciledFill fill;
+        copy_cstr(fill.venue_order_id, sizeof(fill.venue_order_id),
+                  item.value("order_id", std::string("")));
+        copy_cstr(fill.symbol, sizeof(fill.symbol), item.value("product_id", std::string("")));
+        fill.side = item.value("side", std::string("BUY")) == "SELL" ? Side::ASK : Side::BID;
+        fill.quantity = item.value("size", 0.0);
+        fill.price = item.value("price", 0.0);
+        fill.exchange_ts_ns = item.value("trade_time", int64_t{0});
+        if (!snapshot.fills.push(fill))
+            return ConnectorResult::ERROR_UNKNOWN;
+    }
     return ConnectorResult::OK;
 }
 

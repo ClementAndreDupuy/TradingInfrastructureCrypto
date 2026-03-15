@@ -147,8 +147,7 @@ ConnectorResult BinanceConnector::cancel_all_at_venue(const char* symbol) {
 
 namespace trading {
 
-ConnectorResult BinanceConnector::fetch_reconciliation_snapshot(
-    ReconciliationSnapshot& snapshot) {
+ConnectorResult BinanceConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot) {
     snapshot.clear();
 
     const auto open_orders =
@@ -175,8 +174,7 @@ ConnectorResult BinanceConnector::fetch_reconciliation_snapshot(
             return ConnectorResult::ERROR_UNKNOWN;
     }
 
-    const auto account =
-        http::get(api_url() + "/api/v3/account", auth_headers("account"));
+    const auto account = http::get(api_url() + "/api/v3/account", auth_headers("account"));
     if (!account.ok())
         return classify_error(account.status);
 
@@ -194,6 +192,27 @@ ConnectorResult BinanceConnector::fetch_reconciliation_snapshot(
             return ConnectorResult::ERROR_UNKNOWN;
     }
 
+    const auto trades = http::get(api_url() + "/api/v3/myTrades", auth_headers("myTrades"));
+    if (!trades.ok())
+        return classify_error(trades.status);
+
+    const auto trades_json = nlohmann::json::parse(trades.body, nullptr, false);
+    if (!trades_json.is_array())
+        return ConnectorResult::ERROR_UNKNOWN;
+
+    for (const auto& item : trades_json) {
+        ReconciledFill fill;
+        fill.client_order_id = item.value("orderId", uint64_t{0});
+        copy_cstr(fill.venue_order_id, sizeof(fill.venue_order_id),
+                  item.value("orderId", std::string("")));
+        copy_cstr(fill.symbol, sizeof(fill.symbol), item.value("symbol", std::string("")));
+        fill.side = item.value("isBuyer", true) ? Side::BID : Side::ASK;
+        fill.quantity = item.value("qty", 0.0);
+        fill.price = item.value("price", 0.0);
+        fill.exchange_ts_ns = item.value("time", int64_t{0}) * 1000000;
+        if (!snapshot.fills.push(fill))
+            return ConnectorResult::ERROR_UNKNOWN;
+    }
     return ConnectorResult::OK;
 }
 

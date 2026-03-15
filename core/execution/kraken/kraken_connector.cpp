@@ -138,12 +138,10 @@ ConnectorResult KrakenConnector::cancel_all_at_venue(const char* symbol) {
 
 namespace trading {
 
-ConnectorResult KrakenConnector::fetch_reconciliation_snapshot(
-    ReconciliationSnapshot& snapshot) {
+ConnectorResult KrakenConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot) {
     snapshot.clear();
 
-    const auto open_resp =
-        http::post(api_url() + "/0/private/OpenOrders", "", auth_headers(""));
+    const auto open_resp = http::post(api_url() + "/0/private/OpenOrders", "", auth_headers(""));
     if (!open_resp.ok())
         return classify_error(open_resp.status);
 
@@ -167,8 +165,7 @@ ConnectorResult KrakenConnector::fetch_reconciliation_snapshot(
             return ConnectorResult::ERROR_UNKNOWN;
     }
 
-    const auto balance_resp =
-        http::post(api_url() + "/0/private/Balance", "", auth_headers(""));
+    const auto balance_resp = http::post(api_url() + "/0/private/Balance", "", auth_headers(""));
     if (!balance_resp.ok())
         return classify_error(balance_resp.status);
 
@@ -186,6 +183,28 @@ ConnectorResult KrakenConnector::fetch_reconciliation_snapshot(
             return ConnectorResult::ERROR_UNKNOWN;
     }
 
+    const auto trades_resp =
+        http::post(api_url() + "/0/private/TradesHistory", "", auth_headers(""));
+    if (!trades_resp.ok())
+        return classify_error(trades_resp.status);
+
+    const auto trades_json = nlohmann::json::parse(trades_resp.body, nullptr, false);
+    const auto& trades = trades_json["result"]["trades"];
+    if (!trades.is_object())
+        return ConnectorResult::ERROR_UNKNOWN;
+
+    for (auto it = trades.begin(); it != trades.end(); ++it) {
+        const auto& item = it.value();
+        ReconciledFill fill;
+        copy_cstr(fill.venue_order_id, sizeof(fill.venue_order_id), it.key());
+        copy_cstr(fill.symbol, sizeof(fill.symbol), item.value("pair", std::string("")));
+        fill.side = item.value("type", std::string("buy")) == "sell" ? Side::ASK : Side::BID;
+        fill.quantity = item.value("vol", 0.0);
+        fill.price = item.value("price", 0.0);
+        fill.exchange_ts_ns = static_cast<int64_t>(item.value("time", 0.0) * 1000000000.0);
+        if (!snapshot.fills.push(fill))
+            return ConnectorResult::ERROR_UNKNOWN;
+    }
     return ConnectorResult::OK;
 }
 

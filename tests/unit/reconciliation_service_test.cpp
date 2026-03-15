@@ -28,44 +28,83 @@ bool contains(const std::string& s, const char* token) {
 http::HttpResponse binance_snapshot_response(const char* method, const std::string& url) {
     if (std::strcmp(method, "GET") != 0)
         return {404, ""};
-    if (contains(url, "openOrders"))
-        return {200, R"([{"orderId":"bn-1","symbol":"BTCUSDT","side":"BUY","origQty":1.0,"executedQty":0.2,"price":100.0,"status":"NEW"}])"};
+    if (contains(url, "openOrders")) {
+        return {
+            200,
+            R"([{"orderId":"bn-1","clientOrderId":11,"symbol":"BTCUSDT","side":"BUY","origQty":1.0,"executedQty":0.2,"price":100.0,"status":"NEW"}])"};
+    }
     if (contains(url, "/account"))
         return {200, R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
+    if (contains(url, "myTrades")) {
+        return {
+            200,
+            R"([{"orderId":"bn-1","symbol":"BTCUSDT","isBuyer":true,"qty":0.2,"price":100.0,"time":1700000000000}])"};
+    }
     return {404, ""};
 }
 
 http::HttpResponse kraken_snapshot_response(const char* method, const std::string& url) {
     if (std::strcmp(method, "POST") != 0)
         return {404, ""};
-    if (contains(url, "OpenOrders"))
-        return {200, R"({"result":{"open":{"kr-1":{"status":"open","vol":1.2,"vol_exec":0.1,"descr":{"pair":"XBTUSD","type":"buy","price":100.5}}}}})"};
+    if (contains(url, "OpenOrders")) {
+        return {
+            200,
+            R"({"result":{"open":{"kr-1":{"status":"open","vol":1.2,"vol_exec":0.1,"descr":{"pair":"XBTUSD","type":"buy","price":100.5}}}}})"};
+    }
     if (contains(url, "Balance"))
         return {200, R"({"result":{"XXBT":2.5}})"};
+    if (contains(url, "TradesHistory")) {
+        return {
+            200,
+            R"({"result":{"trades":{"kr-fill-1":{"pair":"XBTUSD","type":"buy","vol":0.1,"price":100.5,"time":1700000000.0}}}})"};
+    }
     return {404, ""};
 }
 
 http::HttpResponse okx_snapshot_response(const char* method, const std::string& url) {
     if (std::strcmp(method, "GET") != 0)
         return {404, ""};
-    if (contains(url, "orders-pending"))
-        return {200, R"({"data":[{"ordId":"ok-1","instId":"BTC-USDT-SWAP","side":"buy","sz":3.0,"accFillSz":1.0,"px":100.0,"state":"live"}]})"};
-    if (contains(url, "account/balance"))
+    if (contains(url, "orders-pending")) {
+        return {
+            200,
+            R"({"data":[{"ordId":"ok-1","instId":"BTC-USDT-SWAP","side":"buy","sz":3.0,"accFillSz":1.0,"px":100.0,"state":"live"}]})"};
+    }
+    if (contains(url, "account/balance")) {
         return {200, R"({"data":[{"details":[{"ccy":"USDT","eq":1000.0,"availEq":900.0}]}]})"};
+    }
     if (contains(url, "account/positions"))
         return {200, R"({"data":[{"instId":"BTC-USDT-SWAP","pos":1.5,"avgPx":99.5}]})"};
+    if (contains(url, "trade/fills")) {
+        return {
+            200,
+            R"({"data":[{"ordId":"ok-1","instId":"BTC-USDT-SWAP","side":"buy","fillSz":1.0,"fillPx":100.0,"ts":1700000000000}]})"};
+    }
     return {404, ""};
 }
 
 http::HttpResponse coinbase_snapshot_response(const char* method, const std::string& url) {
     if (std::strcmp(method, "GET") != 0)
         return {404, ""};
-    if (contains(url, "historical/batch"))
-        return {200, R"({"orders":[{"order_id":"cb-1","product_id":"BTC-USD","side":"BUY","base_size":1.0,"filled_size":0.4,"limit_price":100.0,"status":"OPEN"}]})"};
-    if (contains(url, "/accounts"))
-        return {200, R"({"accounts":[{"currency":"USD","available_balance":{"value":1000.0},"hold":{"value":12.0}}]})"};
-    if (contains(url, "/positions"))
-        return {200, R"({"positions":[{"product_id":"BTC-USD","size":0.6,"average_entry_price":98.0}]})"};
+    if (contains(url, "historical/batch")) {
+        return {
+            200,
+            R"({"orders":[{"order_id":"cb-1","product_id":"BTC-USD","side":"BUY","base_size":1.0,"filled_size":0.4,"limit_price":100.0,"status":"OPEN"}]})"};
+    }
+    if (contains(url, "/accounts")) {
+        return {
+            200,
+            R"({"accounts":[{"currency":"USD","available_balance":{"value":1000.0},"hold":{"value":12.0}}]})"};
+    }
+    if (contains(url, "/positions")) {
+        return {
+            200,
+            R"({"positions":[{"product_id":"BTC-USD","size":0.6,"average_entry_price":98.0}]})"};
+    }
+    if (contains(url, "historical/fills")) {
+        return {
+            200,
+            R"({"fills":[{"order_id":"cb-1","product_id":"BTC-USD","side":"BUY","size":0.4,"price":100.0,"trade_time":1700000000000000000}]})"};
+    }
     return {404, ""};
 }
 
@@ -92,20 +131,24 @@ TEST(ReconciliationServiceTest, FetchSnapshotForAllConnectors) {
     EXPECT_EQ(binance.fetch_reconciliation_snapshot(snapshot), ConnectorResult::OK);
     EXPECT_EQ(snapshot.open_orders.size, 1U);
     EXPECT_EQ(snapshot.balances.size, 1U);
+    EXPECT_EQ(snapshot.fills.size, 1U);
 
     EXPECT_EQ(kraken.fetch_reconciliation_snapshot(snapshot), ConnectorResult::OK);
     EXPECT_EQ(snapshot.open_orders.size, 1U);
     EXPECT_EQ(snapshot.balances.size, 1U);
+    EXPECT_EQ(snapshot.fills.size, 1U);
 
     EXPECT_EQ(okx.fetch_reconciliation_snapshot(snapshot), ConnectorResult::OK);
     EXPECT_EQ(snapshot.open_orders.size, 1U);
     EXPECT_EQ(snapshot.balances.size, 1U);
     EXPECT_EQ(snapshot.positions.size, 1U);
+    EXPECT_EQ(snapshot.fills.size, 1U);
 
     EXPECT_EQ(coinbase.fetch_reconciliation_snapshot(snapshot), ConnectorResult::OK);
     EXPECT_EQ(snapshot.open_orders.size, 1U);
     EXPECT_EQ(snapshot.balances.size, 1U);
     EXPECT_EQ(snapshot.positions.size, 1U);
+    EXPECT_EQ(snapshot.fills.size, 1U);
 }
 
 TEST(ReconciliationServiceTest, QuarantinesVenueOnDriftMismatch) {
@@ -113,10 +156,19 @@ TEST(ReconciliationServiceTest, QuarantinesVenueOnDriftMismatch) {
                                      const std::vector<std::string>&) {
         if (std::strcmp(method, "GET") != 0)
             return http::HttpResponse{404, ""};
-        if (contains(url, "openOrders"))
-            return http::HttpResponse{200, R"([{"orderId":"bn-1","symbol":"BTCUSDT","side":"BUY","origQty":0.5,"executedQty":0.7,"price":100.0,"status":"NEW"}])"};
+        if (contains(url, "openOrders")) {
+            return http::HttpResponse{
+                200,
+                R"([{"orderId":"bn-1","symbol":"BTCUSDT","side":"BUY","origQty":0.5,"executedQty":0.7,"price":100.0,"status":"NEW"}])"};
+        }
         if (contains(url, "/account"))
-            return http::HttpResponse{200, R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
+            return http::HttpResponse{200,
+                                      R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
+        if (contains(url, "myTrades")) {
+            return http::HttpResponse{
+                200,
+                R"([{"orderId":"bn-1","symbol":"BTCUSDT","isBuyer":true,"qty":0.7,"price":100.0,"time":1700000000000}])"};
+        }
         return http::HttpResponse{404, ""};
     });
 
@@ -132,6 +184,34 @@ TEST(ReconciliationServiceTest, QuarantinesVenueOnDriftMismatch) {
     EXPECT_EQ(state->mismatch_count, 1U);
 }
 
+TEST(ReconciliationServiceTest, QuarantinesOnExpectedStateDrift) {
+    ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
+                                     const std::vector<std::string>&) {
+        if (contains(url, "binance.test"))
+            return binance_snapshot_response(method, url);
+        return http::HttpResponse{404, ""};
+    });
+
+    BinanceConnector binance("k", "s", "https://binance.test");
+    ReconciliationService service;
+    ASSERT_TRUE(service.register_connector(binance));
+
+    ReconciliationSnapshot expected;
+    ReconciledOrder order;
+    copy_cstr(order.venue_order_id, sizeof(order.venue_order_id), "bn-1");
+    order.quantity = 1.5;
+    order.price = 100.0;
+    ASSERT_TRUE(expected.open_orders.push(order));
+    ReconciledBalance balance;
+    copy_cstr(balance.asset, sizeof(balance.asset), "BTC");
+    balance.total = 1.1;
+    ASSERT_TRUE(expected.balances.push(balance));
+    ASSERT_TRUE(service.set_expected_state(Exchange::BINANCE, expected));
+
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::ERROR_UNKNOWN);
+    EXPECT_TRUE(service.is_quarantined(Exchange::BINANCE));
+}
+
 TEST(ReconciliationServiceTest, PeriodicDriftCheckSuccess) {
     ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
                                      const std::vector<std::string>&) {
@@ -143,6 +223,18 @@ TEST(ReconciliationServiceTest, PeriodicDriftCheckSuccess) {
     BinanceConnector binance("k", "s", "https://binance.test");
     ReconciliationService service;
     ASSERT_TRUE(service.register_connector(binance));
+
+    ReconciliationSnapshot expected;
+    ReconciledOrder order;
+    copy_cstr(order.venue_order_id, sizeof(order.venue_order_id), "bn-1");
+    order.quantity = 1.0;
+    order.price = 100.0;
+    ASSERT_TRUE(expected.open_orders.push(order));
+    ReconciledBalance balance;
+    copy_cstr(balance.asset, sizeof(balance.asset), "BTC");
+    balance.total = 1.1;
+    ASSERT_TRUE(expected.balances.push(balance));
+    ASSERT_TRUE(service.set_expected_state(Exchange::BINANCE, expected));
 
     EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::OK);
     EXPECT_FALSE(service.is_quarantined(Exchange::BINANCE));
