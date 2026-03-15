@@ -36,12 +36,37 @@ public:
 
     // Clears the book and re-centers the price grid around the snapshot's best bid.
     Result apply_snapshot(const Snapshot& snapshot) {
-        if (snapshot.bids.empty()) {
+        if (snapshot.bids.empty() || snapshot.asks.empty()) {
             return Result::ERROR_INVALID_PRICE;
         }
 
+        const double best_bid = snapshot.bids[0].price;
+        const double best_ask = snapshot.asks[0].price;
+        const double spread = best_ask - best_bid;
+        if (spread <= 0.0) {
+            LOG_ERROR("Invalid snapshot spread", "symbol", symbol_.c_str(),
+                      "best_bid", best_bid, "best_ask", best_ask);
+            return Result::ERROR_INVALID_PRICE;
+        }
+
+        const double max_allowed_spread = max_allowed_spread_abs();
+        if (spread > max_allowed_spread) {
+            LOG_ERROR("Snapshot spread too wide", "symbol", symbol_.c_str(),
+                      "spread", spread, "max_allowed", max_allowed_spread,
+                      "best_bid", best_bid, "best_ask", best_ask);
+            return Result::ERROR_INVALID_PRICE;
+        }
+
+        if (snapshot.checksum_present) {
+            const uint32_t local_checksum = compute_snapshot_checksum(snapshot);
+            if (local_checksum != snapshot.checksum) {
+                LOG_ERROR("Snapshot checksum mismatch", "symbol", symbol_.c_str(),
+                          "local", local_checksum, "remote", snapshot.checksum);
+                return Result::ERROR_BOOK_CORRUPTED;
+            }
+        }
+
         // Center grid: base = best_bid - half_range
-        double best_bid = snapshot.bids[0].price;
         double new_base = best_bid - static_cast<double>(max_levels_ / 2) * tick_size_;
 
         // Reset state
@@ -162,6 +187,35 @@ public:
     Exchange           exchange() const { return exchange_; }
 
 private:
+    static constexpr double k_max_spread_ticks_multiplier_ = 0.25;
+
+    double max_allowed_spread_abs() const noexcept {
+        return std::max(tick_size_,
+                        static_cast<double>(max_levels_) * tick_size_ *
+                            k_max_spread_ticks_multiplier_);
+    }
+
+    static uint32_t fnv1a_bytes(const char* data, size_t len, uint32_t seed) noexcept {
+        uint32_t hash = seed;
+        for (size_t i = 0; i < len; ++i) {
+            hash ^= static_cast<uint8_t>(data[i]);
+            hash *= 16777619u;
+        }
+        return hash;
+    }
+
+    static uint32_t compute_snapshot_checksum(const Snapshot& snapshot) noexcept {
+        uint32_t hash = 2166136261u;
+        auto hash_level = [&hash](const PriceLevel& level) {
+            hash = fnv1a_bytes(reinterpret_cast<const char*>(&level.price), sizeof(level.price), hash);
+            hash = fnv1a_bytes(reinterpret_cast<const char*>(&level.size), sizeof(level.size), hash);
+        };
+
+        for (const auto& level : snapshot.bids) hash_level(level);
+        for (const auto& level : snapshot.asks) hash_level(level);
+        return hash;
+    }
+
     std::string symbol_;
     Exchange    exchange_;
     double      tick_size_;

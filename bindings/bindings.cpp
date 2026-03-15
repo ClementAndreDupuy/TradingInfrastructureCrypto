@@ -132,6 +132,8 @@ PYBIND11_MODULE(trading_core, m) {
         .def_readwrite("sequence",              &Snapshot::sequence)
         .def_readwrite("bids",                  &Snapshot::bids)
         .def_readwrite("asks",                  &Snapshot::asks)
+        .def_readwrite("checksum",              &Snapshot::checksum)
+        .def_readwrite("checksum_present",      &Snapshot::checksum_present)
         .def_readwrite("timestamp_exchange_ns", &Snapshot::timestamp_exchange_ns)
         .def_readwrite("timestamp_local_ns",    &Snapshot::timestamp_local_ns)
         .def("__repr__", [](const Snapshot& s) {
