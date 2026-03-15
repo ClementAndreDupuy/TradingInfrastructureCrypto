@@ -18,6 +18,7 @@ class BinanceConnector : public LiveConnectorBase {
                                      std::string& new_venue_order_id) override;
     ConnectorResult query_at_venue(const VenueOrderEntry& entry, FillUpdate& status) override;
     ConnectorResult cancel_all_at_venue(const char* symbol) override;
+    ConnectorResult fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot) override;
 };
 
 } // namespace trading

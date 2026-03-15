@@ -144,3 +144,57 @@ ConnectorResult BinanceConnector::cancel_all_at_venue(const char* symbol) {
 }
 
 } // namespace trading
+
+namespace trading {
+
+ConnectorResult BinanceConnector::fetch_reconciliation_snapshot(
+    ReconciliationSnapshot& snapshot) {
+    snapshot.clear();
+
+    const auto open_orders =
+        http::get(api_url() + "/api/v3/openOrders", auth_headers("openOrders"));
+    if (!open_orders.ok())
+        return classify_error(open_orders.status);
+
+    const auto order_json = nlohmann::json::parse(open_orders.body, nullptr, false);
+    if (!order_json.is_array())
+        return ConnectorResult::ERROR_UNKNOWN;
+
+    for (const auto& item : order_json) {
+        ReconciledOrder order;
+        order.client_order_id = item.value("clientOrderId", uint64_t{0});
+        copy_cstr(order.venue_order_id, sizeof(order.venue_order_id),
+                  item.value("orderId", std::string("")));
+        copy_cstr(order.symbol, sizeof(order.symbol), item.value("symbol", std::string("")));
+        order.side = item.value("side", std::string("BUY")) == "SELL" ? Side::ASK : Side::BID;
+        order.quantity = item.value("origQty", 0.0);
+        order.filled_quantity = item.value("executedQty", 0.0);
+        order.price = item.value("price", 0.0);
+        order.state = parse_binance_status(item.value("status", std::string("")));
+        if (!snapshot.open_orders.push(order))
+            return ConnectorResult::ERROR_UNKNOWN;
+    }
+
+    const auto account =
+        http::get(api_url() + "/api/v3/account", auth_headers("account"));
+    if (!account.ok())
+        return classify_error(account.status);
+
+    const auto account_json = nlohmann::json::parse(account.body, nullptr, false);
+    const auto& balances = account_json["balances"];
+    if (!balances.is_array())
+        return ConnectorResult::ERROR_UNKNOWN;
+
+    for (const auto& item : balances) {
+        ReconciledBalance balance;
+        copy_cstr(balance.asset, sizeof(balance.asset), item.value("asset", std::string("")));
+        balance.total = item.value("free", 0.0) + item.value("locked", 0.0);
+        balance.available = item.value("free", 0.0);
+        if (!snapshot.balances.push(balance))
+            return ConnectorResult::ERROR_UNKNOWN;
+    }
+
+    return ConnectorResult::OK;
+}
+
+} // namespace trading

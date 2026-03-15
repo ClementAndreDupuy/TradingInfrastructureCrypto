@@ -3,6 +3,7 @@
 #include "../common/logging.hpp"
 #include "../common/rest_client.hpp"
 #include "exchange_connector.hpp"
+#include "reconciliation_types.hpp"
 #include "venue_order_map.hpp"
 
 #include <atomic>
@@ -113,6 +114,11 @@ class LiveConnectorBase : public ExchangeConnector {
     ConnectorResult reconcile() override {
         order_map_.clear();
         return ConnectorResult::OK;
+    }
+
+    virtual ConnectorResult fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot) {
+        snapshot.clear();
+        return ConnectorResult::ERROR_UNKNOWN;
     }
 
     const VenueOrderMap& order_map() const noexcept { return order_map_; }
