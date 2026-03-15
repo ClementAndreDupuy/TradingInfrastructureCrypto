@@ -138,12 +138,10 @@ ConnectorResult KrakenConnector::cancel_all_at_venue(const char* symbol) {
 
 namespace trading {
 
-ConnectorResult KrakenConnector::fetch_reconciliation_snapshot(
-    ReconciliationSnapshot& snapshot) {
+ConnectorResult KrakenConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot) {
     snapshot.clear();
 
-    const auto open_resp =
-        http::post(api_url() + "/0/private/OpenOrders", "", auth_headers(""));
+    const auto open_resp = http::post(api_url() + "/0/private/OpenOrders", "", auth_headers(""));
     if (!open_resp.ok())
         return classify_error(open_resp.status);
 
@@ -167,8 +165,7 @@ ConnectorResult KrakenConnector::fetch_reconciliation_snapshot(
             return ConnectorResult::ERROR_UNKNOWN;
     }
 
-    const auto balance_resp =
-        http::post(api_url() + "/0/private/Balance", "", auth_headers(""));
+    const auto balance_resp = http::post(api_url() + "/0/private/Balance", "", auth_headers(""));
     if (!balance_resp.ok())
         return classify_error(balance_resp.status);
 
