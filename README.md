@@ -6,50 +6,58 @@ This is a high-level map of how each system block talks to the others.
 
 ```mermaid
 flowchart LR
-  subgraph Exchanges[External Exchanges]
-    BIN[Binance]
-    KRA[Kraken]
-    OKX[OKX]
-    COI[Coinbase]
+  subgraph Exchanges["External Exchanges"]
+    BIN["Binance"]
+    KRA["Kraken"]
+    OKX["OKX"]
+    COI["Coinbase"]
   end
 
-  subgraph HotPath[C++ Hot Path (latency critical)]
-    FEEDS[core/feeds\nWebSocket handlers\n(snapshot + deltas + sequence checks)]
-    ORDERBOOK[core/orderbook\nLocal order books]
-    EXEC[core/execution\nOrderManager + MarketMaker]
-    RISK[core/risk\nPre-trade checks\nKill switch / circuit breaker]
-    SHADOW[core/shadow\nPaper-trading engine]
-    IPCR[core/ipc\nAlphaSignalReader]
+  subgraph HotPath["C++ Hot Path (latency critical)"]
+    FEEDS["core/feeds\nWebSocket handlers\n(snapshot + deltas + sequence checks)"]
+    ORDERBOOK["core/orderbook\nLocal order books"]
+    EXEC["core/execution\nOrderManager + MarketMaker"]
+    RISK["core/risk\nPre-trade checks\nKill switch / circuit breaker"]
+    SHADOW["core/shadow\nPaper-trading engine"]
+    IPCR["core/ipc\nAlphaSignalReader"]
   end
 
-  subgraph ColdPath[Python Cold Path (research + model)]
-    PIPE[research/alpha/neural_alpha\nFeature pipeline + training]
-    BACKTEST[research/backtest\nEvent-driven backtests]
-    IPCW[core/ipc\nShared-memory signal writer]
-    MON[Monitoring\nPrometheus/Grafana]
+  subgraph ColdPath["Python Cold Path (research + model)"]
+    PIPE["research/alpha/neural_alpha\nFeature pipeline + training"]
+    BACKTEST["research/backtest\nEvent-driven backtests"]
+    IPCW["core/ipc\nShared-memory signal writer"]
+    MON["Monitoring\nPrometheus/Grafana"]
   end
 
-  BIN --> FEEDS
-  KRA --> FEEDS
-  OKX --> FEEDS
-  COI --> FEEDS
+  FEEDS -->|"WebSocket subscribe/auth"| BIN
+  FEEDS -->|"WebSocket subscribe/auth"| KRA
+  FEEDS -->|"WebSocket subscribe/auth"| OKX
+  FEEDS -->|"WebSocket subscribe/auth"| COI
+
+  BIN -->|"WebSocket market data\n(snapshot + deltas)"| FEEDS
+  KRA -->|"WebSocket market data\n(snapshot + deltas)"| FEEDS
+  OKX -->|"WebSocket market data\n(snapshot + deltas)"| FEEDS
+  COI -->|"WebSocket market data\n(snapshot + deltas)"| FEEDS
 
   FEEDS --> ORDERBOOK
   ORDERBOOK --> EXEC
   EXEC --> RISK
   RISK --> EXEC
 
-  EXEC -->|Live orders/fills| Exchanges
-  EXEC --> SHADOW
+  EXEC -->|"REST/WebSocket orders"| Exchanges
+  Exchanges -->|"Execution reports/fills"| EXEC
+  EXEC -->|"Shadow route"| SHADOW
+  SHADOW -->|"Paper fills"| EXEC
 
   PIPE --> BACKTEST
-  PIPE --> IPCW
-  IPCW --> IPCR
-  IPCR --> EXEC
+  PIPE -->|"Alpha signal"| IPCW
+  IPCW -->|"Shared memory"| IPCR
+  IPCR -->|"Signal read"| EXEC
 
-  FEEDS --> MON
-  EXEC --> MON
-  PIPE --> MON
+  FEEDS -->|"Feed/latency metrics"| MON
+  EXEC -->|"Orders/PnL/risk metrics"| MON
+  SHADOW -->|"Shadow performance"| MON
+  PIPE -->|"Training + inference metrics"| MON
 ```
 
 ## How each block is used
