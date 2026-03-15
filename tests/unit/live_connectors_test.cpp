@@ -41,7 +41,7 @@ void run_connector_flow(Connector& c, Exchange ex, const char* symbol) {
     EXPECT_EQ(c.reconcile(), ConnectorResult::OK);
 }
 
-}  // namespace
+} // namespace
 
 TEST(LiveConnectorsTest, BinanceMockFlow) {
     BinanceConnector c("", "", "mock://binance");
@@ -63,4 +63,4 @@ TEST(LiveConnectorsTest, CoinbaseMockFlow) {
     run_connector_flow(c, Exchange::COINBASE, "BTC-USD");
 }
 
-}  // namespace trading
+} // namespace trading

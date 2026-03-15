@@ -6,8 +6,8 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
-#include <string>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 using namespace trading;
@@ -15,28 +15,34 @@ using namespace trading;
 namespace {
 
 struct RecordedEvent {
-    char type = 'D';  // S or D
+    char type = 'D'; // S or D
     uint64_t sequence = 0;
     Side side = Side::BID;
     double price = 0.0;
     double size = 0.0;
 };
 
-
 std::string resolve_fixture_path(const std::string& relative) {
     namespace fs = std::filesystem;
 
     const fs::path direct(relative);
-    if (fs::exists(direct)) return direct.string();
+    if (fs::exists(direct))
+        return direct.string();
 
-    const fs::path from_file = fs::path(__FILE__).parent_path().parent_path() / "data" / "replay" / "binance_btcusdt_replay.csv";
-    if (fs::exists(from_file)) return from_file.string();
+    const fs::path from_file = fs::path(__FILE__).parent_path().parent_path() / "data" / "replay" /
+                               "binance_btcusdt_replay.csv";
+    if (fs::exists(from_file))
+        return from_file.string();
 
-    const fs::path from_cwd = fs::current_path() / "tests" / "data" / "replay" / "binance_btcusdt_replay.csv";
-    if (fs::exists(from_cwd)) return from_cwd.string();
+    const fs::path from_cwd =
+        fs::current_path() / "tests" / "data" / "replay" / "binance_btcusdt_replay.csv";
+    if (fs::exists(from_cwd))
+        return from_cwd.string();
 
-    const fs::path from_build = fs::current_path().parent_path() / "tests" / "data" / "replay" / "binance_btcusdt_replay.csv";
-    if (fs::exists(from_build)) return from_build.string();
+    const fs::path from_build = fs::current_path().parent_path() / "tests" / "data" / "replay" /
+                                "binance_btcusdt_replay.csv";
+    if (fs::exists(from_build))
+        return from_build.string();
 
     throw std::runtime_error("Unable to open replay fixture: " + relative);
 }
@@ -50,13 +56,16 @@ std::vector<RecordedEvent> load_events(const std::string& path) {
     std::vector<RecordedEvent> events;
     std::string line;
     while (std::getline(in, line)) {
-        if (line.empty() || line[0] == '#') continue;
+        if (line.empty() || line[0] == '#')
+            continue;
 
         std::stringstream ss(line);
         std::string token;
         std::vector<std::string> fields;
-        while (std::getline(ss, token, ',')) fields.push_back(token);
-        if (fields.size() != 5) continue;
+        while (std::getline(ss, token, ','))
+            fields.push_back(token);
+        if (fields.size() != 5)
+            continue;
 
         RecordedEvent event;
         event.type = fields[0].empty() ? 'D' : fields[0][0];
@@ -115,8 +124,10 @@ std::string replay_once(const std::string& path) {
     for (const auto& event : events) {
         if (event.type == 'S') {
             snapshot.sequence = event.sequence;
-            if (event.side == Side::BID) snapshot.bids.emplace_back(event.price, event.size);
-            else snapshot.asks.emplace_back(event.price, event.size);
+            if (event.side == Side::BID)
+                snapshot.bids.emplace_back(event.price, event.size);
+            else
+                snapshot.asks.emplace_back(event.price, event.size);
             continue;
         }
 
@@ -133,11 +144,12 @@ std::string replay_once(const std::string& path) {
         delta_cb(delta);
     }
 
-    if (!snapshot_applied) snapshot_cb(snapshot);
+    if (!snapshot_applied)
+        snapshot_cb(snapshot);
     return book_state_bytes(manager);
 }
 
-}  // namespace
+} // namespace
 
 TEST(FeedReplayTest, DeterministicByteForByteOrderBookState) {
     const std::string replay_file = "tests/data/replay/binance_btcusdt_replay.csv";

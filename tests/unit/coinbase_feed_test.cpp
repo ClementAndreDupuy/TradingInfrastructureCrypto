@@ -4,7 +4,7 @@
 using namespace trading;
 
 class CoinbaseFeedHandlerTest : public ::testing::Test {
-protected:
+  protected:
     void SetUp() override {
         set_log_level(LogLevel::ERROR);
         handler_ = std::make_unique<CoinbaseFeedHandler>("BTC-USD");
@@ -14,17 +14,14 @@ protected:
             snapshot_count_++;
         });
 
-        handler_->set_delta_callback([this](const Delta& d) {
-            deltas_.push_back(d);
-        });
+        handler_->set_delta_callback([this](const Delta& d) { deltas_.push_back(d); });
 
-        handler_->set_error_callback([this](const std::string& e) {
-            last_error_ = e;
-        });
+        handler_->set_error_callback([this](const std::string& e) { last_error_ = e; });
     }
 
     void TearDown() override {
-        if (handler_) handler_->stop();
+        if (handler_)
+            handler_->stop();
     }
 
     std::unique_ptr<CoinbaseFeedHandler> handler_;
@@ -59,7 +56,6 @@ TEST_F(CoinbaseFeedHandlerTest, ProcessSnapshotThenUpdate) {
     EXPECT_EQ(handler_->get_sequence(), 101u);
 }
 
-
 TEST_F(CoinbaseFeedHandlerTest, IgnoresLegacyLevel2Channel) {
     std::string snapshot =
         R"({"channel":"level2","sequence_num":100,"events":[{"type":"snapshot","updates":[{"side":"bid","price_level":"50000.0","new_quantity":"1.2"},{"side":"offer","price_level":"50001.0","new_quantity":"0.8"}]}]})";
@@ -68,7 +64,6 @@ TEST_F(CoinbaseFeedHandlerTest, IgnoresLegacyLevel2Channel) {
     EXPECT_EQ(snapshot_count_, 0);
     EXPECT_EQ(handler_->get_sequence(), 0u);
 }
-
 
 TEST_F(CoinbaseFeedHandlerTest, MalformedJsonIsIgnored) {
     EXPECT_EQ(handler_->process_message("{bad-json"), Result::SUCCESS);

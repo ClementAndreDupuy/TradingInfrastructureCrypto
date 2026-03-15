@@ -10,13 +10,13 @@ namespace trading {
 namespace {
 
 class MockConnector final : public ExchangeConnector {
-public:
+  public:
     void emit(const FillUpdate& u) {
-        if (on_fill) on_fill(u);
+        if (on_fill)
+            on_fill(u);
     }
 
-
-public:
+  public:
     Exchange exchange_id() const override { return Exchange::BINANCE; }
     bool is_connected() const override { return true; }
     ConnectorResult connect() override { return ConnectorResult::OK; }
@@ -48,7 +48,7 @@ Snapshot make_snapshot() {
     return s;
 }
 
-}  // namespace
+} // namespace
 
 TEST(MarketMakerRiskTest, SubmitsQuotesWithoutCircuitBreaker) {
     MockConnector connector;
@@ -68,7 +68,6 @@ TEST(MarketMakerRiskTest, SubmitsQuotesWithoutCircuitBreaker) {
 
     EXPECT_GT(connector.submit_count, 0);
 }
-
 
 TEST(MarketMakerRiskTest, EntryPriceUsesExactVwapWhenAddingInventory) {
     MockConnector connector;
@@ -128,7 +127,6 @@ TEST(MarketMakerRiskTest, EntryPriceUsesExactVwapWhenAddingInventory) {
     EXPECT_DOUBLE_EQ(maker.entry_price(), expected_vwap);
 }
 
-
 TEST(MarketMakerRiskTest, InventorySkewDecayReducesSkewNearFlatPosition) {
     MockConnector connector;
     OrderManager order_manager(connector);
@@ -157,7 +155,8 @@ TEST(MarketMakerRiskTest, InventorySkewDecayReducesSkewNearFlatPosition) {
     const double mid = book.mid_price();
     double best_bid_flat = 0.0;
     for (const auto& o : connector.submitted_orders) {
-        if (o.side == Side::BID) best_bid_flat = std::max(best_bid_flat, o.price);
+        if (o.side == Side::BID)
+            best_bid_flat = std::max(best_bid_flat, o.price);
     }
 
     Order seed = {};
@@ -186,7 +185,8 @@ TEST(MarketMakerRiskTest, InventorySkewDecayReducesSkewNearFlatPosition) {
 
     double best_bid_inventory = 0.0;
     for (const auto& o : connector.submitted_orders) {
-        if (o.side == Side::BID) best_bid_inventory = std::max(best_bid_inventory, o.price);
+        if (o.side == Side::BID)
+            best_bid_inventory = std::max(best_bid_inventory, o.price);
     }
 
     EXPECT_GT(best_bid_inventory, best_bid_flat);
@@ -217,4 +217,4 @@ TEST(MarketMakerRiskTest, BlocksSubmitWhenCircuitBreakerRejectsRate) {
     EXPECT_EQ(connector.submit_count, 0);
 }
 
-}  // namespace trading
+} // namespace trading

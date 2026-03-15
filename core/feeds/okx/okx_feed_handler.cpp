@@ -1,11 +1,11 @@
 #include "okx_feed_handler.hpp"
 #include "../../common/rest_client.hpp"
-#include <libwebsockets.h>
 #include <algorithm>
 #include <chrono>
 #include <cstring>
-#include <sstream>
 #include <iomanip>
+#include <libwebsockets.h>
+#include <sstream>
 
 namespace trading {
 
@@ -21,7 +21,6 @@ static uint32_t crc32_bytes(const std::string& data) {
     return ~crc;
 }
 
-
 struct OkxWsSession {
     OkxFeedHandler* handler;
     struct lws* wsi{nullptr};
@@ -35,11 +34,11 @@ struct OkxWsSession {
     size_t frag_len{0};
 };
 
-static int okx_lws_cb(struct lws* wsi,
-                      enum lws_callback_reasons reason,
-                      void* /*user*/, void* in, size_t len) {
+static int okx_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* /*user*/, void* in,
+                      size_t len) {
     auto* s = static_cast<OkxWsSession*>(lws_context_user(lws_get_context(wsi)));
-    if (!s) return 0;
+    if (!s)
+        return 0;
 
     switch (reason) {
     case LWS_CALLBACK_CLIENT_ESTABLISHED:
@@ -96,19 +95,17 @@ static struct lws_protocols k_okx_protocols[] = {
     {nullptr, nullptr, 0, 0, 0, nullptr, 0},
 };
 
-OkxFeedHandler::OkxFeedHandler(const std::string& symbol,
-                               const std::string& api_url,
+OkxFeedHandler::OkxFeedHandler(const std::string& symbol, const std::string& api_url,
                                const std::string& ws_url)
-    : symbol_(symbol),
-      api_url_(api_url),
-      ws_url_(ws_url) {
+    : symbol_(symbol), api_url_(api_url), ws_url_(ws_url) {
     LOG_INFO("OkxFeedHandler created", "symbol", symbol_.c_str());
 }
 
 OkxFeedHandler::~OkxFeedHandler() { stop(); }
 
 Result OkxFeedHandler::start() {
-    if (running_.load(std::memory_order_acquire)) return Result::SUCCESS;
+    if (running_.load(std::memory_order_acquire))
+        return Result::SUCCESS;
 
     LOG_INFO("Starting OKX feed handler", "symbol", symbol_.c_str());
     running_.store(true, std::memory_order_release);
@@ -124,11 +121,13 @@ Result OkxFeedHandler::start() {
 
     if (!ready || !running_.load(std::memory_order_acquire)) {
         running_.store(false, std::memory_order_release);
-        if (auto* ctx = static_cast<struct lws_context*>(lws_ctx_.load(std::memory_order_acquire))) {
+        if (auto* ctx =
+                static_cast<struct lws_context*>(lws_ctx_.load(std::memory_order_acquire))) {
             lws_cancel_service(ctx);
         }
         ws_cv_.notify_all();
-        if (ws_thread_.joinable()) ws_thread_.join();
+        if (ws_thread_.joinable())
+            ws_thread_.join();
         return Result::ERROR_CONNECTION_LOST;
     }
 
@@ -137,7 +136,8 @@ Result OkxFeedHandler::start() {
 }
 
 void OkxFeedHandler::stop() {
-    if (!running_.load(std::memory_order_acquire) && !ws_thread_.joinable()) return;
+    if (!running_.load(std::memory_order_acquire) && !ws_thread_.joinable())
+        return;
 
     LOG_INFO("Stopping OKX feed handler", "symbol", symbol_.c_str());
     running_.store(false, std::memory_order_release);
@@ -148,7 +148,8 @@ void OkxFeedHandler::stop() {
     }
     ws_cv_.notify_all();
 
-    if (ws_thread_.joinable()) ws_thread_.join();
+    if (ws_thread_.joinable())
+        ws_thread_.join();
 }
 
 void OkxFeedHandler::ws_event_loop() {
@@ -161,12 +162,16 @@ void OkxFeedHandler::ws_event_loop() {
 
     {
         size_t pos = ws_url_.find("://");
-        if (pos != std::string::npos) pos += 3;
-        else pos = 0;
+        if (pos != std::string::npos)
+            pos += 3;
+        else
+            pos = 0;
 
         size_t slash = ws_url_.find('/', pos);
-        std::string authority = ws_url_.substr(pos, slash == std::string::npos ? std::string::npos : slash - pos);
-        if (slash != std::string::npos) ws_path = ws_url_.substr(slash);
+        std::string authority =
+            ws_url_.substr(pos, slash == std::string::npos ? std::string::npos : slash - pos);
+        if (slash != std::string::npos)
+            ws_path = ws_url_.substr(slash);
 
         size_t colon = authority.rfind(':');
         if (colon != std::string::npos) {
@@ -221,7 +226,8 @@ void OkxFeedHandler::ws_event_loop() {
             continue;
         }
 
-        while (running_.load() && !session.established && !session.closed) lws_service(ctx, 50);
+        while (running_.load() && !session.established && !session.closed)
+            lws_service(ctx, 50);
 
         if (!running_.load() || session.closed) {
             lws_context_destroy(ctx);
@@ -265,8 +271,8 @@ void OkxFeedHandler::ws_event_loop() {
         lws_ctx_.store(nullptr, std::memory_order_release);
 
         if (running_.load(std::memory_order_acquire)) {
-            LOG_WARN("OKX stream disconnected, reconnecting",
-                     "symbol", symbol_.c_str(), "backoff_ms", delay_ms);
+            LOG_WARN("OKX stream disconnected, reconnecting", "symbol", symbol_.c_str(),
+                     "backoff_ms", delay_ms);
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
         }
@@ -279,16 +285,20 @@ Result OkxFeedHandler::fetch_snapshot() {
     const std::string url = api_url_ + "/api/v5/market/books?instId=" + symbol_ + "&sz=400";
 
     auto resp = http::get(url);
-    if (resp.body.empty()) return Result::ERROR_CONNECTION_LOST;
+    if (resp.body.empty())
+        return Result::ERROR_CONNECTION_LOST;
 
     auto j = nlohmann::json::parse(resp.body, nullptr, false);
-    if (j.is_discarded()) return Result::ERROR_BOOK_CORRUPTED;
+    if (j.is_discarded())
+        return Result::ERROR_BOOK_CORRUPTED;
 
     auto code_it = j.find("code");
-    if (code_it == j.end() || code_it->get<std::string>() != "0") return Result::ERROR_BOOK_CORRUPTED;
+    if (code_it == j.end() || code_it->get<std::string>() != "0")
+        return Result::ERROR_BOOK_CORRUPTED;
 
     auto data_it = j.find("data");
-    if (data_it == j.end() || !data_it->is_array() || data_it->empty()) return Result::ERROR_BOOK_CORRUPTED;
+    if (data_it == j.end() || !data_it->is_array() || data_it->empty())
+        return Result::ERROR_BOOK_CORRUPTED;
 
     const auto& book = (*data_it)[0];
 
@@ -299,17 +309,22 @@ Result OkxFeedHandler::fetch_snapshot() {
 
     auto seq_it = book.find("seqId");
     if (seq_it != book.end()) {
-        if (seq_it->is_string()) snap.sequence = std::stoull(seq_it->get<std::string>());
-        else snap.sequence = seq_it->get<uint64_t>();
+        if (seq_it->is_string())
+            snap.sequence = std::stoull(seq_it->get<std::string>());
+        else
+            snap.sequence = seq_it->get<uint64_t>();
     }
 
     auto parse_levels = [](const nlohmann::json& arr) {
         std::vector<PriceLevel> out;
-        if (!arr.is_array()) return out;
+        if (!arr.is_array())
+            return out;
         out.reserve(arr.size());
         for (const auto& lvl : arr) {
-            if (!lvl.is_array() || lvl.size() < 2) continue;
-            out.push_back({std::stod(lvl[0].get<std::string>()), std::stod(lvl[1].get<std::string>())});
+            if (!lvl.is_array() || lvl.size() < 2)
+                continue;
+            out.push_back(
+                {std::stod(lvl[0].get<std::string>()), std::stod(lvl[1].get<std::string>())});
         }
         return out;
     };
@@ -317,14 +332,16 @@ Result OkxFeedHandler::fetch_snapshot() {
     snap.bids = parse_levels(book.value("bids", nlohmann::json::array()));
     snap.asks = parse_levels(book.value("asks", nlohmann::json::array()));
 
-    if (snap.bids.empty() || snap.asks.empty()) return Result::ERROR_BOOK_CORRUPTED;
+    if (snap.bids.empty() || snap.asks.empty())
+        return Result::ERROR_BOOK_CORRUPTED;
 
     bids_.clear();
     asks_.clear();
     apply_local_book_levels(book);
 
     last_sequence_.store(snap.sequence, std::memory_order_release);
-    if (snapshot_callback_) snapshot_callback_(snap);
+    if (snapshot_callback_)
+        snapshot_callback_(snap);
 
     return Result::SUCCESS;
 }
@@ -335,21 +352,25 @@ Result OkxFeedHandler::process_delta(const nlohmann::json& j, uint64_t seq) {
 
     const nlohmann::json* src = &j;
     auto data_it = j.find("data");
-    if (data_it != j.end() && data_it->is_array() && !data_it->empty()) src = &(*data_it)[0];
+    if (data_it != j.end() && data_it->is_array() && !data_it->empty())
+        src = &(*data_it)[0];
 
     apply_local_book_levels(*src);
 
     auto emit_levels = [&](const nlohmann::json& arr, Side side) {
-        if (!arr.is_array()) return;
+        if (!arr.is_array())
+            return;
         for (const auto& lvl : arr) {
-            if (!lvl.is_array() || lvl.size() < 2) continue;
+            if (!lvl.is_array() || lvl.size() < 2)
+                continue;
             Delta d;
             d.side = side;
             d.price = std::stod(lvl[0].get<std::string>());
             d.size = std::stod(lvl[1].get<std::string>());
             d.sequence = seq;
             d.timestamp_local_ns = ts;
-            if (delta_callback_) delta_callback_(d);
+            if (delta_callback_)
+                delta_callback_(d);
         }
     };
 
@@ -361,10 +382,12 @@ Result OkxFeedHandler::process_delta(const nlohmann::json& j, uint64_t seq) {
 
 Result OkxFeedHandler::process_message(const std::string& message) {
     auto j = nlohmann::json::parse(message, nullptr, false);
-    if (j.is_discarded()) return Result::SUCCESS;
+    if (j.is_discarded())
+        return Result::SUCCESS;
 
     auto arg_it = j.find("arg");
-    if (arg_it == j.end() || !arg_it->is_object()) return Result::SUCCESS;
+    if (arg_it == j.end() || !arg_it->is_object())
+        return Result::SUCCESS;
     auto ch_it = arg_it->find("channel");
     if (ch_it == arg_it->end() || !ch_it->is_string() || ch_it->get<std::string>() != "books") {
         return Result::SUCCESS;
@@ -372,7 +395,8 @@ Result OkxFeedHandler::process_message(const std::string& message) {
 
     const nlohmann::json* data_src = nullptr;
     auto data_it = j.find("data");
-    if (data_it == j.end() || !data_it->is_array() || data_it->empty()) return Result::SUCCESS;
+    if (data_it == j.end() || !data_it->is_array() || data_it->empty())
+        return Result::SUCCESS;
     data_src = &(*data_it)[0];
 
     uint64_t seq = 0;
@@ -380,14 +404,18 @@ Result OkxFeedHandler::process_message(const std::string& message) {
 
     auto seq_it = data_src->find("seqId");
     if (seq_it != data_src->end()) {
-        if (seq_it->is_string()) seq = std::stoull(seq_it->get<std::string>());
-        else seq = seq_it->get<uint64_t>();
+        if (seq_it->is_string())
+            seq = std::stoull(seq_it->get<std::string>());
+        else
+            seq = seq_it->get<uint64_t>();
     }
 
     auto prev_it = data_src->find("prevSeqId");
     if (prev_it != data_src->end()) {
-        if (prev_it->is_string()) prev_seq = std::stoull(prev_it->get<std::string>());
-        else prev_seq = prev_it->get<uint64_t>();
+        if (prev_it->is_string())
+            prev_seq = std::stoull(prev_it->get<std::string>());
+        else
+            prev_seq = prev_it->get<uint64_t>();
     }
 
     auto cur = state_.load(std::memory_order_acquire);
@@ -419,10 +447,12 @@ Result OkxFeedHandler::apply_buffered_deltas() {
 
     for (const auto& msg : delta_buffer_) {
         auto j = nlohmann::json::parse(msg, nullptr, false);
-        if (j.is_discarded()) continue;
+        if (j.is_discarded())
+            continue;
 
         auto data_it = j.find("data");
-        if (data_it == j.end() || !data_it->is_array() || data_it->empty()) continue;
+        if (data_it == j.end() || !data_it->is_array() || data_it->empty())
+            continue;
 
         const auto& data = (*data_it)[0];
         uint64_t seq = 0;
@@ -430,14 +460,18 @@ Result OkxFeedHandler::apply_buffered_deltas() {
 
         auto seq_it = data.find("seqId");
         if (seq_it != data.end()) {
-            if (seq_it->is_string()) seq = std::stoull(seq_it->get<std::string>());
-            else seq = seq_it->get<uint64_t>();
+            if (seq_it->is_string())
+                seq = std::stoull(seq_it->get<std::string>());
+            else
+                seq = seq_it->get<uint64_t>();
         }
 
         auto prev_it = data.find("prevSeqId");
         if (prev_it != data.end()) {
-            if (prev_it->is_string()) prev_seq = std::stoull(prev_it->get<std::string>());
-            else prev_seq = prev_it->get<uint64_t>();
+            if (prev_it->is_string())
+                prev_seq = std::stoull(prev_it->get<std::string>());
+            else
+                prev_seq = prev_it->get<uint64_t>();
         }
 
         if (seq <= last_sequence_.load(std::memory_order_acquire)) {
@@ -455,7 +489,8 @@ Result OkxFeedHandler::apply_buffered_deltas() {
             return Result::ERROR_BOOK_CORRUPTED;
         }
 
-        if (process_delta(j, seq) == Result::SUCCESS) ++applied;
+        if (process_delta(j, seq) == Result::SUCCESS)
+            ++applied;
     }
 
     delta_buffer_.clear();
@@ -465,28 +500,36 @@ Result OkxFeedHandler::apply_buffered_deltas() {
 
 bool OkxFeedHandler::validate_delta_sequence(uint64_t seq, uint64_t prev_seq) const {
     uint64_t last = last_sequence_.load(std::memory_order_acquire);
-    if (prev_seq != 0) return prev_seq == last;
+    if (prev_seq != 0)
+        return prev_seq == last;
     return seq > last;
 }
 
 bool OkxFeedHandler::validate_checksum(const nlohmann::json& data) const {
     auto checksum_it = data.find("checksum");
-    if (checksum_it == data.end()) return true;
+    if (checksum_it == data.end())
+        return true;
 
     int64_t remote_checksum = 0;
-    if (checksum_it->is_string()) remote_checksum = std::stoll(checksum_it->get<std::string>());
-    else remote_checksum = checksum_it->get<int64_t>();
+    if (checksum_it->is_string())
+        remote_checksum = std::stoll(checksum_it->get<std::string>());
+    else
+        remote_checksum = checksum_it->get<int64_t>();
 
     auto test_bids = bids_;
     auto test_asks = asks_;
     auto apply_side = [](const nlohmann::json& arr, auto& book_side) {
-        if (!arr.is_array()) return;
+        if (!arr.is_array())
+            return;
         for (const auto& lvl : arr) {
-            if (!lvl.is_array() || lvl.size() < 2) continue;
+            if (!lvl.is_array() || lvl.size() < 2)
+                continue;
             const double price = std::stod(lvl[0].get<std::string>());
             const std::string size = lvl[1].get<std::string>();
-            if (size == "0" || size == "0.0" || std::stod(size) == 0.0) book_side.erase(price);
-            else book_side[price] = size;
+            if (size == "0" || size == "0.0" || std::stod(size) == 0.0)
+                book_side.erase(price);
+            else
+                book_side[price] = size;
         }
     };
 
@@ -497,13 +540,15 @@ bool OkxFeedHandler::validate_checksum(const nlohmann::json& data) const {
     auto bid_it = test_bids.begin();
     auto ask_it = test_asks.begin();
     for (size_t i = 0; i < 25 && (bid_it != test_bids.end() || ask_it != test_asks.end()); ++i) {
-        if (i > 0) oss << ':';
+        if (i > 0)
+            oss << ':';
         if (bid_it != test_bids.end()) {
             oss << std::setprecision(15) << bid_it->first << ':' << bid_it->second;
             ++bid_it;
         }
         if (ask_it != test_asks.end()) {
-            if (oss.tellp() > 0) oss << ':';
+            if (oss.tellp() > 0)
+                oss << ':';
             oss << std::setprecision(15) << ask_it->first << ':' << ask_it->second;
             ++ask_it;
         }
@@ -514,9 +559,7 @@ bool OkxFeedHandler::validate_checksum(const nlohmann::json& data) const {
     const int64_t local_signed = static_cast<int32_t>(local);
 
     if (local_signed != remote_checksum) {
-        LOG_ERROR("OKX checksum mismatch",
-                  "symbol", symbol_.c_str(),
-                  "local", local_signed,
+        LOG_ERROR("OKX checksum mismatch", "symbol", symbol_.c_str(), "local", local_signed,
                   "remote", remote_checksum);
         return false;
     }
@@ -526,14 +569,18 @@ bool OkxFeedHandler::validate_checksum(const nlohmann::json& data) const {
 
 void OkxFeedHandler::apply_local_book_levels(const nlohmann::json& data) {
     auto apply_side = [](const nlohmann::json& arr, auto& book_side) {
-        if (!arr.is_array()) return;
+        if (!arr.is_array())
+            return;
         for (const auto& lvl : arr) {
-            if (!lvl.is_array() || lvl.size() < 2) continue;
+            if (!lvl.is_array() || lvl.size() < 2)
+                continue;
             double price = std::stod(lvl[0].get<std::string>());
             std::string size = lvl[1].get<std::string>();
 
-            if (size == "0" || size == "0.0" || std::stod(size) == 0.0) book_side.erase(price);
-            else book_side[price] = size;
+            if (size == "0" || size == "0.0" || std::stod(size) == 0.0)
+                book_side.erase(price);
+            else
+                book_side[price] = size;
         }
     };
 
@@ -543,9 +590,10 @@ void OkxFeedHandler::apply_local_book_levels(const nlohmann::json& data) {
 
 void OkxFeedHandler::trigger_resnapshot(const std::string& reason) {
     LOG_WARN("Triggering OKX re-snapshot", "reason", reason.c_str());
-    if (error_callback_) error_callback_("Re-snapshot: " + reason);
+    if (error_callback_)
+        error_callback_("Re-snapshot: " + reason);
     delta_buffer_.clear();
     state_.store(State::BUFFERING, std::memory_order_release);
 }
 
-}  // namespace trading
+} // namespace trading

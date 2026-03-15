@@ -8,12 +8,12 @@ namespace trading {
 
 TEST(SmartOrderRouterTest, SplitsAcrossBestVenuesByScore) {
     SmartOrderRouter sor;
-    std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venues{ {
+    std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venues{{
         {Exchange::BINANCE, 100.0, 100.2, 0.20, 5.0, 0.2, 0.2, true},
         {Exchange::KRAKEN, 100.0, 100.1, 0.15, 4.0, 0.2, 0.2, true},
         {Exchange::OKX, 100.0, 100.0, 0.10, 7.0, 0.2, 0.2, true},
         {Exchange::COINBASE, 100.0, 100.3, 1.00, 5.0, 0.2, 0.2, true},
-    } };
+    }};
 
     RoutingDecision d = sor.route(Side::BID, 0.25, venues);
 
@@ -26,12 +26,12 @@ TEST(SmartOrderRouterTest, SplitsAcrossBestVenuesByScore) {
 
 TEST(SmartOrderRouterTest, SkipsUnhealthyOrEmptyVenues) {
     SmartOrderRouter sor;
-    std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venues{ {
+    std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venues{{
         {Exchange::BINANCE, 100.0, 100.1, 0.0, 5.0, 0.1, 0.1, true},
         {Exchange::KRAKEN, 100.0, 100.2, 1.0, 4.0, 0.1, 0.1, false},
         {Exchange::OKX, 100.0, 100.0, 1.0, 4.0, 0.1, 0.1, true},
         {Exchange::COINBASE, 100.0, 100.3, 1.0, 2.0, 0.1, 0.1, true},
-    } };
+    }};
 
     RoutingDecision d = sor.route(Side::BID, 0.5, venues);
 
@@ -42,12 +42,12 @@ TEST(SmartOrderRouterTest, SkipsUnhealthyOrEmptyVenues) {
 
 TEST(SmartOrderRouterTest, AlphaGateBlocksHighRiskAndScalesQty) {
     SmartOrderRouter sor;
-    std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venues{ {
+    std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venues{{
         {Exchange::BINANCE, 100.0, 100.1, 10.0, 2.0, 0.1, 0.1, true},
         {Exchange::KRAKEN, 100.0, 100.2, 10.0, 4.0, 0.1, 0.1, true},
         {Exchange::OKX, 100.0, 100.3, 10.0, 4.0, 0.1, 0.1, true},
         {Exchange::COINBASE, 100.0, 100.4, 10.0, 4.0, 0.1, 0.1, true},
-    } };
+    }};
 
     AlphaSignal blocked;
     blocked.signal_bps = 10.0;
@@ -67,4 +67,4 @@ TEST(SmartOrderRouterTest, AlphaGateBlocksHighRiskAndScalesQty) {
     EXPECT_NEAR(allowed_decision.children[0].quantity, 1.5, 1e-12);
 }
 
-}  // namespace trading
+} // namespace trading

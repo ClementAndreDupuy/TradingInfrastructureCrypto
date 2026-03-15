@@ -1,6 +1,6 @@
 # ThamesRiverTrading Production Readiness Audit
 
-**Audit date:** 2026-03-14  
+**Audit date:** 2026-03-14
 **Scope:** Full codebase audit against industry-standard high/mid-frequency crypto production requirements, with explicit focus on Binance/OKX/Kraken/Coinbase feed + order readiness.
 
 ---
@@ -38,48 +38,48 @@ You currently have **market data ingestion for 4 exchanges**, but **zero live ex
 
 ## CRITICAL (Blocks Production)
 
-1. **No live order connectivity layer implemented.**  
+1. **No live order connectivity layer implemented.**
    `ExchangeConnector` is an interface and only `ShadowConnector` implements it. No Binance/Kraken/OKX/Coinbase REST/FIX/WebSocket trading connectors, no authenticated order submit/cancel path, no reconciliation implementation against live venues.
 
-2. **Deployment references non-existent C++ trading engine binary.**  
+2. **Deployment references non-existent C++ trading engine binary.**
    Systemd service starts `/opt/trading/build/bin/trading_engine`, but no target or `main()` for this binary is present in CMake/repo.
 
-3. **Production run scripts are inconsistent with stated 4-exchange objective.**  
+3. **Production run scripts are inconsistent with stated 4-exchange objective.**
    Live/shadow scripts are Binance-keyed and launch Python `shadow_session` with `--exchanges "SOLANA"`, not Binance/Kraken/OKX/Coinbase execution orchestration.
 
-4. **Local C++ build is non-portable by default due to hard dependency on `libwebsockets` dev package.**  
+4. **Local C++ build is non-portable by default due to hard dependency on `libwebsockets` dev package.**
    Build fails at configure stage when the package is missing; this impairs reliability of developer onboarding and emergency patch workflows.
 
 ---
 
 ## HIGH (Major Industry Gaps)
 
-1. **Coinbase handler does not meet internal exchange standard listed in project guidance.**  
+1. **Coinbase handler does not meet internal exchange standard listed in project guidance.**
    Guidance says Coinbase should be full L3/FIX style; implementation is `level2`/`l2_data` book updates only.
 
-2. **OKX checksum validation is not implemented.**  
+2. **OKX checksum validation is not implemented.**
    Internal guidance explicitly marks CRC32 checksum as required for `books`; code validates sequence continuity but does not verify checksum integrity.
 
-3. **Risk controls not fully wired into strategy decision loop.**  
+3. **Risk controls not fully wired into strategy decision loop.**
    `NeuralAlphaMarketMaker` gates on kill-switch and local signal risk score widening, but does not directly apply `CircuitBreaker` checks before order submissions.
 
-4. **Unit feed tests are partially integration-like and may depend on live network behavior.**  
+4. **Unit feed tests are partially integration-like and may depend on live network behavior.**
    Some tests call handler `start()` and expect sequencing behavior, increasing flakiness and reducing deterministic CI confidence.
 
 ---
 
 ## MEDIUM (Quality / Operations / Reliability)
 
-1. **No explicit latency budget enforcement tests in CI.**  
+1. **No explicit latency budget enforcement tests in CI.**
    Budgets are documented (<1µs orderbook/risk, <10µs feed handler), but no benchmark gate fails builds on regression.
 
-2. **Production readiness docs and implementation are out of sync.**  
+2. **Production readiness docs and implementation are out of sync.**
    Deployment narrative implies a C++ live engine while operational scripts currently run Python shadow/live sessions.
 
-3. **Cross-exchange execution abstraction is incomplete.**  
+3. **Cross-exchange execution abstraction is incomplete.**
    `ShadowEngine` currently instantiated for Binance/Kraken; no equivalent production-grade multi-venue router for OKX/Coinbase.
 
-4. **Dependency bootstrap is split across CI and local instructions.**  
+4. **Dependency bootstrap is split across CI and local instructions.**
    CI installs required native packages explicitly; local build instructions do not provide a robust fallback or preflight checker.
 
 ---

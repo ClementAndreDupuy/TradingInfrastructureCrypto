@@ -1,40 +1,38 @@
 #pragma once
 
-#include "../../common/types.hpp"
 #include "../../common/logging.hpp"
 #include "../../common/rest_client.hpp"
+#include "../../common/types.hpp"
 #ifdef __has_include
-#  if __has_include(<nlohmann/json.hpp>)
-#    include <nlohmann/json.hpp>
-#  else
-#    include "../../common/json.hpp"
-#  endif
+#if __has_include(<nlohmann/json.hpp>)
+#include <nlohmann/json.hpp>
 #else
-#  include "../../common/json.hpp"
+#include "../../common/json.hpp"
 #endif
-#include <string>
-#include <vector>
+#else
+#include "../../common/json.hpp"
+#endif
+#include <atomic>
+#include <condition_variable>
 #include <deque>
 #include <functional>
-#include <atomic>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
 #include <map>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
 
 namespace trading {
 
 class OkxFeedHandler {
-public:
+  public:
     using SnapshotCallback = std::function<void(const Snapshot&)>;
     using DeltaCallback = std::function<void(const Delta&)>;
     using ErrorCallback = std::function<void(const std::string&)>;
 
-    explicit OkxFeedHandler(
-        const std::string& symbol,
-        const std::string& api_url = "https://www.okx.com",
-        const std::string& ws_url = "wss://ws.okx.com:8443/ws/v5/public"
-    );
+    explicit OkxFeedHandler(const std::string& symbol,
+                            const std::string& api_url = "https://www.okx.com",
+                            const std::string& ws_url = "wss://ws.okx.com:8443/ws/v5/public");
 
     ~OkxFeedHandler();
 
@@ -63,11 +61,13 @@ public:
                                   const std::vector<PriceLevel>& asks) {
         bids_.clear();
         asks_.clear();
-        for (const auto& level : bids) bids_[level.price] = std::to_string(level.size);
-        for (const auto& level : asks) asks_[level.price] = std::to_string(level.size);
+        for (const auto& level : bids)
+            bids_[level.price] = std::to_string(level.size);
+        for (const auto& level : asks)
+            asks_[level.price] = std::to_string(level.size);
     }
 
-private:
+  private:
     enum class State { DISCONNECTED, BUFFERING, STREAMING };
 
     std::string symbol_;
@@ -103,4 +103,4 @@ private:
     std::map<double, std::string> asks_;
 };
 
-}  // namespace trading
+} // namespace trading

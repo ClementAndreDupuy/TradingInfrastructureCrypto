@@ -13,15 +13,14 @@ TEST(FeedDisconnectChaosTest, BinanceGapThenRecoveryMessageSucceeds) {
     // Stay offline: deterministic gap/recovery validation without network I/O.
     const uint64_t base = h.get_sequence();
 
-    const std::string gap =
-        R"({"e":"depthUpdate","s":"BTCUSDT","U":)" + std::to_string(base + 100) +
-        R"(,"u":)" + std::to_string(base + 100) + R"(,"b":[],"a":[]})";
+    const std::string gap = R"({"e":"depthUpdate","s":"BTCUSDT","U":)" +
+                            std::to_string(base + 100) + R"(,"u":)" + std::to_string(base + 100) +
+                            R"(,"b":[],"a":[]})";
     EXPECT_EQ(h.process_message(gap), Result::ERROR_SEQUENCE_GAP);
 
-    const std::string recover =
-        R"({"e":"depthUpdate","s":"BTCUSDT","U":)" + std::to_string(base + 1) +
-        R"(,"u":)" + std::to_string(base + 1) +
-        R"(,"b":[["50000.0","1.0"]],"a":[["50001.0","1.0"]]})";
+    const std::string recover = R"({"e":"depthUpdate","s":"BTCUSDT","U":)" +
+                                std::to_string(base + 1) + R"(,"u":)" + std::to_string(base + 1) +
+                                R"(,"b":[["50000.0","1.0"]],"a":[["50001.0","1.0"]]})";
     EXPECT_EQ(h.process_message(recover), Result::SUCCESS);
 }
 
@@ -74,5 +73,5 @@ TEST(FeedDisconnectChaosTest, OkxGapThenRecoveryWithStreamingState) {
     EXPECT_EQ(h.process_message(recover), Result::SUCCESS);
 }
 
-}  // namespace
-}  // namespace trading
+} // namespace
+} // namespace trading

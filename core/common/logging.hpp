@@ -20,29 +20,24 @@
 #include <thread>
 
 #ifdef __x86_64__
-#  include <x86intrin.h>
-#  define TRADING_RDTSC() __rdtsc()
+#include <x86intrin.h>
+#define TRADING_RDTSC() __rdtsc()
 #else
 // Fallback: steady_clock nanoseconds (not a TSC but same type)
-#  define TRADING_RDTSC() static_cast<uint64_t>(                          \
-       std::chrono::steady_clock::now().time_since_epoch().count())
+#define TRADING_RDTSC()                                                                            \
+    static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count())
 #endif
 
 namespace trading {
 
-enum class LogLevel : uint8_t {
-    DEBUG = 0,
-    INFO  = 1,
-    WARN  = 2,
-    ERROR = 3
-};
+enum class LogLevel : uint8_t { DEBUG = 0, INFO = 1, WARN = 2, ERROR = 3 };
 
 // ── RDTSC calibration ─────────────────────────────────────────────────────────
 
 struct TscCalibration {
-    uint64_t tsc_base;      // TSC at calibration time
-    int64_t  ns_base;       // wall-clock ns at calibration time
-    double   ns_per_cycle;  // nanoseconds per TSC cycle
+    uint64_t tsc_base;   // TSC at calibration time
+    int64_t ns_base;     // wall-clock ns at calibration time
+    double ns_per_cycle; // nanoseconds per TSC cycle
 
     static TscCalibration calibrate() noexcept {
         // Sample wall clock + TSC twice, ~50ms apart, to measure frequency.
@@ -53,64 +48,65 @@ struct TscCalibration {
         uint64_t t0_tsc = TRADING_RDTSC();
 
         // Spin-wait ~50 ms to get a stable frequency sample.
-        while (std::chrono::duration_cast<std::chrono::milliseconds>(
-                   Clock::now() - t0_wall).count() < 50) {}
+        while (
+            std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0_wall).count() <
+            50) {
+        }
 
         uint64_t t1_tsc = TRADING_RDTSC();
         auto t1_wall = Clock::now();
 
-        int64_t  elapsed_ns    = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                     t1_wall - t0_wall).count();
-        uint64_t elapsed_tsc   = t1_tsc - t0_tsc;
+        int64_t elapsed_ns =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(t1_wall - t0_wall).count();
+        uint64_t elapsed_tsc = t1_tsc - t0_tsc;
 
-        c.tsc_base     = t0_tsc;
-        c.ns_base      = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                             t0_wall.time_since_epoch()).count();
+        c.tsc_base = t0_tsc;
+        c.ns_base = std::chrono::duration_cast<std::chrono::nanoseconds>(t0_wall.time_since_epoch())
+                        .count();
         c.ns_per_cycle = (elapsed_tsc > 0)
-                         ? static_cast<double>(elapsed_ns) / static_cast<double>(elapsed_tsc)
-                         : 1.0;
+                             ? static_cast<double>(elapsed_ns) / static_cast<double>(elapsed_tsc)
+                             : 1.0;
         return c;
     }
 
     int64_t tsc_to_ns(uint64_t tsc) const noexcept {
-        return ns_base + static_cast<int64_t>(
-            static_cast<double>(tsc - tsc_base) * ns_per_cycle);
+        return ns_base + static_cast<int64_t>(static_cast<double>(tsc - tsc_base) * ns_per_cycle);
     }
 };
 
 // ── Ring-buffer entry ─────────────────────────────────────────────────────────
 
-static constexpr size_t LOG_MSG_SIZE = 224;  // total entry = 256 bytes
+static constexpr size_t LOG_MSG_SIZE = 224; // total entry = 256 bytes
 
 struct alignas(256) LogEntry {
-    uint64_t  tsc;
-    LogLevel  level;
-    char      msg[LOG_MSG_SIZE];
-    char      _pad[256 - sizeof(uint64_t) - sizeof(LogLevel) - LOG_MSG_SIZE];
+    uint64_t tsc;
+    LogLevel level;
+    char msg[LOG_MSG_SIZE];
+    char _pad[256 - sizeof(uint64_t) - sizeof(LogLevel) - LOG_MSG_SIZE];
 };
 static_assert(sizeof(LogEntry) == 256, "LogEntry must be 256 bytes");
 
 // ── SPSC ring buffer ──────────────────────────────────────────────────────────
 
-static constexpr size_t LOG_RING_SIZE = 4096;  // must be power of 2
+static constexpr size_t LOG_RING_SIZE = 4096; // must be power of 2
 
 struct LogRing {
-    alignas(64) std::atomic<uint64_t> head{0};  // writer advances tail
-    alignas(64) std::atomic<uint64_t> tail{0};  // reader advances head
+    alignas(64) std::atomic<uint64_t> head{0}; // writer advances tail
+    alignas(64) std::atomic<uint64_t> tail{0}; // reader advances head
     alignas(256) LogEntry entries[LOG_RING_SIZE];
 };
 
 // ── Async logger singleton ────────────────────────────────────────────────────
 
 class AsyncLogger {
-public:
+  public:
     static AsyncLogger& instance() noexcept {
         static AsyncLogger inst;
         return inst;
     }
 
     void set_level(LogLevel lvl) noexcept { min_level_.store(lvl, std::memory_order_relaxed); }
-    LogLevel min_level() const noexcept   { return min_level_.load(std::memory_order_relaxed); }
+    LogLevel min_level() const noexcept { return min_level_.load(std::memory_order_relaxed); }
 
     // Hot-path: push a log entry into the ring (zero heap allocation).
     // If the ring is full the entry is dropped (never blocks).
@@ -124,7 +120,7 @@ public:
         }
 
         LogEntry& e = ring_.entries[tail & (LOG_RING_SIZE - 1)];
-        e.tsc   = TRADING_RDTSC();
+        e.tsc = TRADING_RDTSC();
         e.level = level;
 
         size_t copy_len = (msg_len < LOG_MSG_SIZE - 1) ? msg_len : (LOG_MSG_SIZE - 1);
@@ -137,18 +133,19 @@ public:
     uint64_t dropped() const noexcept { return dropped_.load(std::memory_order_relaxed); }
 
     void stop() noexcept {
-        if (!running_.exchange(false, std::memory_order_acq_rel)) return;
-        if (writer_thread_.joinable()) writer_thread_.join();
+        if (!running_.exchange(false, std::memory_order_acq_rel))
+            return;
+        if (writer_thread_.joinable())
+            writer_thread_.join();
         // Drain remaining entries synchronously
         drain(/*force=*/true);
     }
 
     ~AsyncLogger() { stop(); }
 
-private:
+  private:
     AsyncLogger()
-        : min_level_(LogLevel::INFO), running_(true),
-          calib_(TscCalibration::calibrate()) {
+        : min_level_(LogLevel::INFO), running_(true), calib_(TscCalibration::calibrate()) {
         writer_thread_ = std::thread(&AsyncLogger::writer_loop, this);
     }
 
@@ -164,7 +161,8 @@ private:
         for (;;) {
             uint64_t head = ring_.head.load(std::memory_order_relaxed);
             uint64_t tail = ring_.tail.load(std::memory_order_acquire);
-            if (head == tail) break;
+            if (head == tail)
+                break;
 
             const LogEntry& e = ring_.entries[head & (LOG_RING_SIZE - 1)];
             write_entry(e);
@@ -178,9 +176,12 @@ private:
         int64_t ns = calib_.tsc_to_ns(e.tsc);
 
         // Convert ns → seconds + subsecond ns
-        time_t sec  = static_cast<time_t>(ns / 1'000'000'000LL);
-        int    nsub = static_cast<int>(ns % 1'000'000'000LL);
-        if (nsub < 0) { sec--; nsub += 1'000'000'000; }
+        time_t sec = static_cast<time_t>(ns / 1'000'000'000LL);
+        int nsub = static_cast<int>(ns % 1'000'000'000LL);
+        if (nsub < 0) {
+            sec--;
+            nsub += 1'000'000'000;
+        }
 
         struct tm tm_buf;
         gmtime_r(&sec, &tm_buf);
@@ -197,59 +198,67 @@ private:
 
     static const char* level_to_string(LogLevel l) noexcept {
         switch (l) {
-            case LogLevel::DEBUG: return "DEBUG";
-            case LogLevel::INFO:  return "INFO ";
-            case LogLevel::WARN:  return "WARN ";
-            case LogLevel::ERROR: return "ERROR";
-            default:              return "?????";
+        case LogLevel::DEBUG:
+            return "DEBUG";
+        case LogLevel::INFO:
+            return "INFO ";
+        case LogLevel::WARN:
+            return "WARN ";
+        case LogLevel::ERROR:
+            return "ERROR";
+        default:
+            return "?????";
         }
     }
 
-    std::atomic<LogLevel>  min_level_;
-    std::atomic<bool>      running_;
-    std::atomic<uint64_t>  dropped_{0};
-    LogRing                ring_;
-    TscCalibration         calib_;
-    std::thread            writer_thread_;
+    std::atomic<LogLevel> min_level_;
+    std::atomic<bool> running_;
+    std::atomic<uint64_t> dropped_{0};
+    LogRing ring_;
+    TscCalibration calib_;
+    std::thread writer_thread_;
 };
 
 // ── Format helpers (stack-only, no heap) ─────────────────────────────────────
 
 namespace detail {
 
-inline bool can_append(size_t pos, size_t cap) noexcept {
-    return cap > 0 && pos < (cap - 1);
-}
+inline bool can_append(size_t pos, size_t cap) noexcept { return cap > 0 && pos < (cap - 1); }
 
 inline void fmt_append(char* buf, size_t& pos, size_t cap, const char* s) noexcept {
-    if (!s) return;
-    while (can_append(pos, cap) && *s) buf[pos++] = *s++;
+    if (!s)
+        return;
+    while (can_append(pos, cap) && *s)
+        buf[pos++] = *s++;
 }
 
 inline void fmt_append_int(char* buf, size_t& pos, size_t cap, long long v) noexcept {
     char tmp[32];
-    int  n = std::snprintf(tmp, sizeof(tmp), "%lld", v);
-    for (int i = 0; i < n && can_append(pos, cap); ++i) buf[pos++] = tmp[i];
+    int n = std::snprintf(tmp, sizeof(tmp), "%lld", v);
+    for (int i = 0; i < n && can_append(pos, cap); ++i)
+        buf[pos++] = tmp[i];
 }
 
 inline void fmt_append_uint(char* buf, size_t& pos, size_t cap, unsigned long long v) noexcept {
     char tmp[32];
-    int  n = std::snprintf(tmp, sizeof(tmp), "%llu", v);
-    for (int i = 0; i < n && can_append(pos, cap); ++i) buf[pos++] = tmp[i];
+    int n = std::snprintf(tmp, sizeof(tmp), "%llu", v);
+    for (int i = 0; i < n && can_append(pos, cap); ++i)
+        buf[pos++] = tmp[i];
 }
 
 inline void fmt_append_double(char* buf, size_t& pos, size_t cap, double v) noexcept {
     char tmp[32];
-    int  n = std::snprintf(tmp, sizeof(tmp), "%.6g", v);
-    for (int i = 0; i < n && can_append(pos, cap); ++i) buf[pos++] = tmp[i];
+    int n = std::snprintf(tmp, sizeof(tmp), "%.6g", v);
+    for (int i = 0; i < n && can_append(pos, cap); ++i)
+        buf[pos++] = tmp[i];
 }
 
 // Terminal case
 inline void fmt_fields(char*, size_t&, size_t) noexcept {}
 
-template<typename V, typename... Rest>
-void fmt_fields(char* buf, size_t& pos, size_t cap,
-                const char* key, V&& val, Rest&&... rest) noexcept;
+template <typename V, typename... Rest>
+void fmt_fields(char* buf, size_t& pos, size_t cap, const char* key, V&& val,
+                Rest&&... rest) noexcept;
 
 // Value dispatch
 inline void fmt_value(char* buf, size_t& pos, size_t cap, const char* v) noexcept {
@@ -286,27 +295,30 @@ inline void fmt_value(char* buf, size_t& pos, size_t cap, float v) noexcept {
     fmt_append_double(buf, pos, cap, static_cast<double>(v));
 }
 
-template<typename V, typename... Rest>
-void fmt_fields(char* buf, size_t& pos, size_t cap,
-                const char* key, V&& val, Rest&&... rest) noexcept {
-    if (can_append(pos, cap)) buf[pos++] = ' ';
+template <typename V, typename... Rest>
+void fmt_fields(char* buf, size_t& pos, size_t cap, const char* key, V&& val,
+                Rest&&... rest) noexcept {
+    if (can_append(pos, cap))
+        buf[pos++] = ' ';
     fmt_append(buf, pos, cap, key);
-    if (can_append(pos, cap)) buf[pos++] = '=';
+    if (can_append(pos, cap))
+        buf[pos++] = '=';
     fmt_value(buf, pos, cap, std::forward<V>(val));
     fmt_fields(buf, pos, cap, std::forward<Rest>(rest)...);
 }
 
-}  // namespace detail
+} // namespace detail
 
 // ── Public log function (zero heap allocation on hot path) ────────────────────
 
-template<typename... Args>
+template <typename... Args>
 inline void log(LogLevel level, const char* msg, Args&&... args) noexcept {
     AsyncLogger& logger = AsyncLogger::instance();
-    if (level < logger.min_level()) return;
+    if (level < logger.min_level())
+        return;
 
     // Format entirely on the stack
-    char   buf[LOG_MSG_SIZE];
+    char buf[LOG_MSG_SIZE];
     size_t pos = 0;
 
     detail::fmt_append(buf, pos, sizeof(buf), msg);
@@ -316,13 +328,11 @@ inline void log(LogLevel level, const char* msg, Args&&... args) noexcept {
     logger.push(level, buf, pos);
 }
 
-inline void set_log_level(LogLevel lvl) noexcept {
-    AsyncLogger::instance().set_level(lvl);
-}
+inline void set_log_level(LogLevel lvl) noexcept { AsyncLogger::instance().set_level(lvl); }
 
-}  // namespace trading
+} // namespace trading
 
 #define LOG_DEBUG(msg, ...) ::trading::log(::trading::LogLevel::DEBUG, msg, ##__VA_ARGS__)
-#define LOG_INFO(msg, ...)  ::trading::log(::trading::LogLevel::INFO,  msg, ##__VA_ARGS__)
-#define LOG_WARN(msg, ...)  ::trading::log(::trading::LogLevel::WARN,  msg, ##__VA_ARGS__)
+#define LOG_INFO(msg, ...) ::trading::log(::trading::LogLevel::INFO, msg, ##__VA_ARGS__)
+#define LOG_WARN(msg, ...) ::trading::log(::trading::LogLevel::WARN, msg, ##__VA_ARGS__)
 #define LOG_ERROR(msg, ...) ::trading::log(::trading::LogLevel::ERROR, msg, ##__VA_ARGS__)

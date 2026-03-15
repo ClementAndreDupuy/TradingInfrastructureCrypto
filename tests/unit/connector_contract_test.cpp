@@ -53,7 +53,7 @@ void run_state_machine_contract(Connector& c, Exchange ex, const char* symbol) {
     EXPECT_EQ(c.cancel_order(103), ConnectorResult::OK);
 }
 
-}  // namespace
+} // namespace
 
 TEST(ConnectorContractTest, BinanceStateMachineDeterministic) {
     BinanceConnector c("", "", "mock://binance");
@@ -75,4 +75,4 @@ TEST(ConnectorContractTest, CoinbaseStateMachineDeterministic) {
     run_state_machine_contract(c, Exchange::COINBASE, "BTC-USD");
 }
 
-}  // namespace trading
+} // namespace trading

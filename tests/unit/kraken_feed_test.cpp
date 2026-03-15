@@ -5,7 +5,7 @@
 using namespace trading;
 
 class KrakenFeedHandlerTest : public ::testing::Test {
-protected:
+  protected:
     void SetUp() override {
         set_log_level(LogLevel::ERROR);
         handler_ = std::make_unique<KrakenFeedHandler>("XBTUSD");
@@ -15,17 +15,14 @@ protected:
             snapshot_count_++;
         });
 
-        handler_->set_delta_callback([this](const Delta& delta) {
-            deltas_.push_back(delta);
-        });
+        handler_->set_delta_callback([this](const Delta& delta) { deltas_.push_back(delta); });
 
-        handler_->set_error_callback([this](const std::string& error) {
-            last_error_ = error;
-        });
+        handler_->set_error_callback([this](const std::string& error) { last_error_ = error; });
     }
 
     void TearDown() override {
-        if (handler_) handler_->stop();
+        if (handler_)
+            handler_->stop();
     }
 
     std::unique_ptr<KrakenFeedHandler> handler_;
@@ -102,9 +99,8 @@ TEST_F(KrakenFeedHandlerTest, SequenceValidation) {
     handler_->start();
 
     // seq=100 with last_seq_=0 is a gap.
-    std::string msg =
-        R"({"channel":"book","type":"update","seq":100,"data":[{"symbol":"XBTUSD",)"
-        R"("bids":[],"asks":[],"checksum":0}]})";
+    std::string msg = R"({"channel":"book","type":"update","seq":100,"data":[{"symbol":"XBTUSD",)"
+                      R"("bids":[],"asks":[],"checksum":0}]})";
 
     EXPECT_EQ(handler_->process_message(msg), Result::ERROR_SEQUENCE_GAP);
     EXPECT_FALSE(last_error_.empty());
@@ -114,16 +110,14 @@ TEST_F(KrakenFeedHandlerTest, StrictSequenceRule) {
     handler_->start();
 
     // seq=1 accepted (last_seq_=0).
-    std::string msg1 =
-        R"({"channel":"book","type":"update","seq":1,"data":[{"symbol":"XBTUSD",)"
-        R"("bids":[{"price":50000.0,"qty":1.0}],"asks":[],"checksum":0}]})";
+    std::string msg1 = R"({"channel":"book","type":"update","seq":1,"data":[{"symbol":"XBTUSD",)"
+                       R"("bids":[{"price":50000.0,"qty":1.0}],"asks":[],"checksum":0}]})";
     EXPECT_EQ(handler_->process_message(msg1), Result::SUCCESS);
     EXPECT_EQ(handler_->get_sequence(), 1u);
 
     // seq=3 rejected: last_seq_=1, expected 2. Kraken is strictly +1, no window.
-    std::string msg2 =
-        R"({"channel":"book","type":"update","seq":3,"data":[{"symbol":"XBTUSD",)"
-        R"("bids":[],"asks":[],"checksum":0}]})";
+    std::string msg2 = R"({"channel":"book","type":"update","seq":3,"data":[{"symbol":"XBTUSD",)"
+                       R"("bids":[],"asks":[],"checksum":0}]})";
     EXPECT_EQ(handler_->process_message(msg2), Result::ERROR_SEQUENCE_GAP);
 
     // seq=2 would now also be rejected because trigger_resnapshot cleared state.
@@ -148,7 +142,6 @@ TEST_F(KrakenFeedHandlerTest, MissingSeqField) {
     EXPECT_EQ(handler_->process_message(msg), Result::ERROR_INVALID_SEQUENCE);
 }
 
-
 TEST_F(KrakenFeedHandlerTest, MalformedJsonIsIgnored) {
     EXPECT_EQ(handler_->process_message("{invalid"), Result::SUCCESS);
 }
@@ -156,9 +149,8 @@ TEST_F(KrakenFeedHandlerTest, MalformedJsonIsIgnored) {
 TEST_F(KrakenFeedHandlerTest, DuplicateSequenceIsRejected) {
     handler_->start();
 
-    std::string msg =
-        R"({"channel":"book","type":"update","seq":1,"data":[{"symbol":"XBTUSD",)"
-        R"("bids":[{"price":50000.0,"qty":1.0}],"asks":[],"checksum":0}]})";
+    std::string msg = R"({"channel":"book","type":"update","seq":1,"data":[{"symbol":"XBTUSD",)"
+                      R"("bids":[{"price":50000.0,"qty":1.0}],"asks":[],"checksum":0}]})";
     EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
     EXPECT_EQ(handler_->process_message(msg), Result::ERROR_SEQUENCE_GAP);
 }

@@ -48,11 +48,11 @@
 
 - [x] **L1** `core/orderbook/orderbook.hpp` — Add guard against pathologically wide spreads (e.g., snapshot with $1M range from malformed data)
 - [x] **L2** `core/orderbook/orderbook.hpp` — Add Binance depth snapshot checksum validation (Binance provides checksum field in snapshot response)
-- [ ] **L3** `research/alpha/neural_alpha/features.py` — Expand per-level queue imbalance to all N price levels beyond top 5 (already noted in feature TODO comments)
-- [ ] **L4** `deploy/daily_train.py` — Add alerting webhook (Slack/PagerDuty) when model fails to promote or IC drops below floor
+- [x] **L3** `research/alpha/neural_alpha/features.py` — Expanded per-level queue imbalance generation to scale with `N_LEVELS` (no hardcoded 5-level wiring), so features automatically include all configured depth levels
+- [ ] **L4** `deploy/daily_train.py` — Add alerting webhook (Slack/PagerDuty) when model fails to promote or IC drops below floor (mail-only fallback is acceptable interim mitigation)
 - [x] **L5** `core/execution/market_maker.hpp` — Add inventory skew decay: reduce skew magnitude as position approaches zero to avoid over-trading a flat book
-- [ ] **L6** `tests/` — Add C++ latency benchmark tests that measure actual order-book delta and risk check timing; fail CI if over budget defined in AGENTS.md
-- [ ] **L7** General — Add `.clang-tidy` and `.clang-format` configs; enforce in CI pre-commit hook
+- [x] **L6** `tests/` — Verified complete: `tests/perf/latency_budget_test.cpp` enforces orderbook/risk/feed latency budgets and CI runs `ctest -L perf` as a hard gate
+- [x] **L7** General — Added `.clang-tidy` and `.clang-format` configs and enforced via pre-commit hooks in CI (`pre-commit run --all-files`)
 
 ### RESEARCH - Needs investigating, come with a plan to implement it for our server
 
@@ -60,4 +60,4 @@
 - [x] **R2** — Research completed in `agents/reports/RESEARCH_R2_MARKET_REGIME_IDENTIFICATION_2026-03-14.md`: State-of-the-art real-time market regime identification and implementation blueprint for hybrid CPD + HMM/HSMM + microstructure overlays
 - [ ] **R3** — Research on deep reinforcement learning for autonomous execution (State Space Design, Action Space design, Reward function formulation)
 - [x] **R4** — Research completed in `agents/reports/RESEARCH_R4_SMART_ORDER_ROUTING_2026-03-14.md`: Smart Order Routing plan (Binance/Kraken/OKX/Coinbase) and implementation path unblocking C9/C10
-- [ ] **R5** — Research on hardware execution with Field-Programmable Gate Arrays and co-locating servers in the same clusters as exchanges 
+- [ ] **R5** — Research on hardware execution with Field-Programmable Gate Arrays and co-locating servers in the same clusters as exchanges

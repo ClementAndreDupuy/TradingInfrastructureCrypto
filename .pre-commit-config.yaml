@@ -1,0 +1,23 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: end-of-file-fixer
+        exclude: ^\.idea/
+      - id: trailing-whitespace
+        exclude: ^\.idea/
+
+  - repo: local
+    hooks:
+      - id: clang-format
+        name: clang-format (C/C++)
+        entry: bash -c 'clang-format --dry-run --Werror "$@"' --
+        language: system
+        files: '\.(h|hpp|c|cc|cpp)$'
+
+      - id: clang-tidy
+        name: clang-tidy (C/C++)
+        entry: bash -c 'clang-tidy -p build "$@"' --
+        language: system
+        files: '^(core|tests|bindings)/.*\.(cc|cpp)$'
+        pass_filenames: true

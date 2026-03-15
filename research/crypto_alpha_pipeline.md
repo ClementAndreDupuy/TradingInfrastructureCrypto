@@ -26,14 +26,14 @@ End‑to‑end pipeline using live order‑book feeds and tick data. A graph‑b
 - Execution‑aware PnL
 
 ## Model
-Spatial encoder: Graph Neural Network on LOB levels  
+Spatial encoder: Graph Neural Network on LOB levels
 Temporal encoder: Transformer on time sequence
 
 Architecture:
 
-LOB → GNN encoder  
-LOB sequence → Transformer encoder  
-Embeddings → Fusion layer  
+LOB → GNN encoder
+LOB sequence → Transformer encoder
+Embeddings → Fusion layer
 Fusion → Multi‑task heads
 
 Outputs:
