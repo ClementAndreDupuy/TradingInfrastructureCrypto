@@ -3,8 +3,13 @@
 ### CRITICAL
 - [ ] **C1** `core/execution/live_connector_base.hpp` + venue connectors — Replace generic auth/signature flow with exchange-spec canonical signing, remove non-cryptographic signature fallback in live path, and enforce hard-fail when cryptographic backend is unavailable
 - [x] **C2** `core/execution/*_connector.cpp` — Implement authenticated cancel/replace/query endpoints with strict response parsing; stop using synthetic venue order IDs and persist real exchange IDs *(submit/cancel/replace/query now implemented with strict parsing and real venue IDs persisted in `VenueOrderMap`)*
-- [x] **C3** `core/execution/` — Built reconciliation service (open orders, fills, balances, positions) with reconnect bootstrap + periodic drift checks and automated quarantine on mismatch *(implemented in `ReconciliationService` + exchange snapshot fetchers with unit coverage)*
+- [ ] **C3** `core/execution/` — **REWORK REQUIRED**: deliver production reconciliation for open orders/fills/balances/positions against internal canonical state (not snapshot self-check only)
+  - acceptance: deterministic state diff between venue snapshots and `OrderManager` + internal ledgers
+  - acceptance: reconnect bootstrap and periodic drift loops both run same reconciliation logic
+  - acceptance: mismatch classes are explicit (`missing_order`, `qty_drift`, `fill_gap`, `balance_drift`, `position_drift`) with deterministic actions
 - [ ] **C4** `core/execution/` + `core/risk/` — Add durable idempotency journal and deterministic recovery for retry storms, duplicate acks, and cancel/replace race conditions
+- [ ] **C5** `core/execution/reconciliation_service.hpp` + `core/execution/*/` — Implement fill reconciliation pipeline with trade-history ingestion, stable dedupe keys, cumulative qty/notional/fee checks, and deterministic ledger replay
+- [ ] **C6** `core/execution/reconciliation_service.hpp` + `tests/` — Add staged drift remediation policy (retry budget, severity levels, explicit cancel-all/risk-halt hooks, incident trail) plus failure-injection coverage for reconnect/drift edge cases
 
 ### HIGH
 - [ ] **H1** `core/risk/` — Add portfolio/global risk controls (gross/net notional caps, concentration limits, venue caps, cross-venue netting limits) independent from strategy layer
