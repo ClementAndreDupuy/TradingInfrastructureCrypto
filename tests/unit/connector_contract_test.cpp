@@ -20,6 +20,10 @@ class ScopedMockTransport {
     ~ScopedMockTransport() { http::clear_mock_transport(); }
 };
 
+bool contains(const std::string& s, const char* token) {
+    return s.find(token) != std::string::npos;
+}
+
 template <typename Connector>
 Order make_order(Exchange ex, uint64_t id, const char* symbol, Side side = Side::BID) {
     Order o{};
@@ -39,15 +43,28 @@ template <typename Connector>
 void run_state_machine_contract(Connector& c, Exchange ex, const char* symbol,
                                 const char* submit_body, const char* cancel_body) {
     ScopedMockTransport transport(
-        [submit_body, cancel_body](const char* method, const std::string& url, const std::string&,
-                                   const std::vector<std::string>&) {
-            if (std::strcmp(method, "POST") == 0 && url.find("order") != std::string::npos)
-                return http::HttpResponse{200, submit_body};
-            if (std::strcmp(method, "DELETE") == 0 ||
-                (std::strcmp(method, "POST") == 0 && url.find("cancel") != std::string::npos) ||
-                (std::strcmp(method, "POST") == 0 && url.find("Cancel") != std::string::npos)) {
+        [submit_body, cancel_body](const char* method, const std::string& url,
+                                   const std::string& body, const std::vector<std::string>&) {
+            if (std::strcmp(method, "DELETE") == 0 && contains(url, "/api/v3/order"))
+                return http::HttpResponse{200, cancel_body};
+
+            if (std::strcmp(method, "POST") == 0 &&
+                (contains(url, "CancelOrder") || contains(url, "cancel-order"))) {
                 return http::HttpResponse{200, cancel_body};
             }
+
+            if (std::strcmp(method, "POST") == 0 && contains(url, "batch_cancel") &&
+                contains(body, "order_ids")) {
+                return http::HttpResponse{200, cancel_body};
+            }
+
+            if (std::strcmp(method, "POST") == 0 &&
+                (contains(url, "/api/v3/order") || contains(url, "AddOrder") ||
+                 (contains(url, "cancel") == false && contains(url, "Cancel") == false &&
+                  contains(url, "order")))) {
+                return http::HttpResponse{200, submit_body};
+            }
+
             return http::HttpResponse{404, ""};
         });
 

@@ -20,6 +20,10 @@ class ScopedMockTransport {
     ~ScopedMockTransport() { http::clear_mock_transport(); }
 };
 
+bool contains(const std::string& s, const char* token) {
+    return s.find(token) != std::string::npos;
+}
+
 Order make_order(Exchange ex, uint64_t id, const char* symbol) {
     Order o;
     o.client_order_id = id;
@@ -39,16 +43,38 @@ void run_connector_flow(Connector& c, Exchange ex, const char* symbol, const cha
                         const char* cancel_body, const char* cancel_all_body) {
     ScopedMockTransport transport([submit_body, cancel_body, cancel_all_body](
                                       const char* method, const std::string& url,
-                                      const std::string&, const std::vector<std::string>&) {
-        if (std::strcmp(method, "POST") == 0 && url.find("order") != std::string::npos)
-            return http::HttpResponse{200, submit_body};
-        if (std::strcmp(method, "DELETE") == 0 && url.find("openOrders") != std::string::npos)
+                                      const std::string& body, const std::vector<std::string>&) {
+        if (std::strcmp(method, "DELETE") == 0 && contains(url, "openOrders"))
             return http::HttpResponse{200, cancel_all_body};
-        if ((std::strcmp(method, "DELETE") == 0 && url.find("order") != std::string::npos) ||
-            (std::strcmp(method, "POST") == 0 && url.find("Cancel") != std::string::npos) ||
-            (std::strcmp(method, "POST") == 0 && url.find("cancel") != std::string::npos)) {
+
+        if (std::strcmp(method, "DELETE") == 0 && contains(url, "/api/v3/order"))
+            return http::HttpResponse{200, cancel_body};
+
+        if (std::strcmp(method, "POST") == 0 &&
+            (contains(url, "CancelOrder") || contains(url, "cancel-order"))) {
             return http::HttpResponse{200, cancel_body};
         }
+
+        if (std::strcmp(method, "POST") == 0 && contains(url, "CancelAllOrdersAfter"))
+            return http::HttpResponse{200, cancel_all_body};
+
+        if (std::strcmp(method, "POST") == 0 && contains(url, "cancel-batch-orders"))
+            return http::HttpResponse{200, cancel_all_body};
+
+        if (std::strcmp(method, "POST") == 0 && contains(url, "batch_cancel")) {
+            if (contains(body, "order_ids"))
+                return http::HttpResponse{200, cancel_body};
+            if (contains(body, "product_id"))
+                return http::HttpResponse{200, cancel_all_body};
+        }
+
+        if (std::strcmp(method, "POST") == 0 &&
+            (contains(url, "/api/v3/order") || contains(url, "AddOrder") ||
+             (contains(url, "cancel") == false && contains(url, "Cancel") == false &&
+              contains(url, "order")))) {
+            return http::HttpResponse{200, submit_body};
+        }
+
         return http::HttpResponse{404, ""};
     });
 
