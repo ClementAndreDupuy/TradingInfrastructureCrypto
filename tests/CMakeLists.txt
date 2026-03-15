@@ -167,6 +167,7 @@ target_link_libraries(live_connectors_test
 target_include_directories(live_connectors_test PRIVATE
     ${CMAKE_SOURCE_DIR}
 )
+target_compile_definitions(live_connectors_test PRIVATE TRT_ENABLE_HTTP_MOCK_TRANSPORT=1)
 
 add_test(NAME LiveConnectorsTest COMMAND live_connectors_test)
 set_tests_properties(LiveConnectorsTest PROPERTIES
@@ -190,6 +191,7 @@ target_link_libraries(connector_contract_test
 target_include_directories(connector_contract_test PRIVATE
     ${CMAKE_SOURCE_DIR}
 )
+target_compile_definitions(connector_contract_test PRIVATE TRT_ENABLE_HTTP_MOCK_TRANSPORT=1)
 
 add_test(NAME ConnectorContractTest COMMAND connector_contract_test)
 set_tests_properties(ConnectorContractTest PROPERTIES
