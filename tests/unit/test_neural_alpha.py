@@ -31,13 +31,17 @@ from research.alpha.neural_alpha.alpha_regression import (
     ols_regression,
 )
 from research.alpha.neural_alpha.backtest import BacktestConfig, NeuralAlphaBacktest
-from research.alpha.neural_alpha.dataset import DatasetConfig, LOBDataset, split_walk_forward
+from research.alpha.neural_alpha.dataset import (
+    DatasetConfig,
+    LOBDataset,
+    rolling_normalise,
+    split_walk_forward,
+)
 from research.alpha.neural_alpha.features import (
     compute_labels,
     compute_lob_tensor,
     compute_scalar_features,
     normalise_scalar,
-    rolling_normalise,
 )
 from research.alpha.neural_alpha.model import (
     CryptoAlphaNet,
