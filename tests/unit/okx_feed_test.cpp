@@ -55,6 +55,18 @@ TEST_F(OkxFeedHandlerTest, BuffersBookDeltasBeforeStreaming) {
     EXPECT_TRUE(last_error_.empty());
 }
 
+
+TEST_F(OkxFeedHandlerTest, ChecksumMismatchTriggersResnapshot) {
+    handler_->set_streaming_state_for_test(100);
+    handler_->seed_book_state_for_test({PriceLevel{50000.0, 1.0}}, {PriceLevel{50001.0, 1.0}});
+
+    std::string msg =
+        R"({"arg":{"channel":"books","instId":"BTC-USDT"},"data":[{"seqId":"101","prevSeqId":"100","checksum":123,"bids":[["50000","1.5","0","1"]],"asks":[["50001","1.1","0","1"]]}]})";
+
+    EXPECT_EQ(handler_->process_message(msg), Result::ERROR_BOOK_CORRUPTED);
+    EXPECT_FALSE(last_error_.empty());
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

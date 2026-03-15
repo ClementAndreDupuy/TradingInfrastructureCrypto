@@ -174,6 +174,29 @@ set_tests_properties(LiveConnectorsTest PROPERTIES
     LABELS "unit;execution"
 )
 
+
+# Market maker + risk gate unit tests
+add_executable(market_maker_risk_test
+    unit/market_maker_risk_test.cpp
+)
+
+target_link_libraries(market_maker_risk_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(market_maker_risk_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME MarketMakerRiskTest COMMAND market_maker_risk_test)
+set_tests_properties(MarketMakerRiskTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;execution;risk"
+)
+
 # Replay tests (deterministic book-state regression)
 add_executable(feed_replay_test
     replay/feed_replay_test.cpp

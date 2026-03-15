@@ -236,6 +236,14 @@ public:
         return CircuitCheckResult::OK;
     }
 
+
+    CircuitCheckResult check_consecutive_losses() const noexcept {
+        if (consec_losses_.load(std::memory_order_acquire) >= cfg_.consecutive_loss_count) {
+            return CircuitCheckResult::CONSEC_LOSSES;
+        }
+        return CircuitCheckResult::OK;
+    }
+
     // ── Accessors ─────────────────────────────────────────────────────────────
 
     static const char* result_to_string(CircuitCheckResult r) noexcept {
