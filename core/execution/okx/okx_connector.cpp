@@ -138,8 +138,7 @@ ConnectorResult OkxConnector::cancel_all_at_venue(const char* symbol) {
 
 namespace trading {
 
-ConnectorResult OkxConnector::fetch_reconciliation_snapshot(
-    ReconciliationSnapshot& snapshot) {
+ConnectorResult OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot) {
     snapshot.clear();
 
     const auto open_orders =
@@ -166,8 +165,7 @@ ConnectorResult OkxConnector::fetch_reconciliation_snapshot(
             return ConnectorResult::ERROR_UNKNOWN;
     }
 
-    const auto account =
-        http::get(api_url() + "/api/v5/account/balance", auth_headers("balance"));
+    const auto account = http::get(api_url() + "/api/v5/account/balance", auth_headers("balance"));
     if (!account.ok())
         return classify_error(account.status);
 

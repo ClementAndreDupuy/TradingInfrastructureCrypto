@@ -138,8 +138,7 @@ ConnectorResult CoinbaseConnector::cancel_all_at_venue(const char* symbol) {
 
 namespace trading {
 
-ConnectorResult CoinbaseConnector::fetch_reconciliation_snapshot(
-    ReconciliationSnapshot& snapshot) {
+ConnectorResult CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot) {
     snapshot.clear();
 
     const auto open_orders = http::get(api_url() + "/api/v3/brokerage/orders/historical/batch",
@@ -179,8 +178,8 @@ ConnectorResult CoinbaseConnector::fetch_reconciliation_snapshot(
     for (const auto& item : accounts) {
         ReconciledBalance balance;
         copy_cstr(balance.asset, sizeof(balance.asset), item.value("currency", std::string("")));
-        balance.total = item["available_balance"].value("value", 0.0) +
-                        item["hold"].value("value", 0.0);
+        balance.total =
+            item["available_balance"].value("value", 0.0) + item["hold"].value("value", 0.0);
         balance.available = item["available_balance"].value("value", 0.0);
         if (!snapshot.balances.push(balance))
             return ConnectorResult::ERROR_UNKNOWN;
@@ -198,7 +197,8 @@ ConnectorResult CoinbaseConnector::fetch_reconciliation_snapshot(
 
     for (const auto& item : positions) {
         ReconciledPosition position;
-        copy_cstr(position.symbol, sizeof(position.symbol), item.value("product_id", std::string("")));
+        copy_cstr(position.symbol, sizeof(position.symbol),
+                  item.value("product_id", std::string("")));
         position.quantity = item.value("size", 0.0);
         position.avg_entry_price = item.value("average_entry_price", 0.0);
         if (!snapshot.positions.push(position))

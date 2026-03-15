@@ -147,8 +147,7 @@ ConnectorResult BinanceConnector::cancel_all_at_venue(const char* symbol) {
 
 namespace trading {
 
-ConnectorResult BinanceConnector::fetch_reconciliation_snapshot(
-    ReconciliationSnapshot& snapshot) {
+ConnectorResult BinanceConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot) {
     snapshot.clear();
 
     const auto open_orders =
@@ -175,8 +174,7 @@ ConnectorResult BinanceConnector::fetch_reconciliation_snapshot(
             return ConnectorResult::ERROR_UNKNOWN;
     }
 
-    const auto account =
-        http::get(api_url() + "/api/v3/account", auth_headers("account"));
+    const auto account = http::get(api_url() + "/api/v3/account", auth_headers("account"));
     if (!account.ok())
         return classify_error(account.status);
 
