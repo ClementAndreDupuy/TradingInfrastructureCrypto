@@ -9,6 +9,7 @@ Tests:
     - Backtest logic
     - Alpha regression metrics
 """
+
 from __future__ import annotations
 
 import sys
@@ -42,6 +43,8 @@ from research.alpha.neural_alpha.features import (
     compute_lob_tensor,
     compute_scalar_features,
     normalise_scalar,
+    D_SCALAR,
+    N_LEVELS,
 )
 from research.alpha.neural_alpha.model import (
     CryptoAlphaNet,
@@ -55,6 +58,7 @@ from research.alpha.neural_alpha.shadow_session import NeuralAlphaShadowSession,
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def small_df() -> pl.DataFrame:
     return generate_synthetic_lob(n_ticks=200, seed=0)
@@ -67,6 +71,7 @@ def medium_df() -> pl.DataFrame:
 
 # ── Feature engineering ───────────────────────────────────────────────────────
 
+
 class TestFeatures:
     def test_lob_tensor_shape(self, small_df: pl.DataFrame) -> None:
         lob = compute_lob_tensor(small_df)
@@ -78,11 +83,18 @@ class TestFeatures:
 
     def test_scalar_feature_shape(self, small_df: pl.DataFrame) -> None:
         scalar = compute_scalar_features(small_df)
-        assert scalar.shape == (200, 21)
+        assert scalar.shape == (200, D_SCALAR)
 
     def test_scalar_no_inf(self, small_df: pl.DataFrame) -> None:
         scalar = compute_scalar_features(small_df)
         assert np.isfinite(scalar).all(), "Scalar features contain inf/nan"
+
+    def test_queue_imbalance_feature_count_matches_levels(self, small_df: pl.DataFrame) -> None:
+        scalar = compute_scalar_features(small_df)
+        qi_start = 13
+        qi_end = qi_start + N_LEVELS
+        qi = scalar[:, qi_start:qi_end]
+        assert qi.shape == (200, N_LEVELS)
 
     def test_labels_shape(self, small_df: pl.DataFrame) -> None:
         labels = compute_labels(small_df)
@@ -127,6 +139,7 @@ class TestFeatures:
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 
+
 class TestModel:
     def test_spatial_encoder_shape(self) -> None:
         enc = LOBSpatialEncoder(d_model=32, n_heads=2, n_layers=1, n_levels=5)
@@ -142,19 +155,19 @@ class TestModel:
 
     def test_full_model_output_shapes(self) -> None:
         model = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=16)
-        lob    = torch.randn(2, 16, 5, 4)
-        scalar = torch.randn(2, 16, 21)
-        preds  = model(lob, scalar)
-        assert preds["returns"].shape   == (2, 16, 4)
+        lob = torch.randn(2, 16, 5, 4)
+        scalar = torch.randn(2, 16, D_SCALAR)
+        preds = model(lob, scalar)
+        assert preds["returns"].shape == (2, 16, 4)
         assert preds["direction"].shape == (2, 16, 3)
-        assert preds["risk"].shape      == (2, 16)
+        assert preds["risk"].shape == (2, 16)
 
     def test_model_gradients(self) -> None:
-        model     = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=16)
+        model = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=16)
         criterion = MultiTaskLoss()
-        lob       = torch.randn(2, 16, 5, 4)
-        scalar    = torch.randn(2, 16, 21)
-        labels    = torch.randn(2, 16, 6)
+        lob = torch.randn(2, 16, 5, 4)
+        scalar = torch.randn(2, 16, D_SCALAR)
+        labels = torch.randn(2, 16, 6)
         labels[..., 4] = torch.randint(0, 3, (2, 16)).float()
         labels[..., 5] = torch.randint(0, 2, (2, 16)).float()
 
@@ -167,23 +180,24 @@ class TestModel:
                 assert param.grad is not None, f"No gradient for {name}"
 
     def test_risk_head_bounded(self) -> None:
-        model  = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=8)
-        lob    = torch.randn(1, 8, 5, 4)
-        scalar = torch.randn(1, 8, 21)
-        preds  = model(lob, scalar)
-        risk   = preds["risk"].detach().numpy()
+        model = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=8)
+        lob = torch.randn(1, 8, 5, 4)
+        scalar = torch.randn(1, 8, D_SCALAR)
+        preds = model(lob, scalar)
+        risk = preds["risk"].detach().numpy()
         assert (risk >= 0.0).all() and (risk <= 1.0).all(), "Risk not in [0, 1]"
 
 
 # ── Loss ──────────────────────────────────────────────────────────────────────
 
+
 class TestLoss:
     def test_loss_positive(self) -> None:
-        model     = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=8)
+        model = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=8)
         criterion = MultiTaskLoss()
-        lob       = torch.randn(2, 8, 5, 4)
-        scalar    = torch.randn(2, 8, 21)
-        labels    = torch.zeros(2, 8, 6)
+        lob = torch.randn(2, 8, 5, 4)
+        scalar = torch.randn(2, 8, D_SCALAR)
+        labels = torch.zeros(2, 8, 6)
         labels[..., 4] = torch.randint(0, 3, (2, 8)).float()
         preds = model(lob, scalar)
         loss, breakdown = criterion(preds, labels)
@@ -192,12 +206,12 @@ class TestLoss:
 
     def test_loss_decreases(self) -> None:
         """Loss should decrease with a gradient step."""
-        model     = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=8)
+        model = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=8)
         criterion = MultiTaskLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-        lob       = torch.randn(4, 8, 5, 4)
-        scalar    = torch.randn(4, 8, 21)
-        labels    = torch.zeros(4, 8, 6)
+        lob = torch.randn(4, 8, 5, 4)
+        scalar = torch.randn(4, 8, D_SCALAR)
+        labels = torch.zeros(4, 8, 6)
         labels[..., 4] = torch.randint(0, 3, (4, 8)).float()
 
         losses = []
@@ -214,6 +228,7 @@ class TestLoss:
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
 
+
 class TestDataset:
     def test_dataset_len(self, medium_df: pl.DataFrame) -> None:
         ds = LOBDataset(medium_df, DatasetConfig(seq_len=32, stride=1))
@@ -221,12 +236,12 @@ class TestDataset:
         assert len(ds) == 500 - 32 + 1
 
     def test_dataset_item_shapes(self, medium_df: pl.DataFrame) -> None:
-        ds     = LOBDataset(medium_df, DatasetConfig(seq_len=32))
+        ds = LOBDataset(medium_df, DatasetConfig(seq_len=32))
         sample = ds[0]
-        assert sample["lob"].shape    == (32, 5, 4)
-        assert sample["scalar"].shape == (32, 21)
+        assert sample["lob"].shape == (32, 5, 4)
+        assert sample["scalar"].shape == (32, D_SCALAR)
         assert sample["labels"].shape == (32, 6)
-        assert sample["mask"].shape   == (32,)
+        assert sample["mask"].shape == (32,)
 
     def test_rolling_normalise_handles_short_series(self) -> None:
         x = np.arange(24, dtype=np.float64).reshape(12, 2)
@@ -240,9 +255,7 @@ class TestDataset:
             # Test set must come after train set in time
             assert train_df["timestamp_ns"].max() <= test_df["timestamp_ns"].min()
 
-
-# ── Backtest ──────────────────────────────────────────────────────────────────
-
+    # ── Backtest ──────────────────────────────────────────────────────────────────
 
     def test_walk_forward_with_tiny_dataset_has_non_empty_train(self) -> None:
         tiny = generate_synthetic_lob(n_ticks=40, seed=2)
@@ -262,40 +275,41 @@ class TestDataset:
     def test_model_raises_on_invalid_lob_tensor_shape(self) -> None:
         model = CryptoAlphaNet(d_spatial=16, d_temporal=32, seq_len=8)
         bad_lob = torch.randn(2, 8, 5)
-        scalar = torch.randn(2, 8, 21)
+        scalar = torch.randn(2, 8, D_SCALAR)
         with pytest.raises(ValueError):
             model(bad_lob, scalar)
 
     def test_nan_inputs_propagate_to_outputs(self) -> None:
         model = CryptoAlphaNet(d_spatial=16, d_temporal=32, seq_len=8)
         lob = torch.randn(1, 8, 5, 4)
-        scalar = torch.randn(1, 8, 21)
+        scalar = torch.randn(1, 8, D_SCALAR)
         scalar[0, 0, 0] = float("nan")
         out = model(lob, scalar)
         assert torch.isnan(out["returns"]).any() or torch.isnan(out["risk"]).any()
 
+
 class TestBacktest:
     def test_no_trades_with_zero_signal(self, small_df: pl.DataFrame) -> None:
-        bt  = NeuralAlphaBacktest()
+        bt = NeuralAlphaBacktest()
         sig = np.zeros(len(small_df))
         res = bt.run(small_df, sig)
         assert res["trades"].is_empty() or len(res["trades"]) == 0
 
     def test_trades_with_strong_signal(self, small_df: pl.DataFrame) -> None:
-        bt  = NeuralAlphaBacktest(BacktestConfig(entry_threshold_bps=0.1))
-        sig = np.ones(len(small_df)) * 0.01   # strong long signal
+        bt = NeuralAlphaBacktest(BacktestConfig(entry_threshold_bps=0.1))
+        sig = np.ones(len(small_df)) * 0.01  # strong long signal
         res = bt.run(small_df, sig)
         assert res["metrics"]["total_trades"] > 0
 
     def test_equity_length(self, small_df: pl.DataFrame) -> None:
-        bt  = NeuralAlphaBacktest()
+        bt = NeuralAlphaBacktest()
         sig = np.random.randn(len(small_df)) * 0.001
         res = bt.run(small_df, sig)
         if not res["equity_curve"].is_empty():
             assert len(res["equity_curve"]) > 0
 
     def test_metrics_keys(self, small_df: pl.DataFrame) -> None:
-        bt  = NeuralAlphaBacktest(BacktestConfig(entry_threshold_bps=0.1))
+        bt = NeuralAlphaBacktest(BacktestConfig(entry_threshold_bps=0.1))
         sig = np.ones(len(small_df)) * 0.01
         res = bt.run(small_df, sig)
         for key in ("total_trades", "total_net_pnl", "sharpe_annualised", "win_rate"):
@@ -325,6 +339,7 @@ class TestBacktest:
 
 
 # ── Alpha regression ──────────────────────────────────────────────────────────
+
 
 class TestAlphaRegression:
     def test_ic_perfect_signal(self) -> None:
@@ -367,7 +382,7 @@ class TestAlphaRegression:
             {
                 "fold": 1,
                 "predictions": rng.standard_normal((50, 4)).astype(np.float32),
-                "labels":      rng.standard_normal((50, 6)).astype(np.float32),
+                "labels": rng.standard_normal((50, 6)).astype(np.float32),
             }
         ]
         metrics = analyse_alpha(fold_results)
@@ -375,7 +390,9 @@ class TestAlphaRegression:
 
 
 class TestShadowSessionTraining:
-    def test_train_on_recent_persists_model_weights(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_train_on_recent_persists_model_weights(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         model_path = tmp_path / "neural_alpha_latest.pt"
         signal_path = tmp_path / "alpha_signal.bin"
         log_path = tmp_path / "shadow.jsonl"
@@ -428,8 +445,13 @@ class TestShadowSessionTraining:
             model = CryptoAlphaNet(d_spatial=16, d_temporal=32, seq_len=8)
             return [{"metrics": {"loss_total": 0.1234}, "model_state": model.state_dict()}]
 
-        monkeypatch.setattr("research.alpha.neural_alpha.shadow_session._fetch_binance_l5", _fake_fetch)
-        monkeypatch.setattr("research.alpha.neural_alpha.shadow_session.walk_forward_train", _fake_walk_forward_train)
+        monkeypatch.setattr(
+            "research.alpha.neural_alpha.shadow_session._fetch_binance_l5", _fake_fetch
+        )
+        monkeypatch.setattr(
+            "research.alpha.neural_alpha.shadow_session.walk_forward_train",
+            _fake_walk_forward_train,
+        )
 
         session.train_on_recent(n_ticks=4)
 

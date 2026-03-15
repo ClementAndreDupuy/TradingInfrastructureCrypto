@@ -13,13 +13,15 @@ Outputs two arrays:
     lob_tensor  : (T, N_LEVELS, 4)  — per-level [bid_p, bid_s, ask_p, ask_s] normalised
     scalar_feat : (T, D_SCALAR)     — midprice-derived features
 """
+
 from __future__ import annotations
 
 import numpy as np
 import polars as pl
 
 N_LEVELS = 5
-D_SCALAR = 21  # number of scalar features per tick
+BASE_SCALAR_FEATURES = 16
+D_SCALAR = BASE_SCALAR_FEATURES + N_LEVELS  # queue imbalance contributes one feature per level
 
 
 def _safe_col(df: pl.DataFrame, name: str, default: float = 0.0) -> np.ndarray:
@@ -52,7 +54,7 @@ def _extract_levels(df: pl.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarra
         return np.stack(cols, axis=1)  # (T, N_LEVELS)
 
     bp = _list_col("bid_prices", "bid_price_{}")
-    bs = _list_col("bid_sizes",  "bid_size_{}")
+    bs = _list_col("bid_sizes", "bid_size_{}")
     ap = _list_col("ask_prices", "ask_price_{}")
     as_ = _list_col("ask_sizes", "ask_size_{}")
 
@@ -82,8 +84,8 @@ def compute_lob_tensor(df: pl.DataFrame) -> np.ndarray:
     spread = np.where(mid > 0, best_ask - best_bid, 1.0)
 
     # Normalise prices as distance from mid in units of spread
-    bid_p_norm = (bp - mid[:, None]) / spread[:, None]   # negative for bids
-    ask_p_norm = (ap - mid[:, None]) / spread[:, None]   # positive for asks
+    bid_p_norm = (bp - mid[:, None]) / spread[:, None]  # negative for bids
+    ask_p_norm = (ap - mid[:, None]) / spread[:, None]  # positive for asks
 
     # Normalise sizes as fraction of total depth
     total_bid = bs.sum(axis=1, keepdims=True).clip(1e-9)
@@ -112,7 +114,7 @@ def _rolling_std(x: np.ndarray, window: int) -> np.ndarray:
         return np.zeros(0, dtype=np.float64)
 
     cum = np.concatenate([[0.0], np.cumsum(x)])
-    cum2 = np.concatenate([[0.0], np.cumsum(x ** 2)])
+    cum2 = np.concatenate([[0.0], np.cumsum(x**2)])
 
     end = np.arange(1, T + 1)
     start = np.maximum(0, end - max(1, window))
@@ -120,13 +122,13 @@ def _rolling_std(x: np.ndarray, window: int) -> np.ndarray:
     s1 = cum[end] - cum[start]
     s2 = cum2[end] - cum2[start]
     n = (end - start).astype(np.float64)
-    var  = (s2 / n - (s1 / n) ** 2).clip(0)
+    var = (s2 / n - (s1 / n) ** 2).clip(0)
     return np.sqrt(var)
 
 
 def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
     """
-    Return (T, D_SCALAR=21) array of derived features:
+    Return (T, D_SCALAR) array of derived features:
         0  mid_return_lag1    — tick-to-tick midprice log return
         1  spread_bps         — bid-ask spread in bps
         2  microprice         — size-weighted price deviation from mid
@@ -140,14 +142,10 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
         10 ofi_5              — order-flow imbalance lag-5
         11 ofi_10             — order-flow imbalance lag-10
         12 ofi_20             — order-flow imbalance lag-20
-        13 qi_1               — per-level queue imbalance level 1
-        14 qi_2               — per-level queue imbalance level 2
-        15 qi_3               — per-level queue imbalance level 3
-        16 qi_4               — per-level queue imbalance level 4
-        17 qi_5               — per-level queue imbalance level 5
-        18 vol_60             — rolling 60-tick std of mid log return
-        19 vol_200            — rolling 200-tick std of mid log return
-        20 vol_ratio_5_60     — vol_5 / (vol_60 + 1e-8)
+        13..(13+N_LEVELS-1) qi_i — per-level queue imbalance for each level i in [1, N_LEVELS]
+        D_SCALAR-3           vol_60             — rolling 60-tick std of mid log return
+        D_SCALAR-2           vol_200            — rolling 200-tick std of mid log return
+        D_SCALAR-1           vol_ratio_5_60     — vol_5 / (vol_60 + 1e-8)
     """
     bp, bs, ap, as_ = _extract_levels(df)
 
@@ -175,8 +173,8 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
     log_depth_ask = np.log1p(depth_ask)
 
     # OFI: delta(bid_depth) - delta(ask_depth) at lags 1, 5, 10, 20
-    ofi_1  = _lag_diff(depth_bid, 1)  - _lag_diff(depth_ask, 1)
-    ofi_5  = _lag_diff(depth_bid, 5)  - _lag_diff(depth_ask, 5)
+    ofi_1 = _lag_diff(depth_bid, 1) - _lag_diff(depth_ask, 1)
+    ofi_5 = _lag_diff(depth_bid, 5) - _lag_diff(depth_ask, 5)
     ofi_10 = _lag_diff(depth_bid, 10) - _lag_diff(depth_ask, 10)
     ofi_20 = _lag_diff(depth_bid, 20) - _lag_diff(depth_ask, 20)
 
@@ -188,23 +186,38 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
     signed_flow = log_ret * total_depth
 
     # Rolling volatility (vectorized)
-    vol_5   = _rolling_std(log_ret, 5)
-    vol_20  = _rolling_std(log_ret, 20)
-    vol_60  = _rolling_std(log_ret, 60)
+    vol_5 = _rolling_std(log_ret, 5)
+    vol_20 = _rolling_std(log_ret, 20)
+    vol_60 = _rolling_std(log_ret, 60)
     vol_200 = _rolling_std(log_ret, 200)
     vol_ratio_5_60 = vol_5 / (vol_60 + 1e-8)
 
     # Per-level queue imbalance: (bid_size_i - ask_size_i) / (bid_size_i + ask_size_i + 1e-8)
     qi = (bs - as_) / (bs + as_ + 1e-8)  # (T, N_LEVELS)
 
-    features = np.stack([
-        log_ret, spread_bps, microprice - mid,
-        obi, log_depth_bid, log_depth_ask,
-        ofi_1, signed_flow, vol_5, vol_20,
-        ofi_5, ofi_10, ofi_20,
-        qi[:, 0], qi[:, 1], qi[:, 2], qi[:, 3], qi[:, 4],
-        vol_60, vol_200, vol_ratio_5_60,
-    ], axis=1)
+    base_features = [
+        log_ret,
+        spread_bps,
+        microprice - mid,
+        obi,
+        log_depth_bid,
+        log_depth_ask,
+        ofi_1,
+        signed_flow,
+        vol_5,
+        vol_20,
+        ofi_5,
+        ofi_10,
+        ofi_20,
+        vol_60,
+        vol_200,
+        vol_ratio_5_60,
+    ]
+    queue_imbalance_features = [qi[:, i] for i in range(N_LEVELS)]
+    features = np.stack(
+        base_features[:13] + queue_imbalance_features + base_features[13:],
+        axis=1,
+    )
 
     features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
     return features.astype(np.float32)
@@ -243,8 +256,9 @@ def compute_labels(df: pl.DataFrame, horizons: tuple[int, ...] = (1, 10, 100, 50
     # Direction based on mid horizon (index 2 = 100-tick)
     flat_thresh = 2e-5  # ~0.2 bps
     mid_ret = returns[:, 2]
-    direction = np.where(mid_ret > flat_thresh, 2,
-                np.where(mid_ret < -flat_thresh, 0, 1)).astype(np.float32)
+    direction = np.where(mid_ret > flat_thresh, 2, np.where(mid_ret < -flat_thresh, 0, 1)).astype(
+        np.float32
+    )
 
     # Adverse selection using fill-reversion model:
     # infer fill direction from immediate move, then mark adverse if
@@ -257,7 +271,7 @@ def compute_labels(df: pl.DataFrame, horizons: tuple[int, ...] = (1, 10, 100, 50
         if abs(r1) <= 1e-6:
             continue
         fill_dir = 1.0 if r1 > 0 else -1.0
-        path = log_mid[t + 1: t + 1 + reversion_h] - log_mid[t]
+        path = log_mid[t + 1 : t + 1 + reversion_h] - log_mid[t]
         if path.size == 0:
             continue
         if fill_dir > 0:
@@ -271,8 +285,9 @@ def compute_labels(df: pl.DataFrame, horizons: tuple[int, ...] = (1, 10, 100, 50
     return labels.astype(np.float32)
 
 
-def normalise_scalar(features: np.ndarray, mean: np.ndarray | None = None,
-                     std: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def normalise_scalar(
+    features: np.ndarray, mean: np.ndarray | None = None, std: np.ndarray | None = None
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Z-score normalise scalar features. Returns (normalised, mean, std)."""
     if mean is None:
         mean = features.mean(axis=0)
