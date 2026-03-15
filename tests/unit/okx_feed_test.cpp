@@ -46,6 +46,29 @@ TEST_F(OkxFeedHandlerTest, IgnoresNonBookMessages) {
     EXPECT_TRUE(deltas_.empty());
 }
 
+
+TEST_F(OkxFeedHandlerTest, MalformedJsonIsIgnored) {
+    EXPECT_EQ(handler_->process_message("{oops"), Result::SUCCESS);
+}
+
+TEST_F(OkxFeedHandlerTest, SequenceGapRejectedInStreamingState) {
+    handler_->set_streaming_state_for_test(100);
+    handler_->seed_book_state_for_test({PriceLevel{50000.0, 1.0}}, {PriceLevel{50001.0, 1.0}});
+
+    std::string msg =
+        R"({"arg":{"channel":"books","instId":"BTC-USDT"},"data":[{"seqId":"105","prevSeqId":"100","bids":[["50000","1.0","0","1"]],"asks":[["50001","1.0","0","1"]]}]})";
+    EXPECT_EQ(handler_->process_message(msg), Result::ERROR_SEQUENCE_GAP);
+}
+
+TEST_F(OkxFeedHandlerTest, DuplicateSequenceRejectedInStreamingState) {
+    handler_->set_streaming_state_for_test(100);
+    handler_->seed_book_state_for_test({PriceLevel{50000.0, 1.0}}, {PriceLevel{50001.0, 1.0}});
+
+    std::string msg =
+        R"({"arg":{"channel":"books","instId":"BTC-USDT"},"data":[{"seqId":"100","prevSeqId":"100","bids":[["50000","1.0","0","1"]],"asks":[["50001","1.0","0","1"]]}]})";
+    EXPECT_EQ(handler_->process_message(msg), Result::ERROR_SEQUENCE_GAP);
+}
+
 TEST_F(OkxFeedHandlerTest, BuffersBookDeltasBeforeStreaming) {
     std::string msg =
         R"({"arg":{"channel":"books","instId":"BTC-USDT"},"data":[{"seqId":"101","prevSeqId":"100","bids":[["50000","1.0","0","1"]],"asks":[["50001","1.2","0","1"]]}]})";

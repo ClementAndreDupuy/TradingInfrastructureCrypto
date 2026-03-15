@@ -175,6 +175,28 @@ set_tests_properties(LiveConnectorsTest PROPERTIES
 )
 
 
+# Deterministic connector contract tests (state-machine invariants)
+add_executable(connector_contract_test
+    unit/connector_contract_test.cpp
+)
+
+target_link_libraries(connector_contract_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(connector_contract_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME ConnectorContractTest COMMAND connector_contract_test)
+set_tests_properties(ConnectorContractTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;execution"
+)
+
 # Market maker + risk gate unit tests
 add_executable(market_maker_risk_test
     unit/market_maker_risk_test.cpp
@@ -237,4 +259,53 @@ add_test(NAME FullPipelineReplayTest COMMAND full_pipeline_replay_test)
 set_tests_properties(FullPipelineReplayTest PROPERTIES
     TIMEOUT 30
     LABELS "integration;replay"
+)
+
+
+# Performance latency budget gates
+add_executable(latency_budget_test
+    perf/latency_budget_test.cpp
+)
+
+target_link_libraries(latency_budget_test
+    binance_feed
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(latency_budget_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME LatencyBudgetTest COMMAND latency_budget_test)
+set_tests_properties(LatencyBudgetTest PROPERTIES
+    TIMEOUT 60
+    LABELS "perf"
+)
+
+
+# Replay-based disconnect/reconnect chaos tests per exchange
+add_executable(feed_disconnect_chaos_test
+    replay/feed_disconnect_chaos_test.cpp
+)
+
+target_link_libraries(feed_disconnect_chaos_test
+    binance_feed
+    kraken_feed
+    coinbase_feed
+    okx_feed
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(feed_disconnect_chaos_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME FeedDisconnectChaosTest COMMAND feed_disconnect_chaos_test)
+set_tests_properties(FeedDisconnectChaosTest PROPERTIES
+    TIMEOUT 30
+    LABELS "replay;feeds;chaos"
 )

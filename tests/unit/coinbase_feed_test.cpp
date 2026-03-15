@@ -69,6 +69,29 @@ TEST_F(CoinbaseFeedHandlerTest, IgnoresLegacyLevel2Channel) {
     EXPECT_EQ(handler_->get_sequence(), 0u);
 }
 
+
+TEST_F(CoinbaseFeedHandlerTest, MalformedJsonIsIgnored) {
+    EXPECT_EQ(handler_->process_message("{bad-json"), Result::SUCCESS);
+}
+
+TEST_F(CoinbaseFeedHandlerTest, DuplicateSequenceRejectedAfterSnapshot) {
+    std::string snapshot =
+        R"({"channel":"l2_data","sequence_num":100,"events":[{"type":"snapshot","updates":[{"side":"bid","price_level":"50000.0","new_quantity":"1.2"}]}]})";
+    EXPECT_EQ(handler_->process_message(snapshot), Result::SUCCESS);
+
+    std::string update =
+        R"({"channel":"l2_data","sequence_num":101,"events":[{"type":"update","updates":[{"side":"bid","price_level":"50000.5","new_quantity":"2.0"}]}]})";
+    EXPECT_EQ(handler_->process_message(update), Result::SUCCESS);
+    EXPECT_EQ(handler_->process_message(update), Result::ERROR_SEQUENCE_GAP);
+}
+
+TEST_F(CoinbaseFeedHandlerTest, ExtremePriceLevelsAreHandled) {
+    std::string snapshot =
+        R"({"channel":"l2_data","sequence_num":200,"events":[{"type":"snapshot","updates":[{"side":"bid","price_level":"1000000000.0","new_quantity":"1.2"},{"side":"offer","price_level":"0.00000001","new_quantity":"0.8"}]}]})";
+    EXPECT_EQ(handler_->process_message(snapshot), Result::SUCCESS);
+    EXPECT_EQ(handler_->get_sequence(), 200u);
+}
+
 TEST_F(CoinbaseFeedHandlerTest, SequenceGapTriggersError) {
     std::string snapshot =
         R"({"channel":"l2_data","sequence_num":100,"events":[{"type":"snapshot","updates":[{"side":"bid","price_level":"50000.0","new_quantity":"1.2"},{"side":"offer","price_level":"50001.0","new_quantity":"0.8"}]}]})";

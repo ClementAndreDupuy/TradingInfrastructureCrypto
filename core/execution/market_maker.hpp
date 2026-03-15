@@ -123,6 +123,7 @@ public:
     }
 
     double position()     const noexcept { return om_.position(); }
+    double entry_price()  const noexcept { return entry_price_; }
     double realized_pnl() const noexcept { return om_.realized_pnl(); }
 
 private:
@@ -281,14 +282,18 @@ private:
         const double px    = u.fill_price;
         const double pos   = om_.position();
 
-        // Update average entry price (volume-weighted)
-        if (pos != 0.0 && entry_price_ > 0.0) {
-            double prev_notional = std::abs(pos - (is_bid ? qty : -qty)) * entry_price_;
-            double new_notional  = qty * px;
-            double total_qty     = std::abs(pos);
-            entry_price_ = (prev_notional + new_notional) / (total_qty + 1e-12);
-        } else {
-            entry_price_ = (pos == 0.0) ? 0.0 : px;
+        const double signed_fill_qty = is_bid ? qty : -qty;
+        const double prev_pos = pos - signed_fill_qty;
+
+        if (pos == 0.0) {
+            entry_price_ = 0.0;
+        } else if (prev_pos == 0.0 || entry_price_ <= 0.0) {
+            entry_price_ = px;
+        } else if ((prev_pos > 0.0 && signed_fill_qty > 0.0) ||
+                   (prev_pos < 0.0 && signed_fill_qty < 0.0)) {
+            const double old_qty = std::abs(prev_pos);
+            const double new_qty = std::abs(signed_fill_qty);
+            entry_price_ = ((entry_price_ * old_qty) + (px * new_qty)) / (old_qty + new_qty);
         }
 
         // Clear stop if it just fired
