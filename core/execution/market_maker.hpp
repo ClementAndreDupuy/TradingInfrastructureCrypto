@@ -73,6 +73,12 @@ public:
     NeuralAlphaMarketMaker(OrderManager&      order_mgr,
                            const BookManager& book,
                            KillSwitch&        kill,
+                           const MarketMakerConfig& cfg)
+        : NeuralAlphaMarketMaker(order_mgr, book, kill, nullptr, cfg) {}
+
+    NeuralAlphaMarketMaker(OrderManager&      order_mgr,
+                           const BookManager& book,
+                           KillSwitch&        kill,
                            CircuitBreaker*    circuit_breaker = nullptr,
                            const MarketMakerConfig& cfg = {})
         : om_(order_mgr), book_(book), kill_(kill), circuit_breaker_(circuit_breaker), cfg_(cfg) {

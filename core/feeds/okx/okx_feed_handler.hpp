@@ -53,6 +53,20 @@ public:
 
     Result process_message(const std::string& message);
 
+    // Test hooks for deterministic unit coverage without touching internal symbols.
+    void set_streaming_state_for_test(uint64_t last_sequence) {
+        last_sequence_.store(last_sequence, std::memory_order_release);
+        state_.store(State::STREAMING, std::memory_order_release);
+    }
+
+    void seed_book_state_for_test(const std::vector<PriceLevel>& bids,
+                                  const std::vector<PriceLevel>& asks) {
+        bids_.clear();
+        asks_.clear();
+        for (const auto& level : bids) bids_[level.price] = std::to_string(level.size);
+        for (const auto& level : asks) asks_[level.price] = std::to_string(level.size);
+    }
+
 private:
     enum class State { DISCONNECTED, BUFFERING, STREAMING };
 

@@ -1,6 +1,4 @@
-#define private public
 #include "core/feeds/okx/okx_feed_handler.hpp"
-#undef private
 #include <gtest/gtest.h>
 
 using namespace trading;
@@ -59,10 +57,8 @@ TEST_F(OkxFeedHandlerTest, BuffersBookDeltasBeforeStreaming) {
 
 
 TEST_F(OkxFeedHandlerTest, ChecksumMismatchTriggersResnapshot) {
-    handler_->state_.store(OkxFeedHandler::State::STREAMING, std::memory_order_release);
-    handler_->last_sequence_.store(100, std::memory_order_release);
-    handler_->bids_[50000.0] = "1.0";
-    handler_->asks_[50001.0] = "1.0";
+    handler_->set_streaming_state_for_test(100);
+    handler_->seed_book_state_for_test({PriceLevel{50000.0, 1.0}}, {PriceLevel{50001.0, 1.0}});
 
     std::string msg =
         R"({"arg":{"channel":"books","instId":"BTC-USDT"},"data":[{"seqId":"101","prevSeqId":"100","checksum":123,"bids":[["50000","1.5","0","1"]],"asks":[["50001","1.1","0","1"]]}]})";
