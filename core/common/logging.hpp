@@ -97,7 +97,7 @@ static constexpr size_t LOG_RING_SIZE = 4096;  // must be power of 2
 struct LogRing {
     alignas(64) std::atomic<uint64_t> head{0};  // writer advances tail
     alignas(64) std::atomic<uint64_t> tail{0};  // reader advances head
-    alignas(64) LogEntry entries[LOG_RING_SIZE];
+    alignas(256) LogEntry entries[LOG_RING_SIZE];
 };
 
 // ── Async logger singleton ────────────────────────────────────────────────────

@@ -3,7 +3,7 @@
 #include "../execution/kraken_connector.hpp"
 #include "../execution/okx_connector.hpp"
 #include "../execution/smart_order_router.hpp"
-#include "../feeds/book_manager.hpp"
+#include "../feeds/common/book_manager.hpp"
 #include "../ipc/alpha_signal.hpp"
 #include "../risk/circuit_breaker.hpp"
 #include "../risk/kill_switch.hpp"

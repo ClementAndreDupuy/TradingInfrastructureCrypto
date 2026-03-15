@@ -17,7 +17,7 @@
 // Config values are sourced from config/dev/risk.yaml (arb_risk section).
 
 #include "kill_switch.hpp"
-#include "../feeds/book_manager.hpp"
+#include "../feeds/common/book_manager.hpp"
 #include "../common/logging.hpp"
 
 #include <atomic>

@@ -13,7 +13,9 @@
 #include <thread>
 #include <vector>
 
-#if defined(__has_include)
+#if defined(TRT_DISABLE_OPENSSL)
+#  define TRT_HAS_OPENSSL 0
+#elif defined(__has_include)
 #  if __has_include(<openssl/hmac.h>) && __has_include(<openssl/evp.h>)
 #    include <openssl/hmac.h>
 #    include <openssl/evp.h>

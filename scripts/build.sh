@@ -1,57 +1,123 @@
-#!/bin/bash
-# Manual build script (no CMake).
-# For production use CMake: mkdir -p build && cd build && cmake .. && make -j$(nproc)
+#!/usr/bin/env bash
+# Unified local build script for C++ and Python components.
+# Default behavior:
+#   1) Build C++ engine with CMake
+#   2) Install Python package in editable mode
+#   3) Build pybind11 extension in-place
+#   4) Byte-compile Python sources
+#   5) Run unit tests
 
-set -e
+set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-echo "=== Building ThamesRiverTrading ==="
+BUILD_CPP=1
+BUILD_PYTHON=1
+INSTALL_PYTHON=1
+BUILD_BINDINGS=1
+RUN_TESTS=1
+COMPILE_PYTHON=1
+BUILD_DIR="build"
+JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 
-rm -rf build_manual
-mkdir -p build_manual
+usage() {
+    cat <<USAGE
+Usage: ./scripts/build.sh [options]
 
-echo "Compiling Binance feed handler..."
-clang++ -std=c++17 -O2 -Wall -I. \
-    -c core/feeds/binance/binance_feed_handler.cpp \
-    -o build_manual/binance_feed_handler.o
+Options:
+  --skip-cpp              Skip C++ CMake build
+  --skip-python           Skip all Python steps (install, bindings, compileall, tests)
+  --skip-python-install   Skip 'python3 -m pip install -e .'
+  --skip-bindings         Skip 'python3 bindings/setup.py build_ext --inplace'
+  --skip-compileall       Skip Python byte-compilation check
+  --skip-tests            Skip 'pytest tests/unit/'
+  --build-dir <DIR>       CMake build directory (default: build)
+  --jobs <N>              Parallel jobs for CMake build (default: detected CPU count)
+  -h, --help              Show this help
+USAGE
+}
 
-echo "Compiling Kraken feed handler..."
-clang++ -std=c++17 -O2 -Wall -I. \
-    -c core/feeds/kraken/kraken_feed_handler.cpp \
-    -o build_manual/kraken_feed_handler.o
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --skip-cpp) BUILD_CPP=0; shift ;;
+        --skip-python) BUILD_PYTHON=0; shift ;;
+        --skip-python-install) INSTALL_PYTHON=0; shift ;;
+        --skip-bindings) BUILD_BINDINGS=0; shift ;;
+        --skip-compileall) COMPILE_PYTHON=0; shift ;;
+        --skip-tests) RUN_TESTS=0; shift ;;
+        --build-dir) BUILD_DIR="$2"; shift 2 ;;
+        --jobs) JOBS="$2"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "[build] Unknown argument: $1"; usage; exit 1 ;;
+    esac
+done
 
-echo "Compiling execution connectors..."
-clang++ -std=c++17 -O2 -Wall -I. \
-    -c core/execution/binance_connector.cpp \
-    -o build_manual/binance_connector.o
-clang++ -std=c++17 -O2 -Wall -I. \
-    -c core/execution/kraken_connector.cpp \
-    -o build_manual/kraken_connector.o
+if [[ "$BUILD_PYTHON" -eq 0 ]]; then
+    INSTALL_PYTHON=0
+    BUILD_BINDINGS=0
+    RUN_TESTS=0
+    COMPILE_PYTHON=0
+fi
 
-echo "Compiling perp_arb strategy..."
-clang++ -std=c++17 -O2 -Wall -I. \
-    -c core/strategy/perp_arb_main.cpp \
-    -o build_manual/perp_arb_main.o
+echo "=== ThamesRiverTrading local build ==="
+echo "[build] project_root=$PROJECT_ROOT"
 
-echo "Linking perp_arb..."
-clang++ -std=c++17 \
-    build_manual/binance_feed_handler.o \
-    build_manual/kraken_feed_handler.o \
-    build_manual/binance_connector.o \
-    build_manual/kraken_connector.o \
-    build_manual/perp_arb_main.o \
-    -lssl -lcrypto \
-    -o build_manual/perp_arb
+action_cpp() {
+    echo "[build] Configuring CMake in $BUILD_DIR"
+    cmake -S . -B "$BUILD_DIR"
+    echo "[build] Building C++ targets (jobs=$JOBS)"
+    cmake --build "$BUILD_DIR" -j "$JOBS"
+}
 
-echo ""
-echo "✓ Build complete: build_manual/perp_arb"
-echo ""
-echo "Shadow mode (safe default):"
-echo "  ./build_manual/perp_arb --shadow"
-echo ""
-echo "Live mode (requires API keys and 2+ weeks shadow):"
-echo "  export BINANCE_API_KEY='...' BINANCE_API_SECRET='...'"
-echo "  export KRAKEN_API_KEY='...'  KRAKEN_API_SECRET='...'"
-echo "  ./build_manual/perp_arb --live"
+action_python_install() {
+    echo "[build] Installing Python package (editable)"
+    python3 -m pip install -e .
+}
+
+action_bindings() {
+    echo "[build] Building pybind11 bindings in-place"
+    python3 bindings/setup.py build_ext --inplace
+}
+
+action_compileall() {
+    echo "[build] Byte-compiling Python sources"
+    python3 -m compileall research deploy tests
+}
+
+action_tests() {
+    echo "[build] Running Python unit tests"
+    pytest tests/unit/
+}
+
+if [[ "$BUILD_CPP" -eq 1 ]]; then
+    action_cpp
+else
+    echo "[build] Skipping C++ build"
+fi
+
+if [[ "$INSTALL_PYTHON" -eq 1 ]]; then
+    action_python_install
+else
+    echo "[build] Skipping Python package install"
+fi
+
+if [[ "$BUILD_BINDINGS" -eq 1 ]]; then
+    action_bindings
+else
+    echo "[build] Skipping pybind11 bindings build"
+fi
+
+if [[ "$COMPILE_PYTHON" -eq 1 ]]; then
+    action_compileall
+else
+    echo "[build] Skipping Python byte-compilation"
+fi
+
+if [[ "$RUN_TESTS" -eq 1 ]]; then
+    action_tests
+else
+    echo "[build] Skipping tests"
+fi
+
+echo "[build] Done."

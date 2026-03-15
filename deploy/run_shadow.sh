@@ -108,7 +108,11 @@ for venue in "${VENUE_LIST[@]}"; do
 done
 
 run_engine_once() {
-    "$ENGINE_BIN" --mode shadow --venues "$VENUES" --symbol "$SYMBOL" "${EXTRA_ARGS[@]}"
+    if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
+        "$ENGINE_BIN" --mode shadow --venues "$VENUES" --symbol "$SYMBOL" "${EXTRA_ARGS[@]}"
+    else
+        "$ENGINE_BIN" --mode shadow --venues "$VENUES" --symbol "$SYMBOL"
+    fi
 }
 
 PY_PID=""

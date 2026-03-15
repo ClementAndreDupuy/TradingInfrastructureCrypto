@@ -25,7 +25,7 @@
 #include "../common/logging.hpp"
 #include "../execution/exchange_connector.hpp"
 #include "../execution/order_manager.hpp"
-#include "../feeds/book_manager.hpp"
+#include "../feeds/common/book_manager.hpp"
 
 #include <array>
 #include <atomic>
