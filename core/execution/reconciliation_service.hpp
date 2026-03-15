@@ -29,7 +29,8 @@ class ReconciliationService {
         uint32_t mismatch_count = 0;
     };
 
-    explicit ReconciliationService(DriftThresholds thresholds = {}) : thresholds_(thresholds) {}
+    ReconciliationService() = default;
+    explicit ReconciliationService(const DriftThresholds& thresholds) : thresholds_(thresholds) {}
 
     bool register_connector(LiveConnectorBase& connector) {
         for (size_t i = 0; i < connector_count_; ++i) {
@@ -141,7 +142,8 @@ class ReconciliationService {
                 out.reason = "negative average entry price";
                 return out;
             }
-            if (position.quantity > 0.0 && position.avg_entry_price <= thresholds_.max_position_drift) {
+            if (position.quantity > 0.0 &&
+                position.avg_entry_price <= thresholds_.max_position_drift) {
                 out.mismatch = true;
                 out.reason = "positive position with invalid entry";
                 return out;
@@ -166,9 +168,7 @@ class ReconciliationService {
         return nullptr;
     }
 
-    static int64_t now_ns() noexcept {
-        return http::now_ns();
-    }
+    static int64_t now_ns() noexcept { return http::now_ns(); }
 
     DriftThresholds thresholds_;
     std::array<LiveConnectorBase*, MAX_CONNECTORS> connectors_{};

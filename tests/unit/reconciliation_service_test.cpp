@@ -21,7 +21,6 @@ class ScopedMockTransport {
     ~ScopedMockTransport() { http::clear_mock_transport(); }
 };
 
-
 class TestableBinanceConnector : public BinanceConnector {
   public:
     using BinanceConnector::BinanceConnector;
@@ -30,14 +29,14 @@ class TestableBinanceConnector : public BinanceConnector {
 
 class TestableKrakenConnector : public KrakenConnector {
   public:
-    using KrakenConnector::KrakenConnector;
     using KrakenConnector::fetch_reconciliation_snapshot;
+    using KrakenConnector::KrakenConnector;
 };
 
 class TestableOkxConnector : public OkxConnector {
   public:
-    using OkxConnector::OkxConnector;
     using OkxConnector::fetch_reconciliation_snapshot;
+    using OkxConnector::OkxConnector;
 };
 
 class TestableCoinbaseConnector : public CoinbaseConnector {
@@ -45,7 +44,6 @@ class TestableCoinbaseConnector : public CoinbaseConnector {
     using CoinbaseConnector::CoinbaseConnector;
     using CoinbaseConnector::fetch_reconciliation_snapshot;
 };
-
 
 bool contains(const std::string& s, const char* token) {
     return s.find(token) != std::string::npos;
@@ -55,7 +53,9 @@ http::HttpResponse binance_snapshot_response(const char* method, const std::stri
     if (std::strcmp(method, "GET") != 0)
         return {404, ""};
     if (contains(url, "openOrders"))
-        return {200, R"([{"orderId":"bn-1","symbol":"BTCUSDT","side":"BUY","origQty":1.0,"executedQty":0.2,"price":100.0,"status":"NEW"}])"};
+        return {
+            200,
+            R"([{"orderId":"bn-1","symbol":"BTCUSDT","side":"BUY","origQty":1.0,"executedQty":0.2,"price":100.0,"status":"NEW"}])"};
     if (contains(url, "/account"))
         return {200, R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
     return {404, ""};
@@ -65,7 +65,9 @@ http::HttpResponse kraken_snapshot_response(const char* method, const std::strin
     if (std::strcmp(method, "POST") != 0)
         return {404, ""};
     if (contains(url, "OpenOrders"))
-        return {200, R"({"result":{"open":{"kr-1":{"status":"open","vol":1.2,"vol_exec":0.1,"descr":{"pair":"XBTUSD","type":"buy","price":100.5}}}}})"};
+        return {
+            200,
+            R"({"result":{"open":{"kr-1":{"status":"open","vol":1.2,"vol_exec":0.1,"descr":{"pair":"XBTUSD","type":"buy","price":100.5}}}}})"};
     if (contains(url, "Balance"))
         return {200, R"({"result":{"XXBT":2.5}})"};
     return {404, ""};
@@ -75,7 +77,9 @@ http::HttpResponse okx_snapshot_response(const char* method, const std::string& 
     if (std::strcmp(method, "GET") != 0)
         return {404, ""};
     if (contains(url, "orders-pending"))
-        return {200, R"({"data":[{"ordId":"ok-1","instId":"BTC-USDT-SWAP","side":"buy","sz":3.0,"accFillSz":1.0,"px":100.0,"state":"live"}]})"};
+        return {
+            200,
+            R"({"data":[{"ordId":"ok-1","instId":"BTC-USDT-SWAP","side":"buy","sz":3.0,"accFillSz":1.0,"px":100.0,"state":"live"}]})"};
     if (contains(url, "account/balance"))
         return {200, R"({"data":[{"details":[{"ccy":"USDT","eq":1000.0,"availEq":900.0}]}]})"};
     if (contains(url, "account/positions"))
@@ -87,11 +91,17 @@ http::HttpResponse coinbase_snapshot_response(const char* method, const std::str
     if (std::strcmp(method, "GET") != 0)
         return {404, ""};
     if (contains(url, "historical/batch"))
-        return {200, R"({"orders":[{"order_id":"cb-1","product_id":"BTC-USD","side":"BUY","base_size":1.0,"filled_size":0.4,"limit_price":100.0,"status":"OPEN"}]})"};
+        return {
+            200,
+            R"({"orders":[{"order_id":"cb-1","product_id":"BTC-USD","side":"BUY","base_size":1.0,"filled_size":0.4,"limit_price":100.0,"status":"OPEN"}]})"};
     if (contains(url, "/accounts"))
-        return {200, R"({"accounts":[{"currency":"USD","available_balance":{"value":1000.0},"hold":{"value":12.0}}]})"};
+        return {
+            200,
+            R"({"accounts":[{"currency":"USD","available_balance":{"value":1000.0},"hold":{"value":12.0}}]})"};
     if (contains(url, "/positions"))
-        return {200, R"({"positions":[{"product_id":"BTC-USD","size":0.6,"average_entry_price":98.0}]})"};
+        return {
+            200,
+            R"({"positions":[{"product_id":"BTC-USD","size":0.6,"average_entry_price":98.0}]})"};
     return {404, ""};
 }
 
@@ -140,9 +150,12 @@ TEST(ReconciliationServiceTest, QuarantinesVenueOnDriftMismatch) {
         if (std::strcmp(method, "GET") != 0)
             return http::HttpResponse{404, ""};
         if (contains(url, "openOrders"))
-            return http::HttpResponse{200, R"([{"orderId":"bn-1","symbol":"BTCUSDT","side":"BUY","origQty":0.5,"executedQty":0.7,"price":100.0,"status":"NEW"}])"};
+            return http::HttpResponse{
+                200,
+                R"([{"orderId":"bn-1","symbol":"BTCUSDT","side":"BUY","origQty":0.5,"executedQty":0.7,"price":100.0,"status":"NEW"}])"};
         if (contains(url, "/account"))
-            return http::HttpResponse{200, R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
+            return http::HttpResponse{200,
+                                      R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
         return http::HttpResponse{404, ""};
     });
 
