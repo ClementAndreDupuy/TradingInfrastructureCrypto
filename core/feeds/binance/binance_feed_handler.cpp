@@ -9,6 +9,33 @@
 
 namespace trading {
 
+namespace {
+
+uint32_t fnv1a_bytes(const char* data, size_t len, uint32_t seed) noexcept {
+    uint32_t hash = seed;
+    for (size_t i = 0; i < len; ++i) {
+        hash ^= static_cast<uint8_t>(data[i]);
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+uint32_t compute_snapshot_checksum(const std::vector<PriceLevel>& bids,
+                                   const std::vector<PriceLevel>& asks) noexcept {
+    uint32_t hash = 2166136261u;
+    auto hash_level = [&hash](const PriceLevel& level) {
+        hash = fnv1a_bytes(reinterpret_cast<const char*>(&level.price), sizeof(level.price), hash);
+        hash = fnv1a_bytes(reinterpret_cast<const char*>(&level.size), sizeof(level.size), hash);
+    };
+
+    for (const auto& level : bids) hash_level(level);
+    for (const auto& level : asks) hash_level(level);
+    return hash;
+}
+
+}  // namespace
+
+
 // ─── Per-connection session (lives on ws_event_loop stack) ──────────────────
 struct BinanceWsSession {
     BinanceFeedHandler* handler;
@@ -344,6 +371,21 @@ Result BinanceFeedHandler::fetch_snapshot() {
 
     snap.bids = parse_levels(j.value("bids", nlohmann::json::array()));
     snap.asks = parse_levels(j.value("asks", nlohmann::json::array()));
+
+    auto checksum_it = j.find("checksum");
+    if (checksum_it != j.end() && checksum_it->is_number_unsigned()) {
+        snap.checksum = checksum_it->get<uint32_t>();
+        snap.checksum_present = true;
+
+        const uint32_t local_checksum = compute_snapshot_checksum(snap.bids, snap.asks);
+        if (local_checksum != snap.checksum) {
+            LOG_ERROR("Binance snapshot checksum mismatch",
+                      "symbol", symbol_.c_str(),
+                      "local", local_checksum,
+                      "remote", snap.checksum);
+            return Result::ERROR_BOOK_CORRUPTED;
+        }
+    }
 
     if (snap.bids.empty() || snap.asks.empty()) {
         LOG_ERROR("Empty order book in snapshot", "symbol", symbol_.c_str());

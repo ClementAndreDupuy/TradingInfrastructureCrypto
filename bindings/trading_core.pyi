@@ -103,6 +103,8 @@ class Snapshot:
     sequence: int                 # Snapshot sequence number
     bids: list[PriceLevel]        # Bid levels, best (highest) first
     asks: list[PriceLevel]        # Ask levels, best (lowest) first
+    checksum: int                 # Optional exchange-provided checksum
+    checksum_present: bool        # True when checksum field is valid
     timestamp_exchange_ns: int    # Exchange-reported timestamp (ns since epoch)
     timestamp_local_ns: int       # Local receipt timestamp (ns since epoch)
 

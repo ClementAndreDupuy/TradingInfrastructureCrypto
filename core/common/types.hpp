@@ -66,10 +66,18 @@ struct Snapshot {
     uint64_t sequence;
     std::vector<PriceLevel> bids;
     std::vector<PriceLevel> asks;
+    uint32_t checksum;
+    bool checksum_present;
     int64_t timestamp_exchange_ns;
     int64_t timestamp_local_ns;
 
-    Snapshot() : exchange(Exchange::UNKNOWN), sequence(0), timestamp_exchange_ns(0), timestamp_local_ns(0) {}
+    Snapshot()
+        : exchange(Exchange::UNKNOWN),
+          sequence(0),
+          checksum(0),
+          checksum_present(false),
+          timestamp_exchange_ns(0),
+          timestamp_local_ns(0) {}
 };
 
 // Convert Exchange to string

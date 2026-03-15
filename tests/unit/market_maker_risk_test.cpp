@@ -2,7 +2,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstring>
+#include <vector>
 
 namespace trading {
 namespace {
@@ -23,6 +25,7 @@ public:
     ConnectorResult submit_order(const Order& order) override {
         ++submit_count;
         last_order = order;
+        submitted_orders.push_back(order);
         return ConnectorResult::OK;
     }
 
@@ -32,6 +35,7 @@ public:
 
     int submit_count = 0;
     Order last_order{};
+    std::vector<Order> submitted_orders;
 };
 
 Snapshot make_snapshot() {
@@ -122,6 +126,70 @@ TEST(MarketMakerRiskTest, EntryPriceUsesExactVwapWhenAddingInventory) {
     const double expected_vwap = (100.0 * 2.0 + 110.0 * 1.0) / 3.0;
     EXPECT_DOUBLE_EQ(order_manager.position(), 3.0);
     EXPECT_DOUBLE_EQ(maker.entry_price(), expected_vwap);
+}
+
+
+TEST(MarketMakerRiskTest, InventorySkewDecayReducesSkewNearFlatPosition) {
+    MockConnector connector;
+    OrderManager order_manager(connector);
+    BookManager book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
+    KillSwitch kill_switch;
+
+    auto on_snapshot = book.snapshot_handler();
+    on_snapshot(make_snapshot());
+
+    MarketMakerConfig cfg;
+    std::strncpy(cfg.symbol, "BTCUSDT", sizeof(cfg.symbol) - 1);
+    cfg.symbol[sizeof(cfg.symbol) - 1] = '\0';
+    cfg.order_qty = 0.001;
+    cfg.max_position = 0.01;
+    cfg.signal_min_bps = 0.0;
+    cfg.skew_factor = 0.3;
+    cfg.max_skew_bps = 5.0;
+    cfg.inventory_skew_decay_power = 2.0;
+
+    NeuralAlphaMarketMaker maker(order_manager, book, kill_switch, nullptr, cfg);
+
+    maker.set_alpha_signal(10.0, 0.0);
+    maker.on_book_update();
+
+    ASSERT_GE(connector.submitted_orders.size(), 2u);
+    const double mid = book.mid_price();
+    double best_bid_flat = 0.0;
+    for (const auto& o : connector.submitted_orders) {
+        if (o.side == Side::BID) best_bid_flat = std::max(best_bid_flat, o.price);
+    }
+
+    Order seed = {};
+    std::strncpy(seed.symbol, "BTCUSDT", sizeof(seed.symbol) - 1);
+    seed.symbol[sizeof(seed.symbol) - 1] = '\0';
+    seed.exchange = Exchange::BINANCE;
+    seed.side = Side::BID;
+    seed.type = OrderType::LIMIT;
+    seed.tif = TimeInForce::IOC;
+    seed.price = mid;
+    seed.quantity = 0.005;
+
+    uint64_t seed_id = order_manager.submit(seed);
+    ASSERT_NE(seed_id, 0u);
+
+    FillUpdate fill{};
+    fill.client_order_id = seed_id;
+    fill.new_state = OrderState::FILLED;
+    fill.fill_qty = seed.quantity;
+    fill.fill_price = seed.price;
+    fill.cumulative_filled_qty = seed.quantity;
+    fill.avg_fill_price = seed.price;
+    connector.emit(fill);
+
+    maker.on_book_update();
+
+    double best_bid_inventory = 0.0;
+    for (const auto& o : connector.submitted_orders) {
+        if (o.side == Side::BID) best_bid_inventory = std::max(best_bid_inventory, o.price);
+    }
+
+    EXPECT_GT(best_bid_inventory, best_bid_flat);
 }
 
 TEST(MarketMakerRiskTest, BlocksSubmitWhenCircuitBreakerRejectsRate) {

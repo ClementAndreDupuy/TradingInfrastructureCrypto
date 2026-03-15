@@ -1,6 +1,7 @@
 #include "core/orderbook/orderbook.hpp"
 #include <gtest/gtest.h>
 #include <cmath>
+#include <cstdint>
 
 using namespace trading;
 
@@ -28,6 +29,27 @@ static Delta make_delta(Side side, double price, double size, uint64_t seq) {
     return d;
 }
 
+
+static uint32_t snapshot_checksum(const Snapshot& s) {
+    auto fnv1a_bytes = [](const char* data, size_t len, uint32_t seed) {
+        uint32_t hash = seed;
+        for (size_t i = 0; i < len; ++i) {
+            hash ^= static_cast<uint8_t>(data[i]);
+            hash *= 16777619u;
+        }
+        return hash;
+    };
+
+    uint32_t hash = 2166136261u;
+    auto hash_level = [&](const PriceLevel& level) {
+        hash = fnv1a_bytes(reinterpret_cast<const char*>(&level.price), sizeof(level.price), hash);
+        hash = fnv1a_bytes(reinterpret_cast<const char*>(&level.size), sizeof(level.size), hash);
+    };
+
+    for (const auto& l : s.bids) hash_level(l);
+    for (const auto& l : s.asks) hash_level(l);
+    return hash;
+}
 // ─────────────────────────────────────────────
 
 TEST(OrderBook, ConstructionDefaults) {
@@ -210,6 +232,34 @@ TEST(OrderBook, ReSnapshotRecentersGrid) {
     EXPECT_DOUBLE_EQ(base2, 80000.0 - (20000 / 2) * 1.0);
     EXPECT_DOUBLE_EQ(book.get_best_bid(), 80000.0);
     EXPECT_EQ(book.get_sequence(), 200u);
+}
+
+
+TEST(OrderBook, RejectsPathologicallyWideSpreadSnapshot) {
+    OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
+    Snapshot s = make_snapshot(50000.0, 56001.0, 3, 1.0, 100);
+
+    EXPECT_EQ(book.apply_snapshot(s), Result::ERROR_INVALID_PRICE);
+    EXPECT_FALSE(book.is_initialized());
+}
+
+TEST(OrderBook, AcceptsSnapshotWithValidChecksum) {
+    OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
+    Snapshot s = make_snapshot(50000.0, 50001.0, 3, 1.0, 100);
+    s.checksum = snapshot_checksum(s);
+    s.checksum_present = true;
+
+    EXPECT_EQ(book.apply_snapshot(s), Result::SUCCESS);
+}
+
+TEST(OrderBook, RejectsSnapshotWithInvalidChecksum) {
+    OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
+    Snapshot s = make_snapshot(50000.0, 50001.0, 3, 1.0, 100);
+    s.checksum = 42;
+    s.checksum_present = true;
+
+    EXPECT_EQ(book.apply_snapshot(s), Result::ERROR_BOOK_CORRUPTED);
+    EXPECT_FALSE(book.is_initialized());
 }
 
 int main(int argc, char** argv) {

@@ -63,6 +63,7 @@ struct MarketMakerConfig {
     double risk_max         = 0.65;   // adverse-selection threshold
     double risk_widen_bps   = 3.0;    // extra spread when risk_score >= risk_max
     double signal_min_bps   = 1.5;    // don't skew below this signal magnitude
+    double inventory_skew_decay_power = 2.0; // stronger decay as inventory approaches flat
 
     // Signal staleness
     int64_t stale_ns        = 2'000'000'000LL;  // 2 s
@@ -162,6 +163,16 @@ private:
         if (std::abs(signal_bps) >= cfg_.signal_min_bps)
             skew = std::max(-cfg_.max_skew_bps,
                    std::min( cfg_.max_skew_bps, cfg_.skew_factor * signal_bps));
+
+        // Inventory skew decay: suppress skew when inventory is near flat to avoid churn.
+        double decay = 1.0;
+        if (cfg_.max_position > 0.0) {
+            double inv_ratio = std::abs(net_pos) / cfg_.max_position;
+            inv_ratio = std::max(0.0, std::min(1.0, inv_ratio));
+            const double decay_power = std::max(1.0, cfg_.inventory_skew_decay_power);
+            decay = std::pow(inv_ratio, decay_power);
+            skew *= decay;
+        }
 
         // Risk widening
         double extra = (risk_score >= cfg_.risk_max) ? cfg_.risk_widen_bps : 0.0;
