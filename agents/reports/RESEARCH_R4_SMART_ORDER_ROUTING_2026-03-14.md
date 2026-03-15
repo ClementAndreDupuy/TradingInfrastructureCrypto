@@ -64,7 +64,7 @@ Design and implement a **production-grade Smart Order Router** in `core/executio
      - failover thresholds (reject ratio, stale-book threshold, heartbeat timeout).
 
 4. **Execution gateway wiring (C10 foundation)**
-   - `core/app/trading_engine_main.cpp` (or `core/main.cpp`)
+   - `core/engine/trading_engine_main.cpp` (or `core/main.cpp`)
    - Constructs:
      - feed handlers + book manager per venue.
      - risk + circuit breaker.
@@ -189,7 +189,7 @@ This plan introduces a concrete `trading_engine` binary and `main()` that wires:
 1. Add `core/execution/venue_order_map.hpp` fixed-capacity table (no heap on hot path).
 2. Add four connector classes and unit tests under `tests/unit/`.
 3. Add `core/execution/smart_order_router.hpp` + `cpp` with score-based routing.
-4. Add `core/app/trading_engine_main.cpp` and CMake target `trading_engine`.
+4. Add `core/engine/trading_engine_main.cpp` and CMake target `trading_engine`.
 5. Update `deploy/systemd/trading-engine.service` and `deploy/run_live.sh` for four-venue launch.
 6. Add config parser for `routing.yaml`.
 7. Add replay + connector contract tests in CI.

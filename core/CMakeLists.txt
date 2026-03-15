@@ -149,7 +149,7 @@ target_include_directories(execution PUBLIC
 )
 
 add_executable(trading_engine
-    app/trading_engine_main.cpp
+    engine/trading_engine_main.cpp
 )
 
 target_link_libraries(trading_engine
