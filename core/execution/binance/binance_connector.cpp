@@ -46,7 +46,6 @@ bool parse_binance_order_id(const std::string& body, std::string& venue_order_id
     return false;
 }
 
-
 OrderState parse_binance_status(const std::string& raw) {
     if (raw == "NEW" || raw == "PARTIALLY_FILLED")
         return raw == "NEW" ? OrderState::OPEN : OrderState::PARTIALLY_FILLED;
@@ -108,11 +107,12 @@ ConnectorResult BinanceConnector::cancel_at_venue(const VenueOrderEntry& entry) 
                                                : ConnectorResult::ERROR_UNKNOWN;
 }
 
-
-ConnectorResult BinanceConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& replacement,
+ConnectorResult BinanceConnector::replace_at_venue(const VenueOrderEntry& entry,
+                                                   const Order& replacement,
                                                    std::string& new_venue_order_id) {
     const std::string payload = order_payload(replacement);
-    const auto resp = http::put(api_url() + "/api/v3/order?orderId=" + std::string(entry.venue_order_id), payload,
+    const auto resp =
+        http::put(api_url() + "/api/v3/order?orderId=" + std::string(entry.venue_order_id), payload,
                   auth_headers(payload));
     if (!resp.ok())
         return classify_error(resp.status);
@@ -123,11 +123,13 @@ ConnectorResult BinanceConnector::replace_at_venue(const VenueOrderEntry& entry,
 }
 
 ConnectorResult BinanceConnector::query_at_venue(const VenueOrderEntry& entry, FillUpdate& status) {
-    const auto resp = http::get(api_url() + "/api/v3/order?orderId=" + std::string(entry.venue_order_id),
+    const auto resp =
+        http::get(api_url() + "/api/v3/order?orderId=" + std::string(entry.venue_order_id),
                   auth_headers(std::string("orderId=") + entry.venue_order_id));
     if (!resp.ok())
         return classify_error(resp.status);
-    return parse_binance_query(resp.body, status) ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
+    return parse_binance_query(resp.body, status) ? ConnectorResult::OK
+                                                  : ConnectorResult::ERROR_UNKNOWN;
 }
 
 ConnectorResult BinanceConnector::cancel_all_at_venue(const char* symbol) {

@@ -36,8 +36,6 @@ bool parse_kraken_order_id(const std::string& body, std::string& venue_order_id)
     return !venue_order_id.empty();
 }
 
-
-
 OrderState parse_kraken_status(const std::string& raw) {
     if (raw == "open")
         return OrderState::OPEN;
@@ -94,35 +92,41 @@ ConnectorResult KrakenConnector::submit_to_venue(const Order& order,
 
 ConnectorResult KrakenConnector::cancel_at_venue(const VenueOrderEntry& entry) {
     const std::string payload = std::string("txid=") + entry.venue_order_id;
-    const auto resp = http::post(api_url() + "/0/private/CancelOrder", payload, auth_headers(payload));
+    const auto resp =
+        http::post(api_url() + "/0/private/CancelOrder", payload, auth_headers(payload));
     if (!resp.ok())
         return classify_error(resp.status);
     return parse_kraken_cancel_ack(resp.body) ? ConnectorResult::OK
                                               : ConnectorResult::ERROR_UNKNOWN;
 }
 
-
-ConnectorResult KrakenConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& replacement,
+ConnectorResult KrakenConnector::replace_at_venue(const VenueOrderEntry& entry,
+                                                  const Order& replacement,
                                                   std::string& new_venue_order_id) {
-    const std::string payload = std::string("txid=") + entry.venue_order_id + "&" + order_payload(replacement);
-    const auto resp = http::post(api_url() + "/0/private/EditOrder", payload, auth_headers(payload));
+    const std::string payload =
+        std::string("txid=") + entry.venue_order_id + "&" + order_payload(replacement);
+    const auto resp =
+        http::post(api_url() + "/0/private/EditOrder", payload, auth_headers(payload));
     if (!resp.ok())
         return classify_error(resp.status);
     return parse_kraken_order_id(resp.body, new_venue_order_id) ? ConnectorResult::OK
-                                                                 : ConnectorResult::ERROR_UNKNOWN;
+                                                                : ConnectorResult::ERROR_UNKNOWN;
 }
 
 ConnectorResult KrakenConnector::query_at_venue(const VenueOrderEntry& entry, FillUpdate& status) {
     const std::string payload = std::string("txid=") + entry.venue_order_id;
-    const auto resp = http::post(api_url() + "/0/private/QueryOrders", payload, auth_headers(payload));
+    const auto resp =
+        http::post(api_url() + "/0/private/QueryOrders", payload, auth_headers(payload));
     if (!resp.ok())
         return classify_error(resp.status);
-    return parse_kraken_query(resp.body, status) ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
+    return parse_kraken_query(resp.body, status) ? ConnectorResult::OK
+                                                 : ConnectorResult::ERROR_UNKNOWN;
 }
 
 ConnectorResult KrakenConnector::cancel_all_at_venue(const char* symbol) {
     const std::string payload = std::string("pair=") + (symbol ? symbol : "");
-    const auto resp = http::post(api_url() + "/0/private/CancelAllOrdersAfter", payload, auth_headers(payload));
+    const auto resp =
+        http::post(api_url() + "/0/private/CancelAllOrdersAfter", payload, auth_headers(payload));
     if (!resp.ok())
         return classify_error(resp.status);
     const auto j = nlohmann::json::parse(resp.body, nullptr, false);

@@ -37,8 +37,6 @@ bool parse_okx_order_id(const std::string& body, std::string& venue_order_id) {
     return !venue_order_id.empty();
 }
 
-
-
 OrderState parse_okx_status(const std::string& raw) {
     if (raw == "live")
         return OrderState::OPEN;
@@ -96,37 +94,41 @@ ConnectorResult OkxConnector::submit_to_venue(const Order& order,
 
 ConnectorResult OkxConnector::cancel_at_venue(const VenueOrderEntry& entry) {
     const std::string payload = std::string("{\"ordId\":\"") + entry.venue_order_id + "\"}";
-    const auto resp = http::post(api_url() + "/api/v5/trade/cancel-order", payload, auth_headers(payload));
+    const auto resp =
+        http::post(api_url() + "/api/v5/trade/cancel-order", payload, auth_headers(payload));
     if (!resp.ok())
         return classify_error(resp.status);
     return parse_okx_cancel_ack(resp.body) ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
 }
 
-
-ConnectorResult OkxConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& replacement,
+ConnectorResult OkxConnector::replace_at_venue(const VenueOrderEntry& entry,
+                                               const Order& replacement,
                                                std::string& new_venue_order_id) {
     const std::string payload = std::string("{\"ordId\":\"") + entry.venue_order_id +
                                 "\",\"newPx\":\"" + std::to_string(replacement.price) +
                                 "\",\"newSz\":\"" + std::to_string(replacement.quantity) + "\"}";
-    const auto resp = http::post(api_url() + "/api/v5/trade/amend-order", payload, auth_headers(payload));
+    const auto resp =
+        http::post(api_url() + "/api/v5/trade/amend-order", payload, auth_headers(payload));
     if (!resp.ok())
         return classify_error(resp.status);
     return parse_okx_order_id(resp.body, new_venue_order_id) ? ConnectorResult::OK
-                                                              : ConnectorResult::ERROR_UNKNOWN;
+                                                             : ConnectorResult::ERROR_UNKNOWN;
 }
 
 ConnectorResult OkxConnector::query_at_venue(const VenueOrderEntry& entry, FillUpdate& status) {
-    const auto resp = http::get(api_url() + "/api/v5/trade/order?ordId=" + std::string(entry.venue_order_id),
-                               auth_headers(std::string("ordId=") + entry.venue_order_id));
+    const auto resp =
+        http::get(api_url() + "/api/v5/trade/order?ordId=" + std::string(entry.venue_order_id),
+                  auth_headers(std::string("ordId=") + entry.venue_order_id));
     if (!resp.ok())
         return classify_error(resp.status);
-    return parse_okx_query(resp.body, status) ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
+    return parse_okx_query(resp.body, status) ? ConnectorResult::OK
+                                              : ConnectorResult::ERROR_UNKNOWN;
 }
 
 ConnectorResult OkxConnector::cancel_all_at_venue(const char* symbol) {
     const std::string payload = std::string("{\"instId\":\"") + (symbol ? symbol : "") + "\"}";
-    const auto resp = http::post(api_url() + "/api/v5/trade/cancel-batch-orders", payload,
-                                auth_headers(payload));
+    const auto resp =
+        http::post(api_url() + "/api/v5/trade/cancel-batch-orders", payload, auth_headers(payload));
     if (!resp.ok())
         return classify_error(resp.status);
     return parse_okx_cancel_ack(resp.body) ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;

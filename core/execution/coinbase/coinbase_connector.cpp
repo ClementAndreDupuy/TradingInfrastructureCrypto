@@ -34,8 +34,6 @@ bool parse_coinbase_order_id(const std::string& body, std::string& venue_order_i
     return !venue_order_id.empty();
 }
 
-
-
 OrderState parse_coinbase_status(const std::string& raw) {
     if (raw == "OPEN")
         return OrderState::OPEN;
@@ -101,33 +99,35 @@ ConnectorResult CoinbaseConnector::cancel_at_venue(const VenueOrderEntry& entry)
                                                 : ConnectorResult::ERROR_UNKNOWN;
 }
 
-
-ConnectorResult CoinbaseConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& replacement,
+ConnectorResult CoinbaseConnector::replace_at_venue(const VenueOrderEntry& entry,
+                                                    const Order& replacement,
                                                     std::string& new_venue_order_id) {
     const std::string payload = std::string("{\"order_id\":\"") + entry.venue_order_id +
                                 "\",\"size\":\"" + std::to_string(replacement.quantity) +
                                 "\",\"limit_price\":\"" + std::to_string(replacement.price) + "\"}";
-    const auto resp = http::post(api_url() + "/api/v3/brokerage/orders/edit", payload, auth_headers(payload));
+    const auto resp =
+        http::post(api_url() + "/api/v3/brokerage/orders/edit", payload, auth_headers(payload));
     if (!resp.ok())
         return classify_error(resp.status);
     return parse_coinbase_order_id(resp.body, new_venue_order_id) ? ConnectorResult::OK
-                                                                   : ConnectorResult::ERROR_UNKNOWN;
+                                                                  : ConnectorResult::ERROR_UNKNOWN;
 }
 
-ConnectorResult CoinbaseConnector::query_at_venue(const VenueOrderEntry& entry, FillUpdate& status) {
-    const auto resp =
-        http::get(api_url() + "/api/v3/brokerage/orders/historical/" + std::string(entry.venue_order_id),
-                  auth_headers(entry.venue_order_id));
+ConnectorResult CoinbaseConnector::query_at_venue(const VenueOrderEntry& entry,
+                                                  FillUpdate& status) {
+    const auto resp = http::get(api_url() + "/api/v3/brokerage/orders/historical/" +
+                                    std::string(entry.venue_order_id),
+                                auth_headers(entry.venue_order_id));
     if (!resp.ok())
         return classify_error(resp.status);
-    return parse_coinbase_query(resp.body, status) ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
+    return parse_coinbase_query(resp.body, status) ? ConnectorResult::OK
+                                                   : ConnectorResult::ERROR_UNKNOWN;
 }
 
 ConnectorResult CoinbaseConnector::cancel_all_at_venue(const char* symbol) {
-    const std::string payload =
-        std::string("{\"product_id\":\"") + (symbol ? symbol : "") + "\"}";
-    const auto resp =
-        http::post(api_url() + "/api/v3/brokerage/orders/batch_cancel", payload, auth_headers(payload));
+    const std::string payload = std::string("{\"product_id\":\"") + (symbol ? symbol : "") + "\"}";
+    const auto resp = http::post(api_url() + "/api/v3/brokerage/orders/batch_cancel", payload,
+                                 auth_headers(payload));
     if (!resp.ok())
         return classify_error(resp.status);
     return parse_coinbase_cancel_ack(resp.body) ? ConnectorResult::OK

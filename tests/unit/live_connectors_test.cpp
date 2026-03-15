@@ -42,16 +42,17 @@ template <typename Connector>
 void run_connector_flow(Connector& c, Exchange ex, const char* symbol, const char* submit_body,
                         const char* replace_body, const char* query_body, const char* cancel_body,
                         const char* cancel_all_body) {
-    ScopedMockTransport transport([submit_body, replace_body, query_body, cancel_body, cancel_all_body](
-                                      const char* method, const std::string& url,
-                                      const std::string& body,
-                                      const std::vector<std::string>& headers) {
+    ScopedMockTransport transport([submit_body, replace_body, query_body, cancel_body,
+                                   cancel_all_body](const char* method, const std::string& url,
+                                                    const std::string& body,
+                                                    const std::vector<std::string>& headers) {
         const bool is_private_request =
             contains(url, "order") || contains(url, "Order") || contains(url, "trade");
         if (is_private_request && std::strcmp(method, "GET") != 0)
             EXPECT_FALSE(headers.empty());
 
-        if (std::strcmp(method, "GET") == 0 &&
+        if (((std::strcmp(method, "GET") == 0) ||
+             (std::strcmp(method, "POST") == 0 && contains(url, "QueryOrders"))) &&
             (contains(url, "/api/v3/order") || contains(url, "QueryOrders") ||
              contains(url, "/api/v5/trade/order") || contains(url, "historical"))) {
             return http::HttpResponse{200, query_body};
@@ -130,8 +131,7 @@ void run_connector_flow(Connector& c, Exchange ex, const char* symbol, const cha
 TEST(LiveConnectorsTest, BinanceAuthenticatedFlow) {
     BinanceConnector c("k", "s", "https://binance.test");
     run_connector_flow(c, Exchange::BINANCE, "BTCUSDT", R"({"orderId":"12345"})",
-                       R"({"orderId":"456"})",
-                       R"({"status":"NEW","executedQty":0,"avgPrice":0})",
+                       R"({"orderId":"456"})", R"({"status":"NEW","executedQty":0,"avgPrice":0})",
                        R"({"orderId":"12345","status":"CANCELED"})", R"([])");
 }
 
