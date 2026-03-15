@@ -29,7 +29,7 @@
 
 #include "order_manager.hpp"
 #include "../ipc/alpha_signal.hpp"
-#include "../feeds/book_manager.hpp"
+#include "../feeds/common/book_manager.hpp"
 #include "../risk/kill_switch.hpp"
 #include "../common/logging.hpp"
 

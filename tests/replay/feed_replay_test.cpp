@@ -1,4 +1,4 @@
-#include "core/feeds/book_manager.hpp"
+#include "core/feeds/common/book_manager.hpp"
 #include <gtest/gtest.h>
 
 #include <cstdint>
