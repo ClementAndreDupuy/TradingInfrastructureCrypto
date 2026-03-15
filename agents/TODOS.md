@@ -35,14 +35,14 @@
 - [x] **M3** `research/alpha/neural_alpha/features.py` — Improve adverse-selection label: replace sign-flip heuristic with fill-reversion model (check if price reverts against fill direction within N ticks)
 - [x] **M4** `research/alpha/neural_alpha/backtest.py` — Add basic market impact model (linear or square-root impact based on order size / ADV)
 - [x] **M5** `core/common/logging.hpp` — Replace `std::chrono::system_clock` with PTP-synchronized clock or at minimum RDTSC-based timestamps for sub-microsecond precision
-- [ ] **M6** `core/execution/order_manager.hpp` lines 264–272 — Fix entry price VWAP: `new_avg = (old_avg * old_qty + fill_px * fill_qty) / (old_qty + fill_qty)`; remove `1e-12` epsilon hack
+- [x] **M6** `core/execution/order_manager.hpp` lines 264–272 — Fix entry price VWAP: `new_avg = (old_avg * old_qty + fill_px * fill_qty) / (old_qty + fill_qty)`; remove `1e-12` epsilon hack
 - [x] **M7** `core/feeds/binance/binance_feed_handler.cpp` — Added REST rate limit tracking: minimum 1s between snapshot calls; HTTP 429/418 responses trigger 60s backoff
 - [x] **M8** `core/shadow/shadow_engine.hpp` — Make fee structure config-driven: read from `config/dev/risk.yaml` instead of hardcoded `2.0 bps` maker / `5.0 bps` taker
-- [ ] **M9** `tests/unit/` — Add negative tests for feed handlers: malformed JSON, out-of-order sequences, duplicate sequence IDs, extreme price levels
-- [ ] **M10** `tests/unit/test_neural_alpha.py` — Add edge case tests: walk-forward with very small dataset, invalid input tensor shapes, NaN propagation through model
-- [ ] **M11** `tests/` + CI — Add deterministic connector contract tests (submit/cancel/reconcile state machine) and replay-based disconnect/reconnect chaos tests per exchange
-- [ ] **M12** `tests/perf/` + CI — Add latency benchmark gates enforcing documented budgets (`orderbook<1us`, `risk<1us`, `feed<10us`) with fail thresholds
-- [ ] **M13** `scripts/` + docs — Add preflight dependency checker for local/prod builds (libwebsockets/libcurl/json) and fail-fast bootstrap diagnostics
+- [x] **M9** `tests/unit/` — Add negative tests for feed handlers: malformed JSON, out-of-order sequences, duplicate sequence IDs, extreme price levels
+- [x] **M10** `tests/unit/test_neural_alpha.py` — Add edge case tests: walk-forward with very small dataset, invalid input tensor shapes, NaN propagation through model
+- [x] **M11** `tests/` + CI — Add deterministic connector contract tests (submit/cancel/reconcile state machine) and replay-based disconnect/reconnect chaos tests per exchange
+- [x] **M12** `tests/perf/` + CI — Add latency benchmark gates enforcing documented budgets (`orderbook<1us`, `risk<1us`, `feed<10us`) with fail thresholds
+- [x] **M13** `scripts/` + docs — Add preflight dependency checker for local/prod builds (libwebsockets/libcurl/json) and fail-fast bootstrap diagnostics
 
 ### LOW — Nice-to-Have
 

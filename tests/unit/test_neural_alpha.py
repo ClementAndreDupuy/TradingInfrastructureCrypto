@@ -31,7 +31,12 @@ from research.alpha.neural_alpha.alpha_regression import (
     ols_regression,
 )
 from research.alpha.neural_alpha.backtest import BacktestConfig, NeuralAlphaBacktest
-from research.alpha.neural_alpha.dataset import DatasetConfig, LOBDataset, split_walk_forward
+from research.alpha.neural_alpha.dataset import (
+    DatasetConfig,
+    LOBDataset,
+    rolling_normalise,
+    split_walk_forward,
+)
 from research.alpha.neural_alpha.features import (
     compute_labels,
     compute_lob_tensor,
@@ -223,6 +228,12 @@ class TestDataset:
         assert sample["labels"].shape == (32, 6)
         assert sample["mask"].shape   == (32,)
 
+    def test_rolling_normalise_handles_short_series(self) -> None:
+        x = np.arange(24, dtype=np.float64).reshape(12, 2)
+        out = rolling_normalise(x, window=20)
+        assert out.shape == x.shape
+        assert np.isfinite(out).all()
+
     def test_walk_forward_no_leakage(self, medium_df: pl.DataFrame) -> None:
         splits = split_walk_forward(medium_df, n_folds=3, train_frac=0.75)
         for train_df, test_df in splits:
@@ -231,6 +242,37 @@ class TestDataset:
 
 
 # ── Backtest ──────────────────────────────────────────────────────────────────
+
+
+    def test_walk_forward_with_tiny_dataset_has_non_empty_train(self) -> None:
+        tiny = generate_synthetic_lob(n_ticks=40, seed=2)
+        cfg = DatasetConfig(seq_len=8, horizons=(1, 5, 10, 20))
+        splits = split_walk_forward(
+            tiny,
+            n_folds=2,
+            train_frac=0.6,
+        )
+        assert len(splits) == 2
+        for train_df, test_df in splits:
+            train_ds = LOBDataset(train_df, cfg)
+            test_ds = LOBDataset(test_df, cfg)
+            assert len(train_ds) > 0
+            assert len(test_ds) > 0
+
+    def test_model_raises_on_invalid_lob_tensor_shape(self) -> None:
+        model = CryptoAlphaNet(d_spatial=16, d_temporal=32, seq_len=8)
+        bad_lob = torch.randn(2, 8, 5)
+        scalar = torch.randn(2, 8, 21)
+        with pytest.raises(ValueError):
+            model(bad_lob, scalar)
+
+    def test_nan_inputs_propagate_to_outputs(self) -> None:
+        model = CryptoAlphaNet(d_spatial=16, d_temporal=32, seq_len=8)
+        lob = torch.randn(1, 8, 5, 4)
+        scalar = torch.randn(1, 8, 21)
+        scalar[0, 0, 0] = float("nan")
+        out = model(lob, scalar)
+        assert torch.isnan(out["returns"]).any() or torch.isnan(out["risk"]).any()
 
 class TestBacktest:
     def test_no_trades_with_zero_signal(self, small_df: pl.DataFrame) -> None:

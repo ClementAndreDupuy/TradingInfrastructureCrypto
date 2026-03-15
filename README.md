@@ -70,3 +70,13 @@ flowchart LR
 3. C++ **execution** reads signal + order book state + risk checks.
 4. Orders go either to **shadow** (paper) or **live exchanges**.
 5. Metrics flow to monitoring for operational health and performance.
+
+## Build/Bootstrap preflight
+
+Run the dependency checker before local builds or production bootstrap:
+
+```bash
+python3 scripts/preflight_check.py
+```
+
+It validates required tooling and native dependencies (`cmake`, `pkg-config`, `libwebsockets`, `libcurl`, `nlohmann/json`) and exits non-zero on missing prerequisites.

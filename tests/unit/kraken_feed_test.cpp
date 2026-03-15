@@ -148,6 +148,30 @@ TEST_F(KrakenFeedHandlerTest, MissingSeqField) {
     EXPECT_EQ(handler_->process_message(msg), Result::ERROR_INVALID_SEQUENCE);
 }
 
+
+TEST_F(KrakenFeedHandlerTest, MalformedJsonIsIgnored) {
+    EXPECT_EQ(handler_->process_message("{invalid"), Result::SUCCESS);
+}
+
+TEST_F(KrakenFeedHandlerTest, DuplicateSequenceIsRejected) {
+    handler_->start();
+
+    std::string msg =
+        R"({"channel":"book","type":"update","seq":1,"data":[{"symbol":"XBTUSD",)"
+        R"("bids":[{"price":50000.0,"qty":1.0}],"asks":[],"checksum":0}]})";
+    EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
+    EXPECT_EQ(handler_->process_message(msg), Result::ERROR_SEQUENCE_GAP);
+}
+
+TEST_F(KrakenFeedHandlerTest, ExtremePriceLevelAcceptedAsDataPoint) {
+    handler_->start();
+
+    std::string msg =
+        R"({"channel":"book","type":"update","seq":1,"data":[{"symbol":"XBTUSD",)"
+        R"("bids":[{"price":1000000000.0,"qty":1.0}],"asks":[{"price":0.00000001,"qty":1.0}],"checksum":0}]})";
+    EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
+}
+
 TEST_F(KrakenFeedHandlerTest, StopAndRestart) {
     handler_->start();
     EXPECT_TRUE(handler_->is_running());

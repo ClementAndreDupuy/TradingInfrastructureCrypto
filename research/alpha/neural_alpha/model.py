@@ -21,7 +21,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-warnings.filterwarnings("ignore", message="enable_nested_tensor")
+warnings.filterwarnings(
+    "ignore",
+    message=r"enable_nested_tensor is True, but self\.use_nested_tensor is False.*norm_first was True",
+    category=UserWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r"enable_nested_tensor is True, but self.use_nested_tensor is False.*norm_first was True",
+    category=UserWarning,
+    module=r"torch\.nn\.modules\.transformer",
+)
 
 from .features import N_LEVELS, D_SCALAR
 
@@ -243,6 +253,15 @@ class CryptoAlphaNet(nn.Module):
         Returns:
             dict with keys: returns (B,T,4), direction (B,T,3), risk (B,T)
         """
+        if lob.ndim != 4:
+            raise ValueError(f"lob must have shape (B, T, N_LEVELS, 4), got {tuple(lob.shape)}")
+        if scalar.ndim != 3:
+            raise ValueError(f"scalar must have shape (B, T, D_SCALAR), got {tuple(scalar.shape)}")
+        if lob.shape[0] != scalar.shape[0] or lob.shape[1] != scalar.shape[1]:
+            raise ValueError("lob and scalar batch/time dimensions must match")
+        if lob.shape[-1] != 4:
+            raise ValueError("lob last dimension must be 4: [bid_px,bid_sz,ask_px,ask_sz]")
+
         spatial = self.spatial_enc(lob)              # (B, T, d_spatial)
         x = torch.cat([spatial, scalar], dim=-1)     # (B, T, d_spatial + D_SCALAR)
         temporal = self.temporal_enc(x, mask)        # (B, T, d_temporal)

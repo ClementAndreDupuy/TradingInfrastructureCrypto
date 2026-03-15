@@ -73,6 +73,9 @@ jobs:
             libcurl4-openssl-dev \
             nlohmann-json3-dev
 
+      - name: Run preflight dependency check
+        run: python3 scripts/preflight_check.py
+
       - name: Configure CMake
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_BINDINGS=OFF -DCMAKE_CXX_FLAGS="-I$(pwd)"
 
@@ -81,3 +84,6 @@ jobs:
 
       - name: Run C++ unit/integration/replay tests
         run: cd build && ctest --output-on-failure --exclude-regex "BinanceFeedTest|KrakenFeedTest|CoinbaseFeedTest|OkxFeedTest"
+
+      - name: Run latency budget perf gates
+        run: cd build && ctest --output-on-failure -L perf

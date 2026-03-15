@@ -101,6 +101,35 @@ TEST_F(BinanceFeedHandlerTest, MissingSequenceFields) {
     EXPECT_EQ(handler_->process_message(msg), Result::ERROR_INVALID_SEQUENCE);
 }
 
+
+TEST_F(BinanceFeedHandlerTest, MalformedJsonIsIgnored) {
+    EXPECT_EQ(handler_->process_message("{not-json"), Result::SUCCESS);
+}
+
+TEST_F(BinanceFeedHandlerTest, DuplicateSequenceIsRejected) {
+    handler_->start();
+    uint64_t initial_seq = handler_->get_sequence();
+
+    std::string msg = R"({"e":"depthUpdate","s":"BTCUSDT","U":)" +
+        std::to_string(initial_seq + 1) + R"(,"u":)" + std::to_string(initial_seq + 1) +
+        R"(,"b":[["50000.00","1.5"]],"a":[]})";
+
+    EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
+    EXPECT_EQ(handler_->process_message(msg), Result::ERROR_SEQUENCE_GAP);
+}
+
+TEST_F(BinanceFeedHandlerTest, ExtremePriceLevelParsesWithoutCrash) {
+    handler_->start();
+    uint64_t initial_seq = handler_->get_sequence();
+
+    std::string msg = R"({"e":"depthUpdate","s":"BTCUSDT","U":)" +
+        std::to_string(initial_seq + 1) + R"(,"u":)" + std::to_string(initial_seq + 1) +
+        R"(,"b":[["1000000000.00","0.1"]],"a":[["0.00000001","0.1"]]})";
+
+    EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
+    EXPECT_EQ(handler_->get_sequence(), initial_seq + 1);
+}
+
 TEST_F(BinanceFeedHandlerTest, StopHandler) {
     handler_->start();
     EXPECT_TRUE(handler_->is_running());
