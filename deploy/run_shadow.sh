@@ -6,6 +6,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENGINE_BIN="${ENGINE_BIN:-$REPO_ROOT/build/bin/trading_engine}"
 ENV_FILE_DEFAULT="$REPO_ROOT/config/shadow/trading.env"
+PYTHON_BIN="${PYTHON_BIN:-}"
 
 usage() {
     cat <<USAGE
@@ -102,6 +103,22 @@ set_shadow_creds() {
     export "$secret_var=$secret_val"
 }
 
+choose_python() {
+    if [[ -n "$PYTHON_BIN" ]]; then
+        return 0
+    fi
+    for candidate in python3.12 python3.11 python3.10 python3; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
+                PYTHON_BIN="$candidate"
+                return 0
+            fi
+        fi
+    done
+    echo "[shadow] ERROR: Python 3.10+ is required for neural alpha shadow session."
+    return 1
+}
+
 IFS=',' read -r -a VENUE_LIST <<< "$VENUES"
 for venue in "${VENUE_LIST[@]}"; do
     set_shadow_creds "$venue"
@@ -125,6 +142,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 if [[ "$SKIP_ALPHA" -eq 0 ]]; then
+    choose_python
     mkdir -p "$REPO_ROOT/logs" "$REPO_ROOT/models"
     ALPHA_ARGS=(
         -m research.alpha.neural_alpha.shadow_session
@@ -141,8 +159,8 @@ if [[ "$SKIP_ALPHA" -eq 0 ]]; then
         --log-path "$REPO_ROOT/logs/neural_alpha_shadow.jsonl"
     )
 
-    echo "[shadow] Starting python shadow session (signals -> $SIGNAL_FILE)"
-    (cd "$REPO_ROOT" && python3 "${ALPHA_ARGS[@]}") &
+    echo "[shadow] Starting python shadow session with $PYTHON_BIN (signals -> $SIGNAL_FILE)"
+    (cd "$REPO_ROOT" && "$PYTHON_BIN" "${ALPHA_ARGS[@]}") &
     PY_PID=$!
 fi
 
