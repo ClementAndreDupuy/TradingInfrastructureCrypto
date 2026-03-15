@@ -27,6 +27,8 @@ class ExchangeConnector {
 
     virtual ConnectorResult submit_order(const Order& order) = 0;
     virtual ConnectorResult cancel_order(uint64_t client_order_id) = 0;
+    virtual ConnectorResult replace_order(uint64_t client_order_id, const Order& replacement) = 0;
+    virtual ConnectorResult query_order(uint64_t client_order_id, FillUpdate& status) = 0;
     virtual ConnectorResult cancel_all(const char* symbol) = 0;
 
     // Reconcile local order state with exchange state (called on reconnect).

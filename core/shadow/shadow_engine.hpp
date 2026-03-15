@@ -158,6 +158,27 @@ class ShadowConnector : public ExchangeConnector {
         return ConnectorResult::ERROR_UNKNOWN;
     }
 
+    ConnectorResult replace_order(uint64_t client_order_id, const Order& replacement) override {
+        ConnectorResult cancel_res = cancel_order(client_order_id);
+        if (cancel_res != ConnectorResult::OK)
+            return cancel_res;
+        return submit_order(replacement);
+    }
+
+    ConnectorResult query_order(uint64_t client_order_id, FillUpdate& status) override {
+        for (const auto& s : orders_) {
+            if (s.active && s.client_order_id == client_order_id) {
+                status.client_order_id = client_order_id;
+                status.fill_qty = s.filled_qty;
+                status.cumulative_filled_qty = s.filled_qty;
+                status.new_state = OrderState::OPEN;
+                status.local_ts_ns = now_ns();
+                return ConnectorResult::OK;
+            }
+        }
+        return ConnectorResult::ERROR_INVALID_ORDER;
+    }
+
     ConnectorResult cancel_all(const char* symbol) override {
         for (auto& s : orders_) {
             if (s.active && std::strncmp(s.symbol, symbol, 15) == 0) {

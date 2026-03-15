@@ -80,6 +80,34 @@ class LiveConnectorBase : public ExchangeConnector {
         return result;
     }
 
+    ConnectorResult replace_order(uint64_t client_order_id, const Order& replacement) override {
+        const VenueOrderEntry* mapped = order_map_.get(client_order_id);
+        if (!mapped)
+            return ConnectorResult::ERROR_INVALID_ORDER;
+
+        std::string new_venue_order_id;
+        const ConnectorResult result = with_retries(
+            [&]() { return replace_at_venue(*mapped, replacement, new_venue_order_id); });
+        if (result != ConnectorResult::OK)
+            return result;
+
+        order_map_.erase(client_order_id);
+        if (!order_map_.upsert(replacement.client_order_id, new_venue_order_id.c_str(), exchange_,
+                               replacement.symbol)) {
+            LOG_ERROR("Venue order map full", "exchange", exchange_to_string(exchange_));
+            return ConnectorResult::ERROR_UNKNOWN;
+        }
+        return ConnectorResult::OK;
+    }
+
+    ConnectorResult query_order(uint64_t client_order_id, FillUpdate& status) override {
+        const VenueOrderEntry* mapped = order_map_.get(client_order_id);
+        if (!mapped)
+            return ConnectorResult::ERROR_INVALID_ORDER;
+
+        return with_retries([&]() { return query_at_venue(*mapped, status); });
+    }
+
     ConnectorResult cancel_all(const char* symbol) override { return cancel_all_at_venue(symbol); }
 
     ConnectorResult reconcile() override {
@@ -93,6 +121,9 @@ class LiveConnectorBase : public ExchangeConnector {
     virtual ConnectorResult submit_to_venue(const Order& order, const std::string& idempotency_key,
                                             std::string& venue_order_id) = 0;
     virtual ConnectorResult cancel_at_venue(const VenueOrderEntry& entry) = 0;
+    virtual ConnectorResult replace_at_venue(const VenueOrderEntry& entry, const Order& replacement,
+                                             std::string& new_venue_order_id) = 0;
+    virtual ConnectorResult query_at_venue(const VenueOrderEntry& entry, FillUpdate& status) = 0;
     virtual ConnectorResult cancel_all_at_venue(const char* symbol) = 0;
     virtual bool is_retryable(ConnectorResult code) const noexcept {
         return code == ConnectorResult::ERROR_RATE_LIMIT || code == ConnectorResult::ERROR_UNKNOWN;
@@ -104,12 +135,16 @@ class LiveConnectorBase : public ExchangeConnector {
     }
 
     std::vector<std::string> auth_headers(const std::string& payload,
-                                          const std::string& idempotency_key) const {
+                                          const std::string& idempotency_key = "") const {
         const int64_t ts_ms = http::now_ms();
         const std::string ts = std::to_string(ts_ms);
         const std::string signature = sign_payload(ts + payload);
-        return {"X-API-KEY: " + api_key_, "X-TS: " + ts, "X-SIGN: " + signature,
-                "X-IDEMPOTENCY-KEY: " + idempotency_key, "Content-Type: application/json"};
+        std::vector<std::string> headers = {"X-API-KEY: " + api_key_, "X-TS: " + ts,
+                                            "X-SIGN: " + signature,
+                                            "Content-Type: application/json"};
+        if (!idempotency_key.empty())
+            headers.push_back("X-IDEMPOTENCY-KEY: " + idempotency_key);
+        return headers;
     }
 
     const std::string& api_url() const noexcept { return api_url_; }

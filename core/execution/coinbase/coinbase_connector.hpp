@@ -14,6 +14,9 @@ class CoinbaseConnector : public LiveConnectorBase {
     ConnectorResult submit_to_venue(const Order& order, const std::string& idempotency_key,
                                     std::string& venue_order_id) override;
     ConnectorResult cancel_at_venue(const VenueOrderEntry& entry) override;
+    ConnectorResult replace_at_venue(const VenueOrderEntry& entry, const Order& replacement,
+                                     std::string& new_venue_order_id) override;
+    ConnectorResult query_at_venue(const VenueOrderEntry& entry, FillUpdate& status) override;
     ConnectorResult cancel_all_at_venue(const char* symbol) override;
 };
 
