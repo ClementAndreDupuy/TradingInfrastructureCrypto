@@ -21,7 +21,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-warnings.filterwarnings("ignore", message="enable_nested_tensor")
+warnings.filterwarnings(
+    "ignore",
+    message=r"enable_nested_tensor is True, but self\.use_nested_tensor is False.*",
+    category=UserWarning,
+)
 
 from .features import N_LEVELS, D_SCALAR
 
