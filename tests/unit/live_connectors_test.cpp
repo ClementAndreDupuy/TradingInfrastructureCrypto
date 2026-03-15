@@ -48,8 +48,9 @@ void run_connector_flow(Connector& c, Exchange ex, const char* symbol, const cha
                                                     const std::vector<std::string>& headers) {
         const bool is_private_request =
             contains(url, "order") || contains(url, "Order") || contains(url, "trade");
-        if (is_private_request && std::strcmp(method, "GET") != 0)
+        if (is_private_request && std::strcmp(method, "GET") != 0) {
             EXPECT_FALSE(headers.empty());
+        }
 
         if (((std::strcmp(method, "GET") == 0) ||
              (std::strcmp(method, "POST") == 0 && contains(url, "QueryOrders"))) &&
