@@ -1,15 +1,15 @@
 #pragma once
 
-#include "live_connector_base.hpp"
+#include "../live_connector_base.hpp"
 
 namespace trading {
 
-class OkxConnector : public LiveConnectorBase {
+class KrakenConnector : public LiveConnectorBase {
 public:
-    OkxConnector(const std::string& api_key,
-                 const std::string& api_secret,
-                 const std::string& api_url = "https://www.okx.com")
-        : LiveConnectorBase(Exchange::OKX, api_key, api_secret, api_url) {}
+    KrakenConnector(const std::string& api_key,
+                    const std::string& api_secret,
+                    const std::string& api_url = "https://api.kraken.com")
+        : LiveConnectorBase(Exchange::KRAKEN, api_key, api_secret, api_url) {}
 
 protected:
     ConnectorResult submit_to_venue(const Order& order,

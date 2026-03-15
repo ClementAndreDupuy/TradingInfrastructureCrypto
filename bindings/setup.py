@@ -79,6 +79,10 @@ _require_pkg(
     "libcurl",
     "apt install libcurl4-openssl-dev  /  brew install curl",
 )
+_require_pkg(
+    "openssl",
+    "apt install libssl-dev  /  brew install openssl@3",
+)
 
 # nlohmann_json is header-only and optional via pkg-config; missing is non-fatal
 # if the header is reachable via the system include path.
@@ -109,6 +113,12 @@ _parse_flags(
 # libcurl
 _parse_flags(
     _pkg_config("libcurl", "--cflags-only-I") + _pkg_config("libcurl", "--libs"),
+    include_dirs, library_dirs, libraries, extra_link_args,
+)
+
+# OpenSSL (libwebsockets transitively depends on ssl headers/libs)
+_parse_flags(
+    _pkg_config("openssl", "--cflags-only-I") + _pkg_config("openssl", "--libs"),
     include_dirs, library_dirs, libraries, extra_link_args,
 )
 
@@ -159,5 +169,6 @@ setup(
     version="1.0.0",
     description="ThamesRiverTrading C++ pybind11 bridge",
     python_requires=">=3.10",
+    packages=[],
     ext_modules=[ext],
 )

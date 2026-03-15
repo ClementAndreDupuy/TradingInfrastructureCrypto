@@ -1,15 +1,15 @@
 #pragma once
 
-#include "live_connector_base.hpp"
+#include "../live_connector_base.hpp"
 
 namespace trading {
 
-class BinanceConnector : public LiveConnectorBase {
+class CoinbaseConnector : public LiveConnectorBase {
 public:
-    BinanceConnector(const std::string& api_key,
-                     const std::string& api_secret,
-                     const std::string& api_url = "https://api.binance.com")
-        : LiveConnectorBase(Exchange::BINANCE, api_key, api_secret, api_url) {}
+    CoinbaseConnector(const std::string& api_key,
+                      const std::string& api_secret,
+                      const std::string& api_url = "https://api.coinbase.com")
+        : LiveConnectorBase(Exchange::COINBASE, api_key, api_secret, api_url) {}
 
 protected:
     ConnectorResult submit_to_venue(const Order& order,

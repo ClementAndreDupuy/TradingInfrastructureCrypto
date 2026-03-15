@@ -20,6 +20,7 @@ RUN_TESTS=1
 COMPILE_PYTHON=1
 BUILD_DIR="build"
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
+PYTHON_BIN="${PYTHON_BIN:-}"
 
 usage() {
     cat <<USAGE
@@ -63,6 +64,22 @@ fi
 echo "=== ThamesRiverTrading local build ==="
 echo "[build] project_root=$PROJECT_ROOT"
 
+choose_python() {
+    if [[ -n "$PYTHON_BIN" ]]; then
+        return 0
+    fi
+    for candidate in python3.12 python3.11 python3.10 python3; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
+                PYTHON_BIN="$candidate"
+                return 0
+            fi
+        fi
+    done
+    echo "[build] ERROR: Python 3.10+ is required, but no compatible interpreter was found on PATH."
+    return 1
+}
+
 action_cpp() {
     echo "[build] Configuring CMake in $BUILD_DIR"
     cmake -S . -B "$BUILD_DIR"
@@ -72,28 +89,36 @@ action_cpp() {
 
 action_python_install() {
     echo "[build] Installing Python package (editable)"
-    python3 -m pip install -e .
+    if ! "$PYTHON_BIN" -m pip install -e .; then
+        echo "[build] Editable install not supported, falling back to standard install"
+        "$PYTHON_BIN" -m pip install .
+    fi
 }
 
 action_bindings() {
     echo "[build] Building pybind11 bindings in-place"
-    python3 bindings/setup.py build_ext --inplace
+    "$PYTHON_BIN" bindings/setup.py build_ext --inplace
 }
 
 action_compileall() {
     echo "[build] Byte-compiling Python sources"
-    python3 -m compileall research deploy tests
+    "$PYTHON_BIN" -m compileall research deploy tests
 }
 
 action_tests() {
     echo "[build] Running Python unit tests"
-    pytest tests/unit/
+    "$PYTHON_BIN" -m pytest tests/unit/
 }
 
 if [[ "$BUILD_CPP" -eq 1 ]]; then
     action_cpp
 else
     echo "[build] Skipping C++ build"
+fi
+
+if [[ "$BUILD_PYTHON" -eq 1 ]]; then
+    choose_python
+    echo "[build] Using Python interpreter: $PYTHON_BIN ($("$PYTHON_BIN" --version 2>&1))"
 fi
 
 if [[ "$INSTALL_PYTHON" -eq 1 ]]; then

@@ -1,7 +1,7 @@
-#include "core/execution/binance_connector.hpp"
-#include "core/execution/coinbase_connector.hpp"
-#include "core/execution/kraken_connector.hpp"
-#include "core/execution/okx_connector.hpp"
+#include "core/execution/binance/binance_connector.hpp"
+#include "core/execution/coinbase/coinbase_connector.hpp"
+#include "core/execution/kraken/kraken_connector.hpp"
+#include "core/execution/okx/okx_connector.hpp"
 
 #include <gtest/gtest.h>
 

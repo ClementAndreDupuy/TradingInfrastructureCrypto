@@ -117,6 +117,9 @@ target_link_libraries(orderbook_test
     GTest::gtest
     GTest::gtest_main
 )
+target_include_directories(orderbook_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
 
 add_test(NAME OrderBookTest COMMAND orderbook_test)
 

@@ -2,16 +2,21 @@
 
 # libwebsockets (required for real WebSocket connections)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(LIBWEBSOCKETS REQUIRED libwebsockets)
+pkg_check_modules(LIBWEBSOCKETS REQUIRED IMPORTED_TARGET libwebsockets)
 
 # libcurl: prefer system package, fall back to runtime-only link.
 # Install: sudo apt install libcurl4-openssl-dev
 find_package(CURL QUIET)
 find_package(OpenSSL QUIET)
-if(NOT CURL_FOUND)
-    message(STATUS "libcurl dev headers not found; using runtime-only link via curl_abi.hpp")
-    add_library(CURL::libcurl INTERFACE IMPORTED)
-    target_link_libraries(CURL::libcurl INTERFACE curl)
+if(NOT TARGET CURL::libcurl)
+    message(STATUS "CURL::libcurl target not provided; creating compatibility target")
+    add_library(CURL::libcurl INTERFACE IMPORTED GLOBAL)
+    if(CURL_FOUND)
+        target_include_directories(CURL::libcurl INTERFACE ${CURL_INCLUDE_DIRS})
+        target_link_libraries(CURL::libcurl INTERFACE ${CURL_LIBRARIES})
+    else()
+        target_link_libraries(CURL::libcurl INTERFACE curl)
+    endif()
 endif()
 
 # nlohmann/json: prefer system package, fall back to vendored core/common/json.hpp.
@@ -35,10 +40,13 @@ add_library(binance_feed
 
 target_link_libraries(binance_feed
     trading_common
-    ${LIBWEBSOCKETS_LIBRARIES}
+    PkgConfig::LIBWEBSOCKETS
     CURL::libcurl
     nlohmann_json::nlohmann_json
 )
+if(OpenSSL_FOUND)
+    target_link_libraries(binance_feed OpenSSL::SSL OpenSSL::Crypto)
+endif()
 
 target_include_directories(binance_feed PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -54,10 +62,13 @@ add_library(kraken_feed
 
 target_link_libraries(kraken_feed
     trading_common
-    ${LIBWEBSOCKETS_LIBRARIES}
+    PkgConfig::LIBWEBSOCKETS
     CURL::libcurl
     nlohmann_json::nlohmann_json
 )
+if(OpenSSL_FOUND)
+    target_link_libraries(kraken_feed OpenSSL::SSL OpenSSL::Crypto)
+endif()
 
 target_include_directories(kraken_feed PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -73,10 +84,13 @@ add_library(coinbase_feed
 
 target_link_libraries(coinbase_feed
     trading_common
-    ${LIBWEBSOCKETS_LIBRARIES}
+    PkgConfig::LIBWEBSOCKETS
     CURL::libcurl
     nlohmann_json::nlohmann_json
 )
+if(OpenSSL_FOUND)
+    target_link_libraries(coinbase_feed OpenSSL::SSL OpenSSL::Crypto)
+endif()
 
 target_include_directories(coinbase_feed PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -92,10 +106,13 @@ add_library(okx_feed
 
 target_link_libraries(okx_feed
     trading_common
-    ${LIBWEBSOCKETS_LIBRARIES}
+    PkgConfig::LIBWEBSOCKETS
     CURL::libcurl
     nlohmann_json::nlohmann_json
 )
+if(OpenSSL_FOUND)
+    target_link_libraries(okx_feed OpenSSL::SSL OpenSSL::Crypto)
+endif()
 
 target_include_directories(okx_feed PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -111,10 +128,10 @@ install(TARGETS binance_feed kraken_feed coinbase_feed okx_feed
 )
 
 add_library(execution
-    execution/binance_connector.cpp
-    execution/kraken_connector.cpp
-    execution/okx_connector.cpp
-    execution/coinbase_connector.cpp
+        execution/binance/binance_connector.cpp
+        execution/kraken/kraken_connector.cpp
+        execution/okx/okx_connector.cpp
+        execution/coinbase/coinbase_connector.cpp
     execution/smart_order_router.cpp
 )
 
