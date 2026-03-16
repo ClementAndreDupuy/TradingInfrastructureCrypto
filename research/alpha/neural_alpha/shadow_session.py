@@ -116,6 +116,8 @@ class ShadowSessionConfig:
     drift_min_samples: int = 60
     drift_ic_floor: float = -0.05
     safe_mode_ticks: int = 120
+    continuous_train_every_ticks: int = 1000
+    continuous_train_window_ticks: int = 2000
 
 
 class NeuralAlphaShadowSession:
@@ -146,6 +148,8 @@ class NeuralAlphaShadowSession:
         self._safe_mode_ticks_remaining = 0
         self._bridge = CoreBridge()
         self._bridge.open()
+        self._processed_ticks = 0
+        self._last_continuous_train_tick = 0
 
     # ── Model loading / training ──────────────────────────────────────────────
 
@@ -184,12 +188,17 @@ class NeuralAlphaShadowSession:
                 exchanges=self.cfg.exchanges,
             )
 
+        resume_state = None
+        if self._model is not None:
+            resume_state = {k: v.detach().cpu().clone() for k, v in self._model.state_dict().items()}
+
         tcfg = TrainerConfig(
             epochs=self.cfg.train_epochs,
             n_folds=2,
             seq_len=self.cfg.seq_len,
             d_spatial=self.cfg.d_spatial,
             d_temporal=self.cfg.d_temporal,
+            resume_state_dict=resume_state,
         )
         fold_results = walk_forward_train(df, tcfg)
         if not fold_results:
@@ -367,6 +376,25 @@ class NeuralAlphaShadowSession:
             f"signal_std={std_sig:.2f}bps  IC={ic:.3f}"
         )
 
+    def _maybe_continuous_train(self) -> None:
+        if self.cfg.continuous_train_every_ticks <= 0:
+            return
+        ticks_since_train = self._processed_ticks - self._last_continuous_train_tick
+        if ticks_since_train < self.cfg.continuous_train_every_ticks:
+            return
+
+        train_window = max(self.cfg.seq_len * 4, self.cfg.continuous_train_window_ticks)
+        print(
+            f"[CONTINUOUS_TRAIN] starting incremental retrain at tick={self._processed_ticks} "
+            f"window={train_window}"
+        )
+        try:
+            self.train_on_recent(train_window)
+            self._last_continuous_train_tick = self._processed_ticks
+            print("[CONTINUOUS_TRAIN] completed")
+        except Exception as exc:
+            print(f"[CONTINUOUS_TRAIN] failed: {exc}")
+
     # ── Main loop ─────────────────────────────────────────────────────────────
 
     def run(self) -> None:
@@ -389,10 +417,12 @@ class NeuralAlphaShadowSession:
                 ticks = self._fetch_tick()
                 for tick in ticks:
                     self._ring.append(tick)
+                self._processed_ticks += len(ticks)
 
                 if len(self._ring) > self._max_ring:
                     self._ring = self._ring[-self._max_ring:]
 
+                self._maybe_continuous_train()
                 signal_info = self._infer()
                 if signal_info:
                     if prev_mid is not None and prev_mid > 0:
@@ -450,6 +480,10 @@ def main() -> None:
     ap.add_argument("--drift-min-samples",    type=int, default=60, dest="drift_min_samples")
     ap.add_argument("--drift-ic-floor",       type=float, default=-0.05, dest="drift_ic_floor")
     ap.add_argument("--safe-mode-ticks",      type=int, default=120, dest="safe_mode_ticks")
+    ap.add_argument("--continuous-train-every-ticks", type=int, default=1000,
+                    dest="continuous_train_every_ticks")
+    ap.add_argument("--continuous-train-window-ticks", type=int, default=2000,
+                    dest="continuous_train_window_ticks")
     args = ap.parse_args()
 
     cfg = ShadowSessionConfig(
@@ -472,6 +506,8 @@ def main() -> None:
         drift_min_samples=args.drift_min_samples,
         drift_ic_floor=args.drift_ic_floor,
         safe_mode_ticks=args.safe_mode_ticks,
+        continuous_train_every_ticks=args.continuous_train_every_ticks,
+        continuous_train_window_ticks=args.continuous_train_window_ticks,
     )
 
     session = NeuralAlphaShadowSession(cfg)
@@ -491,7 +527,7 @@ def main() -> None:
     else:
         print(
             "WARNING: no model loaded and --train-ticks not set. "
-            "Inference skipped until a model is available."
+            "Continuous training will bootstrap once enough ticks accumulate."
         )
 
     session.run()
