@@ -9,8 +9,7 @@ double SmartOrderRouter::effective_price_bps(const VenueQuote& v, Side side) noe
     if (px <= 0.0)
         return 1e12;
 
-    const double px_component = px * 1e4;
-    return px_component + v.taker_fee_bps + v.latency_penalty_bps + v.risk_penalty_bps;
+    return v.taker_fee_bps + v.latency_penalty_bps + v.risk_penalty_bps;
 }
 
 RoutingRegime
@@ -37,7 +36,7 @@ SmartOrderRouter::infer_regime(const std::array<VenueQuote, MAX_VENUES>& venues)
     if (avg_toxicity >= 2.0) {
         regime.fill_weight_bps = 7.0;
         regime.queue_weight_bps = 1.1;
-        regime.toxicity_weight = 1.7;
+        regime.toxicity_weight = 3.2;
         return regime;
     }
 
@@ -75,6 +74,18 @@ SmartOrderRouter::route(Side side, double quantity,
     std::array<bool, MAX_VENUES> used{};
     double remaining = quantity;
     const RoutingRegime regime = infer_regime(venues);
+    double best_px = 1e18;
+
+    for (const auto& v : venues) {
+        if (!v.healthy || v.depth_qty <= 0.0)
+            continue;
+        const double px = (side == Side::BID) ? v.best_ask : v.best_bid;
+        if (px > 0.0 && px < best_px)
+            best_px = px;
+    }
+
+    if (best_px >= 1e17)
+        return out;
 
     while (remaining > 1e-12 && out.child_count < out.children.size()) {
         int best_idx = -1;
@@ -87,7 +98,9 @@ SmartOrderRouter::route(Side side, double quantity,
             if (!v.healthy || v.depth_qty <= 0.0)
                 continue;
 
-            const double score = score_venue_bps(v, side, regime);
+            const double quote_px = (side == Side::BID) ? v.best_ask : v.best_bid;
+            const double px_penalty_bps = ((quote_px - best_px) / best_px) * 1e4;
+            const double score = score_venue_bps(v, side, regime) + px_penalty_bps;
             if (score < best_score) {
                 best_score = score;
                 best_idx = static_cast<int>(i);

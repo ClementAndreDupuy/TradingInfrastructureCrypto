@@ -49,6 +49,10 @@ class IdempotencyJournal {
         if (!entry)
             return {};
 
+        if (entry->state == JournalState::ACKED) {
+            duplicate_ack_count_ = saturating_add(duplicate_ack_count_, 1);
+        }
+
         if (entry->state == JournalState::ACKED || entry->state == JournalState::IN_FLIGHT) {
             JournalDecision out{};
             populate_decision(*entry, out);
