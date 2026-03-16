@@ -6,13 +6,85 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENGINE_BIN="${ENGINE_BIN:-$REPO_ROOT/build/bin/trading_engine}"
 ENV_FILE_DEFAULT="$REPO_ROOT/config/shadow/trading.env"
+CONFIG_FILE_DEFAULT="$REPO_ROOT/config/shadow/runtime.yaml"
 PYTHON_BIN="${PYTHON_BIN:-}"
+
+read_yaml_value() {
+    local file_path="$1"
+    local key="$2"
+    awk -F: -v search_key="$key" '
+        $1 ~ "^[[:space:]]*" search_key "[[:space:]]*$" {
+            value = $0
+            sub(/^[^:]*:[[:space:]]*/, "", value)
+            sub(/[[:space:]]+#.*/, "", value)
+            gsub(/^["\047]|["\047]$/, "", value)
+            print value
+            exit
+        }
+    ' "$file_path"
+}
+
+resolve_config_path() {
+    local raw_path="$1"
+    if [[ "$raw_path" = /* ]]; then
+        echo "$raw_path"
+    else
+        echo "$REPO_ROOT/$raw_path"
+    fi
+}
+
+apply_config_defaults() {
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        return
+    fi
+
+    local symbol_from_cfg venues_from_cfg duration_from_cfg interval_from_cfg
+    local env_from_cfg signal_file_from_cfg model_path_from_cfg secondary_model_from_cfg
+    local train_ticks_from_cfg train_epochs_from_cfg report_interval_from_cfg
+    local alpha_exchanges_from_cfg alpha_seq_len_from_cfg alpha_log_path_from_cfg
+    local fallback_key_from_cfg fallback_secret_from_cfg
+
+    symbol_from_cfg="$(read_yaml_value "$CONFIG_FILE" "symbol")"
+    venues_from_cfg="$(read_yaml_value "$CONFIG_FILE" "venues")"
+    duration_from_cfg="$(read_yaml_value "$CONFIG_FILE" "duration_secs")"
+    interval_from_cfg="$(read_yaml_value "$CONFIG_FILE" "interval_ms")"
+    env_from_cfg="$(read_yaml_value "$CONFIG_FILE" "env_file")"
+    signal_file_from_cfg="$(read_yaml_value "$CONFIG_FILE" "signal_file")"
+    model_path_from_cfg="$(read_yaml_value "$CONFIG_FILE" "model_path")"
+    secondary_model_from_cfg="$(read_yaml_value "$CONFIG_FILE" "secondary_model_path")"
+    train_ticks_from_cfg="$(read_yaml_value "$CONFIG_FILE" "train_ticks")"
+    train_epochs_from_cfg="$(read_yaml_value "$CONFIG_FILE" "train_epochs")"
+    report_interval_from_cfg="$(read_yaml_value "$CONFIG_FILE" "report_interval")"
+    alpha_exchanges_from_cfg="$(read_yaml_value "$CONFIG_FILE" "alpha_exchanges")"
+    alpha_seq_len_from_cfg="$(read_yaml_value "$CONFIG_FILE" "alpha_seq_len")"
+    alpha_log_path_from_cfg="$(read_yaml_value "$CONFIG_FILE" "alpha_log_path")"
+    fallback_key_from_cfg="$(read_yaml_value "$CONFIG_FILE" "shadow_fallback_api_key")"
+    fallback_secret_from_cfg="$(read_yaml_value "$CONFIG_FILE" "shadow_fallback_api_secret")"
+
+    [[ -n "$symbol_from_cfg" ]] && SYMBOL="$symbol_from_cfg"
+    [[ -n "$venues_from_cfg" ]] && VENUES="$venues_from_cfg"
+    [[ -n "$duration_from_cfg" ]] && DURATION_SECS="$duration_from_cfg"
+    [[ -n "$interval_from_cfg" ]] && INTERVAL_MS="$interval_from_cfg"
+    [[ -n "$env_from_cfg" ]] && ENV_FILE="$(resolve_config_path "$env_from_cfg")"
+    [[ -n "$signal_file_from_cfg" ]] && SIGNAL_FILE="$signal_file_from_cfg"
+    [[ -n "$model_path_from_cfg" ]] && MODEL_PATH="$(resolve_config_path "$model_path_from_cfg")"
+    [[ -n "$secondary_model_from_cfg" ]] && SECONDARY_MODEL_PATH="$(resolve_config_path "$secondary_model_from_cfg")"
+    [[ -n "$train_ticks_from_cfg" ]] && TRAIN_TICKS="$train_ticks_from_cfg"
+    [[ -n "$train_epochs_from_cfg" ]] && TRAIN_EPOCHS="$train_epochs_from_cfg"
+    [[ -n "$report_interval_from_cfg" ]] && REPORT_INTERVAL="$report_interval_from_cfg"
+    [[ -n "$alpha_exchanges_from_cfg" ]] && ALPHA_EXCHANGES="$alpha_exchanges_from_cfg"
+    [[ -n "$alpha_seq_len_from_cfg" ]] && ALPHA_SEQ_LEN="$alpha_seq_len_from_cfg"
+    [[ -n "$alpha_log_path_from_cfg" ]] && ALPHA_LOG_PATH="$(resolve_config_path "$alpha_log_path_from_cfg")"
+    [[ -n "$fallback_key_from_cfg" ]] && SHADOW_FALLBACK_API_KEY="$fallback_key_from_cfg"
+    [[ -n "$fallback_secret_from_cfg" ]] && SHADOW_FALLBACK_API_SECRET="$fallback_secret_from_cfg"
+}
 
 usage() {
     cat <<USAGE
 Usage: ./deploy/run_shadow.sh [options] [-- <extra trading_engine args>]
 
 Options:
+  --config <PATH>               YAML runtime defaults (default: config/shadow/runtime.yaml if present)
   --symbol <SYMBOL>             Trading symbol (default: BTCUSDT)
   --venues <CSV>                Venues CSV (default: BINANCE,KRAKEN,OKX,COINBASE)
   --duration <SECONDS>          Total runtime (default: 900)
@@ -52,11 +124,27 @@ TRAIN_TICKS=400
 TRAIN_EPOCHS=5
 REPORT_INTERVAL=60
 ALPHA_EXCHANGES="BINANCE,KRAKEN"
+ALPHA_SEQ_LEN=64
+ALPHA_LOG_PATH="$REPO_ROOT/logs/neural_alpha_shadow.jsonl"
+SHADOW_FALLBACK_API_KEY="local-shadow-key"
+SHADOW_FALLBACK_API_SECRET="local-shadow-secret"
 SKIP_ALPHA=0
+CONFIG_FILE="$CONFIG_FILE_DEFAULT"
 EXTRA_ARGS=()
+
+for ((i = 1; i <= $#; i++)); do
+    if [[ "${!i}" == "--config" ]]; then
+        next_idx=$((i + 1))
+        CONFIG_FILE="$(resolve_config_path "${!next_idx}")"
+        break
+    fi
+done
+
+apply_config_defaults
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --config) CONFIG_FILE="$(resolve_config_path "$2")"; shift 2 ;;
         --symbol) SYMBOL="$2"; shift 2 ;;
         --venues) VENUES="$2"; shift 2 ;;
         --duration) DURATION_SECS="$2"; shift 2 ;;
@@ -96,8 +184,8 @@ set_shadow_creds() {
     local shadow_key_var="SHADOW_${venue}_API_KEY"
     local shadow_secret_var="SHADOW_${venue}_API_SECRET"
 
-    local key_val="${!shadow_key_var:-${!key_var:-local-shadow-key}}"
-    local secret_val="${!shadow_secret_var:-${!secret_var:-local-shadow-secret}}"
+    local key_val="${!shadow_key_var:-${!key_var:-$SHADOW_FALLBACK_API_KEY}}"
+    local secret_val="${!shadow_secret_var:-${!secret_var:-$SHADOW_FALLBACK_API_SECRET}}"
 
     export "$key_var=$key_val"
     export "$secret_var=$secret_val"
@@ -156,13 +244,13 @@ if [[ "$SKIP_ALPHA" -eq 0 ]]; then
         --duration "$DURATION_SECS"
         --interval-ms "$INTERVAL_MS"
         --report-interval "$REPORT_INTERVAL"
-        --seq-len 64
+        --seq-len "$ALPHA_SEQ_LEN"
         --exchanges "$ALPHA_EXCHANGES"
         --model-path "$MODEL_PATH"
         --secondary-model-path "$SECONDARY_MODEL_PATH"
         --train-ticks "$TRAIN_TICKS"
         --train-epochs "$TRAIN_EPOCHS"
-        --log-path "$REPO_ROOT/logs/neural_alpha_shadow.jsonl"
+        --log-path "$ALPHA_LOG_PATH"
     )
 
     echo "[shadow] Starting python shadow session with $PYTHON_BIN (signals -> $SIGNAL_FILE)"
