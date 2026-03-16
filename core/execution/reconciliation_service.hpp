@@ -411,6 +411,7 @@ class ReconciliationService {
             ++state.fill_gap_retries;
             decision.retry_count = state.fill_gap_retries;
             if (state.fill_gap_retries > policy_.fill_gap_retry_budget) {
+                decision.mismatch_class = MismatchClass::NONE;
                 decision.action = DriftAction::RISK_HALT_RECOMMENDED;
                 decision.severity = SeverityLevel::CRITICAL;
                 decision.quarantine = true;
@@ -422,6 +423,7 @@ class ReconciliationService {
             ++state.order_drift_retries;
             decision.retry_count = state.order_drift_retries;
             if (state.order_drift_retries > policy_.order_drift_retry_budget) {
+                decision.mismatch_class = MismatchClass::NONE;
                 decision.action = DriftAction::RISK_HALT_RECOMMENDED;
                 decision.severity = SeverityLevel::CRITICAL;
                 decision.quarantine = true;
