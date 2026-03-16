@@ -3,7 +3,7 @@
 ### CRITICAL
 - [ ] **C1** `core/execution/live_connector_base.hpp` + venue connectors — Replace generic auth/signature flow with exchange-spec canonical signing, remove non-cryptographic signature fallback in live path, and enforce hard-fail when cryptographic backend is unavailable
 - [x] **C2** `core/execution/*_connector.cpp` — Implement authenticated cancel/replace/query endpoints with strict response parsing; stop using synthetic venue order IDs and persist real exchange IDs *(submit/cancel/replace/query now implemented with strict parsing and real venue IDs persisted in `VenueOrderMap`)*
-- [ ] **C3** `core/execution/` — **REWORK REQUIRED**: deliver production reconciliation for open orders/fills/balances/positions against internal canonical state (not snapshot self-check only)
+- [x] **C3** `core/execution/` — deliver production reconciliation for open orders/fills/balances/positions against internal canonical state with deterministic mismatch classification and actions; reconnect + periodic loops share one reconciliation engine in `ReconciliationService`
   - acceptance: deterministic state diff between venue snapshots and `OrderManager` + internal ledgers
   - acceptance: reconnect bootstrap and periodic drift loops both run same reconciliation logic
   - acceptance: mismatch classes are explicit (`missing_order`, `qty_drift`, `fill_gap`, `balance_drift`, `position_drift`) with deterministic actions
