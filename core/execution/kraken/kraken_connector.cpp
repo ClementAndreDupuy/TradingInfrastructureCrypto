@@ -183,6 +183,35 @@ ConnectorResult KrakenConnector::fetch_reconciliation_snapshot(ReconciliationSna
             return ConnectorResult::ERROR_UNKNOWN;
     }
 
+    const auto trades_resp =
+        http::post(api_url() + "/0/private/TradesHistory", "", auth_headers(""));
+    if (trades_resp.ok()) {
+        const auto trades_json = nlohmann::json::parse(trades_resp.body, nullptr, false);
+        const auto& trades = trades_json["result"]["trades"];
+        if (!trades.is_object())
+            return ConnectorResult::ERROR_UNKNOWN;
+
+        for (auto it = trades.begin(); it != trades.end(); ++it) {
+            const auto& item = it.value();
+            ReconciledFill fill;
+            fill.exchange = Exchange::KRAKEN;
+            copy_cstr(fill.venue_trade_id, sizeof(fill.venue_trade_id), it.key());
+            copy_cstr(fill.venue_order_id, sizeof(fill.venue_order_id),
+                      item.value("ordertxid", std::string("")));
+            copy_cstr(fill.symbol, sizeof(fill.symbol), item.value("pair", std::string("")));
+            fill.side = item.value("type", std::string("buy")) == "sell" ? Side::ASK : Side::BID;
+            fill.quantity = item.value("vol", 0.0);
+            fill.price = item.value("price", 0.0);
+            fill.notional = item.value("cost", fill.quantity * fill.price);
+            fill.fee = item.value("fee", 0.0);
+            copy_cstr(fill.fee_asset, sizeof(fill.fee_asset),
+                      item.value("fee_ccy", std::string("")));
+            fill.exchange_ts_ns = static_cast<int64_t>(item.value("time", 0.0) * 1000000000.0);
+            if (!snapshot.fills.push(fill))
+                return ConnectorResult::ERROR_UNKNOWN;
+        }
+    }
+
     return ConnectorResult::OK;
 }
 

@@ -6,6 +6,7 @@
 #include "../../common/json.hpp"
 #endif
 
+#include <cmath>
 #include <string>
 
 namespace trading {
@@ -200,6 +201,34 @@ ConnectorResult OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapsh
         position.avg_entry_price = item.value("avgPx", 0.0);
         if (!snapshot.positions.push(position))
             return ConnectorResult::ERROR_UNKNOWN;
+    }
+
+    const auto fills_resp =
+        http::get(api_url() + "/api/v5/trade/fills", auth_headers("trade/fills"));
+    if (fills_resp.ok()) {
+        const auto fills_json = nlohmann::json::parse(fills_resp.body, nullptr, false);
+        const auto& fills = fills_json["data"];
+        if (!fills.is_array())
+            return ConnectorResult::ERROR_UNKNOWN;
+
+        for (const auto& item : fills) {
+            ReconciledFill fill;
+            fill.exchange = Exchange::OKX;
+            copy_cstr(fill.venue_trade_id, sizeof(fill.venue_trade_id),
+                      item.value("tradeId", std::string("")));
+            copy_cstr(fill.venue_order_id, sizeof(fill.venue_order_id),
+                      item.value("ordId", std::string("")));
+            copy_cstr(fill.symbol, sizeof(fill.symbol), item.value("instId", std::string("")));
+            fill.side = item.value("side", std::string("buy")) == "sell" ? Side::ASK : Side::BID;
+            fill.quantity = item.value("fillSz", 0.0);
+            fill.price = item.value("fillPx", 0.0);
+            fill.notional = fill.quantity * fill.price;
+            fill.fee = std::fabs(item.value("fee", 0.0));
+            copy_cstr(fill.fee_asset, sizeof(fill.fee_asset), item.value("feeCcy", std::string("")));
+            fill.exchange_ts_ns = item.value("ts", static_cast<int64_t>(0)) * 1000000;
+            if (!snapshot.fills.push(fill))
+                return ConnectorResult::ERROR_UNKNOWN;
+        }
     }
 
     return ConnectorResult::OK;
