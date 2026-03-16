@@ -103,15 +103,17 @@ class LiveConnectorBase : public ExchangeConnector {
             replace_state.state == JournalState::ACKED)
             return ConnectorResult::ERROR_INVALID_ORDER;
 
-        const VenueOrderEntry* mapped = order_map_.get(client_order_id);
-        if (!mapped)
-            return ConnectorResult::ERROR_INVALID_ORDER;
-
         const JournalDecision decision = journal_.begin(JournalOperation::CANCEL, client_order_id);
         if (decision.already_acked())
             return ConnectorResult::OK;
         if (!decision.should_send_to_venue())
             return ConnectorResult::ERROR_UNKNOWN;
+
+        const VenueOrderEntry* mapped = order_map_.get(client_order_id);
+        if (!mapped) {
+            journal_.fail(JournalOperation::CANCEL, client_order_id);
+            return ConnectorResult::ERROR_INVALID_ORDER;
+        }
 
         const ConnectorResult result = with_retries([&]() { return cancel_at_venue(*mapped); });
 
