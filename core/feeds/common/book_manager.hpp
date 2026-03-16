@@ -1,8 +1,8 @@
 #pragma once
 
 #include "../../common/types.hpp"
-#include "../../orderbook/orderbook.hpp"
 #include "../../ipc/lob_publisher.hpp"
+#include "../../orderbook/orderbook.hpp"
 #include <atomic>
 #include <chrono>
 #include <functional>

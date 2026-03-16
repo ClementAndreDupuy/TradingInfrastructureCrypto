@@ -57,6 +57,7 @@ from .pipeline import (
     _fetch_kraken_l5,
     _fetch_okx_l5,
     _fetch_solana_l5,
+    _collect_l5_ticks_rest,
     collect_from_core_bridge,
 )
 from .core_bridge import CoreBridge
@@ -176,7 +177,12 @@ class NeuralAlphaShadowSession:
         print(f"Collecting {n_ticks} ticks for in-place training...")
         df = collect_from_core_bridge(n_ticks=n_ticks, interval_ms=self.cfg.interval_ms)
         if df is None or len(df) == 0:
-            raise RuntimeError("No data collected from core bridge for training.")
+            print("[WARN] core bridge unavailable for training; falling back to REST collectors")
+            df = _collect_l5_ticks_rest(
+                n_ticks=n_ticks,
+                interval_ms=self.cfg.interval_ms,
+                exchanges=self.cfg.exchanges,
+            )
 
         tcfg = TrainerConfig(
             epochs=self.cfg.train_epochs,

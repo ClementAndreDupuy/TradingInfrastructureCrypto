@@ -32,7 +32,7 @@ struct CliOptions {
     std::string mode = "live";
     std::string venues = "BINANCE,KRAKEN,OKX,COINBASE";
     std::string symbol = "BTCUSDT";
-    int loop_interval_ms = 100;
+    int loop_interval_ms = 500;
 };
 
 CliOptions parse_args(int argc, char** argv) {
@@ -215,7 +215,7 @@ int main(int argc, char** argv) {
     const auto reconnect_interval = std::chrono::seconds(1);
     const auto reconciliation_interval = std::chrono::seconds(30);
     const auto loop_interval =
-        std::chrono::milliseconds(opts.loop_interval_ms > 0 ? opts.loop_interval_ms : 100);
+        std::chrono::milliseconds(opts.loop_interval_ms > 0 ? opts.loop_interval_ms : 500);
     auto next_reconnect = std::chrono::steady_clock::now() + reconnect_interval;
     auto next_reconciliation = std::chrono::steady_clock::now() + reconciliation_interval;
 
