@@ -16,7 +16,7 @@
 - [x] **H2** `core/shadow/shadow_engine.hpp` — Extended shadow simulator realism with queue-position decay, partial fills, deterministic latency + slippage modeling, and venue-specific fee modeling for OKX/Coinbase; added dedicated `shadow_engine_test` unit coverage and build-script test wiring
 - [x] **H3** `core/execution/smart_order_router.cpp` — Upgraded SOR objective to include fill probability, queue priority, adverse-selection/toxicity signals, and dynamic regime adaptation
 - [ ] **H4** `deploy/` + monitoring stack — Define production SLOs/error budgets and wire hard alerts for feed integrity, reject spikes, reconciliation drift, and risk trigger frequency
-- [ ] **H5** `tests/` + CI — Add sanitizer/race-test matrix (ASan/UBSan/TSan where applicable) and deterministic connector failure-injection suites
+- [x] **H5** `tests/` + CI — Added sanitizer/race-test matrix (ASan/UBSan + TSan) in CI and deterministic connector failure-injection suites across Binance/Kraken/OKX/Coinbase
 
 ### MEDIUM
 - [ ] **M1** `core/orderbook/orderbook.hpp` — Add dynamic/recentering grid strategy or adaptive bands to avoid prolonged out-of-grid degradation during volatile regimes
