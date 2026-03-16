@@ -19,7 +19,7 @@
 - [x] **H5** `tests/` + CI — Added sanitizer/race-test matrix (ASan/UBSan + TSan) in CI and deterministic connector failure-injection suites across Binance/Kraken/OKX/Coinbase
 
 ### MEDIUM
-- [ ] **M1** `core/orderbook/orderbook.hpp` — Add dynamic/recentering grid strategy or adaptive bands to avoid prolonged out-of-grid degradation during volatile regimes
+- [x] **M1** `core/orderbook/orderbook.hpp` — Added adaptive order book recentering strategy with streak + hard-breach triggers, preserving in-range liquidity while re-anchoring grid during volatile out-of-range regimes; covered by dedicated unit tests
 - [ ] **M2** `core/feeds/` + `tests/replay/` — Build feed-certification replay harness with venue-specific pathological scenarios and acceptance thresholds
 - [ ] **M3** `research/alpha/neural_alpha/` + deploy — Add model governance: champion/challenger registry, automatic rollback policy, and drift-triggered safe mode
 
