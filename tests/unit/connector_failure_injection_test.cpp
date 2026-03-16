@@ -20,7 +20,9 @@ class ScopedMockTransport {
     ~ScopedMockTransport() { http::clear_mock_transport(); }
 };
 
-bool contains(const std::string& s, const char* token) { return s.find(token) != std::string::npos; }
+bool contains(const std::string& s, const char* token) {
+    return s.find(token) != std::string::npos;
+}
 
 bool is_submit_request(const char* method, const std::string& url) {
     return std::strcmp(method, "POST") == 0 &&
@@ -122,15 +124,15 @@ void run_operation_state_invariant_suite(Connector& c, Exchange exchange, const 
 
     {
         int attempts = 0;
-        ScopedMockTransport transport(
-            [&](const char* method, const std::string& url, const std::string& body,
-                const std::vector<std::string>&) {
-                if (is_cancel_request(method, url, body)) {
-                    ++attempts;
-                    return http::HttpResponse{500, "{}"};
-                }
-                return http::HttpResponse{404, ""};
-            });
+        ScopedMockTransport transport([&](const char* method, const std::string& url,
+                                          const std::string& body,
+                                          const std::vector<std::string>&) {
+            if (is_cancel_request(method, url, body)) {
+                ++attempts;
+                return http::HttpResponse{500, "{}"};
+            }
+            return http::HttpResponse{404, ""};
+        });
 
         EXPECT_EQ(c.cancel_order(current_id), ConnectorResult::ERROR_REST_FAILURE);
         EXPECT_EQ(attempts, 3);
