@@ -59,7 +59,9 @@ http::HttpResponse binance_snapshot_response(const char* method, const std::stri
     if (contains(url, "/account"))
         return {200, R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
     if (contains(url, "myTrades"))
-        return {200, R"([{"id":901,"orderId":101,"symbol":"BTCUSDT","isBuyer":true,"qty":0.2,"price":100.0,"commission":0.0001,"commissionAsset":"BTC","time":1700000000000}])"};
+        return {
+            200,
+            R"([{"id":901,"orderId":101,"symbol":"BTCUSDT","isBuyer":true,"qty":0.2,"price":100.0,"commission":0.0001,"commissionAsset":"BTC","time":1700000000000}])"};
     return {404, ""};
 }
 
@@ -73,7 +75,9 @@ http::HttpResponse kraken_snapshot_response(const char* method, const std::strin
     if (contains(url, "Balance"))
         return {200, R"({"result":{"XXBT":2.5}})"};
     if (contains(url, "TradesHistory"))
-        return {200, R"({"result":{"trades":{"tr-1":{"ordertxid":"kr-1","pair":"XBTUSD","type":"buy","vol":0.1,"price":100.5,"cost":10.05,"fee":0.01,"fee_ccy":"USD","time":1700000000.1}}}})"};
+        return {
+            200,
+            R"({"result":{"trades":{"tr-1":{"ordertxid":"kr-1","pair":"XBTUSD","type":"buy","vol":0.1,"price":100.5,"cost":10.05,"fee":0.01,"fee_ccy":"USD","time":1700000000.1}}}})"};
     return {404, ""};
 }
 
@@ -89,7 +93,9 @@ http::HttpResponse okx_snapshot_response(const char* method, const std::string& 
     if (contains(url, "account/positions"))
         return {200, R"({"data":[{"instId":"BTC-USDT-SWAP","pos":1.5,"avgPx":99.5}]})"};
     if (contains(url, "trade/fills"))
-        return {200, R"({"data":[{"tradeId":"ok-tr-1","ordId":"ok-1","instId":"BTC-USDT-SWAP","side":"buy","fillSz":1.0,"fillPx":100.0,"fee":-0.2,"feeCcy":"USDT","ts":1700000000000}]})"};
+        return {
+            200,
+            R"({"data":[{"tradeId":"ok-tr-1","ordId":"ok-1","instId":"BTC-USDT-SWAP","side":"buy","fillSz":1.0,"fillPx":100.0,"fee":-0.2,"feeCcy":"USDT","ts":1700000000000}]})"};
     return {404, ""};
 }
 
@@ -322,7 +328,6 @@ TEST(ReconciliationServiceTest, PeriodicDriftCheckSuccess) {
     EXPECT_GT(state->last_drift_check_ts_ns, 0);
 }
 
-
 TEST(ReconciliationServiceTest, FillGapCheckUsesStableDedupeAndCumulativeLedger) {
     ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
                                      const std::vector<std::string>&) {
@@ -433,6 +438,36 @@ TEST(ReconciliationServiceTest, FillGapMismatchRequestsReplayAndQuarantines) {
     ASSERT_NE(state, nullptr);
     EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::FILL_GAP);
     EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::REQUEST_FILL_REPLAY);
+    EXPECT_EQ(state->fill_replay_requests, 1U);
+}
+
+TEST(ReconciliationServiceTest, SnapshotFetchFailsWhenFillIngestionFails) {
+    ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
+                                     const std::vector<std::string>&) {
+        if (contains(url, "binance.test")) {
+            if (std::strcmp(method, "GET") != 0)
+                return http::HttpResponse{404, ""};
+            if (contains(url, "openOrders")) {
+                return http::HttpResponse{
+                    200,
+                    R"([{"orderId":"bn-1","symbol":"BTCUSDT","side":"BUY","origQty":1.0,"executedQty":0.2,"price":100.0,"status":"NEW"}])"};
+            }
+            if (contains(url, "/account")) {
+                return http::HttpResponse{
+                    200, R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
+            }
+            if (contains(url, "myTrades"))
+                return http::HttpResponse{503, ""};
+        }
+        return http::HttpResponse{404, ""};
+    });
+
+    BinanceConnector binance("k", "s", "https://binance.test");
+    ReconciliationService service;
+    ASSERT_TRUE(service.register_connector(binance));
+
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::ERROR_UNKNOWN);
+    EXPECT_TRUE(service.is_quarantined(Exchange::BINANCE));
 }
 
 } // namespace

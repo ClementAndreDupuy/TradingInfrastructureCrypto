@@ -234,8 +234,8 @@ class ReconciliationService {
                 out.reason = "negative fill values";
                 return out;
             }
-            if (fill.notional > 0.0 &&
-                drift(fill.notional, fill.quantity * fill.price) > thresholds_.max_fill_notional_drift) {
+            if (fill.notional > 0.0 && drift(fill.notional, fill.quantity * fill.price) >
+                                           thresholds_.max_fill_notional_drift) {
                 out.mismatch = true;
                 out.action = DriftAction::QUARANTINE_VENUE;
                 out.reason = "fill notional mismatch";
@@ -302,8 +302,8 @@ class ReconciliationService {
                     thresholds_.max_position_drift ||
                 drift(venue_position->avg_entry_price, internal_position.avg_entry_price) >
                     thresholds_.max_position_drift) {
-                return mismatch(MismatchClass::POSITION_DRIFT,
-                                DriftAction::RISK_HALT_RECOMMENDED, "position_drift");
+                return mismatch(MismatchClass::POSITION_DRIFT, DriftAction::RISK_HALT_RECOMMENDED,
+                                "position_drift");
             }
         }
 
@@ -350,23 +350,25 @@ class ReconciliationService {
     }
 
     static bool fill_same_identity(const FillIdentity& lhs, const FillIdentity& rhs) noexcept {
+        if (lhs.exchange != rhs.exchange)
+            return false;
+
         if (!is_empty_trade_id(lhs.venue_trade_id) && !is_empty_trade_id(rhs.venue_trade_id) &&
             venue_id_eq(lhs.venue_trade_id, rhs.venue_trade_id)) {
             return true;
         }
 
         if (lhs.client_order_id != 0 && rhs.client_order_id != 0 &&
-            lhs.client_order_id == rhs.client_order_id && lhs.exchange_ts_ns == rhs.exchange_ts_ns &&
-            drift(lhs.quantity, rhs.quantity) <= 1e-12 &&
-            drift(lhs.price, rhs.price) <= 1e-12) {
+            lhs.client_order_id == rhs.client_order_id &&
+            lhs.exchange_ts_ns == rhs.exchange_ts_ns &&
+            drift(lhs.quantity, rhs.quantity) <= 1e-12 && drift(lhs.price, rhs.price) <= 1e-12) {
             return true;
         }
 
         if (!is_empty_venue_id(lhs.venue_order_id) && !is_empty_venue_id(rhs.venue_order_id) &&
             venue_id_eq(lhs.venue_order_id, rhs.venue_order_id) &&
             lhs.exchange_ts_ns == rhs.exchange_ts_ns &&
-            drift(lhs.quantity, rhs.quantity) <= 1e-12 &&
-            drift(lhs.price, rhs.price) <= 1e-12) {
+            drift(lhs.quantity, rhs.quantity) <= 1e-12 && drift(lhs.price, rhs.price) <= 1e-12) {
             return true;
         }
 
@@ -410,7 +412,8 @@ class ReconciliationService {
         return nullptr;
     }
 
-    bool build_fill_ledger(const ReconciliationSnapshot& snapshot, FillLedger& ledger) const noexcept {
+    bool build_fill_ledger(const ReconciliationSnapshot& snapshot,
+                           FillLedger& ledger) const noexcept {
         std::array<FillIdentity, MAX_FILL_KEYS> dedupe_keys{};
         size_t dedupe_key_count = 0;
         ledger = {};
@@ -444,7 +447,8 @@ class ReconciliationService {
             dedupe_keys[dedupe_key_count++] = key;
 
             ledger.cum_qty += fill.quantity;
-            const double computed_notional = fill.notional > 0.0 ? fill.notional : fill.quantity * fill.price;
+            const double computed_notional =
+                fill.notional > 0.0 ? fill.notional : fill.quantity * fill.price;
             ledger.cum_notional += computed_notional;
             ledger.cum_fee += fill.fee;
             ++ledger.unique_fill_count;
@@ -457,7 +461,8 @@ class ReconciliationService {
                            const ReconciliationSnapshot& canonical) const noexcept {
         FillLedger venue_ledger;
         FillLedger canonical_ledger;
-        if (!build_fill_ledger(venue, venue_ledger) || !build_fill_ledger(canonical, canonical_ledger))
+        if (!build_fill_ledger(venue, venue_ledger) ||
+            !build_fill_ledger(canonical, canonical_ledger))
             return true;
 
         if (drift(venue_ledger.cum_qty, canonical_ledger.cum_qty) > thresholds_.max_order_fill_gap)
