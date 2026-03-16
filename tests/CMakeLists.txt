@@ -358,3 +358,24 @@ set_tests_properties(ReconciliationServiceTest PROPERTIES
     TIMEOUT 10
     LABELS "unit;execution"
 )
+
+# Shadow engine microstructure realism tests
+add_executable(shadow_engine_test
+    unit/shadow_engine_test.cpp
+)
+
+target_link_libraries(shadow_engine_test
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(shadow_engine_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME ShadowEngineTest COMMAND shadow_engine_test)
+set_tests_properties(ShadowEngineTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;shadow"
+)
