@@ -83,7 +83,7 @@ ConnectorResult CoinbaseConnector::submit_to_venue(const Order& order,
                                                    const std::string& idempotency_key,
                                                    std::string& venue_order_id) {
     const std::string payload = order_payload(order);
-    const auto headers = auth_headers(payload, idempotency_key);
+    const auto headers = auth_headers("POST", "/api/v3/brokerage/orders", payload, idempotency_key);
     const auto resp = http::post(api_url() + "/api/v3/brokerage/orders", payload, headers);
     if (!resp.ok())
         return classify_error(resp.status);
@@ -95,8 +95,9 @@ ConnectorResult CoinbaseConnector::submit_to_venue(const Order& order,
 
 ConnectorResult CoinbaseConnector::cancel_at_venue(const VenueOrderEntry& entry) {
     const std::string payload = std::string("{\"order_ids\":[\"") + entry.venue_order_id + "\"]}";
-    const auto resp = http::post(api_url() + "/api/v3/brokerage/orders/batch_cancel", payload,
-                                 auth_headers(payload));
+    const auto resp =
+        http::post(api_url() + "/api/v3/brokerage/orders/batch_cancel", payload,
+                   auth_headers("POST", "/api/v3/brokerage/orders/batch_cancel", payload));
     if (!resp.ok())
         return classify_error(resp.status);
     return parse_coinbase_cancel_ack(resp.body) ? ConnectorResult::OK
@@ -109,8 +110,8 @@ ConnectorResult CoinbaseConnector::replace_at_venue(const VenueOrderEntry& entry
     const std::string payload = std::string("{\"order_id\":\"") + entry.venue_order_id +
                                 "\",\"size\":\"" + std::to_string(replacement.quantity) +
                                 "\",\"limit_price\":\"" + std::to_string(replacement.price) + "\"}";
-    const auto resp =
-        http::post(api_url() + "/api/v3/brokerage/orders/edit", payload, auth_headers(payload));
+    const auto resp = http::post(api_url() + "/api/v3/brokerage/orders/edit", payload,
+                                 auth_headers("POST", "/api/v3/brokerage/orders/edit", payload));
     if (!resp.ok())
         return classify_error(resp.status);
     return parse_coinbase_order_id(resp.body, new_venue_order_id) ? ConnectorResult::OK
@@ -119,9 +120,10 @@ ConnectorResult CoinbaseConnector::replace_at_venue(const VenueOrderEntry& entry
 
 ConnectorResult CoinbaseConnector::query_at_venue(const VenueOrderEntry& entry,
                                                   FillUpdate& status) {
-    const auto resp = http::get(api_url() + "/api/v3/brokerage/orders/historical/" +
-                                    std::string(entry.venue_order_id),
-                                auth_headers(entry.venue_order_id));
+    const auto resp = http::get(
+        api_url() + "/api/v3/brokerage/orders/historical/" + std::string(entry.venue_order_id),
+        auth_headers(
+            "GET", std::string("/api/v3/brokerage/orders/historical/") + entry.venue_order_id, ""));
     if (!resp.ok())
         return classify_error(resp.status);
     return parse_coinbase_query(resp.body, status) ? ConnectorResult::OK
@@ -130,8 +132,9 @@ ConnectorResult CoinbaseConnector::query_at_venue(const VenueOrderEntry& entry,
 
 ConnectorResult CoinbaseConnector::cancel_all_at_venue(const char* symbol) {
     const std::string payload = std::string("{\"product_id\":\"") + (symbol ? symbol : "") + "\"}";
-    const auto resp = http::post(api_url() + "/api/v3/brokerage/orders/batch_cancel", payload,
-                                 auth_headers(payload));
+    const auto resp =
+        http::post(api_url() + "/api/v3/brokerage/orders/batch_cancel", payload,
+                   auth_headers("POST", "/api/v3/brokerage/orders/batch_cancel", payload));
     if (!resp.ok())
         return classify_error(resp.status);
     return parse_coinbase_cancel_ack(resp.body) ? ConnectorResult::OK
@@ -145,8 +148,9 @@ namespace trading {
 ConnectorResult CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot) {
     snapshot.clear();
 
-    const auto open_orders = http::get(api_url() + "/api/v3/brokerage/orders/historical/batch",
-                                       auth_headers("historical_batch"));
+    const auto open_orders =
+        http::get(api_url() + "/api/v3/brokerage/orders/historical/batch",
+                  auth_headers("GET", "/api/v3/brokerage/orders/historical/batch", ""));
     if (!open_orders.ok())
         return classify_error(open_orders.status);
 
@@ -169,8 +173,8 @@ ConnectorResult CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationS
             return ConnectorResult::ERROR_UNKNOWN;
     }
 
-    const auto account_resp =
-        http::get(api_url() + "/api/v3/brokerage/accounts", auth_headers("accounts"));
+    const auto account_resp = http::get(api_url() + "/api/v3/brokerage/accounts",
+                                        auth_headers("GET", "/api/v3/brokerage/accounts", ""));
     if (!account_resp.ok())
         return classify_error(account_resp.status);
 
@@ -189,8 +193,8 @@ ConnectorResult CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationS
             return ConnectorResult::ERROR_UNKNOWN;
     }
 
-    const auto pos_resp =
-        http::get(api_url() + "/api/v3/brokerage/positions", auth_headers("positions"));
+    const auto pos_resp = http::get(api_url() + "/api/v3/brokerage/positions",
+                                    auth_headers("GET", "/api/v3/brokerage/positions", ""));
     if (!pos_resp.ok())
         return classify_error(pos_resp.status);
 
@@ -210,7 +214,8 @@ ConnectorResult CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationS
     }
 
     const auto fills_resp =
-        http::get(api_url() + "/api/v3/brokerage/orders/historical/fills", auth_headers("fills"));
+        http::get(api_url() + "/api/v3/brokerage/orders/historical/fills",
+                  auth_headers("GET", "/api/v3/brokerage/orders/historical/fills", ""));
     if (fills_resp.status == 404 || fills_resp.status == 405 || fills_resp.status == 501)
         return ConnectorResult::OK;
     if (!fills_resp.ok())

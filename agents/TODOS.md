@@ -1,7 +1,7 @@
 ## TODO List
 
 ### CRITICAL
-- [ ] **C1** `core/execution/live_connector_base.hpp` + venue connectors — Replace generic auth/signature flow with exchange-spec canonical signing, remove non-cryptographic signature fallback in live path, and enforce hard-fail when cryptographic backend is unavailable
+- [x] **C1** `core/execution/live_connector_base.hpp` + venue connectors — Replaced generic auth flow with exchange-specific canonical signing (Binance/Kraken/OKX/Coinbase), removed non-cryptographic signature fallback from live path, and hard-fail connector `connect()` when OpenSSL backend is unavailable
 - [x] **C2** `core/execution/*_connector.cpp` — Implement authenticated cancel/replace/query endpoints with strict response parsing; stop using synthetic venue order IDs and persist real exchange IDs *(submit/cancel/replace/query now implemented with strict parsing and real venue IDs persisted in `VenueOrderMap`)*
 - [x] **C3** `core/execution/` — deliver production reconciliation for open orders/fills/balances/positions against internal canonical state with deterministic mismatch classification and actions; reconnect + periodic loops share one reconciliation engine in `ReconciliationService`
   - acceptance: deterministic state diff between venue snapshots and `OrderManager` + internal ledgers

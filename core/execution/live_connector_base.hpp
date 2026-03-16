@@ -20,6 +20,7 @@
 #if __has_include(<openssl/hmac.h>) && __has_include(<openssl/evp.h>)
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
+#include <openssl/sha.h>
 #define TRT_HAS_OPENSSL 1
 #else
 #define TRT_HAS_OPENSSL 0
@@ -46,6 +47,12 @@ class LiveConnectorBase : public ExchangeConnector {
     bool is_connected() const override { return connected_.load(std::memory_order_acquire); }
 
     ConnectorResult connect() override {
+#if !TRT_HAS_OPENSSL
+        LOG_ERROR("OpenSSL backend unavailable for live connector", "exchange",
+                  exchange_to_string(exchange_));
+        connected_.store(false, std::memory_order_release);
+        return ConnectorResult::AUTH_FAILED;
+#endif
         connected_.store(true, std::memory_order_release);
         return ConnectorResult::OK;
     }
@@ -142,16 +149,50 @@ class LiveConnectorBase : public ExchangeConnector {
                exchange_to_string(exchange_);
     }
 
-    std::vector<std::string> auth_headers(const std::string& payload,
+    std::vector<std::string> auth_headers(const char* method, const std::string& request_path,
+                                          const std::string& payload,
                                           const std::string& idempotency_key = "") const {
         const int64_t ts_ms = http::now_ms();
-        const std::string ts = std::to_string(ts_ms);
-        const std::string signature = sign_payload(ts + payload);
-        std::vector<std::string> headers = {"X-API-KEY: " + api_key_, "X-TS: " + ts,
-                                            "X-SIGN: " + signature,
-                                            "Content-Type: application/json"};
-        if (!idempotency_key.empty())
+        const std::string ts_ms_s = std::to_string(ts_ms);
+        const std::string ts_s = std::to_string(static_cast<double>(ts_ms) / 1000.0);
+
+        std::vector<std::string> headers = {"Content-Type: application/json"};
+        if (!idempotency_key.empty()) {
             headers.push_back("X-IDEMPOTENCY-KEY: " + idempotency_key);
+        }
+
+        switch (exchange_) {
+        case Exchange::BINANCE: {
+            const std::string prehash = ts_ms_s + method + request_path + payload;
+            headers.push_back("X-MBX-APIKEY: " + api_key_);
+            headers.push_back("X-MBX-TIMESTAMP: " + ts_ms_s);
+            headers.push_back("X-MBX-SIGNATURE: " + hmac_sha256_hex(prehash));
+            break;
+        }
+        case Exchange::KRAKEN: {
+            const std::string prehash = request_path + sha256_hex(ts_ms_s + payload);
+            headers.push_back("API-Key: " + api_key_);
+            headers.push_back("API-Nonce: " + ts_ms_s);
+            headers.push_back("API-Sign: " + hmac_sha512_base64(prehash));
+            break;
+        }
+        case Exchange::OKX: {
+            const std::string prehash = ts_s + method + request_path + payload;
+            headers.push_back("OK-ACCESS-KEY: " + api_key_);
+            headers.push_back("OK-ACCESS-TIMESTAMP: " + ts_s);
+            headers.push_back("OK-ACCESS-SIGN: " + hmac_sha256_base64(prehash));
+            break;
+        }
+        case Exchange::COINBASE: {
+            const std::string prehash = ts_s + method + request_path + payload;
+            headers.push_back("CB-ACCESS-KEY: " + api_key_);
+            headers.push_back("CB-ACCESS-TIMESTAMP: " + ts_s);
+            headers.push_back("CB-ACCESS-SIGN: " + hmac_sha256_base64(prehash));
+            break;
+        }
+        default:
+            break;
+        }
         return headers;
     }
 
@@ -171,7 +212,7 @@ class LiveConnectorBase : public ExchangeConnector {
         return ConnectorResult::ERROR_UNKNOWN;
     }
 
-    std::string sign_payload(const std::string& payload) const {
+    std::string hmac_sha256_hex(const std::string& payload) const {
 #if TRT_HAS_OPENSSL
         unsigned char digest[EVP_MAX_MD_SIZE] = {};
         unsigned int digest_len = 0;
@@ -188,8 +229,67 @@ class LiveConnectorBase : public ExchangeConnector {
         }
         return out;
 #else
-        const size_t h = std::hash<std::string>{}(api_secret_ + payload);
-        return std::to_string(static_cast<unsigned long long>(h));
+        (void)payload;
+        return std::string();
+#endif
+    }
+
+    std::string hmac_sha256_base64(const std::string& payload) const {
+#if TRT_HAS_OPENSSL
+        unsigned char digest[EVP_MAX_MD_SIZE] = {};
+        unsigned int digest_len = 0;
+        HMAC(EVP_sha256(), api_secret_.data(), static_cast<int>(api_secret_.size()),
+             reinterpret_cast<const unsigned char*>(payload.data()), payload.size(), digest,
+             &digest_len);
+
+        std::string out;
+        out.resize((digest_len + 2) / 3 * 4);
+        const int out_len = EVP_EncodeBlock(reinterpret_cast<unsigned char*>(&out[0]), digest,
+                                            static_cast<int>(digest_len));
+        out.resize(static_cast<size_t>(out_len));
+        return out;
+#else
+        (void)payload;
+        return std::string();
+#endif
+    }
+
+    std::string hmac_sha512_base64(const std::string& payload) const {
+#if TRT_HAS_OPENSSL
+        unsigned char digest[EVP_MAX_MD_SIZE] = {};
+        unsigned int digest_len = 0;
+        HMAC(EVP_sha512(), api_secret_.data(), static_cast<int>(api_secret_.size()),
+             reinterpret_cast<const unsigned char*>(payload.data()), payload.size(), digest,
+             &digest_len);
+
+        std::string out;
+        out.resize((digest_len + 2) / 3 * 4);
+        const int out_len = EVP_EncodeBlock(reinterpret_cast<unsigned char*>(&out[0]), digest,
+                                            static_cast<int>(digest_len));
+        out.resize(static_cast<size_t>(out_len));
+        return out;
+#else
+        (void)payload;
+        return std::string();
+#endif
+    }
+
+    std::string sha256_hex(const std::string& payload) const {
+#if TRT_HAS_OPENSSL
+        unsigned char digest[SHA256_DIGEST_LENGTH] = {};
+        SHA256(reinterpret_cast<const unsigned char*>(payload.data()), payload.size(), digest);
+
+        static const char* hex = "0123456789abcdef";
+        std::string out;
+        out.resize(SHA256_DIGEST_LENGTH * 2);
+        for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
+            out[2 * i] = hex[(digest[i] >> 4) & 0xF];
+            out[2 * i + 1] = hex[digest[i] & 0xF];
+        }
+        return out;
+#else
+        (void)payload;
+        return std::string();
 #endif
     }
 

@@ -91,7 +91,7 @@ ConnectorResult BinanceConnector::submit_to_venue(const Order& order,
                                                   const std::string& idempotency_key,
                                                   std::string& venue_order_id) {
     const std::string payload = order_payload(order);
-    const auto headers = auth_headers(payload, idempotency_key);
+    const auto headers = auth_headers("POST", "/api/v3/order", payload, idempotency_key);
     const auto resp = http::post(api_url() + "/api/v3/order", payload, headers);
     if (!resp.ok())
         return classify_error(resp.status);
@@ -102,9 +102,9 @@ ConnectorResult BinanceConnector::submit_to_venue(const Order& order,
 }
 
 ConnectorResult BinanceConnector::cancel_at_venue(const VenueOrderEntry& entry) {
-    const auto resp =
-        http::del(api_url() + "/api/v3/order?orderId=" + std::string(entry.venue_order_id),
-                  auth_headers(std::string("orderId=") + entry.venue_order_id));
+    const auto resp = http::del(
+        api_url() + "/api/v3/order?orderId=" + std::string(entry.venue_order_id),
+        auth_headers("DELETE", std::string("/api/v3/order?orderId=") + entry.venue_order_id, ""));
     if (!resp.ok())
         return classify_error(resp.status);
     return parse_binance_cancel_ack(resp.body) ? ConnectorResult::OK
@@ -115,9 +115,9 @@ ConnectorResult BinanceConnector::replace_at_venue(const VenueOrderEntry& entry,
                                                    const Order& replacement,
                                                    std::string& new_venue_order_id) {
     const std::string payload = order_payload(replacement);
-    const auto resp =
-        http::put(api_url() + "/api/v3/order?orderId=" + std::string(entry.venue_order_id), payload,
-                  auth_headers(payload));
+    const auto resp = http::put(
+        api_url() + "/api/v3/order?orderId=" + std::string(entry.venue_order_id), payload,
+        auth_headers("PUT", std::string("/api/v3/order?orderId=") + entry.venue_order_id, payload));
     if (!resp.ok())
         return classify_error(resp.status);
 
@@ -127,9 +127,9 @@ ConnectorResult BinanceConnector::replace_at_venue(const VenueOrderEntry& entry,
 }
 
 ConnectorResult BinanceConnector::query_at_venue(const VenueOrderEntry& entry, FillUpdate& status) {
-    const auto resp =
-        http::get(api_url() + "/api/v3/order?orderId=" + std::string(entry.venue_order_id),
-                  auth_headers(std::string("orderId=") + entry.venue_order_id));
+    const auto resp = http::get(
+        api_url() + "/api/v3/order?orderId=" + std::string(entry.venue_order_id),
+        auth_headers("GET", std::string("/api/v3/order?orderId=") + entry.venue_order_id, ""));
     if (!resp.ok())
         return classify_error(resp.status);
     return parse_binance_query(resp.body, status) ? ConnectorResult::OK
@@ -137,9 +137,10 @@ ConnectorResult BinanceConnector::query_at_venue(const VenueOrderEntry& entry, F
 }
 
 ConnectorResult BinanceConnector::cancel_all_at_venue(const char* symbol) {
-    const auto resp =
-        http::del(api_url() + "/api/v3/openOrders?symbol=" + std::string(symbol ? symbol : ""),
-                  auth_headers(std::string("symbol=") + (symbol ? symbol : "")));
+    const auto resp = http::del(
+        api_url() + "/api/v3/openOrders?symbol=" + std::string(symbol ? symbol : ""),
+        auth_headers("DELETE", std::string("/api/v3/openOrders?symbol=") + (symbol ? symbol : ""),
+                     ""));
     if (!resp.ok())
         return classify_error(resp.status);
     const auto j = nlohmann::json::parse(resp.body, nullptr, false);
@@ -155,7 +156,7 @@ ConnectorResult BinanceConnector::fetch_reconciliation_snapshot(ReconciliationSn
     snapshot.clear();
 
     const auto open_orders =
-        http::get(api_url() + "/api/v3/openOrders", auth_headers("openOrders"));
+        http::get(api_url() + "/api/v3/openOrders", auth_headers("GET", "/api/v3/openOrders", ""));
     if (!open_orders.ok())
         return classify_error(open_orders.status);
 
@@ -178,7 +179,8 @@ ConnectorResult BinanceConnector::fetch_reconciliation_snapshot(ReconciliationSn
             return ConnectorResult::ERROR_UNKNOWN;
     }
 
-    const auto account = http::get(api_url() + "/api/v3/account", auth_headers("account"));
+    const auto account =
+        http::get(api_url() + "/api/v3/account", auth_headers("GET", "/api/v3/account", ""));
     if (!account.ok())
         return classify_error(account.status);
 
@@ -196,8 +198,8 @@ ConnectorResult BinanceConnector::fetch_reconciliation_snapshot(ReconciliationSn
             return ConnectorResult::ERROR_UNKNOWN;
     }
 
-    const auto trades =
-        http::get(api_url() + "/api/v3/myTrades", auth_headers("myTrades", "recon-trades"));
+    const auto trades = http::get(api_url() + "/api/v3/myTrades",
+                                  auth_headers("GET", "/api/v3/myTrades", "", "recon-trades"));
     if (trades.status == 404 || trades.status == 405 || trades.status == 501)
         return ConnectorResult::OK;
     if (!trades.ok())
