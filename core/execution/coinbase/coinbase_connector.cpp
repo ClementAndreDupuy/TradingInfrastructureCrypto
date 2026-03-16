@@ -205,6 +205,38 @@ ConnectorResult CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationS
             return ConnectorResult::ERROR_UNKNOWN;
     }
 
+    const auto fills_resp =
+        http::get(api_url() + "/api/v3/brokerage/orders/historical/fills", auth_headers("fills"));
+    if (fills_resp.status == 404 || fills_resp.status == 405 || fills_resp.status == 501)
+        return ConnectorResult::OK;
+    if (!fills_resp.ok())
+        return classify_error(fills_resp.status);
+
+    const auto fills_json = nlohmann::json::parse(fills_resp.body, nullptr, false);
+    const auto& fills = fills_json["fills"];
+    if (!fills.is_array())
+        return ConnectorResult::ERROR_UNKNOWN;
+
+    for (const auto& item : fills) {
+        ReconciledFill fill;
+        fill.exchange = Exchange::COINBASE;
+        copy_cstr(fill.venue_trade_id, sizeof(fill.venue_trade_id),
+                  item.value("trade_id", std::string("")));
+        copy_cstr(fill.venue_order_id, sizeof(fill.venue_order_id),
+                  item.value("order_id", std::string("")));
+        copy_cstr(fill.symbol, sizeof(fill.symbol), item.value("product_id", std::string("")));
+        fill.side = item.value("side", std::string("BUY")) == "SELL" ? Side::ASK : Side::BID;
+        fill.quantity = item.value("size", 0.0);
+        fill.price = item.value("price", 0.0);
+        fill.notional = fill.quantity * fill.price;
+        fill.fee = item.value("commission", 0.0);
+        copy_cstr(fill.fee_asset, sizeof(fill.fee_asset),
+                  item.value("commission_currency", std::string("")));
+        fill.exchange_ts_ns = item.value("trade_time_ns", static_cast<int64_t>(0));
+        if (!snapshot.fills.push(fill))
+            return ConnectorResult::ERROR_UNKNOWN;
+    }
+
     return ConnectorResult::OK;
 }
 

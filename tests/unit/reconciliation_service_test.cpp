@@ -58,6 +58,10 @@ http::HttpResponse binance_snapshot_response(const char* method, const std::stri
             R"([{"orderId":"bn-1","symbol":"BTCUSDT","side":"BUY","origQty":1.0,"executedQty":0.2,"price":100.0,"status":"NEW"}])"};
     if (contains(url, "/account"))
         return {200, R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
+    if (contains(url, "myTrades"))
+        return {
+            200,
+            R"([{"id":901,"orderId":101,"symbol":"BTCUSDT","isBuyer":true,"qty":0.2,"price":100.0,"commission":0.0001,"commissionAsset":"BTC","time":1700000000000}])"};
     return {404, ""};
 }
 
@@ -70,6 +74,10 @@ http::HttpResponse kraken_snapshot_response(const char* method, const std::strin
             R"({"result":{"open":{"kr-1":{"status":"open","vol":1.2,"vol_exec":0.1,"descr":{"pair":"XBTUSD","type":"buy","price":100.5}}}}})"};
     if (contains(url, "Balance"))
         return {200, R"({"result":{"XXBT":2.5}})"};
+    if (contains(url, "TradesHistory"))
+        return {
+            200,
+            R"({"result":{"trades":{"tr-1":{"ordertxid":"kr-1","pair":"XBTUSD","type":"buy","vol":0.1,"price":100.5,"cost":10.05,"fee":0.01,"fee_ccy":"USD","time":1700000000.1}}}})"};
     return {404, ""};
 }
 
@@ -84,6 +92,10 @@ http::HttpResponse okx_snapshot_response(const char* method, const std::string& 
         return {200, R"({"data":[{"details":[{"ccy":"USDT","eq":1000.0,"availEq":900.0}]}]})"};
     if (contains(url, "account/positions"))
         return {200, R"({"data":[{"instId":"BTC-USDT-SWAP","pos":1.5,"avgPx":99.5}]})"};
+    if (contains(url, "trade/fills"))
+        return {
+            200,
+            R"({"data":[{"tradeId":"ok-tr-1","ordId":"ok-1","instId":"BTC-USDT-SWAP","side":"buy","fillSz":1.0,"fillPx":100.0,"fee":-0.2,"feeCcy":"USDT","ts":1700000000000}]})"};
     return {404, ""};
 }
 
@@ -102,6 +114,10 @@ http::HttpResponse coinbase_snapshot_response(const char* method, const std::str
         return {
             200,
             R"({"positions":[{"product_id":"BTC-USD","size":0.6,"average_entry_price":98.0}]})"};
+    if (contains(url, "historical/fills"))
+        return {
+            200,
+            R"({"fills":[{"trade_id":"cb-tr-1","order_id":"cb-1","product_id":"BTC-USD","side":"BUY","size":0.4,"price":100.0,"commission":0.12,"commission_currency":"USD","trade_time_ns":1700000000000000000}]})"};
     return {404, ""};
 }
 
@@ -128,20 +144,24 @@ TEST(ReconciliationServiceTest, FetchSnapshotForAllConnectors) {
     EXPECT_EQ(binance.fetch_reconciliation_snapshot(snapshot), ConnectorResult::OK);
     EXPECT_EQ(snapshot.open_orders.size, 1U);
     EXPECT_EQ(snapshot.balances.size, 1U);
+    EXPECT_EQ(snapshot.fills.size, 1U);
 
     EXPECT_EQ(kraken.fetch_reconciliation_snapshot(snapshot), ConnectorResult::OK);
     EXPECT_EQ(snapshot.open_orders.size, 1U);
     EXPECT_EQ(snapshot.balances.size, 1U);
+    EXPECT_EQ(snapshot.fills.size, 1U);
 
     EXPECT_EQ(okx.fetch_reconciliation_snapshot(snapshot), ConnectorResult::OK);
     EXPECT_EQ(snapshot.open_orders.size, 1U);
     EXPECT_EQ(snapshot.balances.size, 1U);
     EXPECT_EQ(snapshot.positions.size, 1U);
+    EXPECT_EQ(snapshot.fills.size, 1U);
 
     EXPECT_EQ(coinbase.fetch_reconciliation_snapshot(snapshot), ConnectorResult::OK);
     EXPECT_EQ(snapshot.open_orders.size, 1U);
     EXPECT_EQ(snapshot.balances.size, 1U);
     EXPECT_EQ(snapshot.positions.size, 1U);
+    EXPECT_EQ(snapshot.fills.size, 1U);
 }
 
 TEST(ReconciliationServiceTest, QuarantinesVenueOnDriftMismatch) {
@@ -306,6 +326,177 @@ TEST(ReconciliationServiceTest, PeriodicDriftCheckSuccess) {
     ASSERT_NE(state, nullptr);
     EXPECT_GT(state->last_reconcile_ts_ns, 0);
     EXPECT_GT(state->last_drift_check_ts_ns, 0);
+}
+
+TEST(ReconciliationServiceTest, FillGapCheckUsesStableDedupeAndCumulativeLedger) {
+    ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
+                                     const std::vector<std::string>&) {
+        if (contains(url, "binance.test"))
+            return binance_snapshot_response(method, url);
+        return http::HttpResponse{404, ""};
+    });
+
+    ReconciliationService::DriftThresholds thresholds;
+    thresholds.max_order_fill_gap = 1e-9;
+    thresholds.max_fill_notional_drift = 1e-9;
+    thresholds.max_fill_fee_drift = 1e-9;
+
+    BinanceConnector binance("k", "s", "https://binance.test");
+    ReconciliationService service(thresholds);
+    ASSERT_TRUE(service.register_connector(binance));
+
+    ReconciliationSnapshot canonical;
+
+    ReconciledOrder order;
+    order.client_order_id = 101;
+    std::strncpy(order.venue_order_id, "101", sizeof(order.venue_order_id) - 1);
+    std::strncpy(order.symbol, "BTCUSDT", sizeof(order.symbol) - 1);
+    order.quantity = 1.0;
+    order.filled_quantity = 0.2;
+    ASSERT_TRUE(canonical.open_orders.push(order));
+
+    ReconciledBalance balance;
+    std::strncpy(balance.asset, "BTC", sizeof(balance.asset) - 1);
+    balance.total = 1.1;
+    balance.available = 1.0;
+    ASSERT_TRUE(canonical.balances.push(balance));
+
+    ReconciledFill fill_one;
+    fill_one.exchange = Exchange::BINANCE;
+    fill_one.client_order_id = 101;
+    std::strncpy(fill_one.venue_order_id, "101", sizeof(fill_one.venue_order_id) - 1);
+    std::strncpy(fill_one.venue_trade_id, "901", sizeof(fill_one.venue_trade_id) - 1);
+    std::strncpy(fill_one.symbol, "BTCUSDT", sizeof(fill_one.symbol) - 1);
+    fill_one.quantity = 0.2;
+    fill_one.price = 100.0;
+    fill_one.notional = 20.0;
+    fill_one.fee = 0.0001;
+    fill_one.exchange_ts_ns = 1700000000000000000;
+    ASSERT_TRUE(canonical.fills.push(fill_one));
+
+    ReconciledFill duplicate = fill_one;
+    ASSERT_TRUE(canonical.fills.push(duplicate));
+
+    ASSERT_TRUE(service.set_canonical_snapshot(Exchange::BINANCE, canonical));
+
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::OK);
+    const auto* state = service.state_for(Exchange::BINANCE);
+    ASSERT_NE(state, nullptr);
+    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::NONE);
+}
+
+TEST(ReconciliationServiceTest, FillGapMismatchRequestsReplayAndQuarantines) {
+    ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
+                                     const std::vector<std::string>&) {
+        if (contains(url, "binance.test"))
+            return binance_snapshot_response(method, url);
+        return http::HttpResponse{404, ""};
+    });
+
+    ReconciliationService::DriftThresholds thresholds;
+    thresholds.max_order_fill_gap = 1e-9;
+    thresholds.max_fill_notional_drift = 1e-9;
+    thresholds.max_fill_fee_drift = 1e-9;
+
+    BinanceConnector binance("k", "s", "https://binance.test");
+    ReconciliationService service(thresholds);
+    ASSERT_TRUE(service.register_connector(binance));
+
+    ReconciliationSnapshot canonical;
+
+    ReconciledOrder order;
+    order.client_order_id = 101;
+    std::strncpy(order.venue_order_id, "101", sizeof(order.venue_order_id) - 1);
+    std::strncpy(order.symbol, "BTCUSDT", sizeof(order.symbol) - 1);
+    order.quantity = 1.0;
+    order.filled_quantity = 0.2;
+    ASSERT_TRUE(canonical.open_orders.push(order));
+
+    ReconciledBalance balance;
+    std::strncpy(balance.asset, "BTC", sizeof(balance.asset) - 1);
+    balance.total = 1.1;
+    balance.available = 1.0;
+    ASSERT_TRUE(canonical.balances.push(balance));
+
+    ReconciledFill fill;
+    fill.exchange = Exchange::BINANCE;
+    fill.client_order_id = 101;
+    std::strncpy(fill.venue_order_id, "101", sizeof(fill.venue_order_id) - 1);
+    std::strncpy(fill.venue_trade_id, "902", sizeof(fill.venue_trade_id) - 1);
+    std::strncpy(fill.symbol, "BTCUSDT", sizeof(fill.symbol) - 1);
+    fill.quantity = 0.25;
+    fill.price = 100.0;
+    fill.notional = 25.0;
+    fill.fee = 0.0002;
+    fill.exchange_ts_ns = 1700000001000000000;
+    ASSERT_TRUE(canonical.fills.push(fill));
+
+    ASSERT_TRUE(service.set_canonical_snapshot(Exchange::BINANCE, canonical));
+
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::ERROR_UNKNOWN);
+    const auto* state = service.state_for(Exchange::BINANCE);
+    ASSERT_NE(state, nullptr);
+    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::FILL_GAP);
+    EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::REQUEST_FILL_REPLAY);
+    EXPECT_EQ(state->fill_replay_requests, 1U);
+}
+
+TEST(ReconciliationServiceTest, SnapshotFetchFailsWhenFillIngestionFails) {
+    ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
+                                     const std::vector<std::string>&) {
+        if (contains(url, "binance.test")) {
+            if (std::strcmp(method, "GET") != 0)
+                return http::HttpResponse{404, ""};
+            if (contains(url, "openOrders")) {
+                return http::HttpResponse{
+                    200,
+                    R"([{"orderId":"bn-1","symbol":"BTCUSDT","side":"BUY","origQty":1.0,"executedQty":0.2,"price":100.0,"status":"NEW"}])"};
+            }
+            if (contains(url, "/account")) {
+                return http::HttpResponse{
+                    200, R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
+            }
+            if (contains(url, "myTrades"))
+                return http::HttpResponse{503, ""};
+        }
+        return http::HttpResponse{404, ""};
+    });
+
+    BinanceConnector binance("k", "s", "https://binance.test");
+    ReconciliationService service;
+    ASSERT_TRUE(service.register_connector(binance));
+
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::ERROR_UNKNOWN);
+    EXPECT_TRUE(service.is_quarantined(Exchange::BINANCE));
+}
+
+TEST(ReconciliationServiceTest, SnapshotAllowsMissingFillEndpoint) {
+    ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
+                                     const std::vector<std::string>&) {
+        if (contains(url, "binance.test")) {
+            if (std::strcmp(method, "GET") != 0)
+                return http::HttpResponse{404, ""};
+            if (contains(url, "openOrders")) {
+                return http::HttpResponse{
+                    200,
+                    R"([{"orderId":"bn-1","symbol":"BTCUSDT","side":"BUY","origQty":1.0,"executedQty":0.2,"price":100.0,"status":"NEW"}])"};
+            }
+            if (contains(url, "/account")) {
+                return http::HttpResponse{
+                    200, R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
+            }
+            if (contains(url, "myTrades"))
+                return http::HttpResponse{404, ""};
+        }
+        return http::HttpResponse{404, ""};
+    });
+
+    BinanceConnector binance("k", "s", "https://binance.test");
+    ReconciliationService service;
+    ASSERT_TRUE(service.register_connector(binance));
+
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::OK);
+    EXPECT_FALSE(service.is_quarantined(Exchange::BINANCE));
 }
 
 } // namespace

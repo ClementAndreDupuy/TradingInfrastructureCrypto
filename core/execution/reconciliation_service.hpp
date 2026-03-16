@@ -17,6 +17,7 @@ namespace trading {
 class ReconciliationService {
   public:
     static constexpr size_t MAX_CONNECTORS = 4;
+    static constexpr size_t MAX_FILL_KEYS = 1024;
     using CanonicalSnapshotFetcher = std::function<bool(ReconciliationSnapshot&)>;
 
     enum class MismatchClass : uint8_t {
@@ -39,6 +40,8 @@ class ReconciliationService {
         double max_balance_drift = 1e-6;
         double max_position_drift = 1e-6;
         double max_order_fill_gap = 1e-6;
+        double max_fill_notional_drift = 1e-6;
+        double max_fill_fee_drift = 1e-6;
     };
 
     struct VenueState {
@@ -48,6 +51,7 @@ class ReconciliationService {
         int64_t last_reconcile_ts_ns = 0;
         int64_t last_drift_check_ts_ns = 0;
         uint32_t mismatch_count = 0;
+        uint32_t fill_replay_requests = 0;
         MismatchClass last_mismatch = MismatchClass::NONE;
         DriftAction last_action = DriftAction::NONE;
     };
@@ -106,6 +110,24 @@ class ReconciliationService {
         const char* reason = "";
     };
 
+    struct FillLedger {
+        double cum_qty = 0.0;
+        double cum_notional = 0.0;
+        double cum_fee = 0.0;
+        uint32_t unique_fill_count = 0;
+        bool overflow = false;
+    };
+
+    struct FillIdentity {
+        uint64_t client_order_id = 0;
+        char venue_order_id[64] = {};
+        char venue_trade_id[64] = {};
+        int64_t exchange_ts_ns = 0;
+        double quantity = 0.0;
+        double price = 0.0;
+        Exchange exchange = Exchange::UNKNOWN;
+    };
+
     ConnectorResult run_reconciliation_cycle(bool reconnect_phase) {
         for (size_t i = 0; i < connector_count_; ++i) {
             if (states_[i].quarantined)
@@ -137,6 +159,8 @@ class ReconciliationService {
             const DriftDecision decision = canonical ? evaluate_drift(snapshot, *canonical)
                                                      : evaluate_snapshot_sanity(snapshot);
             if (decision.mismatch) {
+                if (decision.action == DriftAction::REQUEST_FILL_REPLAY)
+                    ++states_[i].fill_replay_requests;
                 quarantine(i, decision.mismatch_class, decision.action, decision.reason);
                 return ConnectorResult::ERROR_UNKNOWN;
             }
@@ -198,6 +222,23 @@ class ReconciliationService {
                 out.mismatch = true;
                 out.action = DriftAction::QUARANTINE_VENUE;
                 out.reason = "positive position with invalid entry";
+                return out;
+            }
+        }
+
+        for (size_t i = 0; i < snapshot.fills.size; ++i) {
+            const auto& fill = snapshot.fills.items[i];
+            if (fill.quantity < 0.0 || fill.price < 0.0 || fill.notional < 0.0 || fill.fee < 0.0) {
+                out.mismatch = true;
+                out.action = DriftAction::QUARANTINE_VENUE;
+                out.reason = "negative fill values";
+                return out;
+            }
+            if (fill.notional > 0.0 && drift(fill.notional, fill.quantity * fill.price) >
+                                           thresholds_.max_fill_notional_drift) {
+                out.mismatch = true;
+                out.action = DriftAction::QUARANTINE_VENUE;
+                out.reason = "fill notional mismatch";
                 return out;
             }
         }
@@ -304,6 +345,36 @@ class ReconciliationService {
         return venue_order_id[0] == '\0';
     }
 
+    static bool is_empty_trade_id(const char* venue_trade_id) noexcept {
+        return venue_trade_id[0] == '\0';
+    }
+
+    static bool fill_same_identity(const FillIdentity& lhs, const FillIdentity& rhs) noexcept {
+        if (lhs.exchange != rhs.exchange)
+            return false;
+
+        if (!is_empty_trade_id(lhs.venue_trade_id) && !is_empty_trade_id(rhs.venue_trade_id) &&
+            venue_id_eq(lhs.venue_trade_id, rhs.venue_trade_id)) {
+            return true;
+        }
+
+        if (lhs.client_order_id != 0 && rhs.client_order_id != 0 &&
+            lhs.client_order_id == rhs.client_order_id &&
+            lhs.exchange_ts_ns == rhs.exchange_ts_ns &&
+            drift(lhs.quantity, rhs.quantity) <= 1e-12 && drift(lhs.price, rhs.price) <= 1e-12) {
+            return true;
+        }
+
+        if (!is_empty_venue_id(lhs.venue_order_id) && !is_empty_venue_id(rhs.venue_order_id) &&
+            venue_id_eq(lhs.venue_order_id, rhs.venue_order_id) &&
+            lhs.exchange_ts_ns == rhs.exchange_ts_ns &&
+            drift(lhs.quantity, rhs.quantity) <= 1e-12 && drift(lhs.price, rhs.price) <= 1e-12) {
+            return true;
+        }
+
+        return false;
+    }
+
     static const ReconciledOrder* find_order(const ReconciliationSnapshot& snapshot,
                                              const ReconciledOrder& key) noexcept {
         for (size_t i = 0; i < snapshot.open_orders.size; ++i) {
@@ -341,32 +412,68 @@ class ReconciliationService {
         return nullptr;
     }
 
-    double aggregate_fill_qty_for_order(const ReconciliationSnapshot& snapshot,
-                                        const ReconciledOrder& order) const noexcept {
-        double qty = 0.0;
+    bool build_fill_ledger(const ReconciliationSnapshot& snapshot,
+                           FillLedger& ledger) const noexcept {
+        std::array<FillIdentity, MAX_FILL_KEYS> dedupe_keys{};
+        size_t dedupe_key_count = 0;
+        ledger = {};
+
         for (size_t i = 0; i < snapshot.fills.size; ++i) {
             const ReconciledFill& fill = snapshot.fills.items[i];
-            if (order.client_order_id != 0 && fill.client_order_id == order.client_order_id) {
-                qty += fill.quantity;
+
+            FillIdentity key;
+            key.client_order_id = fill.client_order_id;
+            std::memcpy(key.venue_order_id, fill.venue_order_id, sizeof(key.venue_order_id));
+            std::memcpy(key.venue_trade_id, fill.venue_trade_id, sizeof(key.venue_trade_id));
+            key.exchange_ts_ns = fill.exchange_ts_ns;
+            key.quantity = fill.quantity;
+            key.price = fill.price;
+            key.exchange = fill.exchange;
+
+            bool duplicate = false;
+            for (size_t k = 0; k < dedupe_key_count; ++k) {
+                if (fill_same_identity(key, dedupe_keys[k])) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate)
                 continue;
+
+            if (dedupe_key_count >= dedupe_keys.size()) {
+                ledger.overflow = true;
+                return false;
             }
-            if (!is_empty_venue_id(order.venue_order_id) &&
-                venue_id_eq(fill.venue_order_id, order.venue_order_id)) {
-                qty += fill.quantity;
-            }
+            dedupe_keys[dedupe_key_count++] = key;
+
+            ledger.cum_qty += fill.quantity;
+            const double computed_notional =
+                fill.notional > 0.0 ? fill.notional : fill.quantity * fill.price;
+            ledger.cum_notional += computed_notional;
+            ledger.cum_fee += fill.fee;
+            ++ledger.unique_fill_count;
         }
-        return qty;
+
+        return true;
     }
 
     bool fill_gap_detected(const ReconciliationSnapshot& venue,
                            const ReconciliationSnapshot& canonical) const noexcept {
-        for (size_t i = 0; i < canonical.open_orders.size; ++i) {
-            const ReconciledOrder& internal_order = canonical.open_orders.items[i];
-            const double internal_qty = aggregate_fill_qty_for_order(canonical, internal_order);
-            const double venue_qty = aggregate_fill_qty_for_order(venue, internal_order);
-            if (drift(venue_qty, internal_qty) > thresholds_.max_order_fill_gap)
-                return true;
+        FillLedger venue_ledger;
+        FillLedger canonical_ledger;
+        if (!build_fill_ledger(venue, venue_ledger) ||
+            !build_fill_ledger(canonical, canonical_ledger))
+            return true;
+
+        if (drift(venue_ledger.cum_qty, canonical_ledger.cum_qty) > thresholds_.max_order_fill_gap)
+            return true;
+        if (drift(venue_ledger.cum_notional, canonical_ledger.cum_notional) >
+            thresholds_.max_fill_notional_drift) {
+            return true;
         }
+        if (drift(venue_ledger.cum_fee, canonical_ledger.cum_fee) > thresholds_.max_fill_fee_drift)
+            return true;
+
         return false;
     }
 

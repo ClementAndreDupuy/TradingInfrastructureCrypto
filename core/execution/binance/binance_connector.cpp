@@ -192,6 +192,37 @@ ConnectorResult BinanceConnector::fetch_reconciliation_snapshot(ReconciliationSn
             return ConnectorResult::ERROR_UNKNOWN;
     }
 
+    const auto trades =
+        http::get(api_url() + "/api/v3/myTrades", auth_headers("myTrades", "recon-trades"));
+    if (trades.status == 404 || trades.status == 405 || trades.status == 501)
+        return ConnectorResult::OK;
+    if (!trades.ok())
+        return classify_error(trades.status);
+
+    const auto trades_json = nlohmann::json::parse(trades.body, nullptr, false);
+    if (!trades_json.is_array())
+        return ConnectorResult::ERROR_UNKNOWN;
+    for (const auto& item : trades_json) {
+        ReconciledFill fill;
+        fill.exchange = Exchange::BINANCE;
+        fill.client_order_id = item.value("orderId", static_cast<uint64_t>(0));
+        copy_cstr(fill.venue_order_id, sizeof(fill.venue_order_id),
+                  std::to_string(item.value("orderId", static_cast<uint64_t>(0))));
+        copy_cstr(fill.venue_trade_id, sizeof(fill.venue_trade_id),
+                  std::to_string(item.value("id", static_cast<uint64_t>(0))));
+        copy_cstr(fill.symbol, sizeof(fill.symbol), item.value("symbol", std::string("")));
+        fill.side = item.value("isBuyer", true) ? Side::BID : Side::ASK;
+        fill.quantity = item.value("qty", 0.0);
+        fill.price = item.value("price", 0.0);
+        fill.notional = fill.quantity * fill.price;
+        fill.fee = item.value("commission", 0.0);
+        copy_cstr(fill.fee_asset, sizeof(fill.fee_asset),
+                  item.value("commissionAsset", std::string("")));
+        fill.exchange_ts_ns = item.value("time", static_cast<int64_t>(0)) * 1000000;
+        if (!snapshot.fills.push(fill))
+            return ConnectorResult::ERROR_UNKNOWN;
+    }
+
     return ConnectorResult::OK;
 }
 

@@ -38,10 +38,15 @@ struct ReconciledOrder {
 struct ReconciledFill {
     uint64_t client_order_id = 0;
     char venue_order_id[64] = {};
+    char venue_trade_id[64] = {};
     char symbol[16] = {};
+    Exchange exchange = Exchange::UNKNOWN;
     Side side = Side::BID;
     double quantity = 0.0;
     double price = 0.0;
+    double notional = 0.0;
+    double fee = 0.0;
+    char fee_asset[16] = {};
     int64_t exchange_ts_ns = 0;
 };
 
