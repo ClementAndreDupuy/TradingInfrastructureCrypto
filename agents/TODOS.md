@@ -1,6 +1,12 @@
 ## TODO List
 
 ### CRITICAL
+- [ ] **C-NEW-1** `core/engine/trading_engine_main.cpp` — Replace demo harness with a production event-driven daemon: construct feed handlers + book managers for all 4 venues, run continuous WebSocket event loop, call `NeuralAlphaMarketMaker::on_book_update()` on every tick, periodic `ReconciliationService` call every 30 s, heartbeat keepalive for kill switch, clean SIGTERM/SIGINT shutdown handler. Current binary fires one SOR decision and exits — SystemD restart loop would submit uncoordinated sporadic orders with no position management.
+  - acceptance: binary runs continuously until SIGTERM; does not exit on clean operation
+  - acceptance: kill switch heartbeat is refreshed at ≥ 1 Hz
+  - acceptance: reconciliation runs on reconnect and every 30 s
+- [ ] **C-NEW-2** `deploy/systemd/neural-alpha-shadow.service` — Fix `--exchanges SOLANA` to `--exchanges BINANCE` (or BINANCE,KRAKEN). Shadow session currently runs against a non-existent exchange; all shadow validation data (IC, fill rate) has been collected on the wrong instrument/venue. Shadow must match intended live venues before go/no-go evaluation is meaningful.
+- [ ] **C-NEW-3** `deploy/aws/userdata.sh` — Bootstrap script only fetches and writes Binance credentials; Kraken/OKX/Coinbase `API_KEY` + `API_SECRET` are missing from `/etc/trading/env`. `LiveConnectorBase::connect()` returns `AUTH_FAILED` for 3 of 4 connectors at startup. Fix: load all 4 exchange key-pairs from Secrets Manager into the env file.
 - [x] **C1** `core/execution/live_connector_base.hpp` + venue connectors — Replaced generic auth flow with exchange-specific canonical signing (Binance/Kraken/OKX/Coinbase), removed non-cryptographic signature fallback from live path, and hard-fail connector `connect()` when OpenSSL backend is unavailable
 - [x] **C2** `core/execution/*_connector.cpp` — Implement authenticated cancel/replace/query endpoints with strict response parsing; stop using synthetic venue order IDs and persist real exchange IDs *(submit/cancel/replace/query now implemented with strict parsing and real venue IDs persisted in `VenueOrderMap`)*
 - [x] **C3** `core/execution/` — deliver production reconciliation for open orders/fills/balances/positions against internal canonical state with deterministic mismatch classification and actions; reconnect + periodic loops share one reconciliation engine in `ReconciliationService`
