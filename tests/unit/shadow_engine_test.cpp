@@ -36,7 +36,7 @@ Order make_limit(Exchange ex, Side side, uint64_t oid, double px, double qty) {
 } // namespace
 
 TEST(ShadowEngineTest, RestingOrderProducesPartialThenFinalFill) {
-    BookManager book("BTCUSDT", Exchange::BINANCE, 1.0, 2048);
+    BookManager book("BTCUSDT", Exchange::BINANCE, 0.5, 2048);
     book.snapshot_handler()(make_snapshot(Exchange::BINANCE, 100.0, 2.0, 100.5, 2.0));
 
     ShadowConfig cfg;
@@ -48,10 +48,20 @@ TEST(ShadowEngineTest, RestingOrderProducesPartialThenFinalFill) {
     std::vector<FillUpdate> fills;
     connector.on_fill = [&](const FillUpdate& u) { fills.push_back(u); };
 
-    ASSERT_EQ(connector.submit_order(make_limit(Exchange::BINANCE, Side::BID, 1, 101.0, 1.0)),
+    // Submit a resting ask at the current best ask; queue-ahead at this level
+    // should force partial fills once the opposite side moves to cross.
+    ASSERT_EQ(connector.submit_order(make_limit(Exchange::BINANCE, Side::ASK, 1, 100.5, 1.0)),
               ConnectorResult::OK);
 
-    connector.check_fills();
+    Delta make_cross;
+    make_cross.side = Side::BID;
+    make_cross.price = 100.5;
+    make_cross.size = 2.0;
+    make_cross.sequence = 2;
+    book.delta_handler()(make_cross);
+
+    for (int i = 0; i < 4 && fills.empty(); ++i)
+        connector.check_fills();
     ASSERT_FALSE(fills.empty());
     EXPECT_EQ(fills.front().new_state, OrderState::PARTIALLY_FILLED);
     EXPECT_LT(fills.front().fill_qty, 1.0);
