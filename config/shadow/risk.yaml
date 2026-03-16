@@ -11,6 +11,11 @@ arb_risk:
   max_notional_per_symbol:      5000.0
   max_notional_per_exchange:    10000.0
   max_portfolio_notional:       20000.0
+  max_gross_notional:           20000.0   # hard global gross cap
+  max_net_notional:             6000.0   # hard global net cap across venues
+  max_symbol_concentration_pct: 30.0       # any single symbol share of gross notional
+  max_venue_notional:           10000.0   # hard per-venue global cap
+  max_cross_venue_net_notional: 2500.0    # hard per-symbol cross-venue netting cap
 
   # ── Drawdown ─────────────────────────────────────────────────────────────────
   max_drawdown_usd:             -500.0     # 10% of dev kill threshold

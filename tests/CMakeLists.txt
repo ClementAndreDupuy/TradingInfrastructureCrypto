@@ -223,6 +223,29 @@ set_tests_properties(MarketMakerRiskTest PROPERTIES
     LABELS "unit;execution;risk"
 )
 
+
+# Global risk controls unit tests
+add_executable(global_risk_controls_test
+    unit/global_risk_controls_test.cpp
+)
+
+target_link_libraries(global_risk_controls_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(global_risk_controls_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME GlobalRiskControlsTest COMMAND global_risk_controls_test)
+set_tests_properties(GlobalRiskControlsTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;risk"
+)
+
 # Idempotency journal + deterministic recovery tests
 add_executable(idempotency_recovery_test
     unit/idempotency_recovery_test.cpp

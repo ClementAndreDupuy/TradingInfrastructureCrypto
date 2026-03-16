@@ -6,7 +6,9 @@
 #include "../feeds/common/book_manager.hpp"
 #include "../ipc/alpha_signal.hpp"
 #include "../risk/circuit_breaker.hpp"
+#include "../risk/global_risk_controls.hpp"
 #include "../risk/kill_switch.hpp"
+#include "../risk/risk_config_loader.hpp"
 
 #include <array>
 #include <cstring>
@@ -57,9 +59,13 @@ int main(int argc, char** argv) {
 
     const CliOptions opts = parse_args(argc, argv);
 
-    KillSwitch kill_switch;
-    CircuitBreakerConfig cb_cfg;
-    CircuitBreaker circuit_breaker(cb_cfg, kill_switch);
+    RiskRuntimeConfig risk_cfg;
+    const std::string risk_path = "config/" + opts.mode + "/risk.yaml";
+    (void)RiskConfigLoader::load(risk_path, risk_cfg);
+
+    KillSwitch kill_switch(risk_cfg.heartbeat_timeout_ns);
+    CircuitBreaker circuit_breaker(risk_cfg.circuit_breaker, kill_switch);
+    GlobalRiskControls global_risk(risk_cfg.global_risk, kill_switch);
 
     if (kill_switch.is_active())
         return 2;
@@ -118,6 +124,13 @@ int main(int argc, char** argv) {
         const auto& child = decision.children[i];
         const Order child_order = make_child_order(opts.symbol.c_str(), child.exchange, Side::BID,
                                                    child.quantity, child.limit_price, next_id++);
+
+        const double signed_notional = child.quantity * child.limit_price;
+        if (global_risk.commit_order(child.exchange, child_order.symbol, signed_notional) !=
+            GlobalRiskCheckResult::OK) {
+            std::cout << "global-risk blocked submit\n";
+            return 4;
+        }
 
         ConnectorResult res = ConnectorResult::ERROR_UNKNOWN;
         switch (child.exchange) {
