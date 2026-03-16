@@ -201,6 +201,29 @@ set_tests_properties(ConnectorContractTest PROPERTIES
     LABELS "unit;execution"
 )
 
+
+# Deterministic connector failure-injection tests
+add_executable(connector_failure_injection_test
+    unit/connector_failure_injection_test.cpp
+)
+
+target_link_libraries(connector_failure_injection_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(connector_failure_injection_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME ConnectorFailureInjectionTest COMMAND connector_failure_injection_test)
+set_tests_properties(ConnectorFailureInjectionTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;execution;chaos"
+)
+
 # Market maker + risk gate unit tests
 add_executable(market_maker_risk_test
     unit/market_maker_risk_test.cpp
