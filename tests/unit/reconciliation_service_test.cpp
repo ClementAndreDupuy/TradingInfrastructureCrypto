@@ -169,6 +169,82 @@ TEST(ReconciliationServiceTest, QuarantinesVenueOnDriftMismatch) {
     const auto* state = service.state_for(Exchange::BINANCE);
     ASSERT_NE(state, nullptr);
     EXPECT_EQ(state->mismatch_count, 1U);
+    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::NONE);
+}
+
+TEST(ReconciliationServiceTest, UsesCanonicalSnapshotForReconnectAndPeriodicLoops) {
+    ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
+                                     const std::vector<std::string>&) {
+        if (contains(url, "binance.test"))
+            return binance_snapshot_response(method, url);
+        return http::HttpResponse{404, ""};
+    });
+
+    BinanceConnector binance("k", "s", "https://binance.test");
+    ReconciliationService service;
+    ASSERT_TRUE(service.register_connector(binance));
+
+    ReconciliationSnapshot canonical;
+    ReconciledOrder order;
+    order.client_order_id = 11;
+    std::strncpy(order.venue_order_id, "bn-1", sizeof(order.venue_order_id) - 1);
+    std::strncpy(order.symbol, "BTCUSDT", sizeof(order.symbol) - 1);
+    order.quantity = 1.0;
+    order.filled_quantity = 0.2;
+    ASSERT_TRUE(canonical.open_orders.push(order));
+
+    ReconciledBalance balance;
+    std::strncpy(balance.asset, "BTC", sizeof(balance.asset) - 1);
+    balance.total = 1.1;
+    balance.available = 1.0;
+    ASSERT_TRUE(canonical.balances.push(balance));
+
+    ASSERT_TRUE(service.set_canonical_snapshot(Exchange::BINANCE, canonical));
+
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::OK);
+    EXPECT_EQ(service.run_periodic_drift_check(), ConnectorResult::OK);
+
+    const auto* state = service.state_for(Exchange::BINANCE);
+    ASSERT_NE(state, nullptr);
+    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::NONE);
+    EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::NONE);
+}
+
+TEST(ReconciliationServiceTest, DetectsExplicitMismatchClasses) {
+    ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
+                                     const std::vector<std::string>&) {
+        if (contains(url, "binance.test"))
+            return binance_snapshot_response(method, url);
+        return http::HttpResponse{404, ""};
+    });
+
+    BinanceConnector binance("k", "s", "https://binance.test");
+    ReconciliationService service;
+    ASSERT_TRUE(service.register_connector(binance));
+
+    ReconciliationSnapshot canonical;
+    ReconciledOrder order;
+    order.client_order_id = 22;
+    std::strncpy(order.venue_order_id, "bn-1", sizeof(order.venue_order_id) - 1);
+    std::strncpy(order.symbol, "BTCUSDT", sizeof(order.symbol) - 1);
+    order.quantity = 1.0;
+    order.filled_quantity = 0.2;
+    ASSERT_TRUE(canonical.open_orders.push(order));
+
+    ReconciledBalance balance;
+    std::strncpy(balance.asset, "BTC", sizeof(balance.asset) - 1);
+    balance.total = 9.0;
+    balance.available = 8.0;
+    ASSERT_TRUE(canonical.balances.push(balance));
+
+    ASSERT_TRUE(service.set_canonical_snapshot(Exchange::BINANCE, canonical));
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::ERROR_UNKNOWN);
+
+    const auto* state = service.state_for(Exchange::BINANCE);
+    ASSERT_NE(state, nullptr);
+    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::BALANCE_DRIFT);
+    EXPECT_EQ(state->last_action,
+              ReconciliationService::DriftAction::RISK_HALT_RECOMMENDED);
 }
 
 TEST(ReconciliationServiceTest, PeriodicDriftCheckSuccess) {
