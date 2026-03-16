@@ -238,7 +238,10 @@ class ReconciliationService {
         ++state.snapshot_failure_retries;
         out.retry_count = state.snapshot_failure_retries;
         out.reason = reconnect_phase ? "snapshot fetch failed" : "periodic snapshot fetch failed";
-        if (res == ConnectorResult::AUTH_FAILED ||
+        // Industry baseline: treat deterministic client-side request failures as
+        // non-recoverable for reconciliation (invalid credentials/signature,
+        // malformed auth headers, permission scope mismatches).
+        if (res == ConnectorResult::ERROR_INVALID_ORDER ||
             out.retry_count > policy_.snapshot_failure_retry_budget) {
             out.action = DriftAction::QUARANTINE_VENUE;
             out.severity = SeverityLevel::CRITICAL;

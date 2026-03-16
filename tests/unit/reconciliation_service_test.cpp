@@ -621,11 +621,11 @@ TEST(ReconciliationServiceTest, SnapshotFailureUsesRetryBudgetThenQuarantine) {
     service.set_cancel_all_hook([&](Exchange, ReconciliationService::MismatchClass,
                                     std::string_view) { ++cancel_all_calls; });
 
-    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::ERROR_REST_FAILURE);
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::ERROR_INVALID_ORDER);
     EXPECT_FALSE(service.is_quarantined(Exchange::BINANCE));
     EXPECT_EQ(cancel_all_calls, 1U);
 
-    EXPECT_EQ(service.run_periodic_drift_check(), ConnectorResult::ERROR_REST_FAILURE);
+    EXPECT_EQ(service.run_periodic_drift_check(), ConnectorResult::ERROR_INVALID_ORDER);
     EXPECT_TRUE(service.is_quarantined(Exchange::BINANCE));
 
     const auto* state = service.state_for(Exchange::BINANCE);
