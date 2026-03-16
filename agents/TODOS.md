@@ -12,7 +12,7 @@
 - [x] **C6** `core/execution/reconciliation_service.hpp` + `tests/` — Added staged drift remediation policy (retry budgets, severity levels, explicit cancel-all/risk-halt hooks, incident trail) plus failure-injection coverage for reconnect/drift edge cases
 
 ### HIGH
-- [ ] **H1** `core/risk/` — Add portfolio/global risk controls (gross/net notional caps, concentration limits, venue caps, cross-venue netting limits) independent from strategy layer
+- [x] **H1** `core/risk/` — Added `GlobalRiskControls` with config-driven portfolio/global risk caps (gross/net notional, concentration, venue caps, cross-venue netting), wired into trading engine pre-trade flow via `RiskConfigLoader`, and covered with dedicated unit tests
 - [x] **H2** `core/shadow/shadow_engine.hpp` — Extended shadow simulator realism with queue-position decay, partial fills, deterministic latency + slippage modeling, and venue-specific fee modeling for OKX/Coinbase; added dedicated `shadow_engine_test` unit coverage and build-script test wiring
 - [x] **H3** `core/execution/smart_order_router.cpp` — Upgraded SOR objective to include fill probability, queue priority, adverse-selection/toxicity signals, and dynamic regime adaptation
 - [ ] **H4** `deploy/` + monitoring stack — Define production SLOs/error budgets and wire hard alerts for feed integrity, reject spikes, reconciliation drift, and risk trigger frequency

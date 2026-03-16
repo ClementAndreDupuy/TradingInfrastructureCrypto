@@ -37,3 +37,11 @@ kill_switch:
   enabled: true
   hardware_pin: ""              # Set to GPIO pin ID if using hardware kill
   software_hotkey: "SIGTERM"
+
+
+global_risk:
+  max_gross_notional: 13000
+  max_net_notional: 4000
+  max_symbol_concentration_pct: 30.0
+  max_venue_notional: 6500
+  max_cross_venue_net_notional: 2500

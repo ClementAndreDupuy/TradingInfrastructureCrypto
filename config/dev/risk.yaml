@@ -11,6 +11,11 @@ arb_risk:
   max_notional_per_symbol:      100000.0   # per single arb leg
   max_notional_per_exchange:    250000.0   # total open notional on one venue
   max_portfolio_notional:       500000.0   # total open notional across all venues
+  max_gross_notional:           500000.0   # hard global gross cap
+  max_net_notional:             150000.0   # hard global net cap across venues
+  max_symbol_concentration_pct: 35.0       # any single symbol share of gross notional
+  max_venue_notional:           250000.0   # hard per-venue global cap
+  max_cross_venue_net_notional: 75000.0    # hard per-symbol cross-venue netting cap
 
   # ── Drawdown ─────────────────────────────────────────────────────────────
   max_drawdown_usd:             -5000.0    # kill switch triggers below this
