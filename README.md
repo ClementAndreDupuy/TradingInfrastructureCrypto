@@ -13,51 +13,86 @@ flowchart LR
     COI["Coinbase"]
   end
 
+  subgraph Ops["Ops + Runtime Control"]
+    CFG["config/dev|shadow|live\nRuntime parameters + credentials refs"]
+    DEPLOY["deploy/\nsystemd + AWS deployment assets"]
+    MON["Prometheus + Grafana\nDashboards + alerts"]
+  end
+
+  subgraph Shared["Shared + Integration Layer"]
+    COMMON["core/common\nOrder, fills, enums, shared types"]
+    IPCW["core/ipc\nPython shared-memory signal writer"]
+    IPCR["core/ipc\nC++ AlphaSignalReader"]
+    BIND["bindings/\npybind11 bridge"]
+  end
+
   subgraph HotPath["C++ Hot Path (latency critical)"]
     FEEDS["core/feeds\nWebSocket handlers\n(snapshot + deltas + sequence checks)"]
     ORDERBOOK["core/orderbook\nLocal order books"]
+    ENGINE["core/engine\nRuntime orchestration"]
     EXEC["core/execution\nOrderManager + MarketMaker"]
     RISK["core/risk\nPre-trade checks\nKill switch / circuit breaker"]
     SHADOW["core/shadow\nPaper-trading engine"]
-    IPCR["core/ipc\nAlphaSignalReader"]
   end
 
   subgraph ColdPath["Python Cold Path (research + model)"]
     PIPE["research/alpha/neural_alpha\nFeature pipeline + training"]
     BACKTEST["research/backtest\nEvent-driven backtests"]
-    IPCW["core/ipc\nShared-memory signal writer"]
-    MON["Monitoring\nPrometheus/Grafana"]
+    TESTS["tests/unit|integration|replay|perf\nRegression + performance checks"]
   end
+
+  ENGINE -->|"Load params + risk limits"| CFG
+  EXEC -->|"Load strategy + venue config"| CFG
+  FEEDS -->|"Load symbols + feed config"| CFG
+  DEPLOY -->|"Provision + service rollout"| ENGINE
+
+  COMMON --> FEEDS
+  COMMON --> ORDERBOOK
+  COMMON --> RISK
+  COMMON --> EXEC
+  COMMON --> SHADOW
+  COMMON --> ENGINE
+  COMMON --> BIND
+
+  PIPE -->|"Backtest-ready features/signals"| BACKTEST
+  PIPE -->|"Alpha signal stream"| IPCW
+  BIND -->|"Research helpers + native accelerators"| PIPE
+  IPCW -->|"Shared memory"| IPCR
+  IPCR -->|"Signal read"| EXEC
+
+  ENGINE -->|"Start/stop + wiring"| FEEDS
+  ENGINE -->|"Start/stop + wiring"| EXEC
+  ENGINE -->|"Start/stop + wiring"| SHADOW
 
   FEEDS -->|"WebSocket subscribe/auth"| BIN
   FEEDS -->|"WebSocket subscribe/auth"| KRA
   FEEDS -->|"WebSocket subscribe/auth"| OKX
   FEEDS -->|"WebSocket subscribe/auth"| COI
 
-  BIN -->|"WebSocket market data\n(snapshot + deltas)"| FEEDS
-  KRA -->|"WebSocket market data\n(snapshot + deltas)"| FEEDS
-  OKX -->|"WebSocket market data\n(snapshot + deltas)"| FEEDS
-  COI -->|"WebSocket market data\n(snapshot + deltas)"| FEEDS
+  BIN -->|"Market data\n(snapshot + deltas)"| FEEDS
+  KRA -->|"Market data\n(snapshot + deltas)"| FEEDS
+  OKX -->|"Market data\n(snapshot + deltas)"| FEEDS
+  COI -->|"Market data\n(snapshot + deltas)"| FEEDS
 
   FEEDS --> ORDERBOOK
-  ORDERBOOK --> EXEC
-  EXEC --> RISK
-  RISK --> EXEC
+  ORDERBOOK -->|"Top of book + depth"| EXEC
+  EXEC -->|"Pre-trade check request"| RISK
+  RISK -->|"Approve/reject"| EXEC
 
   EXEC -->|"REST/WebSocket orders"| Exchanges
   Exchanges -->|"Execution reports/fills"| EXEC
   EXEC -->|"Shadow route"| SHADOW
   SHADOW -->|"Paper fills"| EXEC
 
-  PIPE --> BACKTEST
-  PIPE -->|"Alpha signal"| IPCW
-  IPCW -->|"Shared memory"| IPCR
-  IPCR -->|"Signal read"| EXEC
-
   FEEDS -->|"Feed/latency metrics"| MON
   EXEC -->|"Orders/PnL/risk metrics"| MON
   SHADOW -->|"Shadow performance"| MON
   PIPE -->|"Training + inference metrics"| MON
+  ENGINE -->|"Service health"| MON
+
+  TESTS -->|"CI validation of C++ + Python paths"| FEEDS
+  TESTS -->|"CI validation of strategy/risk behavior"| EXEC
+  TESTS -->|"Replay/perf checks"| BACKTEST
 ```
 
 ## How each block is used
