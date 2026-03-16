@@ -23,52 +23,54 @@ struct KrakenWsSession {
 };
 
 // ─── libwebsockets callback ──────────────────────────────────────────────────
-static int kraken_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* /*user*/,
-                         void* in, size_t len) {
-    auto* s = static_cast<KrakenWsSession*>(lws_context_user(lws_get_context(wsi)));
-    if (!s)
+static auto kraken_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* /*user*/,
+                          void* input, size_t len) -> int {
+    auto* session = static_cast<KrakenWsSession*>(lws_context_user(lws_get_context(wsi)));
+    if (session == nullptr) {
         return 0;
+    }
 
     switch (reason) {
     case LWS_CALLBACK_CLIENT_ESTABLISHED:
-        s->wsi = wsi;
-        s->established = true;
-        s->last_ping_ns = http::now_ns();
+        session->wsi = wsi;
+        session->established = true;
+        session->last_ping_ns = http::now_ns();
         lws_callback_on_writable(wsi);
         lws_cancel_service(lws_get_context(wsi));
         break;
 
     case LWS_CALLBACK_CLIENT_RECEIVE: {
-        const char* data = static_cast<const char*>(in);
-        bool is_final = lws_is_final_fragment(wsi);
-        if (s->frag_len + len < sizeof(s->frag_buf)) {
-            std::memcpy(s->frag_buf + s->frag_len, data, len);
-            s->frag_len += len;
+        const char* data = static_cast<const char*>(input);
+        bool is_final = lws_is_final_fragment(wsi) != 0;
+        if (session->frag_len + len < sizeof(session->frag_buf)) {
+            std::memcpy(session->frag_buf + session->frag_len, data, len);
+            session->frag_len += len;
         }
-        if (is_final && s->handler) {
-            s->handler->process_message(std::string(s->frag_buf, s->frag_len));
-            s->frag_len = 0;
+        if (is_final && (session->handler != nullptr)) {
+            session->handler->process_message(std::string(session->frag_buf, session->frag_len));
+            session->frag_len = 0;
         }
         break;
     }
 
     case LWS_CALLBACK_CLIENT_WRITEABLE: {
-        if (s->send_subscribe && !s->subscribe_msg.empty()) {
-            std::vector<unsigned char> buf(LWS_PRE + s->subscribe_msg.size());
-            std::memcpy(buf.data() + LWS_PRE, s->subscribe_msg.c_str(), s->subscribe_msg.size());
-            lws_write(wsi, buf.data() + LWS_PRE, s->subscribe_msg.size(), LWS_WRITE_TEXT);
-            s->send_subscribe = false;
-        } else if (s->send_ping) {
+        if (session->send_subscribe && !session->subscribe_msg.empty()) {
+            std::vector<unsigned char> buf(LWS_PRE + session->subscribe_msg.size());
+            std::memcpy(buf.data() + LWS_PRE, session->subscribe_msg.c_str(),
+                        session->subscribe_msg.size());
+            lws_write(wsi, buf.data() + LWS_PRE, session->subscribe_msg.size(), LWS_WRITE_TEXT);
+            session->send_subscribe = false;
+        } else if (session->send_ping) {
             unsigned char buf[LWS_PRE + 4] = {};
             lws_write(wsi, buf + LWS_PRE, 0, LWS_WRITE_PING);
-            s->send_ping = false;
+            session->send_ping = false;
         }
         break;
     }
 
     case LWS_CALLBACK_CLIENT_CLOSED:
     case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
-        s->closed = true;
+        session->closed = true;
         lws_cancel_service(lws_get_context(wsi));
         break;
 
@@ -93,26 +95,29 @@ KrakenFeedHandler::KrakenFeedHandler(const std::string& symbol, const std::strin
              symbol_.c_str());
 }
 
-std::string KrakenFeedHandler::get_api_key_from_env() { return http::env_var("KRAKEN_API_KEY"); }
-std::string KrakenFeedHandler::get_api_secret_from_env() {
+auto KrakenFeedHandler::get_api_key_from_env() -> std::string {
+    return http::env_var("KRAKEN_API_KEY");
+}
+auto KrakenFeedHandler::get_api_secret_from_env() -> std::string {
     return http::env_var("KRAKEN_API_SECRET");
 }
 
 KrakenFeedHandler::~KrakenFeedHandler() { stop(); }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
-Result KrakenFeedHandler::start() {
-    if (running_.load(std::memory_order_acquire))
+auto KrakenFeedHandler::start() -> Result {
+    if (running_.load(std::memory_order_acquire)) {
         return Result::SUCCESS;
+    }
 
     LOG_INFO("Starting feed handler", "symbol", symbol_.c_str());
     running_.store(true, std::memory_order_release);
     state_.store(State::BUFFERING, std::memory_order_release);
 
-    ws_thread_ = std::thread([this]() { ws_event_loop(); });
+    ws_thread_ = std::thread([this]() -> void { ws_event_loop(); });
 
-    std::unique_lock<std::mutex> lk(ws_mutex_);
-    bool ready = ws_cv_.wait_for(lk, std::chrono::seconds(30), [this]() {
+    std::unique_lock<std::mutex> lock(ws_mutex_);
+    bool ready = ws_cv_.wait_for(lock, std::chrono::seconds(30), [this]() -> bool {
         return state_.load(std::memory_order_acquire) == State::STREAMING ||
                !running_.load(std::memory_order_acquire);
     });
@@ -124,8 +129,9 @@ Result KrakenFeedHandler::start() {
             lws_cancel_service(ctx);
         }
         ws_cv_.notify_all();
-        if (ws_thread_.joinable())
+        if (ws_thread_.joinable()) {
             ws_thread_.join();
+        }
         return Result::ERROR_CONNECTION_LOST;
     }
 
@@ -134,8 +140,9 @@ Result KrakenFeedHandler::start() {
 }
 
 void KrakenFeedHandler::stop() {
-    if (!running_.load(std::memory_order_acquire) && !ws_thread_.joinable())
+    if (!running_.load(std::memory_order_acquire) && !ws_thread_.joinable()) {
         return;
+    }
 
     LOG_INFO("Stopping feed handler", "symbol", symbol_.c_str());
     running_.store(false, std::memory_order_release);
@@ -146,8 +153,9 @@ void KrakenFeedHandler::stop() {
     }
     ws_cv_.notify_all();
 
-    if (ws_thread_.joinable())
+    if (ws_thread_.joinable()) {
         ws_thread_.join();
+    }
 }
 
 // ─── WebSocket event loop ─────────────────────────────────────────────────────
@@ -160,10 +168,11 @@ void KrakenFeedHandler::ws_event_loop() {
     int ws_port = 443;
     {
         size_t pos = ws_url_.find("://");
-        if (pos != std::string::npos)
+        if (pos != std::string::npos) {
             pos += 3;
-        else
+        } else {
             pos = 0;
+        }
         size_t slash = ws_url_.find('/', pos);
         std::string authority =
             ws_url_.substr(pos, slash == std::string::npos ? std::string::npos : slash - pos);
@@ -178,8 +187,9 @@ void KrakenFeedHandler::ws_event_loop() {
 
     // Kraken v2 subscription: symbol format "XBT/USD" (insert '/' before last 3 chars).
     std::string ws_sym = symbol_;
-    if (ws_sym.find('/') == std::string::npos && ws_sym.size() > 3)
+    if (ws_sym.find('/') == std::string::npos && ws_sym.size() > 3) {
         ws_sym.insert(ws_sym.size() - 3, "/");
+    }
 
     const std::string subscribe_msg =
         R"({"method":"subscribe","params":{"channel":"book","symbol":[")" + ws_sym +
@@ -198,7 +208,7 @@ void KrakenFeedHandler::ws_event_loop() {
         ctx_info.user = &session;
 
         auto* ctx = lws_create_context(&ctx_info);
-        if (!ctx) {
+        if (ctx == nullptr) {
             LOG_ERROR("lws_create_context failed", "symbol", symbol_.c_str());
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
@@ -206,17 +216,17 @@ void KrakenFeedHandler::ws_event_loop() {
         }
         lws_ctx_.store(ctx, std::memory_order_release);
 
-        lws_client_connect_info cc = {};
-        cc.context = ctx;
-        cc.address = ws_host.c_str();
-        cc.port = ws_port;
-        cc.path = "/v2";
-        cc.host = ws_host.c_str();
-        cc.origin = ws_host.c_str();
-        cc.protocol = k_kraken_protocols[0].name;
-        cc.ssl_connection = LCCSCF_USE_SSL;
+        lws_client_connect_info connect_info = {};
+        connect_info.context = ctx;
+        connect_info.address = ws_host.c_str();
+        connect_info.port = ws_port;
+        connect_info.path = "/v2";
+        connect_info.host = ws_host.c_str();
+        connect_info.origin = ws_host.c_str();
+        connect_info.protocol = k_kraken_protocols[0].name;
+        connect_info.ssl_connection = LCCSCF_USE_SSL;
 
-        if (!lws_client_connect_via_info(&cc)) {
+        if (lws_client_connect_via_info(&connect_info) == nullptr) {
             LOG_ERROR("WebSocket connect failed", "symbol", symbol_.c_str());
             lws_context_destroy(ctx);
             lws_ctx_.store(nullptr, std::memory_order_release);
@@ -226,8 +236,9 @@ void KrakenFeedHandler::ws_event_loop() {
         }
 
         // Wait for ESTABLISHED (subscription sent in WRITEABLE callback).
-        while (running_.load() && !session.established && !session.closed)
+        while (running_.load() && !session.established && !session.closed) {
             lws_service(ctx, 50);
+        }
 
         if (!running_.load() || session.closed) {
             lws_context_destroy(ctx);
@@ -263,7 +274,7 @@ void KrakenFeedHandler::ws_event_loop() {
         while (running_.load() && !session.closed) {
             lws_service(ctx, 1000);
 
-            if (!session.closed && session.wsi) {
+            if (!session.closed && (session.wsi != nullptr)) {
                 int64_t now = http::now_ns();
                 if (now - session.last_ping_ns > 20'000'000'000LL) {
                     session.send_ping = true;
@@ -289,7 +300,7 @@ void KrakenFeedHandler::ws_event_loop() {
 // ─── REST snapshot ────────────────────────────────────────────────────────────
 // Kraken REST response: {"error":[],"result":{"XXBTZUSD":{"bids":[["px","vol",ts],...],...}}}
 // The result key is the internal pair name (may differ from the requested symbol).
-Result KrakenFeedHandler::fetch_snapshot() {
+auto KrakenFeedHandler::fetch_snapshot() -> Result {
     const std::string url = api_url_ + "/0/public/Depth?pair=" + symbol_ + "&count=500";
 
     LOG_INFO("Fetching Kraken snapshot", "symbol", symbol_.c_str());
@@ -300,21 +311,21 @@ Result KrakenFeedHandler::fetch_snapshot() {
         return Result::ERROR_CONNECTION_LOST;
     }
 
-    auto j = nlohmann::json::parse(resp.body, nullptr, false);
-    if (j.is_discarded()) {
+    auto json = nlohmann::json::parse(resp.body, nullptr, false);
+    if (json.is_discarded()) {
         LOG_ERROR("Snapshot JSON parse failed", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
 
     // error must be an empty array
-    auto err_it = j.find("error");
-    if (err_it == j.end() || !err_it->is_array() || !err_it->empty()) {
+    auto err_it = json.find("error");
+    if (err_it == json.end() || !err_it->is_array() || !err_it->empty()) {
         LOG_ERROR("Kraken API returned error", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
 
-    auto res_it = j.find("result");
-    if (res_it == j.end() || !res_it->is_object() || res_it->empty()) {
+    auto res_it = json.find("result");
+    if (res_it == json.end() || !res_it->is_object() || res_it->empty()) {
         LOG_ERROR("No result in snapshot", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
@@ -323,15 +334,17 @@ Result KrakenFeedHandler::fetch_snapshot() {
     const auto pair_data = res_it->begin().value();
 
     const char* symbol = symbol_.c_str();
-    auto parse_rest_levels = [symbol](const nlohmann::json& arr) {
+    auto parse_rest_levels = [symbol](const nlohmann::json& arr) -> std::vector<PriceLevel> {
         std::vector<PriceLevel> levels;
-        if (!arr.is_array())
+        if (!arr.is_array()) {
             return levels;
+        }
         levels.reserve(arr.size());
         for (const auto& lvl : arr) {
             // Each entry: ["price_str", "vol_str", timestamp_int]
-            if (!lvl.is_array() || lvl.size() < 2)
+            if (!lvl.is_array() || lvl.size() < 2) {
                 continue;
+            }
             try {
                 levels.push_back(
                     {std::stod(lvl[0].get<std::string>()), std::stod(lvl[1].get<std::string>())});
@@ -357,8 +370,9 @@ Result KrakenFeedHandler::fetch_snapshot() {
     }
 
     last_seq_.store(0, std::memory_order_release);
-    if (snapshot_callback_)
+    if (snapshot_callback_) {
         snapshot_callback_(snap);
+    }
 
     LOG_INFO("Kraken snapshot received", "symbol", symbol_.c_str(), "bids", snap.bids.size(),
              "asks", snap.asks.size());
@@ -366,18 +380,21 @@ Result KrakenFeedHandler::fetch_snapshot() {
 }
 
 // ─── Message dispatch ─────────────────────────────────────────────────────────
-Result KrakenFeedHandler::process_message(const std::string& message) {
-    auto j = nlohmann::json::parse(message, nullptr, false);
-    if (j.is_discarded())
+auto KrakenFeedHandler::process_message(const std::string& message) -> Result {
+    auto json = nlohmann::json::parse(message, nullptr, false);
+    if (json.is_discarded()) {
         return Result::SUCCESS;
+    }
 
-    auto ch_it = j.find("channel");
-    if (ch_it == j.end() || !ch_it->is_string() || ch_it->get<std::string>() != "book")
+    auto ch_it = json.find("channel");
+    if (ch_it == json.end() || !ch_it->is_string() || ch_it->get<std::string>() != "book") {
         return Result::SUCCESS;
+    }
 
-    auto seq_it = j.find("seq");
-    if (seq_it == j.end())
+    auto seq_it = json.find("seq");
+    if (seq_it == json.end()) {
         return Result::ERROR_INVALID_SEQUENCE;
+    }
     uint64_t seq = seq_it->get<uint64_t>();
 
     auto cur = state_.load(std::memory_order_acquire);
@@ -397,39 +414,43 @@ Result KrakenFeedHandler::process_message(const std::string& message) {
         return Result::ERROR_SEQUENCE_GAP;
     }
 
-    return process_delta(j, seq);
+    return process_delta(json, seq);
 }
 
 // ─── Delta processing ─────────────────────────────────────────────────────────
 // Kraken v2 book update: {"channel":"book","type":"update","seq":N,
 //   "data":[{"symbol":"BTC/USD","bids":[{"price":X,"qty":Y}],"asks":[...]}]}
-Result KrakenFeedHandler::process_delta(const nlohmann::json& j, uint64_t seq) {
+auto KrakenFeedHandler::process_delta(const nlohmann::json& json, uint64_t seq) -> Result {
     last_seq_.store(seq, std::memory_order_release);
 
-    int64_t ts = http::now_ns();
+    int64_t timestamp_ns = http::now_ns();
 
     // Levels may be in data[0] (v2 envelope) or at the top level.
-    const nlohmann::json* src = &j;
-    auto data_it = j.find("data");
-    if (data_it != j.end() && data_it->is_array() && !data_it->empty())
+    const nlohmann::json* src = &json;
+    auto data_it = json.find("data");
+    if (data_it != json.end() && data_it->is_array() && !data_it->empty()) {
         src = &(*data_it)[0];
+    }
 
-    auto emit_levels = [&](const nlohmann::json& arr, Side side) {
-        if (!arr.is_array())
+    auto emit_levels = [&](const nlohmann::json& arr, Side side) -> void {
+        if (!arr.is_array()) {
             return;
+        }
         for (const auto& lvl : arr) {
             auto p_it = lvl.find("price");
             auto q_it = lvl.find("qty");
-            if (p_it == lvl.end() || q_it == lvl.end())
+            if (p_it == lvl.end() || q_it == lvl.end()) {
                 continue;
-            Delta d;
-            d.side = side;
-            d.price = p_it->get<double>();
-            d.size = q_it->get<double>();
-            d.sequence = seq;
-            d.timestamp_local_ns = ts;
-            if (delta_callback_)
-                delta_callback_(d);
+            }
+            Delta delta;
+            delta.side = side;
+            delta.price = p_it->get<double>();
+            delta.size = q_it->get<double>();
+            delta.sequence = seq;
+            delta.timestamp_local_ns = timestamp_ns;
+            if (delta_callback_) {
+                delta_callback_(delta);
+            }
         }
     };
 
@@ -440,17 +461,19 @@ Result KrakenFeedHandler::process_delta(const nlohmann::json& j, uint64_t seq) {
 }
 
 // ─── Buffered-delta replay ────────────────────────────────────────────────────
-Result KrakenFeedHandler::apply_buffered_deltas() {
+auto KrakenFeedHandler::apply_buffered_deltas() -> Result {
     size_t applied = 0, skipped = 0;
 
     for (const auto& msg : delta_buffer_) {
-        auto j = nlohmann::json::parse(msg, nullptr, false);
-        if (j.is_discarded())
+        auto json = nlohmann::json::parse(msg, nullptr, false);
+        if (json.is_discarded()) {
             continue;
+        }
 
-        auto seq_it = j.find("seq");
-        if (seq_it == j.end())
+        auto seq_it = json.find("seq");
+        if (seq_it == json.end()) {
             continue;
+        }
 
         uint64_t seq = seq_it->get<uint64_t>();
         uint64_t last_seq = last_seq_.load(std::memory_order_acquire);
@@ -458,8 +481,9 @@ Result KrakenFeedHandler::apply_buffered_deltas() {
         if (seq <= last_seq) {
             ++skipped;
         } else if (seq == last_seq + 1) {
-            if (process_delta(j, seq) == Result::SUCCESS)
+            if (process_delta(json, seq) == Result::SUCCESS) {
                 ++applied;
+            }
         } else {
             LOG_ERROR("Gap in buffered deltas", "seq", seq, "expected", last_seq + 1);
             delta_buffer_.clear();
@@ -473,14 +497,15 @@ Result KrakenFeedHandler::apply_buffered_deltas() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-bool KrakenFeedHandler::validate_delta_sequence(uint64_t seq) {
+auto KrakenFeedHandler::validate_delta_sequence(uint64_t seq) -> bool {
     return seq == last_seq_.load(std::memory_order_acquire) + 1;
 }
 
 void KrakenFeedHandler::trigger_resnapshot(const std::string& reason) {
     LOG_WARN("Triggering re-snapshot", "reason", reason.c_str());
-    if (error_callback_)
+    if (error_callback_) {
         error_callback_("Re-snapshot: " + reason);
+    }
     delta_buffer_.clear();
     state_.store(State::BUFFERING, std::memory_order_release);
 }

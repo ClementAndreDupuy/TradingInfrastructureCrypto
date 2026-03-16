@@ -36,30 +36,32 @@ struct CliOptions {
     int loop_interval_ms = 500;
 };
 
-CliOptions parse_args(int argc, char** argv) {
+auto parse_args(int argc, char** argv) -> CliOptions {
     CliOptions out;
     for (int i = 1; i < argc; ++i) {
         const std::string arg(argv[i]);
-        if (arg == "--mode" && i + 1 < argc)
+        if (arg == "--mode" && i + 1 < argc) {
             out.mode = argv[++i];
-        else if (arg == "--venues" && i + 1 < argc)
+        } else if (arg == "--venues" && i + 1 < argc) {
             out.venues = argv[++i];
-        else if (arg == "--symbol" && i + 1 < argc)
+        } else if (arg == "--symbol" && i + 1 < argc) {
             out.symbol = argv[++i];
-        else if (arg == "--loop-interval-ms" && i + 1 < argc)
+        } else if (arg == "--loop-interval-ms" && i + 1 < argc) {
             out.loop_interval_ms = std::stoi(argv[++i]);
+        }
     }
     return out;
 }
 
 std::atomic<bool> g_running{true};
 
-bool has_venue(const std::string& csv, const std::string& needle) {
-    std::stringstream ss(csv);
+auto has_venue(const std::string& csv, const std::string& needle) -> bool {
+    std::stringstream csv_stream(csv);
     std::string item;
-    while (std::getline(ss, item, ',')) {
-        if (item == needle)
+    while (std::getline(csv_stream, item, ',')) {
+        if (item == needle) {
             return true;
+        }
     }
     return false;
 }
@@ -71,25 +73,26 @@ void setup_signal_handlers() {
     std::signal(SIGTERM, stop_handler);
 }
 
-trading::Order make_child_order(const char* symbol, trading::Exchange exchange, trading::Side side,
-                                double qty, double price, uint64_t client_order_id) {
-    trading::Order o;
-    std::strncpy(o.symbol, symbol, sizeof(o.symbol) - 1);
-    o.symbol[sizeof(o.symbol) - 1] = '\0';
-    o.exchange = exchange;
-    o.side = side;
-    o.type = trading::OrderType::LIMIT;
-    o.tif = trading::TimeInForce::IOC;
-    o.quantity = qty;
-    o.price = price;
-    o.client_order_id = client_order_id;
-    return o;
+auto make_child_order(const char* symbol, trading::Exchange exchange, trading::Side side,
+                      double qty, double price, uint64_t client_order_id) -> trading::Order {
+    trading::Order order;
+    std::strncpy(order.symbol, symbol, sizeof(order.symbol) - 1);
+    order.symbol[sizeof(order.symbol) - 1] = '\0';
+    order.exchange = exchange;
+    order.side = side;
+    order.type = trading::OrderType::LIMIT;
+    order.tif = trading::TimeInForce::IOC;
+    order.quantity = qty;
+    order.price = price;
+    order.client_order_id = client_order_id;
+    return order;
 }
 
-trading::VenueQuote make_quote(trading::Exchange exchange, const trading::BookManager& book,
-                               bool enabled) {
-    if (!enabled)
+auto make_quote(trading::Exchange exchange, const trading::BookManager& book, bool enabled)
+    -> trading::VenueQuote {
+    if (!enabled) {
         return {exchange, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
+    }
 
     const bool book_ready = book.is_ready();
     const double bid = book_ready ? book.best_bid() : 100.0;
@@ -102,7 +105,7 @@ trading::VenueQuote make_quote(trading::Exchange exchange, const trading::BookMa
 
 } // namespace
 
-int main(int argc, char** argv) {
+auto main(int argc, char** argv) -> int {
     try {
         using namespace trading;
 
@@ -118,8 +121,9 @@ int main(int argc, char** argv) {
 
         setup_signal_handlers();
 
-        if (kill_switch.is_active())
+        if (kill_switch.is_active()) {
             return 2;
+        }
 
         const bool run_binance = has_venue(opts.venues, "BINANCE");
         const bool run_kraken = has_venue(opts.venues, "KRAKEN");
@@ -155,14 +159,18 @@ int main(int argc, char** argv) {
         coinbase_feed.set_snapshot_callback(coinbase_book.snapshot_handler());
         coinbase_feed.set_delta_callback(coinbase_book.delta_handler());
 
-        if (run_binance)
+        if (run_binance) {
             (void)binance_feed.start();
-        if (run_kraken)
+        }
+        if (run_kraken) {
             (void)kraken_feed.start();
-        if (run_okx)
+        }
+        if (run_okx) {
             (void)okx_feed.start();
-        if (run_coinbase)
+        }
+        if (run_coinbase) {
             (void)coinbase_feed.start();
+        }
 
         BinanceConnector binance(
             http::env_var("BINANCE_API_KEY"), http::env_var("BINANCE_API_SECRET"),
@@ -176,33 +184,40 @@ int main(int argc, char** argv) {
             opts.mode == "shadow" ? "mock://coinbase" : "https://api.coinbase.com");
 
         ReconciliationService reconciliation;
-        if (run_binance)
+        if (run_binance) {
             (void)reconciliation.register_connector(binance);
-        if (run_kraken)
+        }
+        if (run_kraken) {
             (void)reconciliation.register_connector(kraken);
-        if (run_okx)
+        }
+        if (run_okx) {
             (void)reconciliation.register_connector(okx);
-        if (run_coinbase)
+        }
+        if (run_coinbase) {
             (void)reconciliation.register_connector(coinbase);
+        }
 
-    auto connect_if_needed = [](LiveConnectorBase& connector, bool enabled,
-                                ReconciliationService& reconciliation) {
-        if (!enabled)
-            return false;
-        if (connector.is_connected())
-            return false;
+        auto connect_if_needed = [](LiveConnectorBase& connector, bool enabled,
+                                    ReconciliationService& reconciliation) -> bool {
+            if (!enabled) {
+                return false;
+            }
+            if (connector.is_connected()) {
+                return false;
+            }
 
-        const ConnectorResult res = connector.connect();
-        if (res == ConnectorResult::OK)
-            (void)reconciliation.mark_reconnect_required(connector.exchange_id());
-        return res == ConnectorResult::OK;
-    };
+            const ConnectorResult res = connector.connect();
+            if (res == ConnectorResult::OK) {
+                (void)reconciliation.mark_reconnect_required(connector.exchange_id());
+            }
+            return res == ConnectorResult::OK;
+        };
 
-    bool any_reconnected = false;
-    any_reconnected |= connect_if_needed(binance, run_binance, reconciliation);
-    any_reconnected |= connect_if_needed(kraken, run_kraken, reconciliation);
-    any_reconnected |= connect_if_needed(okx, run_okx, reconciliation);
-    any_reconnected |= connect_if_needed(coinbase, run_coinbase, reconciliation);
+        bool any_reconnected = false;
+        any_reconnected |= connect_if_needed(binance, run_binance, reconciliation);
+        any_reconnected |= connect_if_needed(kraken, run_kraken, reconciliation);
+        any_reconnected |= connect_if_needed(okx, run_okx, reconciliation);
+        any_reconnected |= connect_if_needed(coinbase, run_coinbase, reconciliation);
 
         if (any_reconnected) {
             const ConnectorResult reconcile_res = reconciliation.reconcile_on_reconnect();
@@ -229,8 +244,9 @@ int main(int argc, char** argv) {
                   << " symbol=" << opts.symbol << "\n";
 
         while (g_running.load(std::memory_order_acquire)) {
-            if (kill_switch.is_active())
+            if (kill_switch.is_active()) {
                 break;
+            }
 
             kill_switch.heartbeat();
             (void)kill_switch.check_heartbeat();
@@ -289,13 +305,13 @@ int main(int argc, char** argv) {
                 }
             }
 
-        const auto now = std::chrono::steady_clock::now();
-        if (now >= next_reconnect) {
-            bool recovered_connection = false;
-            recovered_connection |= connect_if_needed(binance, run_binance, reconciliation);
-            recovered_connection |= connect_if_needed(kraken, run_kraken, reconciliation);
-            recovered_connection |= connect_if_needed(okx, run_okx, reconciliation);
-            recovered_connection |= connect_if_needed(coinbase, run_coinbase, reconciliation);
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= next_reconnect) {
+                bool recovered_connection = false;
+                recovered_connection |= connect_if_needed(binance, run_binance, reconciliation);
+                recovered_connection |= connect_if_needed(kraken, run_kraken, reconciliation);
+                recovered_connection |= connect_if_needed(okx, run_okx, reconciliation);
+                recovered_connection |= connect_if_needed(coinbase, run_coinbase, reconciliation);
 
                 if (recovered_connection) {
                     const ConnectorResult reconcile_res = reconciliation.reconcile_on_reconnect();

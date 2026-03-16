@@ -4,31 +4,36 @@
 
 namespace trading {
 
-double SmartOrderRouter::effective_price_bps(const VenueQuote& v, Side side) noexcept {
-    const double px = (side == Side::BID) ? v.best_ask : v.best_bid;
-    if (px <= 0.0)
+auto SmartOrderRouter::effective_price_bps(const VenueQuote& venue_quote, Side side) noexcept
+    -> double {
+    const double quote_price = (side == Side::BID) ? venue_quote.best_ask : venue_quote.best_bid;
+    if (quote_price <= 0.0) {
         return 1e12;
+    }
 
-    return v.taker_fee_bps + v.latency_penalty_bps + v.risk_penalty_bps;
+    return venue_quote.taker_fee_bps + venue_quote.latency_penalty_bps +
+           venue_quote.risk_penalty_bps;
 }
 
-RoutingRegime
-SmartOrderRouter::infer_regime(const std::array<VenueQuote, MAX_VENUES>& venues) noexcept {
+auto SmartOrderRouter::infer_regime(const std::array<VenueQuote, MAX_VENUES>& venues) noexcept
+    -> RoutingRegime {
     double healthy_count = 0.0;
     double total_toxicity = 0.0;
     double total_fill = 0.0;
 
-    for (const auto& v : venues) {
-        if (!v.healthy)
+    for (const auto& venue_quote : venues) {
+        if (!venue_quote.healthy) {
             continue;
+        }
         healthy_count += 1.0;
-        total_toxicity += v.toxicity_bps;
-        total_fill += v.fill_probability;
+        total_toxicity += venue_quote.toxicity_bps;
+        total_fill += venue_quote.fill_probability;
     }
 
     RoutingRegime regime;
-    if (healthy_count <= 0.0)
+    if (healthy_count <= 0.0) {
         return regime;
+    }
 
     const double avg_toxicity = total_toxicity / healthy_count;
     const double avg_fill = total_fill / healthy_count;
@@ -56,19 +61,20 @@ SmartOrderRouter::infer_regime(const std::array<VenueQuote, MAX_VENUES>& venues)
     return regime;
 }
 
-double SmartOrderRouter::score_venue_bps(const VenueQuote& v, Side side,
-                                         const RoutingRegime& regime) noexcept {
-    const double base_cost = effective_price_bps(v, side);
-    const double clipped_fill = (v.fill_probability < 0.05) ? 0.05 : v.fill_probability;
+auto SmartOrderRouter::score_venue_bps(const VenueQuote& venue_quote, Side side,
+                                       const RoutingRegime& regime) noexcept -> double {
+    const double base_cost = effective_price_bps(venue_quote, side);
+    const double clipped_fill =
+        (venue_quote.fill_probability < 0.05) ? 0.05 : venue_quote.fill_probability;
     const double fill_penalty = regime.fill_weight_bps * (1.0 - clipped_fill);
-    const double queue_penalty = regime.queue_weight_bps * v.queue_ahead_qty;
-    const double toxicity_penalty = regime.toxicity_weight * v.toxicity_bps;
+    const double queue_penalty = regime.queue_weight_bps * venue_quote.queue_ahead_qty;
+    const double toxicity_penalty = regime.toxicity_weight * venue_quote.toxicity_bps;
     return base_cost + fill_penalty + queue_penalty + toxicity_penalty;
 }
 
-RoutingDecision
-SmartOrderRouter::route(Side side, double quantity,
-                        const std::array<VenueQuote, MAX_VENUES>& venues) const noexcept {
+auto SmartOrderRouter::route(Side side, double quantity,
+                             const std::array<VenueQuote, MAX_VENUES>& venues) const noexcept
+    -> RoutingDecision {
     RoutingDecision out;
 
     std::array<bool, MAX_VENUES> used{};
@@ -76,39 +82,47 @@ SmartOrderRouter::route(Side side, double quantity,
     const RoutingRegime regime = infer_regime(venues);
     double best_px = 1e18;
 
-    for (const auto& v : venues) {
-        if (!v.healthy || v.depth_qty <= 0.0)
+    for (const auto& venue_quote : venues) {
+        if (!venue_quote.healthy || venue_quote.depth_qty <= 0.0) {
             continue;
-        const double px = (side == Side::BID) ? v.best_ask : v.best_bid;
-        if (px > 0.0 && px < best_px)
-            best_px = px;
+        }
+        const double quote_price =
+            (side == Side::BID) ? venue_quote.best_ask : venue_quote.best_bid;
+        if (quote_price > 0.0 && quote_price < best_px) {
+            best_px = quote_price;
+        }
     }
 
-    if (best_px >= 1e17)
+    if (best_px >= 1e17) {
         return out;
+    }
 
     while (remaining > 1e-12 && out.child_count < out.children.size()) {
         int best_idx = -1;
         double best_score = 1e18;
 
         for (size_t i = 0; i < venues.size(); ++i) {
-            if (used[i])
+            if (used[i]) {
                 continue;
-            const auto& v = venues[i];
-            if (!v.healthy || v.depth_qty <= 0.0)
+            }
+            const auto& venue_quote = venues[i];
+            if (!venue_quote.healthy || venue_quote.depth_qty <= 0.0) {
                 continue;
+            }
 
-            const double quote_px = (side == Side::BID) ? v.best_ask : v.best_bid;
+            const double quote_px =
+                (side == Side::BID) ? venue_quote.best_ask : venue_quote.best_bid;
             const double px_penalty_bps = ((quote_px - best_px) / best_px) * 1e4;
-            const double score = score_venue_bps(v, side, regime) + px_penalty_bps;
+            const double score = score_venue_bps(venue_quote, side, regime) + px_penalty_bps;
             if (score < best_score) {
                 best_score = score;
                 best_idx = static_cast<int>(i);
             }
         }
 
-        if (best_idx < 0)
+        if (best_idx < 0) {
             break;
+        }
 
         const VenueQuote& winner = venues[best_idx];
         const double clip = (remaining < winner.depth_qty) ? remaining : winner.depth_qty;
@@ -126,10 +140,11 @@ SmartOrderRouter::route(Side side, double quantity,
     return out;
 }
 
-RoutingDecision SmartOrderRouter::route_with_alpha(Side side, double base_quantity,
-                                                   const AlphaSignal& alpha_signal,
-                                                   const std::array<VenueQuote, MAX_VENUES>& venues,
-                                                   const RoutingConstraints& cfg) const noexcept {
+auto SmartOrderRouter::route_with_alpha(Side side, double base_quantity,
+                                        const AlphaSignal& alpha_signal,
+                                        const std::array<VenueQuote, MAX_VENUES>& venues,
+                                        const RoutingConstraints& cfg) const noexcept
+    -> RoutingDecision {
     RoutingDecision out;
 
     if (alpha_signal.risk_score >= cfg.alpha_risk_max) {
