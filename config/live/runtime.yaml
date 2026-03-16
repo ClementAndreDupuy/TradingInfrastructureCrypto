@@ -1,0 +1,5 @@
+# Runtime defaults for deploy/run_live.sh
+symbol: BTCUSDT
+venues: BINANCE,KRAKEN,OKX,COINBASE
+interval_ms: 500
+env_file: config/live/trading.env
