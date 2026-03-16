@@ -118,14 +118,17 @@ class ShadowConnector : public ExchangeConnector {
         slot->is_maker = false;
         slot->queue_ahead_qty = queue_ahead_at_submit(*slot);
 
-        if (order.type == OrderType::MARKET ||
-            (order.tif == TimeInForce::IOC && is_immediately_fillable(*slot))) {
+        const bool fillable_now = is_immediately_fillable(*slot);
+        const bool released = slot->submit_ts_ns >= slot->release_ts_ns;
+
+        if (released && (order.type == OrderType::MARKET || fillable_now)) {
             fill_at_best(*slot, slot->quantity);
             return ConnectorResult::OK;
         }
 
-        if (order.type == OrderType::LIMIT && is_immediately_fillable(*slot)) {
-            fill_at_best(*slot, slot->quantity);
+        if (order.tif == TimeInForce::IOC && !fillable_now) {
+            emit_cancel(*slot);
+            slot->active = false;
             return ConnectorResult::OK;
         }
 
@@ -189,7 +192,13 @@ class ShadowConnector : public ExchangeConnector {
                 fill_at_best(s, s.quantity - s.filled_qty);
                 continue;
             }
-            if (is_immediately_fillable(s))
+            const bool fillable = is_immediately_fillable(s);
+            if (s.tif == TimeInForce::IOC && !fillable) {
+                emit_cancel(s);
+                s.active = false;
+                continue;
+            }
+            if (fillable)
                 fill_passive_or_cross(s);
         }
     }
