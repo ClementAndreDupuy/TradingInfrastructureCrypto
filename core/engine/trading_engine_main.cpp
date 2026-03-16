@@ -90,10 +90,10 @@ int main(int argc, char** argv) {
     coinbase.connect();
 
     std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venues{{
-        {Exchange::BINANCE, 100.0, 100.1, 0.40, 5.0, 0.5, 0.2, true},
-        {Exchange::KRAKEN, 100.0, 100.2, 0.40, 4.0, 0.7, 0.3, true},
-        {Exchange::OKX, 100.0, 100.0, 0.30, 5.0, 0.4, 0.4, true},
-        {Exchange::COINBASE, 100.0, 100.3, 3.00, 6.0, 0.9, 0.5, true},
+        {Exchange::BINANCE, 100.0, 100.1, 0.40, 5.0, 0.5, 0.2, 0.70, 0.20, 0.4, true},
+        {Exchange::KRAKEN, 100.0, 100.2, 0.40, 4.0, 0.7, 0.3, 0.68, 0.30, 0.3, true},
+        {Exchange::OKX, 100.0, 100.0, 0.30, 5.0, 0.4, 0.4, 0.72, 0.10, 0.5, true},
+        {Exchange::COINBASE, 100.0, 100.3, 3.00, 6.0, 0.9, 0.5, 0.63, 0.40, 0.6, true},
     }};
 
     AlphaSignalReader alpha_reader;
