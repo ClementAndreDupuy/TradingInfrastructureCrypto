@@ -155,6 +155,10 @@ add_executable(trading_engine
 target_link_libraries(trading_engine
     execution
     trading_common
+    binance_feed
+    kraken_feed
+    okx_feed
+    coinbase_feed
 )
 
 install(TARGETS execution trading_engine

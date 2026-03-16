@@ -1,7 +1,7 @@
 ## TODO List
 
 ### CRITICAL
-- [ ] **C-NEW-1** `core/engine/trading_engine_main.cpp` — Replace demo harness with a production event-driven daemon: construct feed handlers + book managers for all 4 venues, run continuous WebSocket event loop, call `NeuralAlphaMarketMaker::on_book_update()` on every tick, periodic `ReconciliationService` call every 30 s, heartbeat keepalive for kill switch, clean SIGTERM/SIGINT shutdown handler. Current binary fires one SOR decision and exits — SystemD restart loop would submit uncoordinated sporadic orders with no position management.
+- [x] **C-NEW-1** `core/engine/trading_engine_main.cpp` — Replace demo harness with a production event-driven daemon: construct feed handlers + book managers for all 4 venues, run continuous WebSocket event loop, call `NeuralAlphaMarketMaker::on_book_update()` on every tick, periodic `ReconciliationService` call every 30 s, heartbeat keepalive for kill switch, clean SIGTERM/SIGINT shutdown handler. Current binary fires one SOR decision and exits — SystemD restart loop would submit uncoordinated sporadic orders with no position management.
   - acceptance: binary runs continuously until SIGTERM; does not exit on clean operation
   - acceptance: kill switch heartbeat is refreshed at ≥ 1 Hz
   - acceptance: reconciliation runs on reconnect and every 30 s
