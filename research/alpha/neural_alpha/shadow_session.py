@@ -57,7 +57,6 @@ from .pipeline import (
     _fetch_kraken_l5,
     _fetch_okx_l5,
     _fetch_solana_l5,
-    _collect_l5_ticks_rest,
     collect_from_core_bridge,
 )
 from .core_bridge import CoreBridge
@@ -177,16 +176,27 @@ class NeuralAlphaShadowSession:
         self._secondary_model = model
         print(f"Secondary model loaded from {path}")
 
+    def _collect_training_ticks(self, n_ticks: int) -> pl.DataFrame:
+        df = collect_from_core_bridge(n_ticks=n_ticks, interval_ms=self.cfg.interval_ms)
+        if df is not None and len(df) > 0:
+            return df
+
+        print("[WARN] core bridge unavailable for training; falling back to session collectors")
+        interval_s = self.cfg.interval_ms / 1000.0
+        rows: list[dict] = []
+        while len(rows) < n_ticks:
+            rows.extend(self._fetch_tick())
+            if len(rows) >= n_ticks:
+                break
+            time.sleep(interval_s)
+
+        if not rows:
+            raise RuntimeError("No data collected for training — core bridge and collectors unavailable.")
+        return pl.DataFrame(rows[:n_ticks]).sort("timestamp_ns")
+
     def train_on_recent(self, n_ticks: int) -> None:
         print(f"Collecting {n_ticks} ticks for in-place training...")
-        df = collect_from_core_bridge(n_ticks=n_ticks, interval_ms=self.cfg.interval_ms)
-        if df is None or len(df) == 0:
-            print("[WARN] core bridge unavailable for training; falling back to REST collectors")
-            df = _collect_l5_ticks_rest(
-                n_ticks=n_ticks,
-                interval_ms=self.cfg.interval_ms,
-                exchanges=self.cfg.exchanges,
-            )
+        df = self._collect_training_ticks(n_ticks)
 
         resume_state = None
         if self._model is not None:
