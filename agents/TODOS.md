@@ -21,7 +21,7 @@
 ### MEDIUM
 - [x] **M1** `core/orderbook/orderbook.hpp` — Added adaptive order book recentering strategy with streak + hard-breach triggers, preserving in-range liquidity while re-anchoring grid during volatile out-of-range regimes; covered by dedicated unit tests
 - [ ] **M2** `core/feeds/` + `tests/replay/` — Build feed-certification replay harness with venue-specific pathological scenarios and acceptance thresholds
-- [ ] **M3** `research/alpha/neural_alpha/` + deploy — Add model governance: champion/challenger registry, automatic rollback policy, and drift-triggered safe mode
+- [x] **M3** `research/alpha/neural_alpha/` + deploy — Added model governance with champion/challenger registry, automatic rollback to previous champion, and drift-triggered safe mode in shadow inference
 
 ### LOW
 - [ ] **L1** `deploy/daily_train.py` — Add alerting webhook (Slack/PagerDuty) when model fails to promote or IC drops below floor (mail-only fallback is acceptable interim mitigation)

@@ -49,6 +49,7 @@ import torch
 
 from .dataset import rolling_normalise
 from .features import compute_lob_tensor, compute_scalar_features
+from .governance import ChampionChallengerRegistry, DriftGuard
 from .model import CryptoAlphaNet
 from .pipeline import _fetch_binance_l5, _fetch_kraken_l5, _fetch_solana_l5
 from .trainer import TrainerConfig, walk_forward_train
@@ -101,6 +102,11 @@ class ShadowSessionConfig:
     train_epochs: int = 10
     exchanges: list[str] = field(default_factory=lambda: ["SOLANA"])
     signal_file: str = _SIGNAL_FILE
+    registry_path: str = "models/model_registry.json"
+    drift_window: int = 200
+    drift_min_samples: int = 60
+    drift_ic_floor: float = -0.05
+    safe_mode_ticks: int = 120
 
 
 class NeuralAlphaShadowSession:
@@ -122,6 +128,13 @@ class NeuralAlphaShadowSession:
         self._running = False
         self._signals: list[float] = []
         self._outcomes: list[float] = []
+        self._registry = ChampionChallengerRegistry(cfg.registry_path)
+        self._drift_guard = DriftGuard(
+            window=cfg.drift_window,
+            min_samples=cfg.drift_min_samples,
+            ic_floor=cfg.drift_ic_floor,
+        )
+        self._safe_mode_ticks_remaining = 0
 
     # ── Model loading / training ──────────────────────────────────────────────
 
@@ -262,6 +275,10 @@ class NeuralAlphaShadowSession:
         elif signal_bps < 0 and ret_1tick_bps >= 0:
             signal_bps = 0.0
 
+        if self._safe_mode_ticks_remaining > 0:
+            signal_bps = 0.0
+            self._safe_mode_ticks_remaining -= 1
+
         # Publish to shared memory — C++ reads on next book update (< 100 ns)
         self._publisher.publish(signal_bps, risk)
 
@@ -283,7 +300,20 @@ class NeuralAlphaShadowSession:
             "dir_p_flat":     float(dir_probs[1]),
             "dir_p_up":       float(dir_probs[2]),
             "gated":          signal_bps == 0.0 and raw_signal_bps != 0.0,
+            "safe_mode":      self._safe_mode_ticks_remaining > 0,
         }
+
+    def _trigger_safe_mode(self, reason: str) -> None:
+        self._safe_mode_ticks_remaining = max(self._safe_mode_ticks_remaining, self.cfg.safe_mode_ticks)
+        rollback_path = self._registry.rollback_to_previous_champion(reason=reason)
+        if rollback_path and Path(rollback_path).exists():
+            try:
+                self.load_model(rollback_path)
+                print(f"[SAFE_MODE] rollback model loaded: {rollback_path}")
+            except Exception as exc:
+                print(f"[SAFE_MODE] rollback load failed: {exc}")
+        else:
+            print("[SAFE_MODE] no rollback champion available; publishing neutral signal only")
 
     # ── Data collection ───────────────────────────────────────────────────────
 
@@ -362,6 +392,12 @@ class NeuralAlphaShadowSession:
                     if prev_mid is not None and prev_mid > 0:
                         realised = (signal_info["mid_price"] - prev_mid) / prev_mid
                         self._outcomes.append(realised)
+                        drift_triggered = self._drift_guard.update(signal_info["signal"], realised)
+                        if drift_triggered:
+                            ic = self._drift_guard.current_ic()
+                            self._trigger_safe_mode(
+                                reason=f"drift_ic_breach ic={ic:.4f} floor={self.cfg.drift_ic_floor:.4f}"
+                            )
 
                     self._signals.append(signal_info["signal"])
                     prev_mid = signal_info["mid_price"]
@@ -402,6 +438,11 @@ def main() -> None:
     ap.add_argument("--train-ticks",          type=int, default=0, dest="train_ticks")
     ap.add_argument("--train-epochs",         type=int, default=10, dest="train_epochs")
     ap.add_argument("--exchanges",            type=str, default="SOLANA")
+    ap.add_argument("--registry-path",        type=str, default="models/model_registry.json", dest="registry_path")
+    ap.add_argument("--drift-window",         type=int, default=200, dest="drift_window")
+    ap.add_argument("--drift-min-samples",    type=int, default=60, dest="drift_min_samples")
+    ap.add_argument("--drift-ic-floor",       type=float, default=-0.05, dest="drift_ic_floor")
+    ap.add_argument("--safe-mode-ticks",      type=int, default=120, dest="safe_mode_ticks")
     args = ap.parse_args()
 
     cfg = ShadowSessionConfig(
@@ -419,6 +460,11 @@ def main() -> None:
         train_epochs=args.train_epochs,
         exchanges=args.exchanges.split(","),
         signal_file=args.signal_file,
+        registry_path=args.registry_path,
+        drift_window=args.drift_window,
+        drift_min_samples=args.drift_min_samples,
+        drift_ic_floor=args.drift_ic_floor,
+        safe_mode_ticks=args.safe_mode_ticks,
     )
 
     session = NeuralAlphaShadowSession(cfg)
