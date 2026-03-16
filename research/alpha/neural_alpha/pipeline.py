@@ -226,23 +226,28 @@ def collect_l5_ticks(
     n_ticks: int,
     interval_ms: int,
     exchanges: list[str] | None = None,
+    allow_rest_fallback: bool = True,
 ) -> pl.DataFrame:
-    """Fetch L5 LOB snapshots from the specified exchanges.
-
-    Supported exchange labels: BINANCE, KRAKEN, OKX, COINBASE, SOLANA.
-    """
+    """Fetch L5 LOB snapshots from core feed bridge, optionally topped up via REST."""
     exchanges = exchanges or ["BINANCE", "KRAKEN", "OKX", "COINBASE"]
     bridge_df = collect_from_core_bridge(n_ticks=n_ticks, interval_ms=interval_ms)
 
     if bridge_df is not None and len(bridge_df) >= n_ticks // 2:
-        if len(bridge_df) < n_ticks:
+        if len(bridge_df) < n_ticks and allow_rest_fallback:
             print(f"[WARN] bridge returned {len(bridge_df)} ticks (< {n_ticks}); topping up with REST")
             rest_df = _collect_l5_ticks_rest(n_ticks - len(bridge_df), interval_ms, exchanges)
             return pl.concat([bridge_df, rest_df]).sort("timestamp_ns")
+        if len(bridge_df) < n_ticks:
+            raise RuntimeError(
+                f"Core bridge returned {len(bridge_df)} ticks (< {n_ticks}) and REST fallback is disabled."
+            )
         return bridge_df
 
-    print("[WARN] core bridge unavailable or insufficient; falling back to REST collection")
-    return _collect_l5_ticks_rest(n_ticks, interval_ms, exchanges)
+    if allow_rest_fallback:
+        print("[WARN] core bridge unavailable or insufficient; falling back to REST collection")
+        return _collect_l5_ticks_rest(n_ticks, interval_ms, exchanges)
+
+    raise RuntimeError("Core bridge unavailable and REST fallback disabled.")
 
 
 # ── Synthetic data for offline testing ───────────────────────────────────────
@@ -302,8 +307,12 @@ def run_pipeline(args: argparse.Namespace) -> None:
         print(f"Loading data from {args.data_path}")
         df = pl.read_parquet(args.data_path)
     else:
-        df = collect_l5_ticks(args.ticks, args.interval_ms,
-                               exchanges=args.exchanges.split(","))
+        df = collect_l5_ticks(
+            args.ticks,
+            args.interval_ms,
+            exchanges=args.exchanges.split(","),
+            allow_rest_fallback=not args.core_only,
+        )
 
     if args.save_data:
         out = Path(args.save_data)
@@ -383,9 +392,11 @@ def main() -> None:
     ap.add_argument("--ticks",           type=int,   default=300,
                     help="Ticks to collect per exchange (default 300)")
     ap.add_argument("--interval-ms",     type=int,   default=500,   dest="interval_ms")
-    ap.add_argument("--exchanges", type=str, default="SOLANA")
+    ap.add_argument("--exchanges", type=str, default="BINANCE,KRAKEN,OKX,COINBASE")
     ap.add_argument("--synthetic",       action="store_true",
                     help="Use synthetic LOB data (offline testing)")
+    ap.add_argument("--core-only", action="store_true",
+                    help="Require core feed bridge data; disable REST fallback")
     ap.add_argument("--data-path",       type=str,   default=None,  dest="data_path",
                     help="Load existing Parquet instead of fetching")
     ap.add_argument("--save-data",       type=str,   default=None,  dest="save_data")
