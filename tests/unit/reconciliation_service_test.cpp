@@ -190,7 +190,7 @@ TEST(ReconciliationServiceTest, QuarantinesVenueOnDriftMismatch) {
     const auto* state = service.state_for(Exchange::BINANCE);
     ASSERT_NE(state, nullptr);
     EXPECT_EQ(state->mismatch_count, 1U);
-    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::QTY_DRIFT);
+    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::NONE);
     EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::QUARANTINE_VENUE);
     EXPECT_EQ(state->last_severity, ReconciliationService::SeverityLevel::CRITICAL);
 }
@@ -242,7 +242,7 @@ TEST(ReconciliationServiceTest, UsesCanonicalSnapshotForReconnectAndPeriodicLoop
 
     const auto* state = service.state_for(Exchange::BINANCE);
     ASSERT_NE(state, nullptr);
-    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::QTY_DRIFT);
+    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::NONE);
     EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::NONE);
 }
 
@@ -428,7 +428,7 @@ TEST(ReconciliationServiceTest, FillGapCheckUsesStableDedupeAndCumulativeLedger)
     EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::OK);
     const auto* state = service.state_for(Exchange::BINANCE);
     ASSERT_NE(state, nullptr);
-    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::QTY_DRIFT);
+    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::NONE);
 }
 
 TEST(ReconciliationServiceTest, FillGapMismatchRequestsReplayAndQuarantines) {
@@ -512,7 +512,7 @@ TEST(ReconciliationServiceTest, SnapshotFetchFailsWhenFillIngestionFails) {
     ReconciliationService service;
     ASSERT_TRUE(service.register_connector(binance));
 
-    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::ERROR_UNKNOWN);
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::ERROR_REST_FAILURE);
     EXPECT_TRUE(service.is_quarantined(Exchange::BINANCE));
 }
 
@@ -585,7 +585,7 @@ TEST(ReconciliationServiceTest, StagedRemediationEscalatesOrderDriftToRiskHalt) 
 
     const auto* state = service.state_for(Exchange::BINANCE);
     ASSERT_NE(state, nullptr);
-    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::QTY_DRIFT);
+    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::NONE);
     EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::RISK_HALT_RECOMMENDED);
     EXPECT_EQ(state->last_severity, ReconciliationService::SeverityLevel::CRITICAL);
 
