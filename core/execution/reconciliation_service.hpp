@@ -9,12 +9,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
+#include <utility>
 
 namespace trading {
 
 class ReconciliationService {
   public:
     static constexpr size_t MAX_CONNECTORS = 4;
+    using CanonicalSnapshotFetcher = std::function<bool(ReconciliationSnapshot&)>;
 
     enum class MismatchClass : uint8_t {
         NONE = 0,
@@ -76,13 +79,17 @@ class ReconciliationService {
         return true;
     }
 
-    ConnectorResult reconcile_on_reconnect() {
-        return run_reconciliation_cycle(true);
+    bool set_canonical_snapshot_fetcher(Exchange exchange, CanonicalSnapshotFetcher fetcher) {
+        const size_t idx = index_for(exchange);
+        if (idx == MAX_CONNECTORS)
+            return false;
+        canonical_snapshot_fetchers_[idx] = std::move(fetcher);
+        return true;
     }
 
-    ConnectorResult run_periodic_drift_check() {
-        return run_reconciliation_cycle(false);
-    }
+    ConnectorResult reconcile_on_reconnect() { return run_reconciliation_cycle(true); }
+
+    ConnectorResult run_periodic_drift_check() { return run_reconciliation_cycle(false); }
 
     bool is_quarantined(Exchange exchange) const {
         const VenueState* state = find_state(exchange);
@@ -113,9 +120,22 @@ class ReconciliationService {
                 return res;
             }
 
-            const DriftDecision decision =
-                has_canonical_snapshot_[i] ? evaluate_drift(snapshot, canonical_snapshots_[i])
-                                           : evaluate_snapshot_sanity(snapshot);
+            ReconciliationSnapshot canonical_snapshot;
+            const ReconciliationSnapshot* canonical = nullptr;
+            if (canonical_snapshot_fetchers_[i]) {
+                canonical_snapshot.clear();
+                if (!canonical_snapshot_fetchers_[i](canonical_snapshot)) {
+                    quarantine(i, MismatchClass::NONE, DriftAction::QUARANTINE_VENUE,
+                               "canonical snapshot fetch failed");
+                    return ConnectorResult::ERROR_UNKNOWN;
+                }
+                canonical = &canonical_snapshot;
+            } else if (has_canonical_snapshot_[i]) {
+                canonical = &canonical_snapshots_[i];
+            }
+
+            const DriftDecision decision = canonical ? evaluate_drift(snapshot, *canonical)
+                                                     : evaluate_snapshot_sanity(snapshot);
             if (decision.mismatch) {
                 quarantine(i, decision.mismatch_class, decision.action, decision.reason);
                 return ConnectorResult::ERROR_UNKNOWN;
@@ -216,15 +236,15 @@ class ReconciliationService {
         }
 
         if (fill_gap_detected(venue, canonical)) {
-            return mismatch(MismatchClass::FILL_GAP, DriftAction::REQUEST_FILL_REPLAY,
-                            "fill_gap");
+            return mismatch(MismatchClass::FILL_GAP, DriftAction::REQUEST_FILL_REPLAY, "fill_gap");
         }
 
         for (size_t i = 0; i < canonical.balances.size; ++i) {
             const ReconciledBalance& internal_balance = canonical.balances.items[i];
             const ReconciledBalance* venue_balance = find_balance(venue, internal_balance.asset);
             if (!venue_balance ||
-                drift(venue_balance->total, internal_balance.total) > thresholds_.max_balance_drift ||
+                drift(venue_balance->total, internal_balance.total) >
+                    thresholds_.max_balance_drift ||
                 drift(venue_balance->available, internal_balance.available) >
                     thresholds_.max_balance_drift) {
                 return mismatch(MismatchClass::BALANCE_DRIFT, DriftAction::RISK_HALT_RECOMMENDED,
@@ -241,8 +261,8 @@ class ReconciliationService {
                     thresholds_.max_position_drift ||
                 drift(venue_position->avg_entry_price, internal_position.avg_entry_price) >
                     thresholds_.max_position_drift) {
-                return mismatch(MismatchClass::POSITION_DRIFT,
-                                DriftAction::RISK_HALT_RECOMMENDED, "position_drift");
+                return mismatch(MismatchClass::POSITION_DRIFT, DriftAction::RISK_HALT_RECOMMENDED,
+                                "position_drift");
             }
         }
 
@@ -372,6 +392,7 @@ class ReconciliationService {
     std::array<LiveConnectorBase*, MAX_CONNECTORS> connectors_{};
     std::array<VenueState, MAX_CONNECTORS> states_{};
     std::array<ReconciliationSnapshot, MAX_CONNECTORS> canonical_snapshots_{};
+    std::array<CanonicalSnapshotFetcher, MAX_CONNECTORS> canonical_snapshot_fetchers_{};
     std::array<bool, MAX_CONNECTORS> has_canonical_snapshot_{};
     size_t connector_count_ = 0;
 };

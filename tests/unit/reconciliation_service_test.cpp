@@ -243,8 +243,46 @@ TEST(ReconciliationServiceTest, DetectsExplicitMismatchClasses) {
     const auto* state = service.state_for(Exchange::BINANCE);
     ASSERT_NE(state, nullptr);
     EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::BALANCE_DRIFT);
-    EXPECT_EQ(state->last_action,
-              ReconciliationService::DriftAction::RISK_HALT_RECOMMENDED);
+    EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::RISK_HALT_RECOMMENDED);
+}
+
+TEST(ReconciliationServiceTest, CanonicalSnapshotFetcherIsUsedOnEachCycle) {
+    ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
+                                     const std::vector<std::string>&) {
+        if (contains(url, "binance.test"))
+            return binance_snapshot_response(method, url);
+        return http::HttpResponse{404, ""};
+    });
+
+    BinanceConnector binance("k", "s", "https://binance.test");
+    ReconciliationService service;
+    ASSERT_TRUE(service.register_connector(binance));
+
+    uint32_t fetch_count = 0;
+    ASSERT_TRUE(service.set_canonical_snapshot_fetcher(
+        Exchange::BINANCE, [&fetch_count](ReconciliationSnapshot& canonical) {
+            ++fetch_count;
+            canonical.clear();
+
+            ReconciledOrder order;
+            order.client_order_id = 77;
+            std::strncpy(order.venue_order_id, "bn-1", sizeof(order.venue_order_id) - 1);
+            std::strncpy(order.symbol, "BTCUSDT", sizeof(order.symbol) - 1);
+            order.quantity = 1.0;
+            order.filled_quantity = 0.2;
+            if (!canonical.open_orders.push(order))
+                return false;
+
+            ReconciledBalance balance;
+            std::strncpy(balance.asset, "BTC", sizeof(balance.asset) - 1);
+            balance.total = 1.1;
+            balance.available = 1.0;
+            return canonical.balances.push(balance);
+        }));
+
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::OK);
+    EXPECT_EQ(service.run_periodic_drift_check(), ConnectorResult::OK);
+    EXPECT_EQ(fetch_count, 2U);
 }
 
 TEST(ReconciliationServiceTest, PeriodicDriftCheckSuccess) {
