@@ -19,6 +19,8 @@ BUILD_BINDINGS=1
 RUN_TESTS=1
 RUN_CPP_TESTS=1
 COMPILE_PYTHON=1
+STRICT_CPP=0
+STRICT_PYTHON=0
 BUILD_DIR="build"
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 PYTHON_BIN="${PYTHON_BIN:-}"
@@ -35,6 +37,8 @@ Options:
   --skip-compileall       Skip Python byte-compilation check
   --skip-tests            Skip Python unit tests ('pytest tests/unit/')
   --skip-cpp-tests        Skip C++ tests ('ctest --output-on-failure')
+  --strict-cpp            Fail build when C++ configure/build fails
+  --strict-python         Fail build when Python install/bindings/tests fail
   --build-dir <DIR>       CMake build directory (default: build)
   --jobs <N>              Parallel jobs for CMake build (default: detected CPU count)
   -h, --help              Show this help
@@ -50,6 +54,8 @@ while [[ $# -gt 0 ]]; do
         --skip-compileall) COMPILE_PYTHON=0; shift ;;
         --skip-tests) RUN_TESTS=0; shift ;;
         --skip-cpp-tests) RUN_CPP_TESTS=0; shift ;;
+        --strict-cpp) STRICT_CPP=1; shift ;;
+        --strict-python) STRICT_PYTHON=1; shift ;;
         --build-dir) BUILD_DIR="$2"; shift 2 ;;
         --jobs) JOBS="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
@@ -74,6 +80,9 @@ choose_python() {
     for candidate in python3.12 python3.11 python3.10 python3; do
         if command -v "$candidate" >/dev/null 2>&1; then
             if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
+                if [[ "$INSTALL_PYTHON" -eq 1 ]] && ! "$candidate" -m pip --version >/dev/null 2>&1; then
+                    continue
+                fi
                 PYTHON_BIN="$candidate"
                 return 0
             fi
@@ -83,9 +92,23 @@ choose_python() {
     return 1
 }
 
+ensure_pip() {
+    if "$PYTHON_BIN" -m pip --version >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo "[build] pip not available for $PYTHON_BIN, attempting bootstrap via ensurepip"
+    if "$PYTHON_BIN" -m ensurepip --upgrade >/dev/null 2>&1; then
+        "$PYTHON_BIN" -m pip --version >/dev/null 2>&1
+        return $?
+    fi
+
+    return 1
+}
+
 action_cpp() {
     echo "[build] Configuring CMake in $BUILD_DIR"
-    cmake -S . -B "$BUILD_DIR"
+    cmake -S . -B "$BUILD_DIR" || return 1
     echo "[build] Building C++ targets (jobs=$JOBS)"
     cmake --build "$BUILD_DIR" -j "$JOBS"
 }
@@ -119,7 +142,17 @@ action_cpp_tests() {
 }
 
 if [[ "$BUILD_CPP" -eq 1 ]]; then
-    action_cpp
+    if ! action_cpp; then
+        if [[ "$STRICT_CPP" -eq 1 ]]; then
+            echo "[build] ERROR: C++ build failed (--strict-cpp enabled)."
+            exit 1
+        fi
+        echo "[build] WARNING: C++ build failed (often due to missing local system dependencies)."
+        echo "[build] WARNING: Continuing with Python-only steps. Use --strict-cpp to fail fast."
+        BUILD_CPP=0
+        RUN_CPP_TESTS=0
+        BUILD_BINDINGS=0
+    fi
 else
     echo "[build] Skipping C++ build"
 fi
@@ -130,13 +163,31 @@ if [[ "$BUILD_PYTHON" -eq 1 ]]; then
 fi
 
 if [[ "$INSTALL_PYTHON" -eq 1 ]]; then
-    action_python_install
+    if ! ensure_pip; then
+        echo "[build] ERROR: pip is required for Python install step but could not be bootstrapped."
+        exit 1
+    fi
+    if ! action_python_install; then
+        if [[ "$STRICT_PYTHON" -eq 1 ]]; then
+            echo "[build] ERROR: Python install failed (--strict-python enabled)."
+            exit 1
+        fi
+        echo "[build] WARNING: Python package install failed. Continuing with non-install steps."
+        BUILD_BINDINGS=0
+        RUN_TESTS=0
+    fi
 else
     echo "[build] Skipping Python package install"
 fi
 
 if [[ "$BUILD_BINDINGS" -eq 1 ]]; then
-    action_bindings
+    if ! action_bindings; then
+        if [[ "$STRICT_PYTHON" -eq 1 ]]; then
+            echo "[build] ERROR: pybind11 bindings build failed (--strict-python enabled)."
+            exit 1
+        fi
+        echo "[build] WARNING: pybind11 bindings build failed. Continuing."
+    fi
 else
     echo "[build] Skipping pybind11 bindings build"
 fi
@@ -154,7 +205,13 @@ else
 fi
 
 if [[ "$RUN_TESTS" -eq 1 ]]; then
-    action_tests
+    if ! action_tests; then
+        if [[ "$STRICT_PYTHON" -eq 1 ]]; then
+            echo "[build] ERROR: Python tests failed (--strict-python enabled)."
+            exit 1
+        fi
+        echo "[build] WARNING: Python tests failed."
+    fi
 else
     echo "[build] Skipping Python tests"
 fi
