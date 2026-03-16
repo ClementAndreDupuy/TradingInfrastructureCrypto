@@ -29,8 +29,7 @@ class OrderBook {
         : symbol_(symbol), exchange_(exchange), tick_size_(tick_size), max_levels_(max_levels),
           base_price_(0.0), sequence_(0), bid_sizes_(max_levels, 0.0), ask_sizes_(max_levels, 0.0),
           scratch_bid_sizes_(max_levels, 0.0), scratch_ask_sizes_(max_levels, 0.0),
-          out_of_range_streak_(0) {
-    }
+          out_of_range_streak_(0) {}
 
     // Clears the book and re-centers the price grid around the snapshot's best bid.
     Result apply_snapshot(const Snapshot& snapshot) {
@@ -129,6 +128,8 @@ class OrderBook {
                 return Result::ERROR_INVALID_PRICE;
             }
         }
+
+        out_of_range_streak_ = 0;
 
         if (delta.side == Side::BID) {
             bid_sizes_[idx] = delta.size;
@@ -242,7 +243,7 @@ class OrderBook {
     uint32_t out_of_range_streak_;
 
     static constexpr uint32_t k_recenter_streak_trigger_ = 4;
-    static constexpr double k_recenter_hard_breach_ratio_ = 0.1;
+    static constexpr double k_recenter_hard_breach_ratio_ = 0.6;
 
     bool should_recenter(double price) {
         const double base = base_price_.load(std::memory_order_acquire);
@@ -259,7 +260,8 @@ class OrderBook {
         out_of_range_streak_++;
         const double hard_breach_ticks =
             static_cast<double>(max_levels_) * k_recenter_hard_breach_ratio_;
-        return breach_ticks >= hard_breach_ticks || out_of_range_streak_ >= k_recenter_streak_trigger_;
+        return breach_ticks >= hard_breach_ticks ||
+               out_of_range_streak_ >= k_recenter_streak_trigger_;
     }
 
     void recenter_grid(double anchor_price) {

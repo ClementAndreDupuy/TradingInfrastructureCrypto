@@ -204,10 +204,10 @@ TEST(OrderBook, RecentersImmediatelyOnLargeBreach) {
 
     const double initial_base = book.base_price();
 
-    // 10%+ grid overshoot should force immediate recenter instead of repeated rejection.
-    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 70000.0, 5.0, 101)), Result::SUCCESS);
+    // Extreme overshoot should force immediate recenter instead of repeated rejection.
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 85000.0, 5.0, 101)), Result::SUCCESS);
     EXPECT_NE(book.base_price(), initial_base);
-    EXPECT_DOUBLE_EQ(book.get_best_ask(), 70000.0);
+    EXPECT_DOUBLE_EQ(book.get_best_ask(), 85000.0);
 }
 
 TEST(OrderBook, RecenterPreservesInRangeLiquidity) {
@@ -218,7 +218,13 @@ TEST(OrderBook, RecenterPreservesInRangeLiquidity) {
     EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 52000.0, 2.5, 101)), Result::SUCCESS);
     EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 52001.0, 3.5, 102)), Result::SUCCESS);
 
-    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 70000.0, 6.0, 103)), Result::SUCCESS);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 62000.0, 6.0, 103)),
+              Result::ERROR_INVALID_PRICE);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 62000.0, 6.1, 104)),
+              Result::ERROR_INVALID_PRICE);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 62000.0, 6.2, 105)),
+              Result::ERROR_INVALID_PRICE);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 62000.0, 6.3, 106)), Result::SUCCESS);
 
     std::vector<PriceLevel> bids, asks;
     book.get_top_levels(20000, bids, asks);
