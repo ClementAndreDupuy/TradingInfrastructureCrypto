@@ -45,13 +45,13 @@ class GlobalRiskControls {
 
     GlobalRiskCheckResult check_order(Exchange exchange, const char* symbol,
                                       double signed_notional) const noexcept {
-        if (!symbol || symbol[0] == '\0' || !std::isfinite(signed_notional) || signed_notional == 0.0)
+        if (!symbol || symbol[0] == '\0' || !std::isfinite(signed_notional) ||
+            signed_notional == 0.0)
             return GlobalRiskCheckResult::INVALID_INPUT;
 
         const double abs_notional = std::abs(signed_notional);
         const double gross_after = gross_notional_.load(std::memory_order_acquire) + abs_notional;
-        const double net_after =
-            net_notional_.load(std::memory_order_acquire) + signed_notional;
+        const double net_after = net_notional_.load(std::memory_order_acquire) + signed_notional;
         if (cfg_.max_gross_notional > 0.0 && gross_after > cfg_.max_gross_notional)
             return GlobalRiskCheckResult::GROSS_NOTIONAL_CAP;
         if (cfg_.max_net_notional > 0.0 && std::abs(net_after) > cfg_.max_net_notional)
@@ -116,7 +116,9 @@ class GlobalRiskControls {
         return GlobalRiskCheckResult::OK;
     }
 
-    double gross_notional() const noexcept { return gross_notional_.load(std::memory_order_acquire); }
+    double gross_notional() const noexcept {
+        return gross_notional_.load(std::memory_order_acquire);
+    }
     double net_notional() const noexcept { return net_notional_.load(std::memory_order_acquire); }
 
     static const char* result_to_string(GlobalRiskCheckResult r) noexcept {
@@ -155,7 +157,6 @@ class GlobalRiskControls {
     std::atomic<double> net_notional_{0.0};
     std::array<std::atomic<double>, 4> venue_gross_notional_{};
     std::array<SymbolState, MAX_SYMBOLS> symbol_states_{};
-
 
     static void atomic_add(std::atomic<double>& target, double delta) noexcept {
         double current = target.load(std::memory_order_acquire);

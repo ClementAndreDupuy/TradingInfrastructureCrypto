@@ -32,8 +32,7 @@ struct ShadowConfig {
 
     static ShadowConfig from_yaml_values(double bin_maker_bps, double bin_taker_bps,
                                          double kra_maker_bps, double kra_taker_bps,
-                                         double okx_maker_bps = 2.0,
-                                         double okx_taker_bps = 5.0,
+                                         double okx_maker_bps = 2.0, double okx_taker_bps = 5.0,
                                          double coinbase_maker_bps = 4.0,
                                          double coinbase_taker_bps = 8.0,
                                          const char* log_file = "shadow_decisions.jsonl") noexcept {
@@ -162,8 +161,10 @@ class ShadowConnector : public ExchangeConnector {
                 status.client_order_id = client_order_id;
                 status.fill_qty = s.filled_qty;
                 status.cumulative_filled_qty = s.filled_qty;
-                status.avg_fill_price = s.filled_qty > 0.0 ? (s.notional_filled / s.filled_qty) : 0.0;
-                status.new_state = s.filled_qty > 0.0 ? OrderState::PARTIALLY_FILLED : OrderState::OPEN;
+                status.avg_fill_price =
+                    s.filled_qty > 0.0 ? (s.notional_filled / s.filled_qty) : 0.0;
+                status.new_state =
+                    s.filled_qty > 0.0 ? OrderState::PARTIALLY_FILLED : OrderState::OPEN;
                 status.local_ts_ns = now_ns();
                 return ConnectorResult::OK;
             }
@@ -328,7 +329,8 @@ class ShadowConnector : public ExchangeConnector {
         u.fill_qty = fill_qty;
         u.cumulative_filled_qty = s.filled_qty;
         u.avg_fill_price = s.filled_qty > 0.0 ? (s.notional_filled / s.filled_qty) : 0.0;
-        u.new_state = s.filled_qty >= s.quantity ? OrderState::FILLED : OrderState::PARTIALLY_FILLED;
+        u.new_state =
+            s.filled_qty >= s.quantity ? OrderState::FILLED : OrderState::PARTIALLY_FILLED;
         u.local_ts_ns = now_ns();
         ExchangeConnector::emit_fill(u);
     }
@@ -368,7 +370,8 @@ class ShadowConnector : public ExchangeConnector {
         std::fflush(log_fp_);
     }
 
-    void log_fill(const ShadowOrder& s, double fill_px, double fill_qty, double fee_bps, double fee) {
+    void log_fill(const ShadowOrder& s, double fill_px, double fill_qty, double fee_bps,
+                  double fee) {
         if (!log_fp_)
             return;
         std::fprintf(log_fp_,
@@ -379,7 +382,8 @@ class ShadowConnector : public ExchangeConnector {
                      "\"cumulative_pnl\":%.6f,\"client_oid\":%llu}\n",
                      (long long)now_ns(), exchange_to_string(s.exchange), s.symbol,
                      s.side == Side::BID ? "BID" : "ASK", s.is_maker ? "true" : "false", fill_px,
-                     fill_qty, s.filled_qty, fee_bps, fee, total_pnl_.load(std::memory_order_relaxed),
+                     fill_qty, s.filled_qty, fee_bps, fee,
+                     total_pnl_.load(std::memory_order_relaxed),
                      (unsigned long long)s.client_order_id);
         std::fflush(log_fp_);
     }
@@ -388,7 +392,8 @@ class ShadowConnector : public ExchangeConnector {
         if (cfg_.latency_jitter_ns <= 0)
             return cfg_.base_latency_ns;
         const uint64_t spread = static_cast<uint64_t>(cfg_.latency_jitter_ns) * 2ULL + 1ULL;
-        const int64_t jitter = static_cast<int64_t>(client_order_id % spread) - cfg_.latency_jitter_ns;
+        const int64_t jitter =
+            static_cast<int64_t>(client_order_id % spread) - cfg_.latency_jitter_ns;
         return cfg_.base_latency_ns + jitter;
     }
 
@@ -446,7 +451,9 @@ class ShadowEngine {
         kraken_shadow_.check_fills();
     }
 
-    double net_pnl() const noexcept { return binance_shadow_.total_pnl() + kraken_shadow_.total_pnl(); }
+    double net_pnl() const noexcept {
+        return binance_shadow_.total_pnl() + kraken_shadow_.total_pnl();
+    }
 
     uint64_t total_fills() const noexcept {
         return binance_shadow_.total_fills() + kraken_shadow_.total_fills();
