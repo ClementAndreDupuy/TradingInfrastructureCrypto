@@ -2,6 +2,7 @@
 
 #include "../common/logging.hpp"
 #include "../common/types.hpp"
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <vector>
@@ -26,7 +27,9 @@ class OrderBook {
     OrderBook(const std::string& symbol, Exchange exchange, double tick_size = 1.0,
               size_t max_levels = 20000)
         : symbol_(symbol), exchange_(exchange), tick_size_(tick_size), max_levels_(max_levels),
-          base_price_(0.0), sequence_(0), bid_sizes_(max_levels, 0.0), ask_sizes_(max_levels, 0.0) {
+          base_price_(0.0), sequence_(0), bid_sizes_(max_levels, 0.0), ask_sizes_(max_levels, 0.0),
+          scratch_bid_sizes_(max_levels, 0.0), scratch_ask_sizes_(max_levels, 0.0),
+          out_of_range_streak_(0) {
     }
 
     // Clears the book and re-centers the price grid around the snapshot's best bid.
@@ -69,6 +72,7 @@ class OrderBook {
         std::fill(ask_sizes_.begin(), ask_sizes_.end(), 0.0);
         base_price_.store(new_base, std::memory_order_release);
         sequence_.store(snapshot.sequence, std::memory_order_release);
+        out_of_range_streak_ = 0;
 
         size_t skipped = 0;
         for (const auto& level : snapshot.bids) {
@@ -111,9 +115,19 @@ class OrderBook {
 
         size_t idx;
         if (!price_to_index(delta.price, idx)) {
-            LOG_WARN("Delta price out of grid range", "price", delta.price, "base",
-                     base_price_.load(), "range", max_levels_ * tick_size_);
-            return Result::ERROR_INVALID_PRICE;
+            if (should_recenter(delta.price)) {
+                recenter_grid(delta.price);
+                if (!price_to_index(delta.price, idx)) {
+                    LOG_WARN("Delta price still out of recentered grid", "price", delta.price,
+                             "base", base_price_.load(), "range", max_levels_ * tick_size_);
+                    return Result::ERROR_INVALID_PRICE;
+                }
+            } else {
+                LOG_WARN("Delta price out of grid range", "price", delta.price, "base",
+                         base_price_.load(), "range", max_levels_ * tick_size_, "streak",
+                         out_of_range_streak_);
+                return Result::ERROR_INVALID_PRICE;
+            }
         }
 
         if (delta.side == Side::BID) {
@@ -223,6 +237,59 @@ class OrderBook {
 
     std::vector<double> bid_sizes_;
     std::vector<double> ask_sizes_;
+    std::vector<double> scratch_bid_sizes_;
+    std::vector<double> scratch_ask_sizes_;
+    uint32_t out_of_range_streak_;
+
+    static constexpr uint32_t k_recenter_streak_trigger_ = 4;
+    static constexpr double k_recenter_hard_breach_ratio_ = 0.1;
+
+    bool should_recenter(double price) {
+        const double base = base_price_.load(std::memory_order_acquire);
+        const double relative = (price - base) / tick_size_;
+        const double upper_idx = static_cast<double>(max_levels_ - 1);
+
+        const double breach_ticks =
+            (relative < 0.0) ? -relative : (relative > upper_idx ? relative - upper_idx : 0.0);
+        if (breach_ticks <= 0.0) {
+            out_of_range_streak_ = 0;
+            return false;
+        }
+
+        out_of_range_streak_++;
+        const double hard_breach_ticks =
+            static_cast<double>(max_levels_) * k_recenter_hard_breach_ratio_;
+        return breach_ticks >= hard_breach_ticks || out_of_range_streak_ >= k_recenter_streak_trigger_;
+    }
+
+    void recenter_grid(double anchor_price) {
+        const double old_base = base_price_.load(std::memory_order_acquire);
+        const double new_base = anchor_price - static_cast<double>(max_levels_ / 2) * tick_size_;
+        const int64_t shift_ticks =
+            static_cast<int64_t>(std::llround((old_base - new_base) / tick_size_));
+
+        std::fill(scratch_bid_sizes_.begin(), scratch_bid_sizes_.end(), 0.0);
+        std::fill(scratch_ask_sizes_.begin(), scratch_ask_sizes_.end(), 0.0);
+
+        for (size_t i = 0; i < max_levels_; ++i) {
+            const int64_t new_idx = static_cast<int64_t>(i) + shift_ticks;
+            if (new_idx < 0 || static_cast<size_t>(new_idx) >= max_levels_) {
+                continue;
+            }
+
+            scratch_bid_sizes_[static_cast<size_t>(new_idx)] = bid_sizes_[i];
+            scratch_ask_sizes_[static_cast<size_t>(new_idx)] = ask_sizes_[i];
+        }
+
+        bid_sizes_.swap(scratch_bid_sizes_);
+        ask_sizes_.swap(scratch_ask_sizes_);
+        base_price_.store(new_base, std::memory_order_release);
+        out_of_range_streak_ = 0;
+
+        LOG_WARN("Order book grid recentered", "symbol", symbol_.c_str(), "anchor_price",
+                 anchor_price, "old_base", old_base, "new_base", new_base, "shift_ticks",
+                 shift_ticks);
+    }
 
     // Maps price → flat-array index. Returns false if uninitialized or out of range.
     bool price_to_index(double price, size_t& out_idx) const {

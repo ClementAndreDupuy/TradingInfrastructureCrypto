@@ -178,6 +178,70 @@ TEST(OrderBook, OutOfRangePriceReturnsError) {
     EXPECT_EQ(book.apply_delta(d), Result::ERROR_INVALID_PRICE);
 }
 
+TEST(OrderBook, RecentersAfterRepeatedOutOfRangeDeltas) {
+    OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
+    book.apply_snapshot(make_snapshot(50000.0, 50001.0, 2, 1.0, 100));
+
+    const double initial_base = book.base_price();
+
+    // Four consecutive out-of-grid deltas should trigger adaptive recentering.
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 65000.0, 1.0, 101)),
+              Result::ERROR_INVALID_PRICE);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 65000.0, 1.1, 102)),
+              Result::ERROR_INVALID_PRICE);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 65000.0, 1.2, 103)),
+              Result::ERROR_INVALID_PRICE);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 65000.0, 9.5, 104)), Result::SUCCESS);
+
+    EXPECT_NE(book.base_price(), initial_base);
+    EXPECT_DOUBLE_EQ(book.get_best_bid(), 65000.0);
+    EXPECT_EQ(book.get_sequence(), 104u);
+}
+
+TEST(OrderBook, RecentersImmediatelyOnLargeBreach) {
+    OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
+    book.apply_snapshot(make_snapshot(50000.0, 50001.0, 2, 1.0, 100));
+
+    const double initial_base = book.base_price();
+
+    // 10%+ grid overshoot should force immediate recenter instead of repeated rejection.
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 70000.0, 5.0, 101)), Result::SUCCESS);
+    EXPECT_NE(book.base_price(), initial_base);
+    EXPECT_DOUBLE_EQ(book.get_best_ask(), 70000.0);
+}
+
+TEST(OrderBook, RecenterPreservesInRangeLiquidity) {
+    OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
+    book.apply_snapshot(make_snapshot(50000.0, 50001.0, 2, 1.0, 100));
+
+    // Seed liquidity that should still be in range after recentering.
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 52000.0, 2.5, 101)), Result::SUCCESS);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 52001.0, 3.5, 102)), Result::SUCCESS);
+
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 70000.0, 6.0, 103)), Result::SUCCESS);
+
+    std::vector<PriceLevel> bids, asks;
+    book.get_top_levels(20000, bids, asks);
+
+    bool found_bid = false;
+    bool found_ask = false;
+    for (const auto& l : bids) {
+        if (std::fabs(l.price - 52000.0) < 0.01) {
+            found_bid = true;
+            EXPECT_DOUBLE_EQ(l.size, 2.5);
+        }
+    }
+    for (const auto& l : asks) {
+        if (std::fabs(l.price - 52001.0) < 0.01) {
+            found_ask = true;
+            EXPECT_DOUBLE_EQ(l.size, 3.5);
+        }
+    }
+
+    EXPECT_TRUE(found_bid);
+    EXPECT_TRUE(found_ask);
+}
+
 TEST(OrderBook, GetBestBidAsk) {
     OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
     Snapshot s = make_snapshot(50000.0, 50001.0, 3, 1.0, 100);
