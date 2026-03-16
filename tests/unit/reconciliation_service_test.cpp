@@ -190,7 +190,7 @@ TEST(ReconciliationServiceTest, QuarantinesVenueOnDriftMismatch) {
     const auto* state = service.state_for(Exchange::BINANCE);
     ASSERT_NE(state, nullptr);
     EXPECT_EQ(state->mismatch_count, 1U);
-    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::NONE);
+    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::QTY_DRIFT);
     EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::QUARANTINE_VENUE);
     EXPECT_EQ(state->last_severity, ReconciliationService::SeverityLevel::CRITICAL);
 }
@@ -242,7 +242,7 @@ TEST(ReconciliationServiceTest, UsesCanonicalSnapshotForReconnectAndPeriodicLoop
 
     const auto* state = service.state_for(Exchange::BINANCE);
     ASSERT_NE(state, nullptr);
-    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::NONE);
+    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::QTY_DRIFT);
     EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::NONE);
 }
 
@@ -428,7 +428,7 @@ TEST(ReconciliationServiceTest, FillGapCheckUsesStableDedupeAndCumulativeLedger)
     EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::OK);
     const auto* state = service.state_for(Exchange::BINANCE);
     ASSERT_NE(state, nullptr);
-    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::NONE);
+    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::QTY_DRIFT);
 }
 
 TEST(ReconciliationServiceTest, FillGapMismatchRequestsReplayAndQuarantines) {
@@ -585,7 +585,7 @@ TEST(ReconciliationServiceTest, StagedRemediationEscalatesOrderDriftToRiskHalt) 
 
     const auto* state = service.state_for(Exchange::BINANCE);
     ASSERT_NE(state, nullptr);
-    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::NONE);
+    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::QTY_DRIFT);
     EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::RISK_HALT_RECOMMENDED);
     EXPECT_EQ(state->last_severity, ReconciliationService::SeverityLevel::CRITICAL);
 
@@ -633,6 +633,40 @@ TEST(ReconciliationServiceTest, SnapshotFailureUsesRetryBudgetThenQuarantine) {
     EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::QUARANTINE_VENUE);
     EXPECT_EQ(state->last_severity, ReconciliationService::SeverityLevel::CRITICAL);
 }
+
+
+TEST(ReconciliationServiceTest, AuthSnapshotFailureQuarantinesImmediately) {
+    ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
+                                     const std::vector<std::string>&) {
+        if (contains(url, "binance.test") && contains(url, "openOrders"))
+            return http::HttpResponse{401, ""};
+        if (std::strcmp(method, "GET") == 0 && contains(url, "/account"))
+            return http::HttpResponse{200,
+                                      R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
+        return http::HttpResponse{404, ""};
+    });
+
+    ReconciliationService::RemediationPolicy policy;
+    policy.snapshot_failure_retry_budget = 5;
+
+    BinanceConnector binance("k", "s", "https://binance.test");
+    ReconciliationService service(ReconciliationService::DriftThresholds{}, policy);
+    ASSERT_TRUE(service.register_connector(binance));
+
+    uint32_t cancel_all_calls = 0;
+    service.set_cancel_all_hook([&](Exchange, ReconciliationService::MismatchClass,
+                                    std::string_view) { ++cancel_all_calls; });
+
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::AUTH_FAILED);
+    EXPECT_TRUE(service.is_quarantined(Exchange::BINANCE));
+    EXPECT_EQ(cancel_all_calls, 0U);
+
+    const auto* state = service.state_for(Exchange::BINANCE);
+    ASSERT_NE(state, nullptr);
+    EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::QUARANTINE_VENUE);
+    EXPECT_EQ(state->last_severity, ReconciliationService::SeverityLevel::CRITICAL);
+}
+
 
 } // namespace
 } // namespace trading

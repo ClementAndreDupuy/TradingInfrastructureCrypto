@@ -20,8 +20,12 @@ std::string order_payload(const Order& o) {
 }
 
 ConnectorResult classify_error(int status) {
+    if (status == 401 || status == 403)
+        return ConnectorResult::AUTH_FAILED;
     if (status == 429)
         return ConnectorResult::ERROR_RATE_LIMIT;
+    if (status >= 500)
+        return ConnectorResult::ERROR_REST_FAILURE;
     if (status >= 400 && status < 500)
         return ConnectorResult::ERROR_INVALID_ORDER;
     return ConnectorResult::ERROR_UNKNOWN;

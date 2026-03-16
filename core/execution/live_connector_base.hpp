@@ -132,7 +132,9 @@ class LiveConnectorBase : public ExchangeConnector {
     virtual ConnectorResult query_at_venue(const VenueOrderEntry& entry, FillUpdate& status) = 0;
     virtual ConnectorResult cancel_all_at_venue(const char* symbol) = 0;
     virtual bool is_retryable(ConnectorResult code) const noexcept {
-        return code == ConnectorResult::ERROR_RATE_LIMIT || code == ConnectorResult::ERROR_UNKNOWN;
+        return code == ConnectorResult::ERROR_RATE_LIMIT ||
+               code == ConnectorResult::ERROR_REST_FAILURE ||
+               code == ConnectorResult::ERROR_UNKNOWN;
     }
 
     std::string make_idempotency_key(uint64_t client_order_id) const {
