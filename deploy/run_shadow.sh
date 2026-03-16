@@ -16,7 +16,7 @@ Options:
   --symbol <SYMBOL>             Trading symbol (default: BTCUSDT)
   --venues <CSV>                Venues CSV (default: BINANCE,KRAKEN,OKX,COINBASE)
   --duration <SECONDS>          Total runtime (default: 900)
-  --interval-ms <MS>            Delay between engine runs (default: 1000)
+  --interval-ms <MS>            Engine + Python loop interval (default: 1000)
   --env-file <PATH>             Optional env file (default: config/shadow/trading.env if present)
   --signal-file <PATH>          Alpha mmap file for Python->C++ bridge
                                 (default: /tmp/neural_alpha_signal.bin)
@@ -30,7 +30,7 @@ Options:
   --alpha-exchanges <CSV>       Exchanges for neural alpha feed polling
                                 (default: BINANCE,KRAKEN)
   --skip-alpha                  Do not launch Python shadow session
-  --once                        Run exactly one C++ engine iteration and exit
+  --once                        Run one engine loop window and exit
   -h, --help                    Show this help
 
 Credential resolution per venue (first non-empty wins):
@@ -103,6 +103,12 @@ set_shadow_creds() {
     export "$secret_var=$secret_val"
 }
 
+normalize_csv_upper() {
+    local raw="$1"
+    # Strip whitespace and normalize to uppercase for venue/env variable resolution.
+    echo "$raw" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]'
+}
+
 choose_python() {
     if [[ -n "$PYTHON_BIN" ]]; then
         return 0
@@ -119,18 +125,18 @@ choose_python() {
     return 1
 }
 
+VENUES="$(normalize_csv_upper "$VENUES")"
+ALPHA_EXCHANGES="$(normalize_csv_upper "$ALPHA_EXCHANGES")"
+
 IFS=',' read -r -a VENUE_LIST <<< "$VENUES"
 for venue in "${VENUE_LIST[@]}"; do
     set_shadow_creds "$venue"
 done
 
-run_engine_once() {
-    if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
-        "$ENGINE_BIN" --mode shadow --venues "$VENUES" --symbol "$SYMBOL" "${EXTRA_ARGS[@]}"
-    else
-        "$ENGINE_BIN" --mode shadow --venues "$VENUES" --symbol "$SYMBOL"
-    fi
-}
+engine_args=(--mode shadow --venues "$VENUES" --symbol "$SYMBOL" --loop-interval-ms "$INTERVAL_MS")
+if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
+    engine_args+=("${EXTRA_ARGS[@]}")
+fi
 
 PY_PID=""
 cleanup() {
@@ -167,14 +173,17 @@ fi
 echo "[shadow] Starting C++ shadow runner symbol=$SYMBOL venues=$VENUES duration=${DURATION_SECS}s interval=${INTERVAL_MS}ms"
 
 if [[ "$RUN_ONCE" -eq 1 ]]; then
-    run_engine_once
-    exit 0
+    DURATION_SECS="$(awk "BEGIN { printf \"%.3f\", ($INTERVAL_MS * 2)/1000 }")"
 fi
 
-end_epoch=$(( $(date +%s) + DURATION_SECS ))
-while [[ $(date +%s) -lt $end_epoch ]]; do
-    run_engine_once
-    sleep "$(awk "BEGIN { printf \"%.3f\", $INTERVAL_MS/1000 }")"
-done
+if timeout "$DURATION_SECS" "$ENGINE_BIN" "${engine_args[@]}"; then
+    :
+else
+    timeout_status=$?
+    if [[ "$timeout_status" -ne 124 ]]; then
+        echo "[shadow] ERROR: trading_engine exited with status $timeout_status"
+        exit "$timeout_status"
+    fi
+fi
 
 echo "[shadow] Completed shadow run window"
