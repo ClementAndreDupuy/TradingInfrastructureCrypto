@@ -50,13 +50,13 @@ class SmartOrderRouter {
   public:
     static constexpr size_t MAX_VENUES = 4;
 
-    RoutingDecision route(Side side, double quantity,
-                          const std::array<VenueQuote, MAX_VENUES>& venues) const noexcept;
+    static RoutingDecision route(Side side, double quantity,
+                                 const std::array<VenueQuote, MAX_VENUES>& venues) noexcept;
 
-    RoutingDecision route_with_alpha(Side side, double base_quantity,
-                                     const AlphaSignal& alpha_signal,
-                                     const std::array<VenueQuote, MAX_VENUES>& venues,
-                                     const RoutingConstraints& cfg = {}) const noexcept;
+    static RoutingDecision route_with_alpha(Side side, double base_quantity,
+                                            const AlphaSignal& alpha_signal,
+                                            const std::array<VenueQuote, MAX_VENUES>& venues,
+                                            const RoutingConstraints& cfg = {}) noexcept;
 
   private:
     static double effective_price_bps(const VenueQuote& v, Side side) noexcept;

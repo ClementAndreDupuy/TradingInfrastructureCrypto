@@ -13,10 +13,10 @@ namespace trading {
 namespace {
 
 auto order_payload(const Order& order) -> std::string {
-    return std::string("{\"instId\":\"") + order.symbol + "\",\"side\":\"" +
-           (order.side == Side::BID ? "buy" : "sell") + "\",\"ordType\":\"" +
-           (order.type == OrderType::MARKET ? "market" : "limit") + "\",\"sz\":\"" +
-           std::to_string(order.quantity) + "\"}";
+    return std::string(R"({"instId":")") + order.symbol + R"(","side":")" +
+           (order.side == Side::BID ? "buy" : "sell") + R"(","ordType":")" +
+           (order.type == OrderType::MARKET ? "market" : "limit") + R"(","sz":")" +
+           std::to_string(order.quantity) + R"("})";
 }
 
 auto classify_error(int status) -> ConnectorResult {
@@ -95,86 +95,9 @@ auto parse_okx_cancel_ack(const std::string& body) -> bool {
     return data[0].value("sCode", std::string("")) == "0";
 }
 
-} // namespace
-
-auto OkxConnector::submit_to_venue(const Order& order, const std::string& idempotency_key,
-                                   std::string& venue_order_id) -> ConnectorResult {
-    const std::string payload = order_payload(order);
-    const auto headers = auth_headers("POST", "/api/v5/trade/order", payload, idempotency_key);
-    const auto resp = http::post(api_url() + "/api/v5/trade/order", payload, headers);
-    if (!resp.ok()) {
-        return classify_error(resp.status);
-    }
-
-    if (!parse_okx_order_id(resp.body, venue_order_id)) {
-        return ConnectorResult::ERROR_UNKNOWN;
-    }
-    return ConnectorResult::OK;
-}
-
-auto OkxConnector::cancel_at_venue(const VenueOrderEntry& entry) -> ConnectorResult {
-    const std::string payload = std::string("{\"ordId\":\"") + entry.venue_order_id + "\"}";
-    const auto resp = http::post(api_url() + "/api/v5/trade/cancel-order", payload,
-                                 auth_headers("POST", "/api/v5/trade/cancel-order", payload));
-    if (!resp.ok()) {
-        return classify_error(resp.status);
-    }
-    return parse_okx_cancel_ack(resp.body) ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
-}
-
-auto OkxConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& replacement,
-                                    std::string& new_venue_order_id) -> ConnectorResult {
-    const std::string payload = std::string("{\"ordId\":\"") + entry.venue_order_id +
-                                "\",\"newPx\":\"" + std::to_string(replacement.price) +
-                                "\",\"newSz\":\"" + std::to_string(replacement.quantity) + "\"}";
-    const auto resp = http::post(api_url() + "/api/v5/trade/amend-order", payload,
-                                 auth_headers("POST", "/api/v5/trade/amend-order", payload));
-    if (!resp.ok()) {
-        return classify_error(resp.status);
-    }
-    return parse_okx_order_id(resp.body, new_venue_order_id) ? ConnectorResult::OK
-                                                             : ConnectorResult::ERROR_UNKNOWN;
-}
-
-auto OkxConnector::query_at_venue(const VenueOrderEntry& entry, FillUpdate& status)
+auto append_okx_open_orders(const std::string& body, ReconciliationSnapshot& snapshot)
     -> ConnectorResult {
-    const auto resp = http::get(
-        api_url() + "/api/v5/trade/order?ordId=" + std::string(entry.venue_order_id),
-        auth_headers("GET", std::string("/api/v5/trade/order?ordId=") + entry.venue_order_id, ""));
-    if (!resp.ok()) {
-        return classify_error(resp.status);
-    }
-    return parse_okx_query(resp.body, status) ? ConnectorResult::OK
-                                              : ConnectorResult::ERROR_UNKNOWN;
-}
-
-auto OkxConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResult {
-    const std::string payload =
-        std::string("{\"instId\":\"") + ((symbol != nullptr) ? symbol : "") + "\"}";
-    const auto resp =
-        http::post(api_url() + "/api/v5/trade/cancel-batch-orders", payload,
-                   auth_headers("POST", "/api/v5/trade/cancel-batch-orders", payload));
-    if (!resp.ok()) {
-        return classify_error(resp.status);
-    }
-    return parse_okx_cancel_ack(resp.body) ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
-}
-
-} // namespace trading
-
-namespace trading {
-
-auto OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot)
-    -> ConnectorResult {
-    snapshot.clear();
-
-    const auto open_orders = http::get(api_url() + "/api/v5/trade/orders-pending",
-                                       auth_headers("GET", "/api/v5/trade/orders-pending", ""));
-    if (!open_orders.ok()) {
-        return classify_error(open_orders.status);
-    }
-
-    const auto order_json = nlohmann::json::parse(open_orders.body, nullptr, false);
+    const auto order_json = nlohmann::json::parse(body, nullptr, false);
     const auto& orders = order_json["data"];
     if (!orders.is_array()) {
         return ConnectorResult::ERROR_UNKNOWN;
@@ -195,13 +118,12 @@ auto OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapsho
         }
     }
 
-    const auto account = http::get(api_url() + "/api/v5/account/balance",
-                                   auth_headers("GET", "/api/v5/account/balance", ""));
-    if (!account.ok()) {
-        return classify_error(account.status);
-    }
+    return ConnectorResult::OK;
+}
 
-    const auto account_json = nlohmann::json::parse(account.body, nullptr, false);
+auto append_okx_balances(const std::string& body, ReconciliationSnapshot& snapshot)
+    -> ConnectorResult {
+    const auto account_json = nlohmann::json::parse(body, nullptr, false);
     const auto& details = account_json["data"][0]["details"];
     if (!details.is_array()) {
         return ConnectorResult::ERROR_UNKNOWN;
@@ -217,13 +139,12 @@ auto OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapsho
         }
     }
 
-    const auto pos_resp = http::get(api_url() + "/api/v5/account/positions",
-                                    auth_headers("GET", "/api/v5/account/positions", ""));
-    if (!pos_resp.ok()) {
-        return classify_error(pos_resp.status);
-    }
+    return ConnectorResult::OK;
+}
 
-    const auto pos_json = nlohmann::json::parse(pos_resp.body, nullptr, false);
+auto append_okx_positions(const std::string& body, ReconciliationSnapshot& snapshot)
+    -> ConnectorResult {
+    const auto pos_json = nlohmann::json::parse(body, nullptr, false);
     const auto& positions = pos_json["data"];
     if (!positions.is_array()) {
         return ConnectorResult::ERROR_UNKNOWN;
@@ -239,16 +160,12 @@ auto OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapsho
         }
     }
 
-    const auto fills_resp = http::get(api_url() + "/api/v5/trade/fills",
-                                      auth_headers("GET", "/api/v5/trade/fills", ""));
-    if (fills_resp.status == 404 || fills_resp.status == 405 || fills_resp.status == 501) {
-        return ConnectorResult::OK;
-    }
-    if (!fills_resp.ok()) {
-        return classify_error(fills_resp.status);
-    }
+    return ConnectorResult::OK;
+}
 
-    const auto fills_json = nlohmann::json::parse(fills_resp.body, nullptr, false);
+auto append_okx_fills(const std::string& body, ReconciliationSnapshot& snapshot)
+    -> ConnectorResult {
+    const auto fills_json = nlohmann::json::parse(body, nullptr, false);
     const auto& fills = fills_json["data"];
     if (!fills.is_array()) {
         return ConnectorResult::ERROR_UNKNOWN;
@@ -275,6 +192,121 @@ auto OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapsho
     }
 
     return ConnectorResult::OK;
+}
+
+} // namespace
+
+auto OkxConnector::submit_to_venue(const Order& order, const std::string& idempotency_key,
+                                   std::string& venue_order_id) -> ConnectorResult {
+    const std::string payload = order_payload(order);
+    const auto headers = auth_headers("POST", "/api/v5/trade/order", payload, idempotency_key);
+    const auto resp = http::post(api_url() + "/api/v5/trade/order", payload, headers);
+    if (!resp.ok()) {
+        return classify_error(resp.status);
+    }
+
+    if (!parse_okx_order_id(resp.body, venue_order_id)) {
+        return ConnectorResult::ERROR_UNKNOWN;
+    }
+    return ConnectorResult::OK;
+}
+
+auto OkxConnector::cancel_at_venue(const VenueOrderEntry& entry) -> ConnectorResult {
+    const std::string payload = std::string(R"({"ordId":")") + entry.venue_order_id + R"("})";
+    const auto resp = http::post(api_url() + "/api/v5/trade/cancel-order", payload,
+                                 auth_headers("POST", "/api/v5/trade/cancel-order", payload));
+    if (!resp.ok()) {
+        return classify_error(resp.status);
+    }
+    return parse_okx_cancel_ack(resp.body) ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
+}
+
+auto OkxConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& replacement,
+                                    std::string& new_venue_order_id) -> ConnectorResult {
+    const std::string payload = std::string(R"({"ordId":")") + entry.venue_order_id +
+                                R"(","newPx":")" + std::to_string(replacement.price) +
+                                R"(","newSz":")" + std::to_string(replacement.quantity) + R"("})";
+    const auto resp = http::post(api_url() + "/api/v5/trade/amend-order", payload,
+                                 auth_headers("POST", "/api/v5/trade/amend-order", payload));
+    if (!resp.ok()) {
+        return classify_error(resp.status);
+    }
+    return parse_okx_order_id(resp.body, new_venue_order_id) ? ConnectorResult::OK
+                                                             : ConnectorResult::ERROR_UNKNOWN;
+}
+
+auto OkxConnector::query_at_venue(const VenueOrderEntry& entry, FillUpdate& status)
+    -> ConnectorResult {
+    const auto resp = http::get(
+        api_url() + "/api/v5/trade/order?ordId=" + std::string(entry.venue_order_id),
+        auth_headers("GET", std::string("/api/v5/trade/order?ordId=") + entry.venue_order_id, ""));
+    if (!resp.ok()) {
+        return classify_error(resp.status);
+    }
+    return parse_okx_query(resp.body, status) ? ConnectorResult::OK
+                                              : ConnectorResult::ERROR_UNKNOWN;
+}
+
+auto OkxConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResult {
+    const std::string payload =
+        std::string(R"({"instId":")") + ((symbol != nullptr) ? symbol : "") + R"("})";
+    const auto resp =
+        http::post(api_url() + "/api/v5/trade/cancel-batch-orders", payload,
+                   auth_headers("POST", "/api/v5/trade/cancel-batch-orders", payload));
+    if (!resp.ok()) {
+        return classify_error(resp.status);
+    }
+    return parse_okx_cancel_ack(resp.body) ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
+}
+
+} // namespace trading
+
+namespace trading {
+
+auto OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot)
+    -> ConnectorResult {
+    snapshot.clear();
+
+    const auto open_orders = http::get(api_url() + "/api/v5/trade/orders-pending",
+                                       auth_headers("GET", "/api/v5/trade/orders-pending", ""));
+    if (!open_orders.ok()) {
+        return classify_error(open_orders.status);
+    }
+
+    ConnectorResult result = append_okx_open_orders(open_orders.body, snapshot);
+    if (result != ConnectorResult::OK) {
+        return result;
+    }
+
+    const auto account = http::get(api_url() + "/api/v5/account/balance",
+                                   auth_headers("GET", "/api/v5/account/balance", ""));
+    if (!account.ok()) {
+        return classify_error(account.status);
+    }
+    result = append_okx_balances(account.body, snapshot);
+    if (result != ConnectorResult::OK) {
+        return result;
+    }
+
+    const auto pos_resp = http::get(api_url() + "/api/v5/account/positions",
+                                    auth_headers("GET", "/api/v5/account/positions", ""));
+    if (!pos_resp.ok()) {
+        return classify_error(pos_resp.status);
+    }
+    result = append_okx_positions(pos_resp.body, snapshot);
+    if (result != ConnectorResult::OK) {
+        return result;
+    }
+
+    const auto fills_resp = http::get(api_url() + "/api/v5/trade/fills",
+                                      auth_headers("GET", "/api/v5/trade/fills", ""));
+    if (fills_resp.status == 404 || fills_resp.status == 405 || fills_resp.status == 501) {
+        return ConnectorResult::OK;
+    }
+    if (!fills_resp.ok()) {
+        return classify_error(fills_resp.status);
+    }
+    return append_okx_fills(fills_resp.body, snapshot);
 }
 
 } // namespace trading

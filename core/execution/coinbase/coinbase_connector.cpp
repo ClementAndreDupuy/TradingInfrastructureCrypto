@@ -12,10 +12,10 @@ namespace trading {
 namespace {
 
 auto order_payload(const Order& order) -> std::string {
-    return std::string("{\"product_id\":\"") + order.symbol + "\",\"side\":\"" +
-           (order.side == Side::BID ? "BUY" : "SELL") + "\",\"order_type\":\"" +
-           (order.type == OrderType::MARKET ? "MARKET" : "LIMIT") + "\",\"size\":\"" +
-           std::to_string(order.quantity) + "\"}";
+    return std::string(R"({"product_id":")") + order.symbol + R"(","side":")" +
+           (order.side == Side::BID ? "BUY" : "SELL") + R"(","order_type":")" +
+           (order.type == OrderType::MARKET ? "MARKET" : "LIMIT") + R"(","size":")" +
+           std::to_string(order.quantity) + R"("})";
 }
 
 auto classify_error(int status) -> ConnectorResult {
@@ -90,91 +90,9 @@ auto parse_coinbase_cancel_ack(const std::string& body) -> bool {
     return results[0].value("success", false);
 }
 
-} // namespace
-
-auto CoinbaseConnector::submit_to_venue(const Order& order, const std::string& idempotency_key,
-                                        std::string& venue_order_id) -> ConnectorResult {
-    const std::string payload = order_payload(order);
-    const auto headers = auth_headers("POST", "/api/v3/brokerage/orders", payload, idempotency_key);
-    const auto resp = http::post(api_url() + "/api/v3/brokerage/orders", payload, headers);
-    if (!resp.ok()) {
-        return classify_error(resp.status);
-    }
-
-    if (!parse_coinbase_order_id(resp.body, venue_order_id)) {
-        return ConnectorResult::ERROR_UNKNOWN;
-    }
-    return ConnectorResult::OK;
-}
-
-auto CoinbaseConnector::cancel_at_venue(const VenueOrderEntry& entry) -> ConnectorResult {
-    const std::string payload = std::string("{\"order_ids\":[\"") + entry.venue_order_id + "\"]}";
-    const auto resp =
-        http::post(api_url() + "/api/v3/brokerage/orders/batch_cancel", payload,
-                   auth_headers("POST", "/api/v3/brokerage/orders/batch_cancel", payload));
-    if (!resp.ok()) {
-        return classify_error(resp.status);
-    }
-    return parse_coinbase_cancel_ack(resp.body) ? ConnectorResult::OK
-                                                : ConnectorResult::ERROR_UNKNOWN;
-}
-
-auto CoinbaseConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& replacement,
-                                         std::string& new_venue_order_id) -> ConnectorResult {
-    const std::string payload = std::string("{\"order_id\":\"") + entry.venue_order_id +
-                                "\",\"size\":\"" + std::to_string(replacement.quantity) +
-                                "\",\"limit_price\":\"" + std::to_string(replacement.price) + "\"}";
-    const auto resp = http::post(api_url() + "/api/v3/brokerage/orders/edit", payload,
-                                 auth_headers("POST", "/api/v3/brokerage/orders/edit", payload));
-    if (!resp.ok()) {
-        return classify_error(resp.status);
-    }
-    return parse_coinbase_order_id(resp.body, new_venue_order_id) ? ConnectorResult::OK
-                                                                  : ConnectorResult::ERROR_UNKNOWN;
-}
-
-auto CoinbaseConnector::query_at_venue(const VenueOrderEntry& entry, FillUpdate& status)
+auto append_coinbase_open_orders(const std::string& body, ReconciliationSnapshot& snapshot)
     -> ConnectorResult {
-    const auto resp = http::get(
-        api_url() + "/api/v3/brokerage/orders/historical/" + std::string(entry.venue_order_id),
-        auth_headers(
-            "GET", std::string("/api/v3/brokerage/orders/historical/") + entry.venue_order_id, ""));
-    if (!resp.ok()) {
-        return classify_error(resp.status);
-    }
-    return parse_coinbase_query(resp.body, status) ? ConnectorResult::OK
-                                                   : ConnectorResult::ERROR_UNKNOWN;
-}
-
-auto CoinbaseConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResult {
-    const std::string payload =
-        std::string("{\"product_id\":\"") + ((symbol != nullptr) ? symbol : "") + "\"}";
-    const auto resp =
-        http::post(api_url() + "/api/v3/brokerage/orders/batch_cancel", payload,
-                   auth_headers("POST", "/api/v3/brokerage/orders/batch_cancel", payload));
-    if (!resp.ok()) {
-        return classify_error(resp.status);
-    }
-    return parse_coinbase_cancel_ack(resp.body) ? ConnectorResult::OK
-                                                : ConnectorResult::ERROR_UNKNOWN;
-}
-
-} // namespace trading
-
-namespace trading {
-
-auto CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot)
-    -> ConnectorResult {
-    snapshot.clear();
-
-    const auto open_orders =
-        http::get(api_url() + "/api/v3/brokerage/orders/historical/batch",
-                  auth_headers("GET", "/api/v3/brokerage/orders/historical/batch", ""));
-    if (!open_orders.ok()) {
-        return classify_error(open_orders.status);
-    }
-
-    const auto open_json = nlohmann::json::parse(open_orders.body, nullptr, false);
+    const auto open_json = nlohmann::json::parse(body, nullptr, false);
     const auto& orders = open_json["orders"];
     if (!orders.is_array()) {
         return ConnectorResult::ERROR_UNKNOWN;
@@ -195,13 +113,12 @@ auto CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sn
         }
     }
 
-    const auto account_resp = http::get(api_url() + "/api/v3/brokerage/accounts",
-                                        auth_headers("GET", "/api/v3/brokerage/accounts", ""));
-    if (!account_resp.ok()) {
-        return classify_error(account_resp.status);
-    }
+    return ConnectorResult::OK;
+}
 
-    const auto account_json = nlohmann::json::parse(account_resp.body, nullptr, false);
+auto append_coinbase_balances(const std::string& body, ReconciliationSnapshot& snapshot)
+    -> ConnectorResult {
+    const auto account_json = nlohmann::json::parse(body, nullptr, false);
     const auto& accounts = account_json["accounts"];
     if (!accounts.is_array()) {
         return ConnectorResult::ERROR_UNKNOWN;
@@ -218,13 +135,12 @@ auto CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sn
         }
     }
 
-    const auto pos_resp = http::get(api_url() + "/api/v3/brokerage/positions",
-                                    auth_headers("GET", "/api/v3/brokerage/positions", ""));
-    if (!pos_resp.ok()) {
-        return classify_error(pos_resp.status);
-    }
+    return ConnectorResult::OK;
+}
 
-    const auto pos_json = nlohmann::json::parse(pos_resp.body, nullptr, false);
+auto append_coinbase_positions(const std::string& body, ReconciliationSnapshot& snapshot)
+    -> ConnectorResult {
+    const auto pos_json = nlohmann::json::parse(body, nullptr, false);
     const auto& positions = pos_json["positions"];
     if (!positions.is_array()) {
         return ConnectorResult::ERROR_UNKNOWN;
@@ -241,17 +157,12 @@ auto CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sn
         }
     }
 
-    const auto fills_resp =
-        http::get(api_url() + "/api/v3/brokerage/orders/historical/fills",
-                  auth_headers("GET", "/api/v3/brokerage/orders/historical/fills", ""));
-    if (fills_resp.status == 404 || fills_resp.status == 405 || fills_resp.status == 501) {
-        return ConnectorResult::OK;
-    }
-    if (!fills_resp.ok()) {
-        return classify_error(fills_resp.status);
-    }
+    return ConnectorResult::OK;
+}
 
-    const auto fills_json = nlohmann::json::parse(fills_resp.body, nullptr, false);
+auto append_coinbase_fills(const std::string& body, ReconciliationSnapshot& snapshot)
+    -> ConnectorResult {
+    const auto fills_json = nlohmann::json::parse(body, nullptr, false);
     const auto& fills = fills_json["fills"];
     if (!fills.is_array()) {
         return ConnectorResult::ERROR_UNKNOWN;
@@ -279,6 +190,128 @@ auto CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sn
     }
 
     return ConnectorResult::OK;
+}
+
+} // namespace
+
+auto CoinbaseConnector::submit_to_venue(const Order& order, const std::string& idempotency_key,
+                                        std::string& venue_order_id) -> ConnectorResult {
+    const std::string payload = order_payload(order);
+    const auto headers = auth_headers("POST", "/api/v3/brokerage/orders", payload, idempotency_key);
+    const auto resp = http::post(api_url() + "/api/v3/brokerage/orders", payload, headers);
+    if (!resp.ok()) {
+        return classify_error(resp.status);
+    }
+
+    if (!parse_coinbase_order_id(resp.body, venue_order_id)) {
+        return ConnectorResult::ERROR_UNKNOWN;
+    }
+    return ConnectorResult::OK;
+}
+
+auto CoinbaseConnector::cancel_at_venue(const VenueOrderEntry& entry) -> ConnectorResult {
+    const std::string payload = std::string(R"({"order_ids":[")") + entry.venue_order_id + R"("]})";
+    const auto resp =
+        http::post(api_url() + "/api/v3/brokerage/orders/batch_cancel", payload,
+                   auth_headers("POST", "/api/v3/brokerage/orders/batch_cancel", payload));
+    if (!resp.ok()) {
+        return classify_error(resp.status);
+    }
+    return parse_coinbase_cancel_ack(resp.body) ? ConnectorResult::OK
+                                                : ConnectorResult::ERROR_UNKNOWN;
+}
+
+auto CoinbaseConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& replacement,
+                                         std::string& new_venue_order_id) -> ConnectorResult {
+    const std::string payload = std::string(R"({"order_id":")") + entry.venue_order_id +
+                                R"(","size":")" + std::to_string(replacement.quantity) +
+                                R"(","limit_price":")" + std::to_string(replacement.price) +
+                                R"("})";
+    const auto resp = http::post(api_url() + "/api/v3/brokerage/orders/edit", payload,
+                                 auth_headers("POST", "/api/v3/brokerage/orders/edit", payload));
+    if (!resp.ok()) {
+        return classify_error(resp.status);
+    }
+    return parse_coinbase_order_id(resp.body, new_venue_order_id) ? ConnectorResult::OK
+                                                                  : ConnectorResult::ERROR_UNKNOWN;
+}
+
+auto CoinbaseConnector::query_at_venue(const VenueOrderEntry& entry, FillUpdate& status)
+    -> ConnectorResult {
+    const auto resp = http::get(
+        api_url() + "/api/v3/brokerage/orders/historical/" + std::string(entry.venue_order_id),
+        auth_headers(
+            "GET", std::string("/api/v3/brokerage/orders/historical/") + entry.venue_order_id, ""));
+    if (!resp.ok()) {
+        return classify_error(resp.status);
+    }
+    return parse_coinbase_query(resp.body, status) ? ConnectorResult::OK
+                                                   : ConnectorResult::ERROR_UNKNOWN;
+}
+
+auto CoinbaseConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResult {
+    const std::string payload =
+        std::string(R"({"product_id":")") + ((symbol != nullptr) ? symbol : "") + R"("})";
+    const auto resp =
+        http::post(api_url() + "/api/v3/brokerage/orders/batch_cancel", payload,
+                   auth_headers("POST", "/api/v3/brokerage/orders/batch_cancel", payload));
+    if (!resp.ok()) {
+        return classify_error(resp.status);
+    }
+    return parse_coinbase_cancel_ack(resp.body) ? ConnectorResult::OK
+                                                : ConnectorResult::ERROR_UNKNOWN;
+}
+
+} // namespace trading
+
+namespace trading {
+
+auto CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot)
+    -> ConnectorResult {
+    snapshot.clear();
+
+    const auto open_orders =
+        http::get(api_url() + "/api/v3/brokerage/orders/historical/batch",
+                  auth_headers("GET", "/api/v3/brokerage/orders/historical/batch", ""));
+    if (!open_orders.ok()) {
+        return classify_error(open_orders.status);
+    }
+
+    ConnectorResult result = append_coinbase_open_orders(open_orders.body, snapshot);
+    if (result != ConnectorResult::OK) {
+        return result;
+    }
+
+    const auto account_resp = http::get(api_url() + "/api/v3/brokerage/accounts",
+                                        auth_headers("GET", "/api/v3/brokerage/accounts", ""));
+    if (!account_resp.ok()) {
+        return classify_error(account_resp.status);
+    }
+    result = append_coinbase_balances(account_resp.body, snapshot);
+    if (result != ConnectorResult::OK) {
+        return result;
+    }
+
+    const auto pos_resp = http::get(api_url() + "/api/v3/brokerage/positions",
+                                    auth_headers("GET", "/api/v3/brokerage/positions", ""));
+    if (!pos_resp.ok()) {
+        return classify_error(pos_resp.status);
+    }
+    result = append_coinbase_positions(pos_resp.body, snapshot);
+    if (result != ConnectorResult::OK) {
+        return result;
+    }
+
+    const auto fills_resp =
+        http::get(api_url() + "/api/v3/brokerage/orders/historical/fills",
+                  auth_headers("GET", "/api/v3/brokerage/orders/historical/fills", ""));
+    if (fills_resp.status == 404 || fills_resp.status == 405 || fills_resp.status == 501) {
+        return ConnectorResult::OK;
+    }
+    if (!fills_resp.ok()) {
+        return classify_error(fills_resp.status);
+    }
+    return append_coinbase_fills(fills_resp.body, snapshot);
 }
 
 } // namespace trading

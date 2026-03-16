@@ -12,11 +12,10 @@ namespace trading {
 namespace {
 
 auto order_payload(const Order& order) -> std::string {
-    return std::string("{\"symbol\":\"") + order.symbol + "\",\"side\":\"" +
-           (order.side == Side::BID ? "BUY" : "SELL") + "\",\"type\":\"" +
-           (order.type == OrderType::MARKET ? "MARKET" : "LIMIT") +
-           "\",\"quantity\":" + std::to_string(order.quantity) +
-           ",\"price\":" + std::to_string(order.price) + "}";
+    return std::string(R"({"symbol":")") + order.symbol + R"(","side":")" +
+           (order.side == Side::BID ? "BUY" : "SELL") + R"(","type":")" +
+           (order.type == OrderType::MARKET ? "MARKET" : "LIMIT") + R"(","quantity":)" +
+           std::to_string(order.quantity) + R"(,"price":)" + std::to_string(order.price) + "}";
 }
 
 auto classify_error(int status) -> ConnectorResult {
