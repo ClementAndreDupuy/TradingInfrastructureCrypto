@@ -3,13 +3,8 @@
 #include "../execution/kraken/kraken_connector.hpp"
 #include "../execution/okx/okx_connector.hpp"
 #include "../execution/smart_order_router.hpp"
-#include "../feeds/binance/binance_feed_handler.hpp"
-#include "../feeds/coinbase/coinbase_feed_handler.hpp"
 #include "../feeds/common/book_manager.hpp"
-#include "../feeds/kraken/kraken_feed_handler.hpp"
-#include "../feeds/okx/okx_feed_handler.hpp"
 #include "../ipc/alpha_signal.hpp"
-#include "../ipc/lob_publisher.hpp"
 #include "../risk/circuit_breaker.hpp"
 #include "../risk/global_risk_controls.hpp"
 #include "../risk/kill_switch.hpp"
@@ -75,54 +70,16 @@ int main(int argc, char** argv) {
     if (kill_switch.is_active())
         return 2;
 
-    // ── LOB publisher: broadcasts live L5 book to Python neural model ──────────
-    LobPublisher lob_publisher;
-    if (!lob_publisher.open()) {
-        std::cerr << "[WARN] LobPublisher: could not open /tmp/trt_lob_feed.bin — "
-                     "neural model will not receive live core data\n";
-    } else {
-        std::cout << "LobPublisher ready → /tmp/trt_lob_feed.bin\n";
-    }
-
-    // ── Order books — one per venue ───────────────────────────────────────────
     BookManager binance_book(opts.symbol, Exchange::BINANCE, 0.1, 10000);
     BookManager kraken_book(opts.symbol, Exchange::KRAKEN, 0.1, 10000);
     BookManager okx_book(opts.symbol, Exchange::OKX, 0.1, 10000);
     BookManager coinbase_book(opts.symbol, Exchange::COINBASE, 0.1, 10000);
 
-    // Attach the shared LOB publisher to every book manager so that every
-    // successful book update is forwarded to the Python neural model.
-    binance_book.set_publisher(&lob_publisher);
-    kraken_book.set_publisher(&lob_publisher);
-    okx_book.set_publisher(&lob_publisher);
-    coinbase_book.set_publisher(&lob_publisher);
+    (void)binance_book;
+    (void)kraken_book;
+    (void)okx_book;
+    (void)coinbase_book;
 
-    // ── Feed handlers — wire callbacks to book managers ───────────────────────
-    BinanceFeedHandler binance_feed(opts.symbol);
-    binance_feed.set_snapshot_callback(binance_book.snapshot_handler());
-    binance_feed.set_delta_callback(binance_book.delta_handler());
-
-    KrakenFeedHandler kraken_feed(opts.symbol);
-    kraken_feed.set_snapshot_callback(kraken_book.snapshot_handler());
-    kraken_feed.set_delta_callback(kraken_book.delta_handler());
-
-    OkxFeedHandler okx_feed(opts.symbol);
-    okx_feed.set_snapshot_callback(okx_book.snapshot_handler());
-    okx_feed.set_delta_callback(okx_book.delta_handler());
-
-    CoinbaseFeedHandler coinbase_feed(opts.symbol);
-    coinbase_feed.set_snapshot_callback(coinbase_book.snapshot_handler());
-    coinbase_feed.set_delta_callback(coinbase_book.delta_handler());
-
-    // Start all feeds (no-op in shadow/mock mode if handlers detect mock URL)
-    if (opts.mode != "shadow") {
-        binance_feed.start();
-        kraken_feed.start();
-        okx_feed.start();
-        coinbase_feed.start();
-    }
-
-    // ── Execution connectors ──────────────────────────────────────────────────
     BinanceConnector binance(http::env_var("BINANCE_API_KEY"), http::env_var("BINANCE_API_SECRET"),
                              opts.mode == "shadow" ? "mock://binance" : "https://api.binance.com");
     KrakenConnector kraken(http::env_var("KRAKEN_API_KEY"), http::env_var("KRAKEN_API_SECRET"),

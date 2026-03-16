@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../../common/types.hpp"
-#include "../../ipc/lob_publisher.hpp"
 #include "../../orderbook/orderbook.hpp"
 #include <atomic>
 #include <chrono>
@@ -19,26 +18,11 @@ namespace trading {
 //   handler.start();
 //   // book is now live
 //   std::cout << mgr.best_bid() << " / " << mgr.best_ask();
-//
-// Optional LOB feed for the neural model:
-//   mgr.set_publisher(&lob_publisher);   // call before start()
-//   // Every successful book update publishes a 5-level snapshot to the ring
-//   // buffer so the Python shadow session can consume live multi-exchange data.
 class BookManager {
   public:
-    static constexpr size_t PUB_LEVELS = 5;
-
     BookManager(const std::string& symbol, Exchange exchange, double tick_size = 1.0,
                 size_t max_levels = 20000)
-        : book_(symbol, exchange, tick_size, max_levels), last_update_ns_(0) {
-        // Pre-allocate reusable vectors for the publisher (no hot-path allocation)
-        pub_bids_.reserve(PUB_LEVELS);
-        pub_asks_.reserve(PUB_LEVELS);
-    }
-
-    // Attach a LobPublisher. Must be called before snapshot/delta handlers fire.
-    // Pass nullptr to detach. Ownership remains with the caller.
-    void set_publisher(LobPublisher* p) noexcept { publisher_ = p; }
+        : book_(symbol, exchange, tick_size, max_levels), last_update_ns_(0) {}
 
     // Returns a lambda suitable for set_snapshot_callback().
     std::function<void(const Snapshot&)> snapshot_handler() {
@@ -49,7 +33,6 @@ class BookManager {
                           "exchange", exchange_to_string(book_.exchange()));
             } else {
                 last_update_ns_.store(now_ns(), std::memory_order_release);
-                publish_lob(s.timestamp_local_ns);
             }
         };
     }
@@ -63,7 +46,6 @@ class BookManager {
                          book_.symbol().c_str(), "price", d.price);
             } else {
                 last_update_ns_.store(now_ns(), std::memory_order_release);
-                publish_lob(d.timestamp_local_ns);
             }
         };
     }
@@ -93,22 +75,6 @@ class BookManager {
   private:
     OrderBook book_;
     std::atomic<int64_t> last_update_ns_;
-    LobPublisher* publisher_ = nullptr;
-
-    // Pre-allocated; reused every publish call — no heap allocation in hot path.
-    std::vector<PriceLevel> pub_bids_;
-    std::vector<PriceLevel> pub_asks_;
-
-    void publish_lob(int64_t timestamp_ns) noexcept {
-        if (!publisher_ || !publisher_->is_open()) return;
-        pub_bids_.clear();
-        pub_asks_.clear();
-        book_.get_top_levels(PUB_LEVELS, pub_bids_, pub_asks_);
-        publisher_->publish(
-            book_.exchange(), book_.symbol().c_str(),
-            timestamp_ns, book_.get_mid_price(),
-            pub_bids_, pub_asks_);
-    }
 
     static int64_t now_ns() noexcept {
         using namespace std::chrono;

@@ -2,11 +2,7 @@
 End-to-end neural alpha pipeline.
 
 Steps:
-    1. Collect L5 LOB data — priority order:
-         a. Live core data via CoreBridge (C++ mmap ring buffer, all venues)
-         b. REST API fallback (Binance/Kraken)
-         c. Parquet file (--data-path)
-         d. Synthetic data (--synthetic)
+    1. Fetch L5 LOB data from Binance/Kraken REST (extends fetch_and_run.py pattern)
     2. Build feature tensors (LOB + tick scalars)
     3. Train CryptoAlphaNet with walk-forward cross-validation
     4. Run event-driven backtest on out-of-sample predictions
@@ -26,8 +22,6 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 import requests
-
-from .core_bridge import CoreBridge
 
 # ── Data fetcher ──────────────────────────────────────────────────────────────
 
@@ -117,69 +111,15 @@ def _fetch_kraken_l5() -> dict | None:
         return None
 
 
-def collect_from_core_bridge(
-    n_ticks: int,
-    interval_ms: int,
-) -> pl.DataFrame | None:
-    """
-    Collect LOB ticks from the live C++ core via the mmap ring buffer.
-
-    Returns a DataFrame with ticks from *all* active exchanges (BINANCE, KRAKEN,
-    OKX, COINBASE) combined, or None if the bridge is unavailable.
-
-    The C++ engine must be running with feed handlers connected; otherwise
-    the ring buffer will not receive new data and this call will time out.
-    """
-    bridge = CoreBridge()
-    if not bridge.open():
-        return None
-
-    print(f"CoreBridge: collecting ≥{n_ticks} ticks from live C++ core…")
-    rows: list[dict] = []
-    interval_s = interval_ms / 1000.0
-    polls = 0
-    max_polls = n_ticks * 4  # generous upper bound to avoid infinite loop
-
-    while len(rows) < n_ticks and polls < max_polls:
-        new = bridge.read_new_ticks()
-        rows.extend(new)
-        if (polls + 1) % 20 == 0:
-            print(f"  {len(rows)}/{n_ticks} ticks collected…")
-        polls += 1
-        if len(rows) < n_ticks:
-            time.sleep(interval_s)
-
-    bridge.close()
-
-    if not rows:
-        print("  [WARN] CoreBridge returned no ticks — C++ feed handlers may not be running.")
-        return None
-
-    df = pl.DataFrame(rows).sort("timestamp_ns")
-    exchanges = df["exchange"].unique().to_list() if "exchange" in df.columns else []
-    print(f"CoreBridge: collected {len(df)} ticks from {exchanges}.\n")
-    return df
-
-
 def collect_l5_ticks(
     n_ticks: int,
     interval_ms: int,
     exchanges: list[str] | None = None,
 ) -> pl.DataFrame:
-    """Collect L5 LOB snapshots.
+    """Fetch L5 LOB snapshots from the specified exchanges.
 
-    Priority:
-      1. Live C++ core via CoreBridge (combined multi-exchange data).
-      2. REST API fallback for the requested exchanges.
-
-    Supported REST exchange labels: BINANCE, KRAKEN, SOLANA.
+    Supported exchange labels: BINANCE, KRAKEN, SOLANA.
     """
-    # Try CoreBridge first — richer data, all venues, WebSocket precision
-    df = collect_from_core_bridge(n_ticks, interval_ms)
-    if df is not None and len(df) >= n_ticks // 2:
-        return df
-
-    # Fall back to REST API
     exchanges = exchanges or ["SOLANA"]
     rows: list[dict] = []
     interval_s = interval_ms / 1000.0
@@ -190,8 +130,7 @@ def collect_l5_ticks(
         "SOLANA": _fetch_solana_l5,
     }
 
-    print(f"REST fallback: collecting {n_ticks} L5 snapshots per exchange "
-          f"(interval {interval_ms} ms)…")
+    print(f"Collecting {n_ticks} L5 snapshots per exchange (interval {interval_ms} ms)…")
     for i in range(n_ticks):
         for ex in exchanges:
             fetcher = _fetchers.get(ex)
