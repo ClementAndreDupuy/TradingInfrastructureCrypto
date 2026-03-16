@@ -197,8 +197,7 @@ class ReconciliationService {
                 reconnect_required_[i] = false;
                 if (local_res != ConnectorResult::OK) {
                     const DriftDecision decision = classify_snapshot_failure(
-                        states_[i], reconnect_phase, local_res,
-                        "local reconcile failed");
+                        states_[i], reconnect_phase, local_res, "local reconcile failed");
                     apply_decision(i, decision, reconnect_phase);
                     return local_res;
                 }
@@ -254,8 +253,7 @@ class ReconciliationService {
     }
 
     DriftDecision classify_snapshot_failure(VenueState& state, bool reconnect_phase,
-                                            ConnectorResult res,
-                                            const char* failure_reason) const {
+                                            ConnectorResult res, const char* failure_reason) const {
         DriftDecision out;
         out.mismatch = true;
         ++state.snapshot_failure_retries;
