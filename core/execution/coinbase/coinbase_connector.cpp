@@ -133,8 +133,9 @@ auto CoinbaseConnector::replace_at_venue(const VenueOrderEntry& entry, const Ord
                                                                   : ConnectorResult::ERROR_UNKNOWN;
 }
 
-auto CoinbaseConnector::query_at_venue(const VenueOrderEntry& entry, FillUpdate& status)
-    -> ConnectorResult {
+auto CoinbaseConnector::query_at_venue(
+    const VenueOrderEntry& entry,
+    FillUpdate& status) -> ConnectorResult {
     const auto resp = http::get(
         api_url() + "/api/v3/brokerage/orders/historical/" + std::string(entry.venue_order_id),
         auth_headers(

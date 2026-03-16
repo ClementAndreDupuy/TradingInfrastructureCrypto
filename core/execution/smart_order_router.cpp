@@ -4,8 +4,9 @@
 
 namespace trading {
 
-auto SmartOrderRouter::effective_price_bps(const VenueQuote& venue_quote, Side side) noexcept
-    -> double {
+auto SmartOrderRouter::effective_price_bps(
+    const VenueQuote& venue_quote,
+    Side side) noexcept -> double {
     const double quote_price = (side == Side::BID) ? venue_quote.best_ask : venue_quote.best_bid;
     if (quote_price <= 0.0) {
         return 1e12;
@@ -140,11 +141,12 @@ auto SmartOrderRouter::route(Side side, double quantity,
     return out;
 }
 
-auto SmartOrderRouter::route_with_alpha(Side side, double base_quantity,
-                                        const AlphaSignal& alpha_signal,
-                                        const std::array<VenueQuote, MAX_VENUES>& venues,
-                                        const RoutingConstraints& cfg) const noexcept
-    -> RoutingDecision {
+auto SmartOrderRouter::route_with_alpha(
+    Side side,
+    double base_quantity,
+    const AlphaSignal& alpha_signal,
+    const std::array<VenueQuote, MAX_VENUES>& venues,
+    const RoutingConstraints& cfg) const noexcept -> RoutingDecision {
     RoutingDecision out;
 
     if (alpha_signal.risk_score >= cfg.alpha_risk_max) {

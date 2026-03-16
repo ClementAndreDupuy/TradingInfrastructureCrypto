@@ -133,8 +133,9 @@ auto KrakenConnector::replace_at_venue(const VenueOrderEntry& entry, const Order
                                                                 : ConnectorResult::ERROR_UNKNOWN;
 }
 
-auto KrakenConnector::query_at_venue(const VenueOrderEntry& entry, FillUpdate& status)
-    -> ConnectorResult {
+auto KrakenConnector::query_at_venue(
+    const VenueOrderEntry& entry,
+    FillUpdate& status) -> ConnectorResult {
     const std::string payload = std::string("txid=") + entry.venue_order_id;
     const auto resp = http::post(api_url() + "/0/private/QueryOrders", payload,
                                  auth_headers("POST", "/0/private/QueryOrders", payload));

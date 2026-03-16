@@ -136,8 +136,9 @@ auto OkxConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& r
                                                              : ConnectorResult::ERROR_UNKNOWN;
 }
 
-auto OkxConnector::query_at_venue(const VenueOrderEntry& entry, FillUpdate& status)
-    -> ConnectorResult {
+auto OkxConnector::query_at_venue(
+    const VenueOrderEntry& entry,
+    FillUpdate& status) -> ConnectorResult {
     const auto resp = http::get(
         api_url() + "/api/v5/trade/order?ordId=" + std::string(entry.venue_order_id),
         auth_headers("GET", std::string("/api/v5/trade/order?ordId=") + entry.venue_order_id, ""));
