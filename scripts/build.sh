@@ -17,6 +17,7 @@ BUILD_PYTHON=1
 INSTALL_PYTHON=1
 BUILD_BINDINGS=1
 RUN_TESTS=1
+RUN_CPP_TESTS=1
 COMPILE_PYTHON=1
 BUILD_DIR="build"
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
@@ -32,7 +33,8 @@ Options:
   --skip-python-install   Skip 'python3 -m pip install -e .'
   --skip-bindings         Skip 'python3 bindings/setup.py build_ext --inplace'
   --skip-compileall       Skip Python byte-compilation check
-  --skip-tests            Skip 'pytest tests/unit/'
+  --skip-tests            Skip Python unit tests ('pytest tests/unit/')
+  --skip-cpp-tests        Skip C++ tests ('ctest --output-on-failure')
   --build-dir <DIR>       CMake build directory (default: build)
   --jobs <N>              Parallel jobs for CMake build (default: detected CPU count)
   -h, --help              Show this help
@@ -47,6 +49,7 @@ while [[ $# -gt 0 ]]; do
         --skip-bindings) BUILD_BINDINGS=0; shift ;;
         --skip-compileall) COMPILE_PYTHON=0; shift ;;
         --skip-tests) RUN_TESTS=0; shift ;;
+        --skip-cpp-tests) RUN_CPP_TESTS=0; shift ;;
         --build-dir) BUILD_DIR="$2"; shift 2 ;;
         --jobs) JOBS="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
@@ -110,6 +113,11 @@ action_tests() {
     "$PYTHON_BIN" -m pytest tests/unit/
 }
 
+action_cpp_tests() {
+    echo "[build] Running C++ tests"
+    ctest --test-dir "$BUILD_DIR" --output-on-failure
+}
+
 if [[ "$BUILD_CPP" -eq 1 ]]; then
     action_cpp
 else
@@ -139,10 +147,16 @@ else
     echo "[build] Skipping Python byte-compilation"
 fi
 
+if [[ "$RUN_CPP_TESTS" -eq 1 && "$BUILD_CPP" -eq 1 ]]; then
+    action_cpp_tests
+else
+    echo "[build] Skipping C++ tests"
+fi
+
 if [[ "$RUN_TESTS" -eq 1 ]]; then
     action_tests
 else
-    echo "[build] Skipping tests"
+    echo "[build] Skipping Python tests"
 fi
 
 echo "[build] Done."

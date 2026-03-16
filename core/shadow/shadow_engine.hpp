@@ -1,26 +1,5 @@
 #pragma once
 
-// Shadow Trading Engine — Paper trading with live code path.
-//
-// Wraps any ExchangeConnector, intercepts submit_order/cancel_order, and
-// simulates fills using live order book data. Identical decision logic to
-// live; only the order submission is intercepted.
-//
-// Fill simulation rules:
-//   LIMIT BID : fills when best_ask <= order.price  (book crosses)
-//   LIMIT ASK : fills when best_bid >= order.price
-//   MARKET    : fills immediately at current best ask/bid
-//   IOC       : same as LIMIT but cancels if not immediately fillable
-//
-// Fee accounting: uses the configured maker/taker rates to compute
-// realistic net P&L, matching what live trading would produce.
-//
-// Decision log: every order submission is written to JSONL file with
-// full book state, timestamps, and verdict.
-//
-// Thread safety: submit_order/cancel_order are called from the strategy
-// thread; check_fills() is called from the same thread on each book update.
-
 #include "../common/logging.hpp"
 #include "../common/types.hpp"
 #include "../execution/exchange_connector.hpp"
@@ -32,36 +11,46 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 namespace trading {
 
-// Fee values are read from config/*/risk.yaml (arb_risk.perp_arb section).
-// Construct via ShadowConfig::from_yaml_values() at startup rather than
-// relying on the in-source defaults, which may diverge from the live config.
 struct ShadowConfig {
-    double binance_maker_fee_bps = 2.0; // arb_risk.perp_arb.binance_perp_maker_fee_bps
-    double binance_taker_fee_bps = 5.0; // arb_risk.perp_arb.binance_perp_taker_fee_bps
-    double kraken_maker_fee_bps = 2.0;  // arb_risk.perp_arb.kraken_futures_maker_fee_bps
-    double kraken_taker_fee_bps = 5.0;  // arb_risk.perp_arb.kraken_futures_taker_fee_bps
+    double binance_maker_fee_bps = 2.0;
+    double binance_taker_fee_bps = 5.0;
+    double kraken_maker_fee_bps = 2.0;
+    double kraken_taker_fee_bps = 5.0;
+    double okx_maker_fee_bps = 2.0;
+    double okx_taker_fee_bps = 5.0;
+    double coinbase_maker_fee_bps = 4.0;
+    double coinbase_taker_fee_bps = 8.0;
+    int64_t base_latency_ns = 150000;
+    int64_t latency_jitter_ns = 50000;
+    double impact_slippage_per_notional_bps = 0.8;
+    double queue_match_fraction_per_check = 0.35;
     char log_path[256] = "shadow_decisions.jsonl";
 
-    // Named constructor — prefer this over relying on defaults.
-    // All fee values in basis points (1 bps = 0.01%).
     static ShadowConfig from_yaml_values(double bin_maker_bps, double bin_taker_bps,
                                          double kra_maker_bps, double kra_taker_bps,
+                                         double okx_maker_bps = 2.0,
+                                         double okx_taker_bps = 5.0,
+                                         double coinbase_maker_bps = 4.0,
+                                         double coinbase_taker_bps = 8.0,
                                          const char* log_file = "shadow_decisions.jsonl") noexcept {
         ShadowConfig c;
         c.binance_maker_fee_bps = bin_maker_bps;
         c.binance_taker_fee_bps = bin_taker_bps;
         c.kraken_maker_fee_bps = kra_maker_bps;
         c.kraken_taker_fee_bps = kra_taker_bps;
+        c.okx_maker_fee_bps = okx_maker_bps;
+        c.okx_taker_fee_bps = okx_taker_bps;
+        c.coinbase_maker_fee_bps = coinbase_maker_bps;
+        c.coinbase_taker_fee_bps = coinbase_taker_bps;
         std::strncpy(c.log_path, log_file, sizeof(c.log_path) - 1);
         c.log_path[sizeof(c.log_path) - 1] = '\0';
         return c;
     }
 };
-
-// ── Virtual order slot ────────────────────────────────────────────────────────
 
 struct ShadowOrder {
     uint64_t client_order_id = 0;
@@ -73,12 +62,13 @@ struct ShadowOrder {
     double price = 0;
     double quantity = 0;
     double filled_qty = 0;
+    double notional_filled = 0;
+    double queue_ahead_qty = 0;
     int64_t submit_ts_ns = 0;
+    int64_t release_ts_ns = 0;
     bool active = false;
-    bool is_maker = false; // set when posted limit rests in book
+    bool is_maker = false;
 };
-
-// ── Shadow connector (wraps a real connector, intercepts orders) ──────────────
 
 class ShadowConnector : public ExchangeConnector {
   public:
@@ -101,7 +91,6 @@ class ShadowConnector : public ExchangeConnector {
     void disconnect() override {}
 
     ConnectorResult submit_order(const Order& order) override {
-        // Find free slot
         ShadowOrder* slot = nullptr;
         for (auto& s : orders_) {
             if (!s.active) {
@@ -124,23 +113,25 @@ class ShadowConnector : public ExchangeConnector {
         slot->price = order.price;
         slot->quantity = order.quantity;
         slot->submit_ts_ns = now_ns();
+        slot->release_ts_ns = slot->submit_ts_ns + modeled_latency_ns(order.client_order_id);
         slot->active = true;
         slot->is_maker = false;
+        slot->queue_ahead_qty = queue_ahead_at_submit(*slot);
 
-        // For IOC market orders, fill immediately at current best
-        if (order.type == OrderType::MARKET ||
-            (order.tif == TimeInForce::IOC && is_immediately_fillable(*slot))) {
-            fill_at_best(*slot);
+        const bool fillable_now = is_immediately_fillable(*slot);
+        const bool released = slot->submit_ts_ns >= slot->release_ts_ns;
+
+        if (released && (order.type == OrderType::MARKET || fillable_now)) {
+            fill_at_best(*slot, slot->quantity);
             return ConnectorResult::OK;
         }
 
-        // Check if limit is immediately fillable (aggressor = taker)
-        if (order.type == OrderType::LIMIT && is_immediately_fillable(*slot)) {
-            fill_at_best(*slot);
+        if (order.tif == TimeInForce::IOC && !fillable_now) {
+            emit_cancel(*slot);
+            slot->active = false;
             return ConnectorResult::OK;
         }
 
-        // Otherwise order rests — mark as maker when/if it fills
         slot->is_maker = true;
         log_order(*slot, "RESTING");
         return ConnectorResult::OK;
@@ -171,7 +162,8 @@ class ShadowConnector : public ExchangeConnector {
                 status.client_order_id = client_order_id;
                 status.fill_qty = s.filled_qty;
                 status.cumulative_filled_qty = s.filled_qty;
-                status.new_state = OrderState::OPEN;
+                status.avg_fill_price = s.filled_qty > 0.0 ? (s.notional_filled / s.filled_qty) : 0.0;
+                status.new_state = s.filled_qty > 0.0 ? OrderState::PARTIALLY_FILLED : OrderState::OPEN;
                 status.local_ts_ns = now_ns();
                 return ConnectorResult::OK;
             }
@@ -191,23 +183,26 @@ class ShadowConnector : public ExchangeConnector {
 
     ConnectorResult reconcile() override { return ConnectorResult::OK; }
 
-    // Called from strategy thread on every book update.
-    // Checks all resting limit orders for fill eligibility.
     void check_fills() {
+        const int64_t ts_now = now_ns();
         for (auto& s : orders_) {
-            if (!s.active)
+            if (!s.active || ts_now < s.release_ts_ns)
                 continue;
             if (s.type == OrderType::MARKET) {
-                fill_at_best(s);
+                fill_at_best(s, s.quantity - s.filled_qty);
                 continue;
             }
-            if (is_immediately_fillable(s)) {
-                fill_at_best(s);
+            const bool fillable = is_immediately_fillable(s);
+            if (s.tif == TimeInForce::IOC && !fillable) {
+                emit_cancel(s);
+                s.active = false;
+                continue;
             }
+            if (fillable)
+                fill_passive_or_cross(s);
         }
     }
 
-    // Metrics
     double total_pnl() const noexcept { return total_pnl_.load(std::memory_order_acquire); }
     uint64_t total_fills() const noexcept { return total_fills_.load(std::memory_order_acquire); }
     uint32_t active_orders() const noexcept {
@@ -239,56 +234,101 @@ class ShadowConnector : public ExchangeConnector {
         if (s.side == Side::BID) {
             double best_ask = book_.best_ask();
             return (best_ask > 0.0 && s.price >= best_ask);
-        } else {
-            double best_bid = book_.best_bid();
-            return (best_bid > 0.0 && s.price <= best_bid);
         }
+        double best_bid = book_.best_bid();
+        return (best_bid > 0.0 && s.price <= best_bid);
     }
 
-    void fill_at_best(ShadowOrder& s) {
-        double fill_px = (s.side == Side::BID) ? book_.best_ask()  // buy at ask
-                                               : book_.best_bid(); // sell at bid
-        if (fill_px <= 0.0) {
-            // No liquidity — treat as rejected
+    void fill_passive_or_cross(ShadowOrder& s) {
+        const double remaining = s.quantity - s.filled_qty;
+        if (remaining <= 0.0) {
+            s.active = false;
+            return;
+        }
+
+        const double top_size = top_opposite_size(s.side);
+        if (top_size <= 0.0) {
             emit_reject(s, "no_liquidity");
             s.active = false;
             return;
         }
 
-        s.filled_qty = s.quantity;
-        s.active = false;
+        double available = top_size * cfg_.queue_match_fraction_per_check;
+        if (s.queue_ahead_qty > 0.0) {
+            const double consumed = available > s.queue_ahead_qty ? s.queue_ahead_qty : available;
+            s.queue_ahead_qty -= consumed;
+            available -= consumed;
+        }
+        if (available <= 0.0)
+            return;
 
-        // Compute fee based on maker/taker
-        double fee_bps = fee_for(s);
-        double fee = (fee_bps / 10000.0) * fill_px * s.quantity;
+        const double fill_qty = available > remaining ? remaining : available;
+        fill_at_best(s, fill_qty);
+    }
 
-        // For tracking P&L per fill: positive for sells, negative for buys
-        double sign = (s.side == Side::ASK) ? 1.0 : -1.0;
-        double contrib = sign * fill_px * s.quantity - sign * fee;
-        double old_pnl = total_pnl_.load(std::memory_order_acquire);
+    void fill_at_best(ShadowOrder& s, double qty) {
+        if (qty <= 0.0)
+            return;
+
+        double fill_px = (s.side == Side::BID) ? book_.best_ask() : book_.best_bid();
+        if (fill_px <= 0.0) {
+            emit_reject(s, "no_liquidity");
+            s.active = false;
+            return;
+        }
+
+        fill_px = apply_slippage(fill_px, qty, s.side);
+        apply_fill(s, fill_px, qty);
+    }
+
+    void apply_fill(ShadowOrder& s, double fill_px, double fill_qty) {
+        if (fill_qty <= 0.0)
+            return;
+
+        s.filled_qty += fill_qty;
+        s.notional_filled += fill_px * fill_qty;
+        if (s.filled_qty >= s.quantity - 1e-12) {
+            s.filled_qty = s.quantity;
+            s.active = false;
+        }
+
+        const double fee_bps = fee_for(s);
+        const double fee = (fee_bps / 10000.0) * fill_px * fill_qty;
+        const double sign = (s.side == Side::ASK) ? 1.0 : -1.0;
+        const double contrib = sign * fill_px * fill_qty - sign * fee;
+
+        const double old_pnl = total_pnl_.load(std::memory_order_acquire);
         total_pnl_.store(old_pnl + contrib, std::memory_order_release);
         total_fills_.fetch_add(1, std::memory_order_relaxed);
 
-        log_fill(s, fill_px, fee_bps, fee);
-        emit_fill(s, fill_px);
+        log_fill(s, fill_px, fill_qty, fee_bps, fee);
+        emit_fill(s, fill_px, fill_qty);
     }
 
     double fee_for(const ShadowOrder& s) const noexcept {
-        bool maker = s.is_maker;
-        if (s.exchange == Exchange::BINANCE)
+        const bool maker = s.is_maker;
+        switch (s.exchange) {
+        case Exchange::BINANCE:
             return maker ? cfg_.binance_maker_fee_bps : cfg_.binance_taker_fee_bps;
-        else
+        case Exchange::KRAKEN:
             return maker ? cfg_.kraken_maker_fee_bps : cfg_.kraken_taker_fee_bps;
+        case Exchange::OKX:
+            return maker ? cfg_.okx_maker_fee_bps : cfg_.okx_taker_fee_bps;
+        case Exchange::COINBASE:
+            return maker ? cfg_.coinbase_maker_fee_bps : cfg_.coinbase_taker_fee_bps;
+        default:
+            return maker ? cfg_.kraken_maker_fee_bps : cfg_.kraken_taker_fee_bps;
+        }
     }
 
-    void emit_fill(const ShadowOrder& s, double fill_px) {
+    void emit_fill(const ShadowOrder& s, double fill_px, double fill_qty) {
         FillUpdate u;
         u.client_order_id = s.client_order_id;
         u.fill_price = fill_px;
-        u.fill_qty = s.quantity;
-        u.cumulative_filled_qty = s.quantity;
-        u.avg_fill_price = fill_px;
-        u.new_state = OrderState::FILLED;
+        u.fill_qty = fill_qty;
+        u.cumulative_filled_qty = s.filled_qty;
+        u.avg_fill_price = s.filled_qty > 0.0 ? (s.notional_filled / s.filled_qty) : 0.0;
+        u.new_state = s.filled_qty >= s.quantity ? OrderState::FILLED : OrderState::PARTIALLY_FILLED;
         u.local_ts_ns = now_ns();
         ExchangeConnector::emit_fill(u);
     }
@@ -310,13 +350,11 @@ class ShadowConnector : public ExchangeConnector {
         ExchangeConnector::emit_fill(u);
     }
 
-    // ── Decision logging ──────────────────────────────────────────────────────
-
     void log_order(const ShadowOrder& s, const char* event) {
         if (!log_fp_)
             return;
-        double best_bid = book_.best_bid();
-        double best_ask = book_.best_ask();
+        const double best_bid = book_.best_bid();
+        const double best_ask = book_.best_ask();
         std::fprintf(log_fp_,
                      "{\"event\":\"%s\",\"ts_ns\":%lld,\"exchange\":\"%s\","
                      "\"symbol\":\"%s\",\"side\":\"%s\",\"type\":\"%s\","
@@ -330,20 +368,61 @@ class ShadowConnector : public ExchangeConnector {
         std::fflush(log_fp_);
     }
 
-    void log_fill(const ShadowOrder& s, double fill_px, double fee_bps, double fee) {
+    void log_fill(const ShadowOrder& s, double fill_px, double fill_qty, double fee_bps, double fee) {
         if (!log_fp_)
             return;
         std::fprintf(log_fp_,
                      "{\"event\":\"FILL\",\"ts_ns\":%lld,\"exchange\":\"%s\","
                      "\"symbol\":\"%s\",\"side\":\"%s\",\"maker\":%s,"
-                     "\"fill_px\":%.2f,\"qty\":%.6f,"
+                     "\"fill_px\":%.2f,\"qty\":%.6f,\"cum_qty\":%.6f,"
                      "\"fee_bps\":%.2f,\"fee_usd\":%.6f,"
                      "\"cumulative_pnl\":%.6f,\"client_oid\":%llu}\n",
                      (long long)now_ns(), exchange_to_string(s.exchange), s.symbol,
                      s.side == Side::BID ? "BID" : "ASK", s.is_maker ? "true" : "false", fill_px,
-                     s.quantity, fee_bps, fee, total_pnl_.load(std::memory_order_relaxed),
+                     fill_qty, s.filled_qty, fee_bps, fee, total_pnl_.load(std::memory_order_relaxed),
                      (unsigned long long)s.client_order_id);
         std::fflush(log_fp_);
+    }
+
+    int64_t modeled_latency_ns(uint64_t client_order_id) const noexcept {
+        if (cfg_.latency_jitter_ns <= 0)
+            return cfg_.base_latency_ns;
+        const uint64_t spread = static_cast<uint64_t>(cfg_.latency_jitter_ns) * 2ULL + 1ULL;
+        const int64_t jitter = static_cast<int64_t>(client_order_id % spread) - cfg_.latency_jitter_ns;
+        return cfg_.base_latency_ns + jitter;
+    }
+
+    double queue_ahead_at_submit(const ShadowOrder& s) const noexcept {
+        std::vector<PriceLevel> bids;
+        std::vector<PriceLevel> asks;
+        book_.get_top_levels(8, bids, asks);
+        const auto& side_levels = s.side == Side::BID ? bids : asks;
+        for (const auto& lvl : side_levels)
+            if (lvl.price == s.price)
+                return lvl.size * 0.6;
+        return 0.0;
+    }
+
+    double top_opposite_size(Side side) const noexcept {
+        std::vector<PriceLevel> bids;
+        std::vector<PriceLevel> asks;
+        book_.get_top_levels(1, bids, asks);
+        if (side == Side::BID)
+            return asks.empty() ? 0.0 : asks.front().size;
+        return bids.empty() ? 0.0 : bids.front().size;
+    }
+
+    double apply_slippage(double px, double qty, Side side) const noexcept {
+        std::vector<PriceLevel> bids;
+        std::vector<PriceLevel> asks;
+        book_.get_top_levels(1, bids, asks);
+        const double top_size = side == Side::BID ? (asks.empty() ? 0.0 : asks.front().size)
+                                                  : (bids.empty() ? 0.0 : bids.front().size);
+        if (top_size <= 0.0)
+            return px;
+        const double impact_bps = cfg_.impact_slippage_per_notional_bps * (qty / top_size);
+        const double sign = side == Side::BID ? 1.0 : -1.0;
+        return px * (1.0 + sign * (impact_bps / 10000.0));
     }
 
     static int64_t now_ns() noexcept {
@@ -351,8 +430,6 @@ class ShadowConnector : public ExchangeConnector {
         return duration_cast<nanoseconds>(high_resolution_clock::now().time_since_epoch()).count();
     }
 };
-
-// ── ShadowEngine — orchestrates the whole shadow session ─────────────────────
 
 class ShadowEngine {
   public:
@@ -364,16 +441,12 @@ class ShadowEngine {
     ShadowConnector& binance_connector() { return binance_shadow_; }
     ShadowConnector& kraken_connector() { return kraken_shadow_; }
 
-    // Call from strategy thread on every book update, after strategy runs.
     void check_fills() {
         binance_shadow_.check_fills();
         kraken_shadow_.check_fills();
     }
 
-    // Combined net P&L across both connectors (buy side negative, sell side positive).
-    double net_pnl() const noexcept {
-        return binance_shadow_.total_pnl() + kraken_shadow_.total_pnl();
-    }
+    double net_pnl() const noexcept { return binance_shadow_.total_pnl() + kraken_shadow_.total_pnl(); }
 
     uint64_t total_fills() const noexcept {
         return binance_shadow_.total_fills() + kraken_shadow_.total_fills();
