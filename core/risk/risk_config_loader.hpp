@@ -8,6 +8,7 @@
 #include <fstream>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace trading {
 
@@ -20,7 +21,13 @@ struct RiskRuntimeConfig {
 class RiskConfigLoader {
   public:
     static bool load(const std::string& path, RiskRuntimeConfig& out) {
-        std::ifstream in(path);
+        std::ifstream in;
+        for (const std::string& candidate : candidate_paths(path)) {
+            in.open(candidate);
+            if (in.is_open())
+                break;
+            in.clear();
+        }
         if (!in.is_open())
             return false;
 
@@ -80,6 +87,12 @@ class RiskConfigLoader {
     }
 
   private:
+    static std::vector<std::string> candidate_paths(const std::string& path) {
+        if (path.empty() || path[0] == '/')
+            return {path};
+        return {path, "../" + path, "../../" + path, "../../../" + path};
+    }
+
     static void trim(std::string& s) {
         size_t start = 0;
         while (start < s.size() && std::isspace(static_cast<unsigned char>(s[start])))

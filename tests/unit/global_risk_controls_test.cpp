@@ -43,7 +43,9 @@ TEST(GlobalRiskControlsTest, EnforcesConcentrationAndCrossVenueNetting) {
               GlobalRiskCheckResult::OK);
     EXPECT_EQ(controls.check_order(Exchange::OKX, "BTCUSDT", 100.0),
               GlobalRiskCheckResult::CONCENTRATION_CAP);
-    EXPECT_EQ(controls.check_order(Exchange::KRAKEN, "ETHUSDT", 300.0),
+    EXPECT_EQ(controls.commit_order(Exchange::COINBASE, "ETHUSDT", 200.0),
+              GlobalRiskCheckResult::OK);
+    EXPECT_EQ(controls.check_order(Exchange::KRAKEN, "ETHUSDT", 100.0),
               GlobalRiskCheckResult::CROSS_VENUE_NETTING_CAP);
 }
 

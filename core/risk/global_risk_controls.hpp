@@ -68,22 +68,23 @@ class GlobalRiskControls {
             return GlobalRiskCheckResult::VENUE_CAP;
 
         const SymbolState* symbol_state = find_symbol(symbol);
-        const double symbol_gross_after =
-            (symbol_state ? symbol_state->gross_notional.load(std::memory_order_acquire) : 0.0) +
-            abs_notional;
+        const double symbol_gross_before =
+            symbol_state ? symbol_state->gross_notional.load(std::memory_order_acquire) : 0.0;
+        const double symbol_gross_after = symbol_gross_before + abs_notional;
         const double symbol_net_after =
             (symbol_state ? symbol_state->net_notional.load(std::memory_order_acquire) : 0.0) +
             signed_notional;
 
-        if (cfg_.max_cross_venue_net_notional > 0.0 &&
-            std::abs(symbol_net_after) > cfg_.max_cross_venue_net_notional) {
-            return GlobalRiskCheckResult::CROSS_VENUE_NETTING_CAP;
-        }
-
-        if (cfg_.max_symbol_concentration > 0.0 && gross_after > 0.0) {
+        const double gross_before = gross_notional_.load(std::memory_order_acquire);
+        if (cfg_.max_symbol_concentration > 0.0 && gross_before > 0.0 && gross_after > 0.0) {
             const double concentration = symbol_gross_after / gross_after;
             if (concentration > cfg_.max_symbol_concentration)
                 return GlobalRiskCheckResult::CONCENTRATION_CAP;
+        }
+
+        if (cfg_.max_cross_venue_net_notional > 0.0 && symbol_gross_before > 0.0 &&
+            std::abs(symbol_net_after) > cfg_.max_cross_venue_net_notional) {
+            return GlobalRiskCheckResult::CROSS_VENUE_NETTING_CAP;
         }
 
         return GlobalRiskCheckResult::OK;
