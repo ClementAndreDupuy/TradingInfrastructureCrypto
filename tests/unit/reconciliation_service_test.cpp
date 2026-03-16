@@ -553,7 +553,7 @@ TEST(ReconciliationServiceTest, StagedRemediationEscalatesOrderDriftToRiskHalt) 
         if (contains(url, "openOrders"))
             return http::HttpResponse{
                 200,
-                R"([{"orderId":"bn-1","symbol":"BTCUSDT","side":"BUY","origQty":0.5,"executedQty":0.7,"price":100.0,"status":"NEW"}])"};
+                R"([{"orderId":"bn-1","symbol":"BTCUSDT","side":"BUY","origQty":0.5,"executedQty":0.3,"price":100.0,"status":"NEW"}])"};
         if (contains(url, "/account"))
             return http::HttpResponse{200,
                                       R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
@@ -565,6 +565,23 @@ TEST(ReconciliationServiceTest, StagedRemediationEscalatesOrderDriftToRiskHalt) 
     BinanceConnector binance("k", "s", "https://binance.test");
     ReconciliationService service(ReconciliationService::DriftThresholds{}, policy);
     ASSERT_TRUE(service.register_connector(binance));
+
+    ReconciliationSnapshot canonical;
+    ReconciledOrder order;
+    std::strncpy(order.venue_order_id, "bn-1", sizeof(order.venue_order_id) - 1);
+    std::strncpy(order.symbol, "BTCUSDT", sizeof(order.symbol) - 1);
+    order.quantity = 0.5;
+    order.filled_quantity = 0.2;
+    order.price = 100.0;
+    ASSERT_TRUE(canonical.open_orders.push(order));
+
+    ReconciledBalance balance;
+    std::strncpy(balance.asset, "BTC", sizeof(balance.asset) - 1);
+    balance.total = 1.1;
+    balance.available = 1.0;
+    ASSERT_TRUE(canonical.balances.push(balance));
+
+    ASSERT_TRUE(service.set_canonical_snapshot(Exchange::BINANCE, canonical));
 
     uint32_t cancel_all_calls = 0;
     uint32_t risk_halt_calls = 0;
