@@ -9,7 +9,7 @@
   - acceptance: mismatch classes are explicit (`missing_order`, `qty_drift`, `fill_gap`, `balance_drift`, `position_drift`) with deterministic actions
 - [ ] **C4** `core/execution/` + `core/risk/` — Add durable idempotency journal and deterministic recovery for retry storms, duplicate acks, and cancel/replace race conditions
 - [x] **C5** `core/execution/reconciliation_service.hpp` + `core/execution/*/` — Implemented fill reconciliation pipeline with trade-history ingestion, stable dedupe keys, cumulative qty/notional/fee checks, and deterministic ledger replay
-- [ ] **C6** `core/execution/reconciliation_service.hpp` + `tests/` — Add staged drift remediation policy (retry budget, severity levels, explicit cancel-all/risk-halt hooks, incident trail) plus failure-injection coverage for reconnect/drift edge cases
+- [x] **C6** `core/execution/reconciliation_service.hpp` + `tests/` — Added staged drift remediation policy (retry budgets, severity levels, explicit cancel-all/risk-halt hooks, incident trail) plus failure-injection coverage for reconnect/drift edge cases
 
 ### HIGH
 - [ ] **H1** `core/risk/` — Add portfolio/global risk controls (gross/net notional caps, concentration limits, venue caps, cross-venue netting limits) independent from strategy layer
