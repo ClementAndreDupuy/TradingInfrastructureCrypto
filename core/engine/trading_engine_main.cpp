@@ -5,11 +5,13 @@
 #include "../execution/okx/okx_connector.hpp"
 #include "../execution/order_manager.hpp"
 #include "../execution/reconciliation_service.hpp"
+#include "../execution/smart_order_router.hpp"
 #include "../feeds/binance/binance_feed_handler.hpp"
 #include "../feeds/coinbase/coinbase_feed_handler.hpp"
 #include "../feeds/common/book_manager.hpp"
 #include "../feeds/kraken/kraken_feed_handler.hpp"
 #include "../feeds/okx/okx_feed_handler.hpp"
+#include "../ipc/alpha_signal.hpp"
 #include "../risk/circuit_breaker.hpp"
 #include "../risk/global_risk_controls.hpp"
 #include "../risk/kill_switch.hpp"
@@ -48,12 +50,25 @@ CliOptions parse_args(int argc, char** argv) {
     return out;
 }
 
-trading::MarketMakerConfig make_mm_cfg(const std::string& symbol, trading::Exchange exchange) {
-    trading::MarketMakerConfig cfg;
-    std::strncpy(cfg.symbol, symbol.c_str(), sizeof(cfg.symbol) - 1);
-    cfg.symbol[sizeof(cfg.symbol) - 1] = '\0';
-    cfg.exchange = exchange;
-    return cfg;
+// Build a VenueQuote from a live BookManager.
+// Fee and latency are venue-specific constants; other fields use
+// per-book state where available and safe defaults elsewhere.
+trading::VenueQuote venue_quote_from_book(const trading::BookManager& book,
+                                          trading::Exchange exchange, double taker_fee_bps,
+                                          double latency_penalty_bps) noexcept {
+    trading::VenueQuote q;
+    q.exchange = exchange;
+    q.best_bid = book.best_bid();
+    q.best_ask = book.best_ask();
+    q.healthy = book.is_ready() && book.age_ms() < 1000;
+    q.taker_fee_bps = taker_fee_bps;
+    q.latency_penalty_bps = latency_penalty_bps;
+    q.fill_probability = 0.5;
+    q.depth_qty = 5.0;
+    q.risk_penalty_bps = 0.0;
+    q.queue_ahead_qty = 0.0;
+    q.toxicity_bps = 0.0;
+    return q;
 }
 
 } // namespace
@@ -79,13 +94,13 @@ int main(int argc, char** argv) {
     if (kill_switch.is_active())
         return 2;
 
-    // ── Book managers ────────────────────────────────────────────────────────
+    // ── Book managers (all 4 venues for full price discovery) ────────────────
     BookManager binance_book(opts.symbol, Exchange::BINANCE, 0.1, 10000);
     BookManager kraken_book(opts.symbol, Exchange::KRAKEN, 0.1, 10000);
     BookManager okx_book(opts.symbol, Exchange::OKX, 0.1, 10000);
     BookManager coinbase_book(opts.symbol, Exchange::COINBASE, 0.1, 10000);
 
-    // ── Execution connectors ─────────────────────────────────────────────────
+    // ── Execution connectors (all 4 for reconciliation and cancel_all) ───────
     BinanceConnector binance_conn(
         http::env_var("BINANCE_API_KEY"), http::env_var("BINANCE_API_SECRET"),
         is_shadow ? "mock://binance" : "https://api.binance.com");
@@ -103,21 +118,22 @@ int main(int argc, char** argv) {
     okx_conn.connect();
     coinbase_conn.connect();
 
-    // ── Order managers ───────────────────────────────────────────────────────
-    OrderManager binance_om(binance_conn);
-    OrderManager kraken_om(kraken_conn);
-    OrderManager okx_om(okx_conn);
-    OrderManager coinbase_om(coinbase_conn);
+    // ── Single market maker on the primary venue (Binance) ───────────────────
+    // One strategy, one position. SOR decides routing on every tick.
+    OrderManager order_mgr(binance_conn);
 
-    // ── Market makers ────────────────────────────────────────────────────────
-    NeuralAlphaMarketMaker binance_mm(binance_om, binance_book, kill_switch, &circuit_breaker,
-                                      make_mm_cfg(opts.symbol, Exchange::BINANCE));
-    NeuralAlphaMarketMaker kraken_mm(kraken_om, kraken_book, kill_switch, &circuit_breaker,
-                                     make_mm_cfg(opts.symbol, Exchange::KRAKEN));
-    NeuralAlphaMarketMaker okx_mm(okx_om, okx_book, kill_switch, &circuit_breaker,
-                                   make_mm_cfg(opts.symbol, Exchange::OKX));
-    NeuralAlphaMarketMaker coinbase_mm(coinbase_om, coinbase_book, kill_switch, &circuit_breaker,
-                                       make_mm_cfg(opts.symbol, Exchange::COINBASE));
+    MarketMakerConfig mm_cfg;
+    std::strncpy(mm_cfg.symbol, opts.symbol.c_str(), sizeof(mm_cfg.symbol) - 1);
+    mm_cfg.symbol[sizeof(mm_cfg.symbol) - 1] = '\0';
+    mm_cfg.exchange = Exchange::BINANCE;
+
+    NeuralAlphaMarketMaker market_maker(order_mgr, binance_book, kill_switch, &circuit_breaker,
+                                        mm_cfg);
+
+    // ── Smart order router ───────────────────────────────────────────────────
+    SmartOrderRouter sor;
+    AlphaSignalReader alpha_reader;
+    alpha_reader.open();
 
     // ── Reconciliation service ────────────────────────────────────────────────
     ReconciliationService recon_service;
@@ -149,7 +165,30 @@ int main(int argc, char** argv) {
 
     recon_service.reconcile_on_reconnect();
 
-    // ── Feed handlers ────────────────────────────────────────────────────────
+    // ── Shared book-update logic ──────────────────────────────────────────────
+    // Called after any venue's book changes. Uses SOR to alpha-gate the market
+    // maker: if the alpha signal is too weak or risk is elevated, skip quoting.
+    // VenueQuotes are built from live books on every call so the SOR always
+    // routes on current market state.
+    auto on_any_book_update = [&]() {
+        const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venues{{
+            venue_quote_from_book(binance_book, Exchange::BINANCE, 4.0, 0.5),
+            venue_quote_from_book(kraken_book, Exchange::KRAKEN, 4.0, 0.7),
+            venue_quote_from_book(okx_book, Exchange::OKX, 3.0, 0.4),
+            venue_quote_from_book(coinbase_book, Exchange::COINBASE, 30.0, 0.9),
+        }};
+
+        const AlphaSignal alpha = alpha_reader.read();
+        const RoutingDecision decision =
+            sor.route_with_alpha(Side::BID, mm_cfg.order_qty, alpha, venues);
+
+        if (decision.blocked_by_alpha)
+            return;
+
+        market_maker.on_book_update();
+    };
+
+    // ── Feed handlers ─────────────────────────────────────────────────────────
     BinanceFeedHandler binance_feed(opts.symbol, "", "",
                                     is_shadow ? "mock://binance" : "https://api.binance.com",
                                     is_shadow ? "" : "wss://stream.binance.com:9443/ws");
@@ -161,21 +200,6 @@ int main(int argc, char** argv) {
     CoinbaseFeedHandler coinbase_feed(opts.symbol,
                                        is_shadow ? "" : "wss://advanced-trade-ws.coinbase.com");
 
-    // ── Wire feed → book → market maker ──────────────────────────────────────
-    auto make_delta_cb = [](std::function<void(const Delta&)> book_delta,
-                            NeuralAlphaMarketMaker& mm) {
-        return [book_delta = std::move(book_delta), &mm](const Delta& d) {
-            book_delta(d);
-            mm.on_book_update();
-        };
-    };
-    auto make_snapshot_cb = [](std::function<void(const Snapshot&)> book_snap,
-                               NeuralAlphaMarketMaker& mm) {
-        return [book_snap = std::move(book_snap), &mm](const Snapshot& s) {
-            book_snap(s);
-            mm.on_book_update();
-        };
-    };
     auto make_error_cb = [&](Exchange ex) {
         return [&, ex](const std::string& err) {
             LOG_WARN("feed error — triggering reconciliation", "exchange",
@@ -184,22 +208,48 @@ int main(int argc, char** argv) {
         };
     };
 
-    binance_feed.set_snapshot_callback(
-        make_snapshot_cb(binance_book.snapshot_handler(), binance_mm));
-    binance_feed.set_delta_callback(make_delta_cb(binance_book.delta_handler(), binance_mm));
+    // Binance is the primary book: snapshot/delta update primary book and fire
+    // the market maker through SOR gating.
+    binance_feed.set_snapshot_callback([&](const Snapshot& s) {
+        binance_book.snapshot_handler()(s);
+        on_any_book_update();
+    });
+    binance_feed.set_delta_callback([&](const Delta& d) {
+        binance_book.delta_handler()(d);
+        on_any_book_update();
+    });
     binance_feed.set_error_callback(make_error_cb(Exchange::BINANCE));
 
-    kraken_feed.set_snapshot_callback(make_snapshot_cb(kraken_book.snapshot_handler(), kraken_mm));
-    kraken_feed.set_delta_callback(make_delta_cb(kraken_book.delta_handler(), kraken_mm));
+    // Secondary books update price data used by SOR but also trigger the
+    // market maker (cross-venue price moves may warrant requoting on Binance).
+    kraken_feed.set_snapshot_callback([&](const Snapshot& s) {
+        kraken_book.snapshot_handler()(s);
+        on_any_book_update();
+    });
+    kraken_feed.set_delta_callback([&](const Delta& d) {
+        kraken_book.delta_handler()(d);
+        on_any_book_update();
+    });
     kraken_feed.set_error_callback(make_error_cb(Exchange::KRAKEN));
 
-    okx_feed.set_snapshot_callback(make_snapshot_cb(okx_book.snapshot_handler(), okx_mm));
-    okx_feed.set_delta_callback(make_delta_cb(okx_book.delta_handler(), okx_mm));
+    okx_feed.set_snapshot_callback([&](const Snapshot& s) {
+        okx_book.snapshot_handler()(s);
+        on_any_book_update();
+    });
+    okx_feed.set_delta_callback([&](const Delta& d) {
+        okx_book.delta_handler()(d);
+        on_any_book_update();
+    });
     okx_feed.set_error_callback(make_error_cb(Exchange::OKX));
 
-    coinbase_feed.set_snapshot_callback(
-        make_snapshot_cb(coinbase_book.snapshot_handler(), coinbase_mm));
-    coinbase_feed.set_delta_callback(make_delta_cb(coinbase_book.delta_handler(), coinbase_mm));
+    coinbase_feed.set_snapshot_callback([&](const Snapshot& s) {
+        coinbase_book.snapshot_handler()(s);
+        on_any_book_update();
+    });
+    coinbase_feed.set_delta_callback([&](const Delta& d) {
+        coinbase_book.delta_handler()(d);
+        on_any_book_update();
+    });
     coinbase_feed.set_error_callback(make_error_cb(Exchange::COINBASE));
 
     binance_feed.start();
