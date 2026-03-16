@@ -25,7 +25,8 @@ class FakeConnector : public LiveConnectorBase {
     std::string next_venue_order_id = "venue-1";
 
   protected:
-    ConnectorResult submit_to_venue(const Order&, const std::string&, std::string& venue_order_id) override {
+    ConnectorResult submit_to_venue(const Order&, const std::string&,
+                                    std::string& venue_order_id) override {
         ++submit_calls;
         venue_order_id = next_venue_order_id;
         return submit_result;
@@ -36,7 +37,8 @@ class FakeConnector : public LiveConnectorBase {
         return cancel_result;
     }
 
-    ConnectorResult replace_at_venue(const VenueOrderEntry&, const Order&, std::string& new_venue_order_id) override {
+    ConnectorResult replace_at_venue(const VenueOrderEntry&, const Order&,
+                                     std::string& new_venue_order_id) override {
         ++replace_calls;
         new_venue_order_id = next_venue_order_id;
         return replace_result;
@@ -84,6 +86,17 @@ TEST(IdempotencyRecoveryTest, DuplicateSubmitAckRecoveredWithoutVenueCall) {
     const VenueOrderEntry* mapped = c.order_map().get(100);
     ASSERT_NE(mapped, nullptr);
     EXPECT_STREQ(mapped->venue_order_id, "venue-acked");
+}
+
+TEST(IdempotencyRecoveryTest, TracksDuplicateAckRecoveryCounter) {
+    std::remove(journal_path());
+
+    FakeConnector c(Exchange::BINANCE);
+    EXPECT_EQ(c.submit_order(make_order(200)), ConnectorResult::OK);
+
+    EXPECT_EQ(c.cancel_order(200), ConnectorResult::OK);
+    EXPECT_EQ(c.cancel_order(200), ConnectorResult::OK);
+    EXPECT_EQ(c.duplicate_ack_recovery_count(), 1u);
 }
 
 TEST(IdempotencyRecoveryTest, RetryStormPersistsAndRecoversDeterministically) {

@@ -17,7 +17,8 @@ class RecoveryGuard {
     RecoveryGuard(const RecoveryGuardConfig& cfg, KillSwitch& kill_switch)
         : cfg_(cfg), kill_switch_(kill_switch) {}
 
-    bool check(uint32_t in_flight_ops, uint32_t duplicate_acks, uint32_t cancel_replace_races) noexcept {
+    bool check(uint32_t in_flight_ops, uint32_t duplicate_acks,
+               uint32_t cancel_replace_races) noexcept {
         if (in_flight_ops > cfg_.max_in_flight_ops || duplicate_acks > cfg_.max_duplicate_acks ||
             cancel_replace_races > cfg_.max_cancel_replace_races) {
             kill_switch_.trigger(KillReason::CIRCUIT_BREAKER);
