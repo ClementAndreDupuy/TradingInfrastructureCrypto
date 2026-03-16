@@ -3,6 +3,7 @@
 #include "../common/logging.hpp"
 #include "../common/rest_client.hpp"
 #include "exchange_connector.hpp"
+#include "idempotency_journal.hpp"
 #include "reconciliation_types.hpp"
 #include "venue_order_map.hpp"
 
@@ -12,6 +13,7 @@
 #include <functional>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #if defined(TRT_DISABLE_OPENSSL)
@@ -41,7 +43,8 @@ class LiveConnectorBase : public ExchangeConnector {
     LiveConnectorBase(Exchange exchange, std::string api_key, std::string api_secret,
                       std::string api_url, RetryPolicy retry_policy = {})
         : exchange_(exchange), api_key_(std::move(api_key)), api_secret_(std::move(api_secret)),
-          api_url_(std::move(api_url)), retry_policy_(retry_policy) {}
+          api_url_(std::move(api_url)), retry_policy_(retry_policy),
+          journal_(std::string("/tmp/trt_idempotency_") + exchange_to_string(exchange_) + ".log") {}
 
     Exchange exchange_id() const override { return exchange_; }
     bool is_connected() const override { return connected_.load(std::memory_order_acquire); }
@@ -60,22 +63,45 @@ class LiveConnectorBase : public ExchangeConnector {
     void disconnect() override { connected_.store(false, std::memory_order_release); }
 
     ConnectorResult submit_order(const Order& order) override {
+        const JournalDecision recovery = journal_.begin(JournalOperation::SUBMIT, order.client_order_id);
+        if (recovery.already_acked()) {
+            if (recovery.venue_order_id[0] != '\0' && recovery.venue_order_id[0] != '-') {
+                order_map_.upsert(order.client_order_id, recovery.venue_order_id, exchange_, order.symbol);
+            }
+            return ConnectorResult::OK;
+        }
+        if (!recovery.should_send_to_venue())
+            return ConnectorResult::ERROR_UNKNOWN;
+
         const std::string idempotency_key = make_idempotency_key(order.client_order_id);
         std::string venue_order_id;
         const ConnectorResult result =
             with_retries([&]() { return submit_to_venue(order, idempotency_key, venue_order_id); });
 
         if (result == ConnectorResult::OK) {
+            journal_.ack(JournalOperation::SUBMIT, order.client_order_id, venue_order_id.c_str());
             if (!order_map_.upsert(order.client_order_id, venue_order_id.c_str(), exchange_,
                                    order.symbol)) {
                 LOG_ERROR("Venue order map full", "exchange", exchange_to_string(exchange_));
                 return ConnectorResult::ERROR_UNKNOWN;
             }
+        } else {
+            journal_.fail(JournalOperation::SUBMIT, order.client_order_id);
         }
         return result;
     }
 
     ConnectorResult cancel_order(uint64_t client_order_id) override {
+        const JournalDecision replace_state = journal_.lookup(JournalOperation::REPLACE, client_order_id);
+        if (replace_state.state == JournalState::IN_FLIGHT || replace_state.state == JournalState::ACKED)
+            return ConnectorResult::ERROR_INVALID_ORDER;
+
+        const JournalDecision decision = journal_.begin(JournalOperation::CANCEL, client_order_id);
+        if (decision.already_acked())
+            return ConnectorResult::OK;
+        if (!decision.should_send_to_venue())
+            return ConnectorResult::ERROR_UNKNOWN;
+
         const VenueOrderEntry* mapped = order_map_.get(client_order_id);
         if (!mapped)
             return ConnectorResult::ERROR_INVALID_ORDER;
@@ -83,12 +109,32 @@ class LiveConnectorBase : public ExchangeConnector {
         const ConnectorResult result = with_retries([&]() { return cancel_at_venue(*mapped); });
 
         if (result == ConnectorResult::OK) {
+            journal_.ack(JournalOperation::CANCEL, client_order_id, mapped->venue_order_id);
             order_map_.erase(client_order_id);
+        } else {
+            journal_.fail(JournalOperation::CANCEL, client_order_id);
         }
         return result;
     }
 
     ConnectorResult replace_order(uint64_t client_order_id, const Order& replacement) override {
+        const JournalDecision cancel_state = journal_.lookup(JournalOperation::CANCEL, client_order_id);
+        if (cancel_state.state == JournalState::IN_FLIGHT || cancel_state.state == JournalState::ACKED)
+            return ConnectorResult::ERROR_INVALID_ORDER;
+
+        const JournalDecision decision =
+            journal_.begin(JournalOperation::REPLACE, client_order_id, replacement.client_order_id);
+        if (decision.already_acked()) {
+            if (decision.venue_order_id[0] != '\0' && decision.venue_order_id[0] != '-') {
+                order_map_.erase(client_order_id);
+                order_map_.upsert(replacement.client_order_id, decision.venue_order_id, exchange_,
+                                  replacement.symbol);
+            }
+            return ConnectorResult::OK;
+        }
+        if (!decision.should_send_to_venue())
+            return ConnectorResult::ERROR_UNKNOWN;
+
         const VenueOrderEntry* mapped = order_map_.get(client_order_id);
         if (!mapped)
             return ConnectorResult::ERROR_INVALID_ORDER;
@@ -96,9 +142,13 @@ class LiveConnectorBase : public ExchangeConnector {
         std::string new_venue_order_id;
         const ConnectorResult result = with_retries(
             [&]() { return replace_at_venue(*mapped, replacement, new_venue_order_id); });
-        if (result != ConnectorResult::OK)
+        if (result != ConnectorResult::OK) {
+            journal_.fail(JournalOperation::REPLACE, client_order_id, replacement.client_order_id);
             return result;
+        }
 
+        journal_.ack(JournalOperation::REPLACE, client_order_id, new_venue_order_id.c_str(),
+                     replacement.client_order_id);
         order_map_.erase(client_order_id);
         if (!order_map_.upsert(replacement.client_order_id, new_venue_order_id.c_str(), exchange_,
                                replacement.symbol)) {
@@ -119,9 +169,12 @@ class LiveConnectorBase : public ExchangeConnector {
     ConnectorResult cancel_all(const char* symbol) override { return cancel_all_at_venue(symbol); }
 
     ConnectorResult reconcile() override {
+        journal_.recover();
         order_map_.clear();
         return ConnectorResult::OK;
     }
+
+    uint32_t in_flight_recovery_count() const noexcept { return journal_.in_flight_count(); }
 
     virtual ConnectorResult fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot) {
         snapshot.clear();
@@ -300,6 +353,7 @@ class LiveConnectorBase : public ExchangeConnector {
     RetryPolicy retry_policy_;
     std::atomic<bool> connected_{false};
     VenueOrderMap order_map_{};
+    IdempotencyJournal journal_;
 };
 
 } // namespace trading

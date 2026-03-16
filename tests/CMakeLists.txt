@@ -223,6 +223,28 @@ set_tests_properties(MarketMakerRiskTest PROPERTIES
     LABELS "unit;execution;risk"
 )
 
+# Idempotency journal + deterministic recovery tests
+add_executable(idempotency_recovery_test
+    unit/idempotency_recovery_test.cpp
+)
+
+target_link_libraries(idempotency_recovery_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(idempotency_recovery_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME IdempotencyRecoveryTest COMMAND idempotency_recovery_test)
+set_tests_properties(IdempotencyRecoveryTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;execution;risk"
+)
+
 # Replay tests (deterministic book-state regression)
 add_executable(feed_replay_test
     replay/feed_replay_test.cpp
