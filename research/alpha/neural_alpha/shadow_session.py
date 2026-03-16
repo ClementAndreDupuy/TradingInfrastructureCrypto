@@ -3,7 +3,7 @@ Neural alpha shadow session.
 
 Runs the trained CryptoAlphaNet model in real-time alongside the C++ shadow
 engine. Every poll interval it:
-    1. Fetches live L5 LOB snapshots from Binance SOLUSDT.
+    1. Fetches live L5 LOB snapshots from configured exchange venues/symbol.
     2. Runs inference through the loaded (or freshly trained) model.
     3. Publishes the signal to shared memory for the C++ strategy to gate trades.
     4. Appends the signal + outcome to a JSONL log.
@@ -29,7 +29,8 @@ Usage:
         --secondary-model-path models/neural_alpha_secondary.pt \
         --duration 86400 \
         --interval-ms 500 \
-        --exchanges SOLANA
+        --symbol BTCUSDT \
+        --exchanges BINANCE,KRAKEN,OKX,COINBASE
 """
 from __future__ import annotations
 
@@ -108,7 +109,8 @@ class ShadowSessionConfig:
     d_temporal: int = 128
     train_ticks: int = 0
     train_epochs: int = 10
-    exchanges: list[str] = field(default_factory=lambda: ["SOLANA"])
+    symbol: str = "BTCUSDT"
+    exchanges: list[str] = field(default_factory=lambda: ["BINANCE", "KRAKEN", "OKX", "COINBASE"])
     signal_file: str = _SIGNAL_FILE
     registry_path: str = "models/model_registry.json"
     drift_window: int = 200
@@ -352,7 +354,7 @@ class NeuralAlphaShadowSession:
         for ex in self.cfg.exchanges:
             fetcher = _fetchers.get(ex)
             if fetcher:
-                row = fetcher()
+                row = fetcher(self.cfg.symbol)
                 if row:
                     ticks.append(row)
         return ticks
@@ -416,8 +418,8 @@ class NeuralAlphaShadowSession:
 
         print(
             f"Shadow session started — duration={self.cfg.duration_s}s  "
-            f"interval={self.cfg.interval_ms}ms  "
-            f"signal_file={self.cfg.signal_file}"
+            f"interval={self.cfg.interval_ms}ms  symbol={self.cfg.symbol}  "
+            f"exchanges={','.join(self.cfg.exchanges)}  signal_file={self.cfg.signal_file}"
         )
 
         try:
@@ -484,7 +486,8 @@ def main() -> None:
     ap.add_argument("--d-temporal",           type=int, default=128, dest="d_temporal")
     ap.add_argument("--train-ticks",          type=int, default=0, dest="train_ticks")
     ap.add_argument("--train-epochs",         type=int, default=10, dest="train_epochs")
-    ap.add_argument("--exchanges",            type=str, default="SOLANA")
+    ap.add_argument("--symbol",               type=str, default="BTCUSDT")
+    ap.add_argument("--exchanges",            type=str, default="BINANCE,KRAKEN,OKX,COINBASE")
     ap.add_argument("--registry-path",        type=str, default="models/model_registry.json", dest="registry_path")
     ap.add_argument("--drift-window",         type=int, default=200, dest="drift_window")
     ap.add_argument("--drift-min-samples",    type=int, default=60, dest="drift_min_samples")
@@ -509,6 +512,7 @@ def main() -> None:
         d_temporal=args.d_temporal,
         train_ticks=args.train_ticks,
         train_epochs=args.train_epochs,
+        symbol=args.symbol,
         exchanges=args.exchanges.split(","),
         signal_file=args.signal_file,
         registry_path=args.registry_path,

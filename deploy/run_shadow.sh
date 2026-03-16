@@ -9,6 +9,22 @@ ENV_FILE_DEFAULT="$REPO_ROOT/config/shadow/trading.env"
 CONFIG_FILE_DEFAULT="$REPO_ROOT/config/shadow/runtime.yaml"
 PYTHON_BIN="${PYTHON_BIN:-}"
 
+timestamp() {
+    date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+log_info() {
+    echo "[$(timestamp)] [shadow] [INFO] $*"
+}
+
+log_warn() {
+    echo "[$(timestamp)] [shadow] [WARN] $*"
+}
+
+log_error() {
+    echo "[$(timestamp)] [shadow] [ERROR] $*" >&2
+}
+
 read_yaml_value() {
     local file_path="$1"
     local key="$2"
@@ -41,7 +57,7 @@ apply_config_defaults() {
     local symbol_from_cfg venues_from_cfg duration_from_cfg interval_from_cfg
     local env_from_cfg signal_file_from_cfg model_path_from_cfg secondary_model_from_cfg
     local train_ticks_from_cfg train_epochs_from_cfg report_interval_from_cfg
-    local alpha_exchanges_from_cfg alpha_seq_len_from_cfg alpha_log_path_from_cfg
+    local alpha_seq_len_from_cfg alpha_log_path_from_cfg
     local fallback_key_from_cfg fallback_secret_from_cfg
 
     symbol_from_cfg="$(read_yaml_value "$CONFIG_FILE" "symbol")"
@@ -55,7 +71,6 @@ apply_config_defaults() {
     train_ticks_from_cfg="$(read_yaml_value "$CONFIG_FILE" "train_ticks")"
     train_epochs_from_cfg="$(read_yaml_value "$CONFIG_FILE" "train_epochs")"
     report_interval_from_cfg="$(read_yaml_value "$CONFIG_FILE" "report_interval")"
-    alpha_exchanges_from_cfg="$(read_yaml_value "$CONFIG_FILE" "alpha_exchanges")"
     alpha_seq_len_from_cfg="$(read_yaml_value "$CONFIG_FILE" "alpha_seq_len")"
     alpha_log_path_from_cfg="$(read_yaml_value "$CONFIG_FILE" "alpha_log_path")"
     fallback_key_from_cfg="$(read_yaml_value "$CONFIG_FILE" "shadow_fallback_api_key")"
@@ -72,7 +87,6 @@ apply_config_defaults() {
     [[ -n "$train_ticks_from_cfg" ]] && TRAIN_TICKS="$train_ticks_from_cfg"
     [[ -n "$train_epochs_from_cfg" ]] && TRAIN_EPOCHS="$train_epochs_from_cfg"
     [[ -n "$report_interval_from_cfg" ]] && REPORT_INTERVAL="$report_interval_from_cfg"
-    [[ -n "$alpha_exchanges_from_cfg" ]] && ALPHA_EXCHANGES="$alpha_exchanges_from_cfg"
     [[ -n "$alpha_seq_len_from_cfg" ]] && ALPHA_SEQ_LEN="$alpha_seq_len_from_cfg"
     [[ -n "$alpha_log_path_from_cfg" ]] && ALPHA_LOG_PATH="$(resolve_config_path "$alpha_log_path_from_cfg")"
     [[ -n "$fallback_key_from_cfg" ]] && SHADOW_FALLBACK_API_KEY="$fallback_key_from_cfg"
@@ -99,8 +113,6 @@ Options:
   --train-ticks <N>             Train if model missing (default: 400)
   --train-epochs <N>            Train epochs when bootstrap training (default: 5)
   --report-interval <SEC>       Python shadow summary cadence (default: 60)
-  --alpha-exchanges <CSV>       Exchanges for neural alpha feed polling
-                                (default: BINANCE,KRAKEN)
   --skip-alpha                  Do not launch Python shadow session
   --once                        Run one engine loop window and exit
   -h, --help                    Show this help
@@ -123,7 +135,6 @@ SECONDARY_MODEL_PATH="$REPO_ROOT/models/neural_alpha_secondary.pt"
 TRAIN_TICKS=400
 TRAIN_EPOCHS=5
 REPORT_INTERVAL=60
-ALPHA_EXCHANGES="BINANCE,KRAKEN"
 ALPHA_SEQ_LEN=64
 ALPHA_LOG_PATH="$REPO_ROOT/logs/neural_alpha_shadow.jsonl"
 SHADOW_FALLBACK_API_KEY="local-shadow-key"
@@ -156,24 +167,23 @@ while [[ $# -gt 0 ]]; do
         --train-ticks) TRAIN_TICKS="$2"; shift 2 ;;
         --train-epochs) TRAIN_EPOCHS="$2"; shift 2 ;;
         --report-interval) REPORT_INTERVAL="$2"; shift 2 ;;
-        --alpha-exchanges) ALPHA_EXCHANGES="$2"; shift 2 ;;
         --skip-alpha) SKIP_ALPHA=1; shift ;;
         --once) RUN_ONCE=1; shift ;;
         -h|--help) usage; exit 0 ;;
         --) shift; EXTRA_ARGS=("$@"); break ;;
-        *) echo "[shadow] Unknown argument: $1"; usage; exit 1 ;;
+        *) log_error "Unknown argument: $1"; usage; exit 1 ;;
     esac
 done
 
 if [[ -f "$ENV_FILE" ]]; then
-    echo "[shadow] Loading env file: $ENV_FILE"
+    log_info "Loading env file: $ENV_FILE"
     # shellcheck disable=SC1090
     source "$ENV_FILE"
 fi
 
 if [[ ! -x "$ENGINE_BIN" ]]; then
-    echo "[shadow] ERROR: missing trading_engine binary at $ENGINE_BIN"
-    echo "[shadow] Build first: mkdir -p build && cd build && cmake .. && make -j\$(nproc)"
+    log_error "Missing trading_engine binary at $ENGINE_BIN"
+    log_info "Build first: mkdir -p build && cd build && cmake .. && make -j\$(nproc)"
     exit 1
 fi
 
@@ -209,12 +219,94 @@ choose_python() {
             fi
         fi
     done
-    echo "[shadow] ERROR: Python 3.10+ is required for neural alpha shadow session."
+    log_error "Python 3.10+ is required for neural alpha shadow session."
     return 1
 }
 
+print_shadow_summary() {
+    if [[ "$SKIP_ALPHA" -eq 1 ]]; then
+        log_info "Skipped alpha session; no Python shadow statistics available."
+        return
+    fi
+
+    if [[ ! -f "$ALPHA_LOG_PATH" ]]; then
+        log_warn "Alpha log path not found: $ALPHA_LOG_PATH"
+        return
+    fi
+
+    if ! choose_python; then
+        log_warn "Cannot summarize shadow session without a valid Python 3.10+ binary."
+        return
+    fi
+
+    log_info "Final shadow session statistics from $ALPHA_LOG_PATH"
+    "$PYTHON_BIN" - "$ALPHA_LOG_PATH" <<'PY'
+import json
+import math
+import statistics
+import sys
+
+path = sys.argv[1]
+signals: list[float] = []
+mid_prices: list[float] = []
+safe_mode_events = 0
+
+with open(path, "r", encoding="utf-8") as fp:
+    for line in fp:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        signal = event.get("signal")
+        mid = event.get("mid_price")
+        if isinstance(signal, (int, float)):
+            signals.append(float(signal))
+        if isinstance(mid, (int, float)):
+            mid_prices.append(float(mid))
+        if event.get("safe_mode"):
+            safe_mode_events += 1
+
+if not signals:
+    print("  [summary] no valid signal records found")
+    raise SystemExit(0)
+
+mean_sig = statistics.fmean(signals) * 1e4
+std_sig = statistics.pstdev(signals) * 1e4 if len(signals) > 1 else 0.0
+max_abs_sig = max(abs(s) for s in signals) * 1e4
+
+returns: list[float] = []
+for prev, cur in zip(mid_prices, mid_prices[1:]):
+    if prev > 0:
+        returns.append((cur - prev) / prev)
+
+ic = 0.0
+if returns and len(signals) > 1:
+    aligned = min(len(returns), len(signals) - 1)
+    x = signals[:aligned]
+    y = returns[:aligned]
+    mx = statistics.fmean(x)
+    my = statistics.fmean(y)
+    cov = sum((a - mx) * (b - my) for a, b in zip(x, y)) / aligned
+    vx = sum((a - mx) ** 2 for a in x) / aligned
+    vy = sum((b - my) ** 2 for b in y) / aligned
+    if vx > 0 and vy > 0:
+        ic = cov / math.sqrt(vx * vy)
+
+print(f"  [summary] signal_count={len(signals)}")
+print(f"  [summary] signal_mean_bps={mean_sig:.3f}")
+print(f"  [summary] signal_std_bps={std_sig:.3f}")
+print(f"  [summary] max_abs_signal_bps={max_abs_sig:.3f}")
+print(f"  [summary] observed_return_count={len(returns)}")
+print(f"  [summary] realised_ic={ic:.4f}")
+print(f"  [summary] safe_mode_events={safe_mode_events}")
+PY
+}
+
 VENUES="$(normalize_csv_upper "$VENUES")"
-ALPHA_EXCHANGES="$(normalize_csv_upper "$ALPHA_EXCHANGES")"
+ALPHA_EXCHANGES="$VENUES"
 
 IFS=',' read -r -a VENUE_LIST <<< "$VENUES"
 for venue in "${VENUE_LIST[@]}"; do
@@ -232,6 +324,7 @@ cleanup() {
         kill "$PY_PID" 2>/dev/null || true
         wait "$PY_PID" 2>/dev/null || true
     fi
+    print_shadow_summary
 }
 trap cleanup EXIT INT TERM
 
@@ -245,6 +338,7 @@ if [[ "$SKIP_ALPHA" -eq 0 ]]; then
         --interval-ms "$INTERVAL_MS"
         --report-interval "$REPORT_INTERVAL"
         --seq-len "$ALPHA_SEQ_LEN"
+        --symbol "$SYMBOL"
         --exchanges "$ALPHA_EXCHANGES"
         --model-path "$MODEL_PATH"
         --secondary-model-path "$SECONDARY_MODEL_PATH"
@@ -253,12 +347,12 @@ if [[ "$SKIP_ALPHA" -eq 0 ]]; then
         --log-path "$ALPHA_LOG_PATH"
     )
 
-    echo "[shadow] Starting python shadow session with $PYTHON_BIN (signals -> $SIGNAL_FILE)"
+    log_info "Starting python shadow session with $PYTHON_BIN (symbol=$SYMBOL, exchanges=$ALPHA_EXCHANGES, signals -> $SIGNAL_FILE, log=$ALPHA_LOG_PATH)"
     (cd "$REPO_ROOT" && "$PYTHON_BIN" "${ALPHA_ARGS[@]}") &
     PY_PID=$!
 fi
 
-echo "[shadow] Starting C++ shadow runner symbol=$SYMBOL venues=$VENUES duration=${DURATION_SECS}s interval=${INTERVAL_MS}ms"
+log_info "Starting C++ shadow runner symbol=$SYMBOL venues=$VENUES duration=${DURATION_SECS}s interval=${INTERVAL_MS}ms"
 
 if [[ "$RUN_ONCE" -eq 1 ]]; then
     DURATION_SECS="$(awk "BEGIN { printf \"%.3f\", ($INTERVAL_MS * 2)/1000 }")"
@@ -269,9 +363,9 @@ if timeout "$DURATION_SECS" "$ENGINE_BIN" "${engine_args[@]}"; then
 else
     timeout_status=$?
     if [[ "$timeout_status" -ne 124 ]]; then
-        echo "[shadow] ERROR: trading_engine exited with status $timeout_status"
+        log_error "trading_engine exited with status $timeout_status"
         exit "$timeout_status"
     fi
 fi
 
-echo "[shadow] Completed shadow run window"
+log_info "Completed shadow run window"
