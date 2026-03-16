@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <string_view>
 #include <utility>
 
 namespace trading {
@@ -184,12 +185,14 @@ TEST(ReconciliationServiceTest, QuarantinesVenueOnDriftMismatch) {
     ASSERT_TRUE(service.register_connector(binance));
 
     EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::ERROR_UNKNOWN);
-    EXPECT_TRUE(service.is_quarantined(Exchange::BINANCE));
+    EXPECT_FALSE(service.is_quarantined(Exchange::BINANCE));
 
     const auto* state = service.state_for(Exchange::BINANCE);
     ASSERT_NE(state, nullptr);
-    EXPECT_EQ(state->mismatch_count, 1U);
+    EXPECT_EQ(state->mismatch_count, 0U);
     EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::NONE);
+    EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::CANCEL_ALL_ORDERS);
+    EXPECT_EQ(state->last_severity, ReconciliationService::SeverityLevel::WARNING);
 }
 
 TEST(ReconciliationServiceTest, UsesCanonicalSnapshotForReconnectAndPeriodicLoops) {
@@ -381,8 +384,11 @@ TEST(ReconciliationServiceTest, FillGapCheckUsesStableDedupeAndCumulativeLedger)
     thresholds.max_fill_notional_drift = 1e-9;
     thresholds.max_fill_fee_drift = 1e-9;
 
+    ReconciliationService::RemediationPolicy policy;
+    policy.fill_gap_retry_budget = 0;
+
     BinanceConnector binance("k", "s", "https://binance.test");
-    ReconciliationService service(thresholds);
+    ReconciliationService service(thresholds, policy);
     ASSERT_TRUE(service.register_connector(binance));
 
     ReconciliationSnapshot canonical;
@@ -438,8 +444,11 @@ TEST(ReconciliationServiceTest, FillGapMismatchRequestsReplayAndQuarantines) {
     thresholds.max_fill_notional_drift = 1e-9;
     thresholds.max_fill_fee_drift = 1e-9;
 
+    ReconciliationService::RemediationPolicy policy;
+    policy.fill_gap_retry_budget = 0;
+
     BinanceConnector binance("k", "s", "https://binance.test");
-    ReconciliationService service(thresholds);
+    ReconciliationService service(thresholds, policy);
     ASSERT_TRUE(service.register_connector(binance));
 
     ReconciliationSnapshot canonical;
@@ -537,6 +546,95 @@ TEST(ReconciliationServiceTest, SnapshotAllowsMissingFillEndpoint) {
 
     EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::OK);
     EXPECT_FALSE(service.is_quarantined(Exchange::BINANCE));
+}
+
+
+TEST(ReconciliationServiceTest, StagedRemediationEscalatesOrderDriftToRiskHalt) {
+    ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
+                                     const std::vector<std::string>&) {
+        if (std::strcmp(method, "GET") != 0)
+            return http::HttpResponse{404, ""};
+        if (contains(url, "openOrders"))
+            return http::HttpResponse{
+                200,
+                R"([{"orderId":"bn-1","symbol":"BTCUSDT","side":"BUY","origQty":0.5,"executedQty":0.7,"price":100.0,"status":"NEW"}])"};
+        if (contains(url, "/account"))
+            return http::HttpResponse{200,
+                                      R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
+        return http::HttpResponse{404, ""};
+    });
+
+    ReconciliationService::RemediationPolicy policy;
+    policy.order_drift_retry_budget = 1;
+    BinanceConnector binance("k", "s", "https://binance.test");
+    ReconciliationService service(ReconciliationService::DriftThresholds{}, policy);
+    ASSERT_TRUE(service.register_connector(binance));
+
+    uint32_t cancel_all_calls = 0;
+    uint32_t risk_halt_calls = 0;
+    service.set_cancel_all_hook([&](Exchange, ReconciliationService::MismatchClass,
+                                    std::string_view) { ++cancel_all_calls; });
+    service.set_risk_halt_hook([&](Exchange, ReconciliationService::MismatchClass,
+                                   std::string_view) { ++risk_halt_calls; });
+
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::ERROR_UNKNOWN);
+    EXPECT_FALSE(service.is_quarantined(Exchange::BINANCE));
+    EXPECT_EQ(cancel_all_calls, 1U);
+    EXPECT_EQ(risk_halt_calls, 0U);
+
+    EXPECT_EQ(service.run_periodic_drift_check(), ConnectorResult::ERROR_UNKNOWN);
+    EXPECT_TRUE(service.is_quarantined(Exchange::BINANCE));
+    EXPECT_EQ(cancel_all_calls, 1U);
+    EXPECT_EQ(risk_halt_calls, 1U);
+
+    const auto* state = service.state_for(Exchange::BINANCE);
+    ASSERT_NE(state, nullptr);
+    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::NONE);
+    EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::RISK_HALT_RECOMMENDED);
+    EXPECT_EQ(state->last_severity, ReconciliationService::SeverityLevel::CRITICAL);
+
+    size_t incident_count = 0;
+    const auto* incidents = service.incident_trail(incident_count);
+    ASSERT_NE(incidents, nullptr);
+    ASSERT_EQ(incident_count, 2U);
+    EXPECT_EQ(incidents[0].action, ReconciliationService::DriftAction::CANCEL_ALL_ORDERS);
+    EXPECT_EQ(incidents[0].severity, ReconciliationService::SeverityLevel::WARNING);
+    EXPECT_EQ(incidents[1].action, ReconciliationService::DriftAction::RISK_HALT_RECOMMENDED);
+    EXPECT_EQ(incidents[1].severity, ReconciliationService::SeverityLevel::CRITICAL);
+}
+
+TEST(ReconciliationServiceTest, SnapshotFailureUsesRetryBudgetThenQuarantine) {
+    ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
+                                     const std::vector<std::string>&) {
+        if (contains(url, "binance.test") && contains(url, "openOrders"))
+            return http::HttpResponse{503, ""};
+        if (std::strcmp(method, "GET") == 0 && contains(url, "/account"))
+            return http::HttpResponse{200, R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
+        return http::HttpResponse{404, ""};
+    });
+
+    ReconciliationService::RemediationPolicy policy;
+    policy.snapshot_failure_retry_budget = 1;
+
+    BinanceConnector binance("k", "s", "https://binance.test");
+    ReconciliationService service(ReconciliationService::DriftThresholds{}, policy);
+    ASSERT_TRUE(service.register_connector(binance));
+
+    uint32_t cancel_all_calls = 0;
+    service.set_cancel_all_hook([&](Exchange, ReconciliationService::MismatchClass,
+                                    std::string_view) { ++cancel_all_calls; });
+
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::ERROR_REST_FAILURE);
+    EXPECT_FALSE(service.is_quarantined(Exchange::BINANCE));
+    EXPECT_EQ(cancel_all_calls, 1U);
+
+    EXPECT_EQ(service.run_periodic_drift_check(), ConnectorResult::ERROR_REST_FAILURE);
+    EXPECT_TRUE(service.is_quarantined(Exchange::BINANCE));
+
+    const auto* state = service.state_for(Exchange::BINANCE);
+    ASSERT_NE(state, nullptr);
+    EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::QUARANTINE_VENUE);
+    EXPECT_EQ(state->last_severity, ReconciliationService::SeverityLevel::CRITICAL);
 }
 
 } // namespace

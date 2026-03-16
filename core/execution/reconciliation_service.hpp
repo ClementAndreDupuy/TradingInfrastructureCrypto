@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <string_view>
 #include <utility>
 
 namespace trading {
@@ -34,6 +35,19 @@ class ReconciliationService {
         QUARANTINE_VENUE = 1,
         REQUEST_FILL_REPLAY = 2,
         RISK_HALT_RECOMMENDED = 3,
+        CANCEL_ALL_ORDERS = 4,
+    };
+
+    enum class SeverityLevel : uint8_t {
+        INFO = 0,
+        WARNING = 1,
+        CRITICAL = 2,
+    };
+
+    struct RemediationPolicy {
+        uint32_t order_drift_retry_budget = 1;
+        uint32_t fill_gap_retry_budget = 2;
+        uint32_t snapshot_failure_retry_budget = 0;
     };
 
     struct DriftThresholds {
@@ -51,13 +65,35 @@ class ReconciliationService {
         int64_t last_reconcile_ts_ns = 0;
         int64_t last_drift_check_ts_ns = 0;
         uint32_t mismatch_count = 0;
+        uint32_t order_drift_retries = 0;
+        uint32_t fill_gap_retries = 0;
+        uint32_t snapshot_failure_retries = 0;
         uint32_t fill_replay_requests = 0;
         MismatchClass last_mismatch = MismatchClass::NONE;
         DriftAction last_action = DriftAction::NONE;
+        SeverityLevel last_severity = SeverityLevel::INFO;
     };
+
+    struct ReconciliationIncident {
+        int64_t ts_ns = 0;
+        Exchange exchange = Exchange::UNKNOWN;
+        MismatchClass mismatch_class = MismatchClass::NONE;
+        DriftAction action = DriftAction::NONE;
+        SeverityLevel severity = SeverityLevel::INFO;
+        bool reconnect_phase = false;
+        uint32_t retry_count = 0;
+        char reason[48] = {};
+    };
+
+    using RemediationHook = std::function<void(Exchange, MismatchClass, std::string_view)>;
+
+    static constexpr size_t MAX_INCIDENT_TRAIL = 256;
 
     ReconciliationService() = default;
     explicit ReconciliationService(const DriftThresholds& thresholds) : thresholds_(thresholds) {}
+
+    ReconciliationService(const DriftThresholds& thresholds, const RemediationPolicy& policy)
+        : thresholds_(thresholds), policy_(policy) {}
 
     bool register_connector(LiveConnectorBase& connector) {
         for (size_t i = 0; i < connector_count_; ++i) {
@@ -102,11 +138,25 @@ class ReconciliationService {
 
     const VenueState* state_for(Exchange exchange) const { return find_state(exchange); }
 
+    void set_cancel_all_hook(RemediationHook hook) { cancel_all_hook_ = std::move(hook); }
+
+    void set_risk_halt_hook(RemediationHook hook) { risk_halt_hook_ = std::move(hook); }
+
+    const ReconciliationIncident* incident_trail(size_t& count) const noexcept {
+        count = incident_count_;
+        return incident_trail_.data();
+    }
+
+    uint32_t dropped_incident_count() const noexcept { return dropped_incident_count_; }
+
   private:
     struct DriftDecision {
         bool mismatch = false;
         MismatchClass mismatch_class = MismatchClass::NONE;
         DriftAction action = DriftAction::NONE;
+        SeverityLevel severity = SeverityLevel::INFO;
+        uint32_t retry_count = 0;
+        bool quarantine = false;
         const char* reason = "";
     };
 
@@ -136,19 +186,22 @@ class ReconciliationService {
             ReconciliationSnapshot snapshot;
             const ConnectorResult res = connectors_[i]->fetch_reconciliation_snapshot(snapshot);
             if (res != ConnectorResult::OK) {
-                quarantine(i, MismatchClass::NONE, DriftAction::QUARANTINE_VENUE,
-                           reconnect_phase ? "snapshot fetch failed"
-                                           : "periodic snapshot fetch failed");
+                const DriftDecision decision =
+                    classify_snapshot_failure(states_[i], reconnect_phase, res);
+                apply_decision(i, decision, reconnect_phase);
                 return res;
             }
+            reset_snapshot_failures(i);
 
             ReconciliationSnapshot canonical_snapshot;
             const ReconciliationSnapshot* canonical = nullptr;
             if (canonical_snapshot_fetchers_[i]) {
                 canonical_snapshot.clear();
                 if (!canonical_snapshot_fetchers_[i](canonical_snapshot)) {
-                    quarantine(i, MismatchClass::NONE, DriftAction::QUARANTINE_VENUE,
-                               "canonical snapshot fetch failed");
+                    const DriftDecision decision = mismatch(
+                        MismatchClass::NONE, DriftAction::QUARANTINE_VENUE,
+                        SeverityLevel::CRITICAL, "canonical snapshot fetch failed", true);
+                    apply_decision(i, decision, reconnect_phase);
                     return ConnectorResult::ERROR_UNKNOWN;
                 }
                 canonical = &canonical_snapshot;
@@ -159,9 +212,7 @@ class ReconciliationService {
             const DriftDecision decision = canonical ? evaluate_drift(snapshot, *canonical)
                                                      : evaluate_snapshot_sanity(snapshot);
             if (decision.mismatch) {
-                if (decision.action == DriftAction::REQUEST_FILL_REPLAY)
-                    ++states_[i].fill_replay_requests;
-                quarantine(i, decision.mismatch_class, decision.action, decision.reason);
+                apply_decision(i, decision, reconnect_phase);
                 return ConnectorResult::ERROR_UNKNOWN;
             }
 
@@ -174,8 +225,30 @@ class ReconciliationService {
             }
             states_[i].last_mismatch = MismatchClass::NONE;
             states_[i].last_action = DriftAction::NONE;
+            states_[i].last_severity = SeverityLevel::INFO;
+            reset_drift_retries(i);
         }
         return ConnectorResult::OK;
+    }
+
+    DriftDecision classify_snapshot_failure(VenueState& state, bool reconnect_phase,
+                                            ConnectorResult res) const {
+        DriftDecision out;
+        out.mismatch = true;
+        ++state.snapshot_failure_retries;
+        out.retry_count = state.snapshot_failure_retries;
+        out.reason = reconnect_phase ? "snapshot fetch failed" : "periodic snapshot fetch failed";
+        if (res == ConnectorResult::AUTH_FAILED ||
+            out.retry_count > policy_.snapshot_failure_retry_budget) {
+            out.action = DriftAction::QUARANTINE_VENUE;
+            out.severity = SeverityLevel::CRITICAL;
+            out.quarantine = true;
+            return out;
+        }
+
+        out.action = DriftAction::CANCEL_ALL_ORDERS;
+        out.severity = SeverityLevel::WARNING;
+        return out;
     }
 
     DriftDecision evaluate_snapshot_sanity(const ReconciliationSnapshot& snapshot) const {
@@ -256,28 +329,25 @@ class ReconciliationService {
             const ReconciledOrder& internal_order = canonical.open_orders.items[i];
             const ReconciledOrder* venue_order = find_order(venue, internal_order);
             if (!venue_order) {
-                return mismatch(MismatchClass::MISSING_ORDER, DriftAction::QUARANTINE_VENUE,
-                                "missing_order");
+                return classify_order_drift(MismatchClass::MISSING_ORDER, "missing_order");
             }
             if (drift(venue_order->quantity, internal_order.quantity) >
                     thresholds_.max_order_fill_gap ||
                 drift(venue_order->filled_quantity, internal_order.filled_quantity) >
                     thresholds_.max_order_fill_gap) {
-                return mismatch(MismatchClass::QTY_DRIFT, DriftAction::QUARANTINE_VENUE,
-                                "qty_drift");
+                return classify_order_drift(MismatchClass::QTY_DRIFT, "qty_drift");
             }
         }
 
         for (size_t i = 0; i < venue.open_orders.size; ++i) {
             const ReconciledOrder& venue_order = venue.open_orders.items[i];
             if (!find_order(canonical, venue_order)) {
-                return mismatch(MismatchClass::MISSING_ORDER, DriftAction::QUARANTINE_VENUE,
-                                "missing_order");
+                return classify_order_drift(MismatchClass::MISSING_ORDER, "missing_order");
             }
         }
 
         if (fill_gap_detected(venue, canonical)) {
-            return mismatch(MismatchClass::FILL_GAP, DriftAction::REQUEST_FILL_REPLAY, "fill_gap");
+            return classify_fill_gap();
         }
 
         for (size_t i = 0; i < canonical.balances.size; ++i) {
@@ -288,8 +358,9 @@ class ReconciliationService {
                     thresholds_.max_balance_drift ||
                 drift(venue_balance->available, internal_balance.available) >
                     thresholds_.max_balance_drift) {
-                return mismatch(MismatchClass::BALANCE_DRIFT, DriftAction::RISK_HALT_RECOMMENDED,
-                                "balance_drift");
+                return mismatch(MismatchClass::BALANCE_DRIFT,
+                                DriftAction::RISK_HALT_RECOMMENDED, SeverityLevel::CRITICAL,
+                                "balance_drift", true);
             }
         }
 
@@ -302,34 +373,119 @@ class ReconciliationService {
                     thresholds_.max_position_drift ||
                 drift(venue_position->avg_entry_price, internal_position.avg_entry_price) >
                     thresholds_.max_position_drift) {
-                return mismatch(MismatchClass::POSITION_DRIFT, DriftAction::RISK_HALT_RECOMMENDED,
-                                "position_drift");
+                return mismatch(MismatchClass::POSITION_DRIFT,
+                                DriftAction::RISK_HALT_RECOMMENDED, SeverityLevel::CRITICAL,
+                                "position_drift", true);
             }
         }
 
         return out;
     }
 
+    DriftDecision classify_order_drift(MismatchClass mismatch_class, const char* reason) const {
+        DriftDecision out;
+        out.mismatch = true;
+        out.mismatch_class = mismatch_class;
+        out.reason = reason;
+        out.action = DriftAction::CANCEL_ALL_ORDERS;
+        out.severity = SeverityLevel::WARNING;
+        return out;
+    }
+
+    DriftDecision classify_fill_gap() const {
+        DriftDecision out;
+        out.mismatch = true;
+        out.mismatch_class = MismatchClass::FILL_GAP;
+        out.reason = "fill_gap";
+        out.action = DriftAction::REQUEST_FILL_REPLAY;
+        out.severity = SeverityLevel::WARNING;
+        return out;
+    }
+
     static DriftDecision mismatch(MismatchClass mismatch_class, DriftAction action,
-                                  const char* reason) {
+                                  SeverityLevel severity, const char* reason, bool quarantine) {
         DriftDecision out;
         out.mismatch = true;
         out.mismatch_class = mismatch_class;
         out.action = action;
+        out.severity = severity;
+        out.quarantine = quarantine;
         out.reason = reason;
         return out;
     }
 
-    void quarantine(size_t idx, MismatchClass mismatch_class, DriftAction action,
-                    const char* reason) {
-        states_[idx].quarantined = true;
-        ++states_[idx].mismatch_count;
-        states_[idx].last_mismatch = mismatch_class;
-        states_[idx].last_action = action;
-        LOG_ERROR("reconciliation quarantine", "exchange",
-                  exchange_to_string(states_[idx].exchange), "reason", reason, "action",
-                  static_cast<int>(action));
+    void apply_decision(size_t idx, DriftDecision decision, bool reconnect_phase) {
+        auto& state = states_[idx];
+        state.last_mismatch = decision.mismatch_class;
+        state.last_action = decision.action;
+        state.last_severity = decision.severity;
+
+        if (decision.mismatch_class == MismatchClass::FILL_GAP) {
+            ++state.fill_gap_retries;
+            decision.retry_count = state.fill_gap_retries;
+            if (state.fill_gap_retries > policy_.fill_gap_retry_budget) {
+                decision.action = DriftAction::RISK_HALT_RECOMMENDED;
+                decision.severity = SeverityLevel::CRITICAL;
+                decision.quarantine = true;
+            } else {
+                ++state.fill_replay_requests;
+            }
+        } else if (decision.mismatch_class == MismatchClass::MISSING_ORDER ||
+                   decision.mismatch_class == MismatchClass::QTY_DRIFT) {
+            ++state.order_drift_retries;
+            decision.retry_count = state.order_drift_retries;
+            if (state.order_drift_retries > policy_.order_drift_retry_budget) {
+                decision.action = DriftAction::RISK_HALT_RECOMMENDED;
+                decision.severity = SeverityLevel::CRITICAL;
+                decision.quarantine = true;
+            }
+        }
+
+        state.last_action = decision.action;
+        state.last_severity = decision.severity;
+        record_incident(idx, decision, reconnect_phase);
+        fire_hook(state.exchange, decision);
+
+        if (decision.quarantine || decision.action == DriftAction::QUARANTINE_VENUE ||
+            decision.action == DriftAction::RISK_HALT_RECOMMENDED) {
+            state.quarantined = true;
+            ++state.mismatch_count;
+            LOG_ERROR("reconciliation quarantine", "exchange", exchange_to_string(state.exchange),
+                      "reason", decision.reason, "action", static_cast<int>(decision.action));
+        }
     }
+
+    void fire_hook(Exchange exchange, const DriftDecision& decision) {
+        if (decision.action == DriftAction::CANCEL_ALL_ORDERS && cancel_all_hook_)
+            cancel_all_hook_(exchange, decision.mismatch_class, decision.reason);
+        if (decision.action == DriftAction::RISK_HALT_RECOMMENDED && risk_halt_hook_)
+            risk_halt_hook_(exchange, decision.mismatch_class, decision.reason);
+    }
+
+    void record_incident(size_t idx, const DriftDecision& decision, bool reconnect_phase) {
+        if (incident_count_ >= incident_trail_.size()) {
+            ++dropped_incident_count_;
+            return;
+        }
+
+        ReconciliationIncident& incident = incident_trail_[incident_count_++];
+        incident.ts_ns = now_ns();
+        incident.exchange = states_[idx].exchange;
+        incident.mismatch_class = decision.mismatch_class;
+        incident.action = decision.action;
+        incident.severity = decision.severity;
+        incident.reconnect_phase = reconnect_phase;
+        incident.retry_count = decision.retry_count;
+        std::strncpy(incident.reason, decision.reason, sizeof(incident.reason) - 1);
+        incident.reason[sizeof(incident.reason) - 1] = '\0';
+    }
+
+    void reset_drift_retries(size_t idx) {
+        states_[idx].order_drift_retries = 0;
+        states_[idx].fill_gap_retries = 0;
+    }
+
+    void reset_snapshot_failures(size_t idx) { states_[idx].snapshot_failure_retries = 0; }
 
     static double drift(double a, double b) noexcept { return std::fabs(a - b); }
 
@@ -496,11 +652,17 @@ class ReconciliationService {
     static int64_t now_ns() noexcept { return http::now_ns(); }
 
     DriftThresholds thresholds_;
+    RemediationPolicy policy_;
     std::array<LiveConnectorBase*, MAX_CONNECTORS> connectors_{};
     std::array<VenueState, MAX_CONNECTORS> states_{};
     std::array<ReconciliationSnapshot, MAX_CONNECTORS> canonical_snapshots_{};
     std::array<CanonicalSnapshotFetcher, MAX_CONNECTORS> canonical_snapshot_fetchers_{};
     std::array<bool, MAX_CONNECTORS> has_canonical_snapshot_{};
+    RemediationHook cancel_all_hook_;
+    RemediationHook risk_halt_hook_;
+    std::array<ReconciliationIncident, MAX_INCIDENT_TRAIL> incident_trail_{};
+    size_t incident_count_ = 0;
+    uint32_t dropped_incident_count_ = 0;
     size_t connector_count_ = 0;
 };
 
