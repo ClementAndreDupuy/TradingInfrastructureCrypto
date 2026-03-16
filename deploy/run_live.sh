@@ -6,12 +6,55 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENGINE_BIN="${ENGINE_BIN:-$REPO_ROOT/build/bin/trading_engine}"
 ENV_FILE_DEFAULT="$REPO_ROOT/config/live/trading.env"
+CONFIG_FILE_DEFAULT="$REPO_ROOT/config/live/runtime.yaml"
+
+read_yaml_value() {
+    local file_path="$1"
+    local key="$2"
+    awk -F: -v search_key="$key" '
+        $1 ~ "^[[:space:]]*" search_key "[[:space:]]*$" {
+            value = $0
+            sub(/^[^:]*:[[:space:]]*/, "", value)
+            sub(/[[:space:]]+#.*/, "", value)
+            gsub(/^["\047]|["\047]$/, "", value)
+            print value
+            exit
+        }
+    ' "$file_path"
+}
+
+resolve_config_path() {
+    local raw_path="$1"
+    if [[ "$raw_path" = /* ]]; then
+        echo "$raw_path"
+    else
+        echo "$REPO_ROOT/$raw_path"
+    fi
+}
+
+apply_config_defaults() {
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        return
+    fi
+
+    local symbol_from_cfg venues_from_cfg interval_from_cfg env_from_cfg
+    symbol_from_cfg="$(read_yaml_value "$CONFIG_FILE" "symbol")"
+    venues_from_cfg="$(read_yaml_value "$CONFIG_FILE" "venues")"
+    interval_from_cfg="$(read_yaml_value "$CONFIG_FILE" "interval_ms")"
+    env_from_cfg="$(read_yaml_value "$CONFIG_FILE" "env_file")"
+
+    [[ -n "$symbol_from_cfg" ]] && SYMBOL="$symbol_from_cfg"
+    [[ -n "$venues_from_cfg" ]] && VENUES="$venues_from_cfg"
+    [[ -n "$interval_from_cfg" ]] && LOOP_INTERVAL_MS="$interval_from_cfg"
+    [[ -n "$env_from_cfg" ]] && ENV_FILE="$(resolve_config_path "$env_from_cfg")"
+}
 
 usage() {
     cat <<USAGE
 Usage: ./deploy/run_live.sh [options] [-- <extra trading_engine args>]
 
 Options:
+  --config <PATH>         YAML runtime defaults (default: config/live/runtime.yaml if present)
   --symbol <SYMBOL>       Trading symbol (default: BTCUSDT)
   --venues <CSV>          Venues CSV (default: BINANCE,KRAKEN,OKX,COINBASE)
   --interval-ms <MS>      Engine loop interval in milliseconds (default: 500)
@@ -28,10 +71,22 @@ SYMBOL="BTCUSDT"
 VENUES="BINANCE,KRAKEN,OKX,COINBASE"
 LOOP_INTERVAL_MS=500
 ENV_FILE="$ENV_FILE_DEFAULT"
+CONFIG_FILE="$CONFIG_FILE_DEFAULT"
 EXTRA_ARGS=()
+
+for ((i = 1; i <= $#; i++)); do
+    if [[ "${!i}" == "--config" ]]; then
+        next_idx=$((i + 1))
+        CONFIG_FILE="$(resolve_config_path "${!next_idx}")"
+        break
+    fi
+done
+
+apply_config_defaults
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --config) CONFIG_FILE="$(resolve_config_path "$2")"; shift 2 ;;
         --symbol) SYMBOL="$2"; shift 2 ;;
         --venues) VENUES="$2"; shift 2 ;;
         --interval-ms) LOOP_INTERVAL_MS="$2"; shift 2 ;;
