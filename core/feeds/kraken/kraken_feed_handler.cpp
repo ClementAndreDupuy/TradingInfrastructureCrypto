@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <exception>
 #include <libwebsockets.h>
 
 namespace trading {
@@ -321,7 +322,8 @@ Result KrakenFeedHandler::fetch_snapshot() {
     // result has one key (internal pair name, e.g., XXBTZUSD)
     const auto pair_data = res_it->begin().value();
 
-    auto parse_rest_levels = [](const nlohmann::json& arr) {
+    const char* symbol = symbol_.c_str();
+    auto parse_rest_levels = [symbol](const nlohmann::json& arr) {
         std::vector<PriceLevel> levels;
         if (!arr.is_array())
             return levels;
@@ -333,7 +335,9 @@ Result KrakenFeedHandler::fetch_snapshot() {
             try {
                 levels.push_back(
                     {std::stod(lvl[0].get<std::string>()), std::stod(lvl[1].get<std::string>())});
-            } catch (...) {
+            } catch (const std::exception& ex) {
+                LOG_WARN("Kraken snapshot level parse failed", "symbol", symbol, "error",
+                         ex.what());
             }
         }
         return levels;

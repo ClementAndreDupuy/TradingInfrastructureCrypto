@@ -21,6 +21,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstring>
+#include <exception>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -102,229 +103,238 @@ trading::VenueQuote make_quote(trading::Exchange exchange, const trading::BookMa
 } // namespace
 
 int main(int argc, char** argv) {
-    using namespace trading;
+    try {
+        using namespace trading;
 
-    const CliOptions opts = parse_args(argc, argv);
+        const CliOptions opts = parse_args(argc, argv);
 
-    RiskRuntimeConfig risk_cfg;
-    const std::string risk_path = "config/" + opts.mode + "/risk.yaml";
-    (void)RiskConfigLoader::load(risk_path, risk_cfg);
+        RiskRuntimeConfig risk_cfg;
+        const std::string risk_path = "config/" + opts.mode + "/risk.yaml";
+        (void)RiskConfigLoader::load(risk_path, risk_cfg);
 
-    KillSwitch kill_switch(risk_cfg.heartbeat_timeout_ns);
-    CircuitBreaker circuit_breaker(risk_cfg.circuit_breaker, kill_switch);
-    GlobalRiskControls global_risk(risk_cfg.global_risk, kill_switch);
+        KillSwitch kill_switch(risk_cfg.heartbeat_timeout_ns);
+        CircuitBreaker circuit_breaker(risk_cfg.circuit_breaker, kill_switch);
+        GlobalRiskControls global_risk(risk_cfg.global_risk, kill_switch);
 
-    setup_signal_handlers();
+        setup_signal_handlers();
 
-    if (kill_switch.is_active())
-        return 2;
-
-    const bool run_binance = has_venue(opts.venues, "BINANCE");
-    const bool run_kraken = has_venue(opts.venues, "KRAKEN");
-    const bool run_okx = has_venue(opts.venues, "OKX");
-    const bool run_coinbase = has_venue(opts.venues, "COINBASE");
-
-    BookManager binance_book(opts.symbol, Exchange::BINANCE, 0.1, 10000);
-    BookManager kraken_book(opts.symbol, Exchange::KRAKEN, 0.1, 10000);
-    BookManager okx_book(opts.symbol, Exchange::OKX, 0.1, 10000);
-    BookManager coinbase_book(opts.symbol, Exchange::COINBASE, 0.1, 10000);
-
-    LobPublisher lob_publisher;
-    if (!lob_publisher.open()) {
-        std::cout << "[WARN] LOB publisher unavailable path=/tmp/trt_lob_feed.bin\n";
-    }
-
-    binance_book.set_publisher(lob_publisher.is_open() ? &lob_publisher : nullptr);
-    kraken_book.set_publisher(lob_publisher.is_open() ? &lob_publisher : nullptr);
-    okx_book.set_publisher(lob_publisher.is_open() ? &lob_publisher : nullptr);
-    coinbase_book.set_publisher(lob_publisher.is_open() ? &lob_publisher : nullptr);
-
-    BinanceFeedHandler binance_feed(opts.symbol);
-    KrakenFeedHandler kraken_feed(opts.symbol);
-    OkxFeedHandler okx_feed(opts.symbol);
-    CoinbaseFeedHandler coinbase_feed(opts.symbol);
-
-    binance_feed.set_snapshot_callback(binance_book.snapshot_handler());
-    binance_feed.set_delta_callback(binance_book.delta_handler());
-    kraken_feed.set_snapshot_callback(kraken_book.snapshot_handler());
-    kraken_feed.set_delta_callback(kraken_book.delta_handler());
-    okx_feed.set_snapshot_callback(okx_book.snapshot_handler());
-    okx_feed.set_delta_callback(okx_book.delta_handler());
-    coinbase_feed.set_snapshot_callback(coinbase_book.snapshot_handler());
-    coinbase_feed.set_delta_callback(coinbase_book.delta_handler());
-
-    if (run_binance)
-        (void)binance_feed.start();
-    if (run_kraken)
-        (void)kraken_feed.start();
-    if (run_okx)
-        (void)okx_feed.start();
-    if (run_coinbase)
-        (void)coinbase_feed.start();
-
-    BinanceConnector binance(http::env_var("BINANCE_API_KEY"), http::env_var("BINANCE_API_SECRET"),
-                             opts.mode == "shadow" ? "mock://binance" : "https://api.binance.com");
-    KrakenConnector kraken(http::env_var("KRAKEN_API_KEY"), http::env_var("KRAKEN_API_SECRET"),
-                           opts.mode == "shadow" ? "mock://kraken" : "https://api.kraken.com");
-    OkxConnector okx(http::env_var("OKX_API_KEY"), http::env_var("OKX_API_SECRET"),
-                     opts.mode == "shadow" ? "mock://okx" : "https://www.okx.com");
-    CoinbaseConnector coinbase(
-        http::env_var("COINBASE_API_KEY"), http::env_var("COINBASE_API_SECRET"),
-        opts.mode == "shadow" ? "mock://coinbase" : "https://api.coinbase.com");
-
-    ReconciliationService reconciliation;
-    if (run_binance)
-        (void)reconciliation.register_connector(binance);
-    if (run_kraken)
-        (void)reconciliation.register_connector(kraken);
-    if (run_okx)
-        (void)reconciliation.register_connector(okx);
-    if (run_coinbase)
-        (void)reconciliation.register_connector(coinbase);
-
-    auto connect_if_needed = [](LiveConnectorBase& connector, bool enabled, bool& reconnected) {
-        if (!enabled)
-            return ConnectorResult::OK;
-        if (connector.is_connected())
-            return ConnectorResult::OK;
-
-        const ConnectorResult res = connector.connect();
-        if (res == ConnectorResult::OK)
-            reconnected = true;
-        return res;
-    };
-
-    bool any_reconnected = false;
-    (void)connect_if_needed(binance, run_binance, any_reconnected);
-    (void)connect_if_needed(kraken, run_kraken, any_reconnected);
-    (void)connect_if_needed(okx, run_okx, any_reconnected);
-    (void)connect_if_needed(coinbase, run_coinbase, any_reconnected);
-
-    if (any_reconnected) {
-        const ConnectorResult reconcile_res = reconciliation.reconcile_on_reconnect();
-        if (reconcile_res != ConnectorResult::OK) {
-            std::cout << "reconcile_on_reconnect failed code=" << static_cast<int>(reconcile_res)
-                      << "\n";
-        }
-    }
-
-    AlphaSignalReader alpha_reader;
-    alpha_reader.open();
-    SmartOrderRouter sor;
-
-    const auto reconnect_interval = std::chrono::seconds(1);
-    const auto reconciliation_interval = std::chrono::seconds(30);
-    const auto loop_interval =
-        std::chrono::milliseconds(opts.loop_interval_ms > 0 ? opts.loop_interval_ms : 500);
-    auto next_reconnect = std::chrono::steady_clock::now() + reconnect_interval;
-    auto next_reconciliation = std::chrono::steady_clock::now() + reconciliation_interval;
-
-    uint64_t next_id = 1;
-
-    std::cout << "trading_engine started mode=" << opts.mode << " venues=" << opts.venues
-              << " symbol=" << opts.symbol << "\n";
-
-    while (g_running.load(std::memory_order_acquire)) {
         if (kill_switch.is_active())
-            break;
+            return 2;
 
-        kill_switch.heartbeat();
-        (void)kill_switch.check_heartbeat();
+        const bool run_binance = has_venue(opts.venues, "BINANCE");
+        const bool run_kraken = has_venue(opts.venues, "KRAKEN");
+        const bool run_okx = has_venue(opts.venues, "OKX");
+        const bool run_coinbase = has_venue(opts.venues, "COINBASE");
 
-        const AlphaSignal alpha_signal = alpha_reader.read();
-        std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venue_quotes{{
-            make_quote(Exchange::BINANCE, binance_book, run_binance),
-            make_quote(Exchange::KRAKEN, kraken_book, run_kraken),
-            make_quote(Exchange::OKX, okx_book, run_okx),
-            make_quote(Exchange::COINBASE, coinbase_book, run_coinbase),
-        }};
+        BookManager binance_book(opts.symbol, Exchange::BINANCE, 0.1, 10000);
+        BookManager kraken_book(opts.symbol, Exchange::KRAKEN, 0.1, 10000);
+        BookManager okx_book(opts.symbol, Exchange::OKX, 0.1, 10000);
+        BookManager coinbase_book(opts.symbol, Exchange::COINBASE, 0.1, 10000);
 
-        const RoutingDecision decision =
-            sor.route_with_alpha(Side::BID, 0.5, alpha_signal, venue_quotes);
-        if (!decision.blocked_by_alpha) {
-            for (size_t i = 0; i < decision.child_count; ++i) {
-                const auto& child = decision.children[i];
-                const Order child_order =
-                    make_child_order(opts.symbol.c_str(), child.exchange, Side::BID, child.quantity,
-                                     child.limit_price, next_id++);
+        LobPublisher lob_publisher;
+        if (!lob_publisher.open()) {
+            std::cout << "[WARN] LOB publisher unavailable path=/tmp/trt_lob_feed.bin\n";
+        }
 
-                const double signed_notional = child.quantity * child.limit_price;
-                if (global_risk.commit_order(child.exchange, child_order.symbol, signed_notional) !=
-                    GlobalRiskCheckResult::OK) {
-                    std::cout << "global-risk blocked submit venue="
-                              << exchange_to_string(child.exchange) << "\n";
-                    continue;
-                }
+        binance_book.set_publisher(lob_publisher.is_open() ? &lob_publisher : nullptr);
+        kraken_book.set_publisher(lob_publisher.is_open() ? &lob_publisher : nullptr);
+        okx_book.set_publisher(lob_publisher.is_open() ? &lob_publisher : nullptr);
+        coinbase_book.set_publisher(lob_publisher.is_open() ? &lob_publisher : nullptr);
 
-                if (circuit_breaker.check_drawdown(0.0) != CircuitCheckResult::OK) {
-                    std::cout << "circuit-breaker blocked submit\n";
-                    break;
-                }
+        BinanceFeedHandler binance_feed(opts.symbol);
+        KrakenFeedHandler kraken_feed(opts.symbol);
+        OkxFeedHandler okx_feed(opts.symbol);
+        CoinbaseFeedHandler coinbase_feed(opts.symbol);
 
-                ConnectorResult res = ConnectorResult::ERROR_UNKNOWN;
-                switch (child.exchange) {
-                case Exchange::BINANCE:
-                    res = binance.submit_order(child_order);
-                    break;
-                case Exchange::KRAKEN:
-                    res = kraken.submit_order(child_order);
-                    break;
-                case Exchange::OKX:
-                    res = okx.submit_order(child_order);
-                    break;
-                case Exchange::COINBASE:
-                    res = coinbase.submit_order(child_order);
-                    break;
-                default:
-                    break;
-                }
+        binance_feed.set_snapshot_callback(binance_book.snapshot_handler());
+        binance_feed.set_delta_callback(binance_book.delta_handler());
+        kraken_feed.set_snapshot_callback(kraken_book.snapshot_handler());
+        kraken_feed.set_delta_callback(kraken_book.delta_handler());
+        okx_feed.set_snapshot_callback(okx_book.snapshot_handler());
+        okx_feed.set_delta_callback(okx_book.delta_handler());
+        coinbase_feed.set_snapshot_callback(coinbase_book.snapshot_handler());
+        coinbase_feed.set_delta_callback(coinbase_book.delta_handler());
 
-                std::cout << "child=" << i << " venue=" << exchange_to_string(child.exchange)
-                          << " qty=" << child.quantity << " result=" << static_cast<int>(res)
-                          << "\n";
+        if (run_binance)
+            (void)binance_feed.start();
+        if (run_kraken)
+            (void)kraken_feed.start();
+        if (run_okx)
+            (void)okx_feed.start();
+        if (run_coinbase)
+            (void)coinbase_feed.start();
+
+        BinanceConnector binance(
+            http::env_var("BINANCE_API_KEY"), http::env_var("BINANCE_API_SECRET"),
+            opts.mode == "shadow" ? "mock://binance" : "https://api.binance.com");
+        KrakenConnector kraken(http::env_var("KRAKEN_API_KEY"), http::env_var("KRAKEN_API_SECRET"),
+                               opts.mode == "shadow" ? "mock://kraken" : "https://api.kraken.com");
+        OkxConnector okx(http::env_var("OKX_API_KEY"), http::env_var("OKX_API_SECRET"),
+                         opts.mode == "shadow" ? "mock://okx" : "https://www.okx.com");
+        CoinbaseConnector coinbase(
+            http::env_var("COINBASE_API_KEY"), http::env_var("COINBASE_API_SECRET"),
+            opts.mode == "shadow" ? "mock://coinbase" : "https://api.coinbase.com");
+
+        ReconciliationService reconciliation;
+        if (run_binance)
+            (void)reconciliation.register_connector(binance);
+        if (run_kraken)
+            (void)reconciliation.register_connector(kraken);
+        if (run_okx)
+            (void)reconciliation.register_connector(okx);
+        if (run_coinbase)
+            (void)reconciliation.register_connector(coinbase);
+
+        auto connect_if_needed = [](LiveConnectorBase& connector, bool enabled, bool& reconnected) {
+            if (!enabled)
+                return ConnectorResult::OK;
+            if (connector.is_connected())
+                return ConnectorResult::OK;
+
+            const ConnectorResult res = connector.connect();
+            if (res == ConnectorResult::OK)
+                reconnected = true;
+            return res;
+        };
+
+        bool any_reconnected = false;
+        (void)connect_if_needed(binance, run_binance, any_reconnected);
+        (void)connect_if_needed(kraken, run_kraken, any_reconnected);
+        (void)connect_if_needed(okx, run_okx, any_reconnected);
+        (void)connect_if_needed(coinbase, run_coinbase, any_reconnected);
+
+        if (any_reconnected) {
+            const ConnectorResult reconcile_res = reconciliation.reconcile_on_reconnect();
+            if (reconcile_res != ConnectorResult::OK) {
+                std::cout << "reconcile_on_reconnect failed code="
+                          << static_cast<int>(reconcile_res) << "\n";
             }
         }
 
-        const auto now = std::chrono::steady_clock::now();
-        if (now >= next_reconnect) {
-            bool recovered_connection = false;
-            (void)connect_if_needed(binance, run_binance, recovered_connection);
-            (void)connect_if_needed(kraken, run_kraken, recovered_connection);
-            (void)connect_if_needed(okx, run_okx, recovered_connection);
-            (void)connect_if_needed(coinbase, run_coinbase, recovered_connection);
+        AlphaSignalReader alpha_reader;
+        alpha_reader.open();
+        SmartOrderRouter sor;
 
-            if (recovered_connection) {
-                const ConnectorResult reconcile_res = reconciliation.reconcile_on_reconnect();
-                if (reconcile_res != ConnectorResult::OK) {
-                    std::cout << "reconcile_on_reconnect failed code="
-                              << static_cast<int>(reconcile_res) << "\n";
+        const auto reconnect_interval = std::chrono::seconds(1);
+        const auto reconciliation_interval = std::chrono::seconds(30);
+        const auto loop_interval =
+            std::chrono::milliseconds(opts.loop_interval_ms > 0 ? opts.loop_interval_ms : 500);
+        auto next_reconnect = std::chrono::steady_clock::now() + reconnect_interval;
+        auto next_reconciliation = std::chrono::steady_clock::now() + reconciliation_interval;
+
+        uint64_t next_id = 1;
+
+        std::cout << "trading_engine started mode=" << opts.mode << " venues=" << opts.venues
+                  << " symbol=" << opts.symbol << "\n";
+
+        while (g_running.load(std::memory_order_acquire)) {
+            if (kill_switch.is_active())
+                break;
+
+            kill_switch.heartbeat();
+            (void)kill_switch.check_heartbeat();
+
+            const AlphaSignal alpha_signal = alpha_reader.read();
+            std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venue_quotes{{
+                make_quote(Exchange::BINANCE, binance_book, run_binance),
+                make_quote(Exchange::KRAKEN, kraken_book, run_kraken),
+                make_quote(Exchange::OKX, okx_book, run_okx),
+                make_quote(Exchange::COINBASE, coinbase_book, run_coinbase),
+            }};
+
+            const RoutingDecision decision =
+                sor.route_with_alpha(Side::BID, 0.5, alpha_signal, venue_quotes);
+            if (!decision.blocked_by_alpha) {
+                for (size_t i = 0; i < decision.child_count; ++i) {
+                    const auto& child = decision.children[i];
+                    const Order child_order =
+                        make_child_order(opts.symbol.c_str(), child.exchange, Side::BID,
+                                         child.quantity, child.limit_price, next_id++);
+
+                    const double signed_notional = child.quantity * child.limit_price;
+                    if (global_risk.commit_order(child.exchange, child_order.symbol,
+                                                 signed_notional) != GlobalRiskCheckResult::OK) {
+                        std::cout << "global-risk blocked submit venue="
+                                  << exchange_to_string(child.exchange) << "\n";
+                        continue;
+                    }
+
+                    if (circuit_breaker.check_drawdown(0.0) != CircuitCheckResult::OK) {
+                        std::cout << "circuit-breaker blocked submit\n";
+                        break;
+                    }
+
+                    ConnectorResult res = ConnectorResult::ERROR_UNKNOWN;
+                    switch (child.exchange) {
+                    case Exchange::BINANCE:
+                        res = binance.submit_order(child_order);
+                        break;
+                    case Exchange::KRAKEN:
+                        res = kraken.submit_order(child_order);
+                        break;
+                    case Exchange::OKX:
+                        res = okx.submit_order(child_order);
+                        break;
+                    case Exchange::COINBASE:
+                        res = coinbase.submit_order(child_order);
+                        break;
+                    default:
+                        break;
+                    }
+
+                    std::cout << "child=" << i << " venue=" << exchange_to_string(child.exchange)
+                              << " qty=" << child.quantity << " result=" << static_cast<int>(res)
+                              << "\n";
                 }
             }
-            next_reconnect = now + reconnect_interval;
-        }
 
-        if (now >= next_reconciliation) {
-            const ConnectorResult drift_res = reconciliation.run_periodic_drift_check();
-            if (drift_res != ConnectorResult::OK) {
-                std::cout << "periodic_reconciliation failed code=" << static_cast<int>(drift_res)
-                          << "\n";
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= next_reconnect) {
+                bool recovered_connection = false;
+                (void)connect_if_needed(binance, run_binance, recovered_connection);
+                (void)connect_if_needed(kraken, run_kraken, recovered_connection);
+                (void)connect_if_needed(okx, run_okx, recovered_connection);
+                (void)connect_if_needed(coinbase, run_coinbase, recovered_connection);
+
+                if (recovered_connection) {
+                    const ConnectorResult reconcile_res = reconciliation.reconcile_on_reconnect();
+                    if (reconcile_res != ConnectorResult::OK) {
+                        std::cout << "reconcile_on_reconnect failed code="
+                                  << static_cast<int>(reconcile_res) << "\n";
+                    }
+                }
+                next_reconnect = now + reconnect_interval;
             }
-            next_reconciliation = now + reconciliation_interval;
+
+            if (now >= next_reconciliation) {
+                const ConnectorResult drift_res = reconciliation.run_periodic_drift_check();
+                if (drift_res != ConnectorResult::OK) {
+                    std::cout << "periodic_reconciliation failed code="
+                              << static_cast<int>(drift_res) << "\n";
+                }
+                next_reconciliation = now + reconciliation_interval;
+            }
+
+            std::this_thread::sleep_for(loop_interval);
         }
 
-        std::this_thread::sleep_for(loop_interval);
+        binance.disconnect();
+        kraken.disconnect();
+        okx.disconnect();
+        coinbase.disconnect();
+        binance_feed.stop();
+        kraken_feed.stop();
+        okx_feed.stop();
+        coinbase_feed.stop();
+
+        std::cout << "trading_engine shutdown complete\n";
+
+        return 0;
+    } catch (const std::exception& ex) {
+        std::cerr << "trading_engine fatal error: " << ex.what() << "\n";
+    } catch (...) {
+        std::cerr << "trading_engine fatal error: unknown exception\n";
     }
 
-    binance.disconnect();
-    kraken.disconnect();
-    okx.disconnect();
-    coinbase.disconnect();
-    binance_feed.stop();
-    kraken_feed.stop();
-    okx_feed.stop();
-    coinbase_feed.stop();
-
-    std::cout << "trading_engine shutdown complete\n";
-
-    return 0;
+    return 1;
 }

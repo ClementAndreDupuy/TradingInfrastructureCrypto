@@ -25,7 +25,7 @@ class LobPublisher {
     static constexpr size_t k_slot_size = 256;
     static constexpr size_t k_header_size = 64;
 
-    struct alignas(1) LobSlot {
+    struct alignas(8) LobSlot {
         uint8_t exchange_id = 255;
         char symbol[15] = {};
         int64_t timestamp_ns = 0;
@@ -37,6 +37,7 @@ class LobPublisher {
         char reserved[64] = {};
     };
 
+    static_assert(alignof(LobSlot) == 8, "LobSlot must remain 8-byte aligned");
     static_assert(sizeof(LobSlot) == k_slot_size, "LobSlot must be exactly 256 bytes");
 
     LobPublisher() = default;

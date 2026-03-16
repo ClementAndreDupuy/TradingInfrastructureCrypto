@@ -4,6 +4,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstring>
+#include <exception>
 #include <libwebsockets.h>
 #include <thread>
 
@@ -356,7 +357,8 @@ Result BinanceFeedHandler::fetch_snapshot() {
     snap.timestamp_local_ns = http::now_ns();
     snap.sequence = lid_it->get<uint64_t>();
 
-    auto parse_levels = [](const nlohmann::json& arr) {
+    const char* symbol = symbol_.c_str();
+    auto parse_levels = [symbol](const nlohmann::json& arr) {
         std::vector<PriceLevel> levels;
         if (!arr.is_array())
             return levels;
@@ -367,7 +369,9 @@ Result BinanceFeedHandler::fetch_snapshot() {
             try {
                 levels.push_back(
                     {std::stod(lvl[0].get<std::string>()), std::stod(lvl[1].get<std::string>())});
-            } catch (...) {
+            } catch (const std::exception& ex) {
+                LOG_WARN("Binance snapshot level parse failed", "symbol", symbol, "error",
+                         ex.what());
             }
         }
         return levels;
@@ -462,7 +466,9 @@ Result BinanceFeedHandler::process_delta(const nlohmann::json& j, uint64_t seq) 
                 d.timestamp_local_ns = ts;
                 if (delta_callback_)
                     delta_callback_(d);
-            } catch (...) {
+            } catch (const std::exception& ex) {
+                LOG_WARN("Binance delta parse failed", "symbol", symbol_.c_str(), "sequence", seq,
+                         "error", ex.what());
             }
         }
     };

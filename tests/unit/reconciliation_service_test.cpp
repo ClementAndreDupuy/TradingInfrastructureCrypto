@@ -651,7 +651,6 @@ TEST(ReconciliationServiceTest, SnapshotFailureUsesRetryBudgetThenQuarantine) {
     EXPECT_EQ(state->last_severity, ReconciliationService::SeverityLevel::CRITICAL);
 }
 
-
 TEST(ReconciliationServiceTest, AuthSnapshotFailureQuarantinesImmediately) {
     ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
                                      const std::vector<std::string>&) {
@@ -683,7 +682,6 @@ TEST(ReconciliationServiceTest, AuthSnapshotFailureQuarantinesImmediately) {
     EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::QUARANTINE_VENUE);
     EXPECT_EQ(state->last_severity, ReconciliationService::SeverityLevel::CRITICAL);
 }
-
 
 } // namespace
 } // namespace trading
