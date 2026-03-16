@@ -430,6 +430,7 @@ class ReconciliationService {
             }
         }
 
+        state.last_mismatch = decision.mismatch_class;
         state.last_action = decision.action;
         state.last_severity = decision.severity;
         record_incident(idx, decision, reconnect_phase);
