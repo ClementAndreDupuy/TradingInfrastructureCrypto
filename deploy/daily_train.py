@@ -38,6 +38,7 @@ sys.path.insert(0, str(ROOT))
 from research.alpha.neural_alpha.alpha_regression import analyse_alpha
 from research.alpha.neural_alpha.backtest import BacktestConfig, NeuralAlphaBacktest
 from research.alpha.neural_alpha.features import compute_lob_tensor, compute_scalar_features, normalise_scalar
+from research.alpha.neural_alpha.governance import ChampionChallengerRegistry
 from research.alpha.neural_alpha.model import CryptoAlphaNet
 from research.alpha.neural_alpha.pipeline import collect_l5_ticks
 from research.alpha.neural_alpha.trainer import TrainerConfig, walk_forward_train
@@ -62,6 +63,7 @@ PROD_MODEL_PATH = MODEL_DIR / "neural_alpha_latest.pt"
 CANDIDATE_MODEL_PATH = MODEL_DIR / "neural_alpha_candidate.pt"
 SECONDARY_MODEL_PATH = MODEL_DIR / "neural_alpha_secondary.pt"
 NORM_STATS_PATH = MODEL_DIR / "scalar_norm_stats.npz"
+REGISTRY_PATH = MODEL_DIR / "model_registry.json"
 
 
 def _ensure_dirs() -> None:
@@ -222,12 +224,16 @@ def run() -> dict:
         "win_rate": round(bt_metrics.get("win_rate", 0.0), 4),
     }
 
+    registry = ChampionChallengerRegistry(REGISTRY_PATH)
+    challenger_id = registry.register_challenger(CANDIDATE_MODEL_PATH, train_metrics)
+
     # 6. Promote if better than current production model
     prod_ic = _load_prod_model_ic()
     promoted = False
     if alpha_metrics.ic_mean >= PROMOTE_IC_MIN and alpha_metrics.ic_mean > prod_ic:
         log.info("Promoting candidate (IC %.4f > prod IC %.4f)", alpha_metrics.ic_mean, prod_ic)
         _promote_candidate()
+        registry.promote(challenger_id, reason="candidate_outperformed_champion")
         promoted = True
     else:
         reason = (
@@ -237,6 +243,8 @@ def run() -> dict:
         )
         log.info("Candidate not promoted: %s", reason)
 
+    train_metrics["challenger_id"] = challenger_id
+    train_metrics["registry_path"] = str(REGISTRY_PATH)
     train_metrics["promoted"] = promoted
     _save_model_meta(CANDIDATE_MODEL_PATH, train_metrics)
     _write_train_log(date_str, train_metrics)
