@@ -219,6 +219,19 @@ TEST(ReconciliationServiceTest, UsesCanonicalSnapshotForReconnectAndPeriodicLoop
     balance.available = 1.0;
     ASSERT_TRUE(canonical.balances.push(balance));
 
+    ReconciledFill fill;
+    fill.exchange = Exchange::BINANCE;
+    fill.client_order_id = 101;
+    std::strncpy(fill.venue_order_id, "101", sizeof(fill.venue_order_id) - 1);
+    std::strncpy(fill.venue_trade_id, "901", sizeof(fill.venue_trade_id) - 1);
+    std::strncpy(fill.symbol, "BTCUSDT", sizeof(fill.symbol) - 1);
+    fill.quantity = 0.2;
+    fill.price = 100.0;
+    fill.notional = 20.0;
+    fill.fee = 0.0001;
+    fill.exchange_ts_ns = 1700000000000000000;
+    ASSERT_TRUE(canonical.fills.push(fill));
+
     ASSERT_TRUE(service.set_canonical_snapshot(Exchange::BINANCE, canonical));
 
     EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::OK);
@@ -256,6 +269,19 @@ TEST(ReconciliationServiceTest, DetectsExplicitMismatchClasses) {
     balance.total = 9.0;
     balance.available = 8.0;
     ASSERT_TRUE(canonical.balances.push(balance));
+
+    ReconciledFill fill;
+    fill.exchange = Exchange::BINANCE;
+    fill.client_order_id = 101;
+    std::strncpy(fill.venue_order_id, "101", sizeof(fill.venue_order_id) - 1);
+    std::strncpy(fill.venue_trade_id, "901", sizeof(fill.venue_trade_id) - 1);
+    std::strncpy(fill.symbol, "BTCUSDT", sizeof(fill.symbol) - 1);
+    fill.quantity = 0.2;
+    fill.price = 100.0;
+    fill.notional = 20.0;
+    fill.fee = 0.0001;
+    fill.exchange_ts_ns = 1700000000000000000;
+    ASSERT_TRUE(canonical.fills.push(fill));
 
     ASSERT_TRUE(service.set_canonical_snapshot(Exchange::BINANCE, canonical));
     EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::ERROR_UNKNOWN);
@@ -297,7 +323,21 @@ TEST(ReconciliationServiceTest, CanonicalSnapshotFetcherIsUsedOnEachCycle) {
             std::strncpy(balance.asset, "BTC", sizeof(balance.asset) - 1);
             balance.total = 1.1;
             balance.available = 1.0;
-            return canonical.balances.push(balance);
+            if (!canonical.balances.push(balance))
+                return false;
+
+            ReconciledFill fill;
+            fill.exchange = Exchange::BINANCE;
+            fill.client_order_id = 101;
+            std::strncpy(fill.venue_order_id, "101", sizeof(fill.venue_order_id) - 1);
+            std::strncpy(fill.venue_trade_id, "901", sizeof(fill.venue_trade_id) - 1);
+            std::strncpy(fill.symbol, "BTCUSDT", sizeof(fill.symbol) - 1);
+            fill.quantity = 0.2;
+            fill.price = 100.0;
+            fill.notional = 20.0;
+            fill.fee = 0.0001;
+            fill.exchange_ts_ns = 1700000000000000000;
+            return canonical.fills.push(fill);
         }));
 
     EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::OK);
@@ -349,7 +389,7 @@ TEST(ReconciliationServiceTest, FillGapCheckUsesStableDedupeAndCumulativeLedger)
 
     ReconciledOrder order;
     order.client_order_id = 101;
-    std::strncpy(order.venue_order_id, "101", sizeof(order.venue_order_id) - 1);
+    std::strncpy(order.venue_order_id, "bn-1", sizeof(order.venue_order_id) - 1);
     std::strncpy(order.symbol, "BTCUSDT", sizeof(order.symbol) - 1);
     order.quantity = 1.0;
     order.filled_quantity = 0.2;
@@ -406,7 +446,7 @@ TEST(ReconciliationServiceTest, FillGapMismatchRequestsReplayAndQuarantines) {
 
     ReconciledOrder order;
     order.client_order_id = 101;
-    std::strncpy(order.venue_order_id, "101", sizeof(order.venue_order_id) - 1);
+    std::strncpy(order.venue_order_id, "bn-1", sizeof(order.venue_order_id) - 1);
     std::strncpy(order.symbol, "BTCUSDT", sizeof(order.symbol) - 1);
     order.quantity = 1.0;
     order.filled_quantity = 0.2;
