@@ -51,7 +51,16 @@ from .dataset import rolling_normalise
 from .features import compute_lob_tensor, compute_scalar_features
 from .governance import ChampionChallengerRegistry, DriftGuard
 from .model import CryptoAlphaNet
-from .pipeline import _fetch_binance_l5, _fetch_kraken_l5, _fetch_solana_l5
+from .pipeline import (
+    _fetch_binance_l5,
+    _fetch_coinbase_l5,
+    _fetch_kraken_l5,
+    _fetch_okx_l5,
+    _fetch_solana_l5,
+    _collect_l5_ticks_rest,
+    collect_from_core_bridge,
+)
+from .core_bridge import CoreBridge
 from .trainer import TrainerConfig, walk_forward_train
 
 # Shared memory file layout: [float64 signal_bps][float64 risk_score][int64 ts_ns]
@@ -135,6 +144,8 @@ class NeuralAlphaShadowSession:
             ic_floor=cfg.drift_ic_floor,
         )
         self._safe_mode_ticks_remaining = 0
+        self._bridge = CoreBridge()
+        self._bridge.open()
 
     # ── Model loading / training ──────────────────────────────────────────────
 
@@ -164,25 +175,14 @@ class NeuralAlphaShadowSession:
 
     def train_on_recent(self, n_ticks: int) -> None:
         print(f"Collecting {n_ticks} ticks for in-place training...")
-        rows: list[dict] = []
-        interval_s = self.cfg.interval_ms / 1000.0
-        _fetchers = {
-            "BINANCE": _fetch_binance_l5,
-            "KRAKEN": _fetch_kraken_l5,
-            "SOLANA": _fetch_solana_l5,
-        }
-        for i in range(n_ticks):
-            for ex in self.cfg.exchanges:
-                fetcher = _fetchers.get(ex)
-                if fetcher:
-                    row = fetcher()
-                    if row:
-                        rows.append(row)
-            if i < n_ticks - 1:
-                time.sleep(interval_s)
-        if not rows:
-            raise RuntimeError("No data collected for training.")
-        df = pl.DataFrame(rows).sort("timestamp_ns")
+        df = collect_from_core_bridge(n_ticks=n_ticks, interval_ms=self.cfg.interval_ms)
+        if df is None or len(df) == 0:
+            print("[WARN] core bridge unavailable for training; falling back to REST collectors")
+            df = _collect_l5_ticks_rest(
+                n_ticks=n_ticks,
+                interval_ms=self.cfg.interval_ms,
+                exchanges=self.cfg.exchanges,
+            )
 
         tcfg = TrainerConfig(
             epochs=self.cfg.train_epochs,
@@ -318,10 +318,16 @@ class NeuralAlphaShadowSession:
     # ── Data collection ───────────────────────────────────────────────────────
 
     def _fetch_tick(self) -> list[dict]:
+        bridge_ticks = self._bridge.read_new_ticks()
+        if bridge_ticks:
+            return bridge_ticks
+
         ticks: list[dict] = []
         _fetchers = {
             "BINANCE": _fetch_binance_l5,
             "KRAKEN": _fetch_kraken_l5,
+            "OKX": _fetch_okx_l5,
+            "COINBASE": _fetch_coinbase_l5,
             "SOLANA": _fetch_solana_l5,
         }
         for ex in self.cfg.exchanges:
@@ -411,6 +417,7 @@ class NeuralAlphaShadowSession:
         finally:
             self._print_summary()
             self._log_fp.close()
+            self._bridge.close()
             self._publisher.close()
             print("Shadow session complete.")
 
