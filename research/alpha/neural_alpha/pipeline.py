@@ -54,40 +54,76 @@ def _parse_binance_l5(d: dict, symbol: str, exchange_label: str) -> dict:
     return row
 
 
-def _fetch_binance_l5() -> dict | None:
+
+
+def _binance_symbol(symbol: str) -> str:
+    return symbol.replace("-", "").upper()
+
+
+def _okx_symbol(symbol: str) -> str:
+    clean = symbol.replace("-", "").upper()
+    if clean.endswith("USDT"):
+        return f"{clean[:-4]}-USDT"
+    if clean.endswith("USD"):
+        return f"{clean[:-3]}-USD"
+    return clean
+
+
+def _coinbase_symbol(symbol: str) -> str:
+    clean = symbol.replace("-", "").upper()
+    if clean.endswith("USDT"):
+        return f"{clean[:-4]}-USD"
+    if clean.endswith("USD"):
+        return f"{clean[:-3]}-USD"
+    return clean
+
+
+def _kraken_symbol(symbol: str) -> str:
+    clean = symbol.replace("-", "").upper()
+    if clean.endswith("USDT"):
+        base = clean[:-4]
+    elif clean.endswith("USD"):
+        base = clean[:-3]
+    else:
+        base = clean
+    if base == "BTC":
+        base = "XBT"
+    return f"PI_{base}USD"
+
+def _fetch_binance_l5(symbol: str = "BTCUSDT") -> dict | None:
     try:
         r = requests.get(
             BINANCE_DEPTH_URL,
-            params={"symbol": "BTCUSDT", "limit": N_LEVELS},
+            params={"symbol": _binance_symbol(symbol), "limit": N_LEVELS},
             timeout=5,
         )
         r.raise_for_status()
-        return _parse_binance_l5(r.json(), "BTCUSDT", "BINANCE")
+        return _parse_binance_l5(r.json(), _binance_symbol(symbol), "BINANCE")
     except Exception as e:
         print(f"  [WARN] Binance L5 fetch: {e}")
         return None
 
 
-def _fetch_solana_l5() -> dict | None:
+def _fetch_solana_l5(symbol: str = "SOLUSDT") -> dict | None:
     """Fetch L5 LOB snapshot for SOLUSDT from Binance spot."""
     try:
         r = requests.get(
             BINANCE_SPOT_DEPTH_URL,
-            params={"symbol": "SOLUSDT", "limit": N_LEVELS},
+            params={"symbol": _binance_symbol(symbol), "limit": N_LEVELS},
             timeout=5,
         )
         r.raise_for_status()
-        return _parse_binance_l5(r.json(), "SOLUSDT", "SOLANA")
+        return _parse_binance_l5(r.json(), _binance_symbol(symbol), "SOLANA")
     except Exception as e:
         print(f"  [WARN] Solana L5 fetch: {e}")
         return None
 
 
-def _fetch_kraken_l5() -> dict | None:
+def _fetch_kraken_l5(symbol: str = "BTCUSDT") -> dict | None:
     try:
         r = requests.get(
             KRAKEN_DEPTH_URL,
-            params={"symbol": "PI_XBTUSD"},
+            params={"symbol": _kraken_symbol(symbol)},
             timeout=5,
         )
         r.raise_for_status()
@@ -99,7 +135,7 @@ def _fetch_kraken_l5() -> dict | None:
         row: dict = {
             "timestamp_ns": time.time_ns(),
             "exchange": "KRAKEN",
-            "symbol": "PI_XBTUSD",
+            "symbol": _kraken_symbol(symbol),
             "best_bid": float(bids[0][0]),
             "best_ask": float(asks[0][0]),
         }
@@ -115,9 +151,9 @@ def _fetch_kraken_l5() -> dict | None:
         return None
 
 
-def _fetch_okx_l5() -> dict | None:
+def _fetch_okx_l5(symbol: str = "BTCUSDT") -> dict | None:
     try:
-        r = requests.get(OKX_DEPTH_URL, params={"instId": "BTC-USDT", "sz": N_LEVELS}, timeout=5)
+        r = requests.get(OKX_DEPTH_URL, params={"instId": _okx_symbol(symbol), "sz": N_LEVELS}, timeout=5)
         r.raise_for_status()
         data = r.json().get("data", [])
         if not data:
@@ -130,7 +166,7 @@ def _fetch_okx_l5() -> dict | None:
         row: dict = {
             "timestamp_ns": time.time_ns(),
             "exchange": "OKX",
-            "symbol": "BTC-USDT",
+            "symbol": _okx_symbol(symbol),
             "best_bid": bids[0][0],
             "best_ask": asks[0][0],
         }
@@ -146,7 +182,7 @@ def _fetch_okx_l5() -> dict | None:
         return None
 
 
-def _fetch_coinbase_l5() -> dict | None:
+def _fetch_coinbase_l5(symbol: str = "BTCUSDT") -> dict | None:
     try:
         r = requests.get(COINBASE_DEPTH_URL, params={"level": 2}, timeout=5)
         r.raise_for_status()
@@ -158,7 +194,7 @@ def _fetch_coinbase_l5() -> dict | None:
         row: dict = {
             "timestamp_ns": time.time_ns(),
             "exchange": "COINBASE",
-            "symbol": "BTC-USD",
+            "symbol": _coinbase_symbol(symbol),
             "best_bid": bids[0][0],
             "best_ask": asks[0][0],
         }
@@ -193,7 +229,7 @@ def collect_from_core_bridge(n_ticks: int, interval_ms: int) -> pl.DataFrame | N
     return pl.DataFrame(rows[:n_ticks]).sort("timestamp_ns")
 
 
-def _collect_l5_ticks_rest(n_ticks: int, interval_ms: int, exchanges: list[str]) -> pl.DataFrame:
+def _collect_l5_ticks_rest(n_ticks: int, interval_ms: int, exchanges: list[str], symbol: str = "BTCUSDT") -> pl.DataFrame:
     rows: list[dict] = []
     interval_s = interval_ms / 1000.0
     _fetchers = {
@@ -211,7 +247,7 @@ def _collect_l5_ticks_rest(n_ticks: int, interval_ms: int, exchanges: list[str])
             if fetcher is None:
                 print(f"  [WARN] Unknown exchange: {ex}")
                 continue
-            row = fetcher()
+            row = fetcher(symbol)
             if row:
                 rows.append(row)
         if i < n_ticks - 1:
@@ -227,6 +263,7 @@ def collect_l5_ticks(
     interval_ms: int,
     exchanges: list[str] | None = None,
     allow_rest_fallback: bool = True,
+    symbol: str = "BTCUSDT",
 ) -> pl.DataFrame:
     """Fetch L5 LOB snapshots from core feed bridge, optionally topped up via REST."""
     exchanges = exchanges or ["BINANCE", "KRAKEN", "OKX", "COINBASE"]
@@ -235,7 +272,7 @@ def collect_l5_ticks(
     if bridge_df is not None and len(bridge_df) >= n_ticks // 2:
         if len(bridge_df) < n_ticks and allow_rest_fallback:
             print(f"[WARN] bridge returned {len(bridge_df)} ticks (< {n_ticks}); topping up with REST")
-            rest_df = _collect_l5_ticks_rest(n_ticks - len(bridge_df), interval_ms, exchanges)
+            rest_df = _collect_l5_ticks_rest(n_ticks - len(bridge_df), interval_ms, exchanges, symbol=symbol)
             return pl.concat([bridge_df, rest_df]).sort("timestamp_ns")
         if len(bridge_df) < n_ticks:
             raise RuntimeError(
@@ -245,7 +282,7 @@ def collect_l5_ticks(
 
     if allow_rest_fallback:
         print("[WARN] core bridge unavailable or insufficient; falling back to REST collection")
-        return _collect_l5_ticks_rest(n_ticks, interval_ms, exchanges)
+        return _collect_l5_ticks_rest(n_ticks, interval_ms, exchanges, symbol=symbol)
 
     raise RuntimeError("Core bridge unavailable and REST fallback disabled.")
 
@@ -311,6 +348,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
             args.ticks,
             args.interval_ms,
             exchanges=args.exchanges.split(","),
+            symbol=args.symbol,
             allow_rest_fallback=not args.core_only,
         )
 
@@ -392,6 +430,7 @@ def main() -> None:
     ap.add_argument("--ticks",           type=int,   default=300,
                     help="Ticks to collect per exchange (default 300)")
     ap.add_argument("--interval-ms",     type=int,   default=500,   dest="interval_ms")
+    ap.add_argument("--symbol",          type=str,   default="BTCUSDT")
     ap.add_argument("--exchanges", type=str, default="BINANCE,KRAKEN,OKX,COINBASE")
     ap.add_argument("--synthetic",       action="store_true",
                     help="Use synthetic LOB data (offline testing)")

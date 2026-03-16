@@ -8,6 +8,18 @@ ENGINE_BIN="${ENGINE_BIN:-$REPO_ROOT/build/bin/trading_engine}"
 ENV_FILE_DEFAULT="$REPO_ROOT/config/live/trading.env"
 CONFIG_FILE_DEFAULT="$REPO_ROOT/config/live/runtime.yaml"
 
+timestamp() {
+    date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+log_info() {
+    echo "[$(timestamp)] [live] [INFO] $*"
+}
+
+log_error() {
+    echo "[$(timestamp)] [live] [ERROR] $*" >&2
+}
+
 read_yaml_value() {
     local file_path="$1"
     local key="$2"
@@ -93,19 +105,19 @@ while [[ $# -gt 0 ]]; do
         --env-file) ENV_FILE="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         --) shift; EXTRA_ARGS=("$@"); break ;;
-        *) echo "[live] Unknown argument: $1"; usage; exit 1 ;;
+        *) log_error "Unknown argument: $1"; usage; exit 1 ;;
     esac
 done
 
 if [[ -f "$ENV_FILE" ]]; then
-    echo "[live] Loading env file: $ENV_FILE"
+    log_info "Loading env file: $ENV_FILE"
     # shellcheck disable=SC1090
     source "$ENV_FILE"
 fi
 
 if [[ ! -x "$ENGINE_BIN" ]]; then
-    echo "[live] ERROR: missing trading_engine binary at $ENGINE_BIN"
-    echo "[live] Build first: mkdir -p build && cd build && cmake .. && make -j\$(nproc)"
+    log_error "Missing trading_engine binary at $ENGINE_BIN"
+    log_info "Build first: mkdir -p build && cd build && cmake .. && make -j\$(nproc)"
     exit 1
 fi
 
@@ -125,8 +137,8 @@ require_live_creds() {
     local secret_val="${!live_secret_var:-${!secret_var:-}}"
 
     if [[ -z "$key_val" || -z "$secret_val" ]]; then
-        echo "[live] ERROR: missing credentials for $venue"
-        echo "[live] Set $live_key_var/$live_secret_var (or $key_var/$secret_var)"
+        log_error "Missing credentials for $venue"
+        log_info "Set $live_key_var/$live_secret_var (or $key_var/$secret_var)"
         exit 1
     fi
 
@@ -141,4 +153,5 @@ for venue in "${VENUE_LIST[@]}"; do
     require_live_creds "$venue"
 done
 
+log_info "Starting C++ live runner symbol=$SYMBOL venues=$VENUES interval=${LOOP_INTERVAL_MS}ms"
 exec "$ENGINE_BIN" --mode live --venues "$VENUES" --symbol "$SYMBOL" --loop-interval-ms "$LOOP_INTERVAL_MS" "${EXTRA_ARGS[@]}"
