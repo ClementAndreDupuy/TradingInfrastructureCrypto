@@ -90,17 +90,7 @@ trading::VenueQuote make_quote(trading::Exchange exchange, const trading::BookMa
     const double ask = book_ready ? book.best_ask() : 100.1;
 
     return {
-        exchange,
-        bid,
-        ask,
-        0.40,
-        5.0,
-        0.5,
-        0.2,
-        0.70,
-        0.20,
-        0.4,
-        true,
+        exchange, bid, ask, 0.40, 5.0, 0.5, 0.2, 0.70, 0.20, 0.4, true,
     };
 }
 
@@ -211,12 +201,14 @@ int main(int argc, char** argv) {
             make_quote(Exchange::COINBASE, coinbase_book, run_coinbase),
         }};
 
-        const RoutingDecision decision = sor.route_with_alpha(Side::BID, 0.5, alpha_signal, venue_quotes);
+        const RoutingDecision decision =
+            sor.route_with_alpha(Side::BID, 0.5, alpha_signal, venue_quotes);
         if (!decision.blocked_by_alpha) {
             for (size_t i = 0; i < decision.child_count; ++i) {
                 const auto& child = decision.children[i];
-                const Order child_order = make_child_order(opts.symbol.c_str(), child.exchange, Side::BID,
-                                                           child.quantity, child.limit_price, next_id++);
+                const Order child_order =
+                    make_child_order(opts.symbol.c_str(), child.exchange, Side::BID, child.quantity,
+                                     child.limit_price, next_id++);
 
                 const double signed_notional = child.quantity * child.limit_price;
                 if (global_risk.commit_order(child.exchange, child_order.symbol, signed_notional) !=
