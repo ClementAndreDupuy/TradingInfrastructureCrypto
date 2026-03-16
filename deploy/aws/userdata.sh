@@ -47,27 +47,44 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_BINDINGS=OFF \
 make -j$(nproc)
 cd /opt/trading
 
-# ── 5. Load Binance API keys from Secrets Manager ─────────────────────────────
+# ── 5. Load exchange API keys from Secrets Manager ────────────────────────────
 mkdir -p /etc/trading
 chmod 700 /etc/trading
 
-aws secretsmanager get-secret-value \
-    --secret-id trading/binance_api_keys \
-    --query SecretString \
-    --output text | \
-python3 -c "
-import json, sys
-d = json.load(sys.stdin)
+BINANCE_SECRET_JSON="$(aws secretsmanager get-secret-value --secret-id trading/binance_api_keys --query SecretString --output text)"
+KRAKEN_SECRET_JSON="$(aws secretsmanager get-secret-value --secret-id trading/kraken_api_keys --query SecretString --output text)"
+OKX_SECRET_JSON="$(aws secretsmanager get-secret-value --secret-id trading/okx_api_keys --query SecretString --output text)"
+COINBASE_SECRET_JSON="$(aws secretsmanager get-secret-value --secret-id trading/coinbase_api_keys --query SecretString --output text)"
+
+export BINANCE_SECRET_JSON KRAKEN_SECRET_JSON OKX_SECRET_JSON COINBASE_SECRET_JSON
+python3 - <<'PY'
+import json
+import os
+
+def read_secret(name: str) -> dict:
+    return json.loads(os.environ[name])
+
+binance = read_secret("BINANCE_SECRET_JSON")
+kraken = read_secret("KRAKEN_SECRET_JSON")
+okx = read_secret("OKX_SECRET_JSON")
+coinbase = read_secret("COINBASE_SECRET_JSON")
+
 with open('/etc/trading/env', 'w') as f:
-    f.write(f'BINANCE_API_KEY={d[\"api_key\"]}\n')
-    f.write(f'BINANCE_API_SECRET={d[\"api_secret\"]}\n')
+    f.write(f'BINANCE_API_KEY={binance["api_key"]}\n')
+    f.write(f'BINANCE_API_SECRET={binance["api_secret"]}\n')
+    f.write(f'KRAKEN_API_KEY={kraken["api_key"]}\n')
+    f.write(f'KRAKEN_API_SECRET={kraken["api_secret"]}\n')
+    f.write(f'OKX_API_KEY={okx["api_key"]}\n')
+    f.write(f'OKX_API_SECRET={okx["api_secret"]}\n')
+    f.write(f'COINBASE_API_KEY={coinbase["api_key"]}\n')
+    f.write(f'COINBASE_API_SECRET={coinbase["api_secret"]}\n')
     f.write('S3_BUCKET=${s3_bucket}\n')
     f.write('MODEL_DIR=/opt/trading/models\n')
     f.write('DATA_DIR=/opt/trading/data\n')
     f.write('TRAIN_TICKS=2000\n')
     f.write('EPOCHS=30\n')
     f.write('PROMOTE_IC_MIN=0.02\n')
-"
+PY
 chmod 600 /etc/trading/env
 
 # ── 6. Install systemd service files ─────────────────────────────────────────
