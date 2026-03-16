@@ -85,8 +85,8 @@ trading::Order make_child_order(const char* symbol, trading::Exchange exchange, 
     return o;
 }
 
-trading::VenueQuote make_quote(trading::Exchange exchange, const trading::BookManager& book,
-                               bool enabled) {
+trading::VenueQuote
+make_quote(trading::Exchange exchange, const trading::BookManager& book, bool enabled) {
     if (!enabled)
         return {exchange, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
 

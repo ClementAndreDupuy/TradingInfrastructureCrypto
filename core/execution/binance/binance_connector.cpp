@@ -126,7 +126,8 @@ ConnectorResult BinanceConnector::replace_at_venue(const VenueOrderEntry& entry,
     return ConnectorResult::OK;
 }
 
-ConnectorResult BinanceConnector::query_at_venue(const VenueOrderEntry& entry, FillUpdate& status) {
+ConnectorResult
+BinanceConnector::query_at_venue(const VenueOrderEntry& entry, FillUpdate& status) {
     const auto resp = http::get(
         api_url() + "/api/v3/order?orderId=" + std::string(entry.venue_order_id),
         auth_headers("GET", std::string("/api/v3/order?orderId=") + entry.venue_order_id, ""));

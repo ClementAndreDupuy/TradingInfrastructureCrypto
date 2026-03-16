@@ -511,8 +511,8 @@ Result BinanceFeedHandler::apply_buffered_deltas() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-bool BinanceFeedHandler::validate_delta_sequence(uint64_t first_update_id,
-                                                 uint64_t last_update_id) {
+bool
+BinanceFeedHandler::validate_delta_sequence(uint64_t first_update_id, uint64_t last_update_id) {
     uint64_t expected = last_update_id_.load(std::memory_order_acquire) + 1;
     return first_update_id <= expected && expected <= last_update_id;
 }
