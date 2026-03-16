@@ -106,3 +106,20 @@ tests/         unit / integration / replay
 
 - Credentials in `config/live/secrets.yaml` (gitignored). Never hardcode.
 - Separate API keys per environment (dev / shadow / live).
+
+## Reusable Agent Memory (Updated)
+
+Use this as a lightweight operating checklist for future agent sessions.
+
+1. **Always discover nested instructions first**: run `rg --files -g 'AGENTS.md'` before editing code.
+2. **Current top-level layout includes additional active areas** beyond the high-level tree above:
+   - `core/engine/` (engine orchestration surface)
+   - `tests/perf/` (performance-focused checks)
+   - `deploy/` (AWS + systemd deployment assets)
+3. **Typical safe verification flow after edits**:
+   - Python: `pytest tests/unit/`
+   - C++ build/test: `mkdir -p build && cd build && cmake .. && make -j$(nproc)` then `cd build && make test`
+4. **Agent change hygiene**:
+   - Keep hot-path and cold-path boundaries explicit in commits.
+   - Update scoped `AGENTS.md` whenever new conventions are introduced.
+   - Prefer replay/integration validation whenever touching book/feed/risk paths.

@@ -30,3 +30,12 @@ Risk limits in `config/{dev,shadow,live}/risk.yaml`. Always tighter in live than
 - Risk evaluation: < 500 ns on x86-64
 - No heap allocation after construction
 - Lock-free atomic operations only
+
+## Reusable Agent Memory (Updated)
+
+- Preserve check ordering unless there is a strong latency/correctness reason; ordering encodes fail-fast policy.
+- Any new guard should declare:
+  - unit (ticks, bps, notional)
+  - reset semantics
+  - interaction with kill switch state
+- Keep config parity across `config/dev`, `config/shadow`, `config/live` with stricter production limits.
