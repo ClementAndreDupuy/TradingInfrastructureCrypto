@@ -31,6 +31,7 @@ flowchart LR
     ORDERBOOK["core/orderbook\nLocal order books"]
     ENGINE["core/engine\nRuntime orchestration"]
     EXEC["core/execution\nOrderManager + MarketMaker"]
+    SOR["core/execution\nSmartOrderRouter + ExchangeConnector(s)"]
     RISK["core/risk\nPre-trade checks\nKill switch / circuit breaker"]
     SHADOW["core/shadow\nPaper-trading engine"]
   end
@@ -62,6 +63,7 @@ flowchart LR
 
   ENGINE -->|"Start/stop + wiring"| FEEDS
   ENGINE -->|"Start/stop + wiring"| EXEC
+  ENGINE -->|"Start/stop + wiring"| SOR
   ENGINE -->|"Start/stop + wiring"| SHADOW
 
   FEEDS -->|"WebSocket subscribe/auth"| BIN
@@ -78,14 +80,23 @@ flowchart LR
   ORDERBOOK -->|"Top of book + depth"| EXEC
   EXEC -->|"Pre-trade check request"| RISK
   RISK -->|"Approve/reject"| EXEC
+  EXEC -->|"Validated parent/child orders"| SOR
 
-  EXEC -->|"REST/WebSocket orders"| Exchanges
-  Exchanges -->|"Execution reports/fills"| EXEC
+  SOR -->|"Route venue-specific orders"| BIN
+  SOR -->|"Route venue-specific orders"| KRA
+  SOR -->|"Route venue-specific orders"| OKX
+  SOR -->|"Route venue-specific orders"| COI
+  BIN -->|"Ack/reject/fill updates"| SOR
+  KRA -->|"Ack/reject/fill updates"| SOR
+  OKX -->|"Ack/reject/fill updates"| SOR
+  COI -->|"Ack/reject/fill updates"| SOR
+  SOR -->|"Normalized execution reports/fills"| EXEC
   EXEC -->|"Shadow route"| SHADOW
   SHADOW -->|"Paper fills"| EXEC
 
   FEEDS -->|"Feed/latency metrics"| MON
   EXEC -->|"Orders/PnL/risk metrics"| MON
+  SOR -->|"Venue routing + reject metrics"| MON
   SHADOW -->|"Shadow performance"| MON
   PIPE -->|"Training + inference metrics"| MON
   ENGINE -->|"Service health"| MON
@@ -100,8 +111,9 @@ flowchart LR
 - **`core/feeds`**: Maintains real-time exchange market data streams and validates message order before updating internal state.
 - **`core/orderbook`**: Stores the in-memory book per symbol; execution logic reads this for spread, depth, and microstructure signals.
 - **`core/risk`**: Gatekeeper in front of trading actions; enforces limits and can halt trading fast.
-- **`core/execution`**: Decides quotes/orders, tracks positions, sends live orders through exchange connectors.
+- **`core/execution`**: Decides quotes/orders, tracks positions, and hands validated orders to the smart order router for venue submission.
 - **`core/ipc`**: Shared-memory bridge between Python model output and C++ strategy input.
+- **`core/execution` smart order router**: Splits/routes validated orders to Binance/Kraken/OKX/Coinbase connectors and normalizes venue acks/fills back to execution.
 - **`core/shadow`**: Runs the same trading logic in paper mode to validate behavior before live deployment.
 - **`research/alpha/neural_alpha`**: Trains and generates alpha signals from historical/live features.
 - **`research/backtest`**: Replays market events to evaluate strategy quality offline.
