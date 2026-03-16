@@ -2,6 +2,7 @@
 
 #include "../../common/types.hpp"
 #include "../../orderbook/orderbook.hpp"
+#include "../../ipc/lob_publisher.hpp"
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -22,7 +23,12 @@ class BookManager {
   public:
     BookManager(const std::string& symbol, Exchange exchange, double tick_size = 1.0,
                 size_t max_levels = 20000)
-        : book_(symbol, exchange, tick_size, max_levels), last_update_ns_(0) {}
+        : book_(symbol, exchange, tick_size, max_levels), last_update_ns_(0), publisher_(nullptr) {
+        pub_bids_.reserve(5);
+        pub_asks_.reserve(5);
+    }
+
+    void set_publisher(LobPublisher* publisher) noexcept { publisher_ = publisher; }
 
     // Returns a lambda suitable for set_snapshot_callback().
     std::function<void(const Snapshot&)> snapshot_handler() {
@@ -32,7 +38,9 @@ class BookManager {
                 LOG_ERROR("BookManager: snapshot apply failed", "symbol", book_.symbol().c_str(),
                           "exchange", exchange_to_string(book_.exchange()));
             } else {
-                last_update_ns_.store(now_ns(), std::memory_order_release);
+                const int64_t ts_ns = (s.timestamp_local_ns > 0) ? s.timestamp_local_ns : now_ns();
+                last_update_ns_.store(ts_ns, std::memory_order_release);
+                publish_lob(ts_ns);
             }
         };
     }
@@ -44,8 +52,10 @@ class BookManager {
             if (result == Result::ERROR_INVALID_PRICE) {
                 LOG_WARN("BookManager: delta out of grid range — re-snapshot needed", "symbol",
                          book_.symbol().c_str(), "price", d.price);
-            } else {
-                last_update_ns_.store(now_ns(), std::memory_order_release);
+            } else if (result == Result::SUCCESS) {
+                const int64_t ts_ns = (d.timestamp_local_ns > 0) ? d.timestamp_local_ns : now_ns();
+                last_update_ns_.store(ts_ns, std::memory_order_release);
+                publish_lob(ts_ns);
             }
         };
     }
@@ -75,6 +85,21 @@ class BookManager {
   private:
     OrderBook book_;
     std::atomic<int64_t> last_update_ns_;
+    LobPublisher* publisher_;
+    std::vector<PriceLevel> pub_bids_;
+    std::vector<PriceLevel> pub_asks_;
+
+    void publish_lob(int64_t timestamp_ns) {
+        if (publisher_ == nullptr || !publisher_->is_open()) {
+            return;
+        }
+
+        pub_bids_.clear();
+        pub_asks_.clear();
+        book_.get_top_levels(5, pub_bids_, pub_asks_);
+        publisher_->publish(book_.exchange(), book_.symbol(), timestamp_ns, book_.get_mid_price(),
+                            pub_bids_, pub_asks_);
+    }
 
     static int64_t now_ns() noexcept {
         using namespace std::chrono;

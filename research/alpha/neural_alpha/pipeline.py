@@ -23,11 +23,15 @@ import numpy as np
 import polars as pl
 import requests
 
+from .core_bridge import CoreBridge
+
 # ── Data fetcher ──────────────────────────────────────────────────────────────
 
 BINANCE_DEPTH_URL = "https://fapi.binance.com/fapi/v1/depth"
 BINANCE_SPOT_DEPTH_URL = "https://api.binance.com/api/v3/depth"
 KRAKEN_DEPTH_URL = "https://futures.kraken.com/derivatives/api/v3/orderbook"
+OKX_DEPTH_URL = "https://www.okx.com/api/v5/market/books"
+COINBASE_DEPTH_URL = "https://api.exchange.coinbase.com/products/BTC-USD/book"
 N_LEVELS = 5
 
 
@@ -111,26 +115,96 @@ def _fetch_kraken_l5() -> dict | None:
         return None
 
 
-def collect_l5_ticks(
-    n_ticks: int,
-    interval_ms: int,
-    exchanges: list[str] | None = None,
-) -> pl.DataFrame:
-    """Fetch L5 LOB snapshots from the specified exchanges.
+def _fetch_okx_l5() -> dict | None:
+    try:
+        r = requests.get(OKX_DEPTH_URL, params={"instId": "BTC-USDT", "sz": N_LEVELS}, timeout=5)
+        r.raise_for_status()
+        data = r.json().get("data", [])
+        if not data:
+            return None
+        book = data[0]
+        bids = [(float(px), float(sz)) for px, sz, *_ in book.get("bids", [])][:N_LEVELS]
+        asks = [(float(px), float(sz)) for px, sz, *_ in book.get("asks", [])][:N_LEVELS]
+        if not bids or not asks:
+            return None
+        row: dict = {
+            "timestamp_ns": time.time_ns(),
+            "exchange": "OKX",
+            "symbol": "BTC-USDT",
+            "best_bid": bids[0][0],
+            "best_ask": asks[0][0],
+        }
+        for i, (bp, bs) in enumerate(bids, 1):
+            row[f"bid_price_{i}"] = bp
+            row[f"bid_size_{i}"] = bs
+        for i, (ap, as_) in enumerate(asks, 1):
+            row[f"ask_price_{i}"] = ap
+            row[f"ask_size_{i}"] = as_
+        return row
+    except Exception as e:
+        print(f"  [WARN] OKX L5 fetch: {e}")
+        return None
 
-    Supported exchange labels: BINANCE, KRAKEN, SOLANA.
-    """
-    exchanges = exchanges or ["SOLANA"]
+
+def _fetch_coinbase_l5() -> dict | None:
+    try:
+        r = requests.get(COINBASE_DEPTH_URL, params={"level": 2}, timeout=5)
+        r.raise_for_status()
+        d = r.json()
+        bids = [(float(px), float(sz)) for px, sz, *_ in d.get("bids", [])][:N_LEVELS]
+        asks = [(float(px), float(sz)) for px, sz, *_ in d.get("asks", [])][:N_LEVELS]
+        if not bids or not asks:
+            return None
+        row: dict = {
+            "timestamp_ns": time.time_ns(),
+            "exchange": "COINBASE",
+            "symbol": "BTC-USD",
+            "best_bid": bids[0][0],
+            "best_ask": asks[0][0],
+        }
+        for i, (bp, bs) in enumerate(bids, 1):
+            row[f"bid_price_{i}"] = bp
+            row[f"bid_size_{i}"] = bs
+        for i, (ap, as_) in enumerate(asks, 1):
+            row[f"ask_price_{i}"] = ap
+            row[f"ask_size_{i}"] = as_
+        return row
+    except Exception as e:
+        print(f"  [WARN] Coinbase L5 fetch: {e}")
+        return None
+
+
+def collect_from_core_bridge(n_ticks: int, interval_ms: int) -> pl.DataFrame | None:
+    bridge = CoreBridge()
+    if not bridge.open():
+        return None
+
     rows: list[dict] = []
     interval_s = interval_ms / 1000.0
+    while len(rows) < n_ticks:
+        rows.extend(bridge.read_new_ticks())
+        if len(rows) >= n_ticks:
+            break
+        time.sleep(interval_s)
+    bridge.close()
 
+    if not rows:
+        return None
+    return pl.DataFrame(rows[:n_ticks]).sort("timestamp_ns")
+
+
+def _collect_l5_ticks_rest(n_ticks: int, interval_ms: int, exchanges: list[str]) -> pl.DataFrame:
+    rows: list[dict] = []
+    interval_s = interval_ms / 1000.0
     _fetchers = {
         "BINANCE": _fetch_binance_l5,
         "KRAKEN": _fetch_kraken_l5,
+        "OKX": _fetch_okx_l5,
+        "COINBASE": _fetch_coinbase_l5,
         "SOLANA": _fetch_solana_l5,
     }
 
-    print(f"Collecting {n_ticks} L5 snapshots per exchange (interval {interval_ms} ms)…")
+    print(f"Collecting {n_ticks} L5 snapshots per exchange over REST (interval {interval_ms} ms)…")
     for i in range(n_ticks):
         for ex in exchanges:
             fetcher = _fetchers.get(ex)
@@ -140,17 +214,35 @@ def collect_l5_ticks(
             row = fetcher()
             if row:
                 rows.append(row)
-        if (i + 1) % 20 == 0:
-            print(f"  {i+1}/{n_ticks}")
         if i < n_ticks - 1:
             time.sleep(interval_s)
 
     if not rows:
         raise RuntimeError("No data collected — check network and exchange APIs.")
+    return pl.DataFrame(rows).sort("timestamp_ns")
 
-    df = pl.DataFrame(rows).sort("timestamp_ns")
-    print(f"Collected {len(df)} ticks.\n")
-    return df
+
+def collect_l5_ticks(
+    n_ticks: int,
+    interval_ms: int,
+    exchanges: list[str] | None = None,
+) -> pl.DataFrame:
+    """Fetch L5 LOB snapshots from the specified exchanges.
+
+    Supported exchange labels: BINANCE, KRAKEN, OKX, COINBASE, SOLANA.
+    """
+    exchanges = exchanges or ["BINANCE", "KRAKEN", "OKX", "COINBASE"]
+    bridge_df = collect_from_core_bridge(n_ticks=n_ticks, interval_ms=interval_ms)
+
+    if bridge_df is not None and len(bridge_df) >= n_ticks // 2:
+        if len(bridge_df) < n_ticks:
+            print(f"[WARN] bridge returned {len(bridge_df)} ticks (< {n_ticks}); topping up with REST")
+            rest_df = _collect_l5_ticks_rest(n_ticks - len(bridge_df), interval_ms, exchanges)
+            return pl.concat([bridge_df, rest_df]).sort("timestamp_ns")
+        return bridge_df
+
+    print("[WARN] core bridge unavailable or insufficient; falling back to REST collection")
+    return _collect_l5_ticks_rest(n_ticks, interval_ms, exchanges)
 
 
 # ── Synthetic data for offline testing ───────────────────────────────────────

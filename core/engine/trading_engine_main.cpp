@@ -4,8 +4,13 @@
 #include "../execution/okx/okx_connector.hpp"
 #include "../execution/reconciliation_service.hpp"
 #include "../execution/smart_order_router.hpp"
+#include "../feeds/binance/binance_feed_handler.hpp"
+#include "../feeds/coinbase/coinbase_feed_handler.hpp"
 #include "../feeds/common/book_manager.hpp"
+#include "../feeds/kraken/kraken_feed_handler.hpp"
+#include "../feeds/okx/okx_feed_handler.hpp"
 #include "../ipc/alpha_signal.hpp"
+#include "../ipc/lob_publisher.hpp"
 #include "../risk/circuit_breaker.hpp"
 #include "../risk/global_risk_controls.hpp"
 #include "../risk/kill_switch.hpp"
@@ -123,6 +128,39 @@ int main(int argc, char** argv) {
     BookManager kraken_book(opts.symbol, Exchange::KRAKEN, 0.1, 10000);
     BookManager okx_book(opts.symbol, Exchange::OKX, 0.1, 10000);
     BookManager coinbase_book(opts.symbol, Exchange::COINBASE, 0.1, 10000);
+
+    LobPublisher lob_publisher;
+    if (!lob_publisher.open()) {
+        std::cout << "[WARN] LOB publisher unavailable path=/tmp/trt_lob_feed.bin\n";
+    }
+
+    binance_book.set_publisher(lob_publisher.is_open() ? &lob_publisher : nullptr);
+    kraken_book.set_publisher(lob_publisher.is_open() ? &lob_publisher : nullptr);
+    okx_book.set_publisher(lob_publisher.is_open() ? &lob_publisher : nullptr);
+    coinbase_book.set_publisher(lob_publisher.is_open() ? &lob_publisher : nullptr);
+
+    BinanceFeedHandler binance_feed(opts.symbol);
+    KrakenFeedHandler kraken_feed(opts.symbol);
+    OkxFeedHandler okx_feed(opts.symbol);
+    CoinbaseFeedHandler coinbase_feed(opts.symbol);
+
+    binance_feed.set_snapshot_callback(binance_book.snapshot_handler());
+    binance_feed.set_delta_callback(binance_book.delta_handler());
+    kraken_feed.set_snapshot_callback(kraken_book.snapshot_handler());
+    kraken_feed.set_delta_callback(kraken_book.delta_handler());
+    okx_feed.set_snapshot_callback(okx_book.snapshot_handler());
+    okx_feed.set_delta_callback(okx_book.delta_handler());
+    coinbase_feed.set_snapshot_callback(coinbase_book.snapshot_handler());
+    coinbase_feed.set_delta_callback(coinbase_book.delta_handler());
+
+    if (run_binance)
+        (void)binance_feed.start();
+    if (run_kraken)
+        (void)kraken_feed.start();
+    if (run_okx)
+        (void)okx_feed.start();
+    if (run_coinbase)
+        (void)coinbase_feed.start();
 
     BinanceConnector binance(http::env_var("BINANCE_API_KEY"), http::env_var("BINANCE_API_SECRET"),
                              opts.mode == "shadow" ? "mock://binance" : "https://api.binance.com");
@@ -281,6 +319,10 @@ int main(int argc, char** argv) {
     kraken.disconnect();
     okx.disconnect();
     coinbase.disconnect();
+    binance_feed.stop();
+    kraken_feed.stop();
+    okx_feed.stop();
+    coinbase_feed.stop();
 
     std::cout << "trading_engine shutdown complete\n";
 
