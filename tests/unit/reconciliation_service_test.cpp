@@ -46,6 +46,58 @@ class TestableCoinbaseConnector : public CoinbaseConnector {
     using CoinbaseConnector::fetch_reconciliation_snapshot;
 };
 
+class TestReconnectConnector : public LiveConnectorBase {
+  public:
+    TestReconnectConnector()
+        : LiveConnectorBase(Exchange::BINANCE, "k", "s", "https://binance.test") {}
+
+    ConnectorResult reconcile() override {
+        ++reconcile_calls;
+        return reconcile_result;
+    }
+
+    ConnectorResult fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot) override {
+        ++snapshot_calls;
+        snapshot.clear();
+
+        ReconciledOrder order;
+        std::strncpy(order.venue_order_id, "bn-1", sizeof(order.venue_order_id) - 1);
+        std::strncpy(order.symbol, "BTCUSDT", sizeof(order.symbol) - 1);
+        order.quantity = 1.0;
+        order.filled_quantity = 0.2;
+        if (!snapshot.open_orders.push(order))
+            return ConnectorResult::ERROR_UNKNOWN;
+
+        ReconciledBalance balance;
+        std::strncpy(balance.asset, "BTC", sizeof(balance.asset) - 1);
+        balance.total = 1.1;
+        balance.available = 1.0;
+        if (!snapshot.balances.push(balance))
+            return ConnectorResult::ERROR_UNKNOWN;
+
+        return ConnectorResult::OK;
+    }
+
+    int reconcile_calls = 0;
+    int snapshot_calls = 0;
+    ConnectorResult reconcile_result = ConnectorResult::OK;
+
+  protected:
+    ConnectorResult submit_to_venue(const Order&, const std::string&, std::string&) override {
+        return ConnectorResult::ERROR_UNKNOWN;
+    }
+    ConnectorResult cancel_at_venue(const VenueOrderEntry&) override {
+        return ConnectorResult::ERROR_UNKNOWN;
+    }
+    ConnectorResult replace_at_venue(const VenueOrderEntry&, const Order&, std::string&) override {
+        return ConnectorResult::ERROR_UNKNOWN;
+    }
+    ConnectorResult query_at_venue(const VenueOrderEntry&, FillUpdate&) override {
+        return ConnectorResult::ERROR_UNKNOWN;
+    }
+    ConnectorResult cancel_all_at_venue(const char*) override { return ConnectorResult::OK; }
+};
+
 bool contains(const std::string& s, const char* token) {
     return s.find(token) != std::string::npos;
 }
@@ -237,6 +289,7 @@ TEST(ReconciliationServiceTest, UsesCanonicalSnapshotForReconnectAndPeriodicLoop
 
     ASSERT_TRUE(service.set_canonical_snapshot(Exchange::BINANCE, canonical));
 
+    ASSERT_TRUE(service.mark_reconnect_required(Exchange::BINANCE));
     EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::OK);
     EXPECT_EQ(service.run_periodic_drift_check(), ConnectorResult::OK);
 
@@ -346,6 +399,53 @@ TEST(ReconciliationServiceTest, CanonicalSnapshotFetcherIsUsedOnEachCycle) {
     EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::OK);
     EXPECT_EQ(service.run_periodic_drift_check(), ConnectorResult::OK);
     EXPECT_EQ(fetch_count, 2U);
+}
+
+TEST(ReconciliationServiceTest, ReconnectCycleCallsLocalReconcileBeforeSnapshotFetch) {
+    TestReconnectConnector connector;
+    ReconciliationService service;
+    ASSERT_TRUE(service.register_connector(connector));
+
+    ASSERT_TRUE(service.mark_reconnect_required(Exchange::BINANCE));
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::OK);
+    EXPECT_EQ(connector.reconcile_calls, 1);
+    EXPECT_EQ(connector.snapshot_calls, 1);
+
+    EXPECT_EQ(service.run_periodic_drift_check(), ConnectorResult::OK);
+    EXPECT_EQ(connector.reconcile_calls, 1);
+    EXPECT_EQ(connector.snapshot_calls, 2);
+}
+
+TEST(ReconciliationServiceTest, ReconnectSkipsLocalReconcileWhenNotMarked) {
+    TestReconnectConnector connector;
+    ReconciliationService service;
+    ASSERT_TRUE(service.register_connector(connector));
+
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::OK);
+    EXPECT_EQ(connector.reconcile_calls, 0);
+    EXPECT_EQ(connector.snapshot_calls, 1);
+}
+
+TEST(ReconciliationServiceTest, ReconnectFailsWhenLocalReconcileFails) {
+    TestReconnectConnector connector;
+    connector.reconcile_result = ConnectorResult::ERROR_REST_FAILURE;
+
+    ReconciliationService::RemediationPolicy policy;
+    policy.snapshot_failure_retry_budget = 0;
+
+    ReconciliationService service(ReconciliationService::DriftThresholds{}, policy);
+    ASSERT_TRUE(service.register_connector(connector));
+
+    ASSERT_TRUE(service.mark_reconnect_required(Exchange::BINANCE));
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::ERROR_REST_FAILURE);
+    EXPECT_EQ(connector.reconcile_calls, 1);
+    EXPECT_EQ(connector.snapshot_calls, 0);
+    EXPECT_TRUE(service.is_quarantined(Exchange::BINANCE));
+
+    const auto* state = service.state_for(Exchange::BINANCE);
+    ASSERT_NE(state, nullptr);
+    EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::QUARANTINE_VENUE);
+    EXPECT_EQ(state->last_severity, ReconciliationService::SeverityLevel::CRITICAL);
 }
 
 TEST(ReconciliationServiceTest, PeriodicDriftCheckSuccess) {

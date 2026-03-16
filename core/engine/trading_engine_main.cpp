@@ -185,23 +185,24 @@ int main(int argc, char** argv) {
         if (run_coinbase)
             (void)reconciliation.register_connector(coinbase);
 
-        auto connect_if_needed = [](LiveConnectorBase& connector, bool enabled, bool& reconnected) {
-            if (!enabled)
-                return ConnectorResult::OK;
-            if (connector.is_connected())
-                return ConnectorResult::OK;
+    auto connect_if_needed = [](LiveConnectorBase& connector, bool enabled,
+                                ReconciliationService& reconciliation) {
+        if (!enabled)
+            return false;
+        if (connector.is_connected())
+            return false;
 
-            const ConnectorResult res = connector.connect();
-            if (res == ConnectorResult::OK)
-                reconnected = true;
-            return res;
-        };
+        const ConnectorResult res = connector.connect();
+        if (res == ConnectorResult::OK)
+            (void)reconciliation.mark_reconnect_required(connector.exchange_id());
+        return res == ConnectorResult::OK;
+    };
 
-        bool any_reconnected = false;
-        (void)connect_if_needed(binance, run_binance, any_reconnected);
-        (void)connect_if_needed(kraken, run_kraken, any_reconnected);
-        (void)connect_if_needed(okx, run_okx, any_reconnected);
-        (void)connect_if_needed(coinbase, run_coinbase, any_reconnected);
+    bool any_reconnected = false;
+    any_reconnected |= connect_if_needed(binance, run_binance, reconciliation);
+    any_reconnected |= connect_if_needed(kraken, run_kraken, reconciliation);
+    any_reconnected |= connect_if_needed(okx, run_okx, reconciliation);
+    any_reconnected |= connect_if_needed(coinbase, run_coinbase, reconciliation);
 
         if (any_reconnected) {
             const ConnectorResult reconcile_res = reconciliation.reconcile_on_reconnect();
@@ -288,13 +289,13 @@ int main(int argc, char** argv) {
                 }
             }
 
-            const auto now = std::chrono::steady_clock::now();
-            if (now >= next_reconnect) {
-                bool recovered_connection = false;
-                (void)connect_if_needed(binance, run_binance, recovered_connection);
-                (void)connect_if_needed(kraken, run_kraken, recovered_connection);
-                (void)connect_if_needed(okx, run_okx, recovered_connection);
-                (void)connect_if_needed(coinbase, run_coinbase, recovered_connection);
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= next_reconnect) {
+            bool recovered_connection = false;
+            recovered_connection |= connect_if_needed(binance, run_binance, reconciliation);
+            recovered_connection |= connect_if_needed(kraken, run_kraken, reconciliation);
+            recovered_connection |= connect_if_needed(okx, run_okx, reconciliation);
+            recovered_connection |= connect_if_needed(coinbase, run_coinbase, reconciliation);
 
                 if (recovered_connection) {
                     const ConnectorResult reconcile_res = reconciliation.reconcile_on_reconnect();

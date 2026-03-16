@@ -13,8 +13,7 @@ Contrastive pre-training:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Iterator
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -22,7 +21,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from .dataset import DatasetConfig, LOBDataset, build_loaders, split_walk_forward
+from .dataset import DatasetConfig, build_loaders, split_walk_forward
 from .model import CryptoAlphaNet, MultiTaskLoss
 
 
@@ -62,6 +61,7 @@ class TrainerConfig:
 
     # Adversarial noise
     adv_noise_std: float = 0.02
+    resume_state_dict: dict[str, torch.Tensor] | None = None
 
 
 def _device() -> torch.device:
@@ -232,7 +232,6 @@ def walk_forward_train(
         labels      : (N, 5) ground truth
         model_state : state dict of best model for this fold
     """
-    import polars as pl
     cfg = cfg or TrainerConfig()
     device = _device()
     print(f"Device: {device}")
@@ -263,6 +262,9 @@ def walk_forward_train(
             dropout=cfg.dropout,
             seq_len=cfg.seq_len,
         ).to(device)
+
+        if cfg.resume_state_dict is not None:
+            model.load_state_dict(cfg.resume_state_dict, strict=False)
 
         criterion = MultiTaskLoss(
             w_return=cfg.w_return,

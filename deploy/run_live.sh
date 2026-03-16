@@ -14,6 +14,7 @@ Usage: ./deploy/run_live.sh [options] [-- <extra trading_engine args>]
 Options:
   --symbol <SYMBOL>       Trading symbol (default: BTCUSDT)
   --venues <CSV>          Venues CSV (default: BINANCE,KRAKEN,OKX,COINBASE)
+  --interval-ms <MS>      Engine loop interval in milliseconds (default: 500)
   --env-file <PATH>       Optional env file (default: config/live/trading.env if present)
   -h, --help              Show this help
 
@@ -25,6 +26,7 @@ USAGE
 
 SYMBOL="BTCUSDT"
 VENUES="BINANCE,KRAKEN,OKX,COINBASE"
+LOOP_INTERVAL_MS=500
 ENV_FILE="$ENV_FILE_DEFAULT"
 EXTRA_ARGS=()
 
@@ -32,6 +34,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --symbol) SYMBOL="$2"; shift 2 ;;
         --venues) VENUES="$2"; shift 2 ;;
+        --interval-ms) LOOP_INTERVAL_MS="$2"; shift 2 ;;
         --env-file) ENV_FILE="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         --) shift; EXTRA_ARGS=("$@"); break ;;
@@ -50,6 +53,11 @@ if [[ ! -x "$ENGINE_BIN" ]]; then
     echo "[live] Build first: mkdir -p build && cd build && cmake .. && make -j\$(nproc)"
     exit 1
 fi
+
+normalize_csv_upper() {
+    local raw="$1"
+    echo "$raw" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]'
+}
 
 require_live_creds() {
     local venue="$1"
@@ -71,9 +79,11 @@ require_live_creds() {
     export "$secret_var=$secret_val"
 }
 
+VENUES="$(normalize_csv_upper "$VENUES")"
+
 IFS=',' read -r -a VENUE_LIST <<< "$VENUES"
 for venue in "${VENUE_LIST[@]}"; do
     require_live_creds "$venue"
 done
 
-exec "$ENGINE_BIN" --mode live --venues "$VENUES" --symbol "$SYMBOL" "${EXTRA_ARGS[@]}"
+exec "$ENGINE_BIN" --mode live --venues "$VENUES" --symbol "$SYMBOL" --loop-interval-ms "$LOOP_INTERVAL_MS" "${EXTRA_ARGS[@]}"
