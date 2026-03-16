@@ -1,5 +1,5 @@
 [Unit]
-Description=Neural Alpha Shadow Session (SOLUSDT live inference)
+Description=Neural Alpha Shadow Session (BINANCE/KRAKEN live inference)
 After=network-online.target
 Wants=network-online.target
 
@@ -15,7 +15,7 @@ ExecStart=/opt/trading-venv/bin/python -m research.alpha.neural_alpha.shadow_ses
     --log-path logs/neural_alpha_shadow.jsonl \
     --duration 86400 \
     --interval-ms 500 \
-    --exchanges SOLANA
+    --exchanges BINANCE,KRAKEN
 Restart=always
 RestartSec=10
 StandardOutput=journal
