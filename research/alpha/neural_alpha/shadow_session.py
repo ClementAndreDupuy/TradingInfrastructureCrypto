@@ -47,6 +47,7 @@ import numpy as np
 import polars as pl
 import torch
 
+from .core_bridge import CoreBridge
 from .dataset import rolling_normalise
 from .features import compute_lob_tensor, compute_scalar_features
 from .governance import ChampionChallengerRegistry, DriftGuard
@@ -136,6 +137,14 @@ class NeuralAlphaShadowSession:
         )
         self._safe_mode_ticks_remaining = 0
 
+        # CoreBridge — preferred data source; falls back to REST if unavailable
+        self._bridge = CoreBridge()
+        if self._bridge.open():
+            print("CoreBridge connected — consuming live data from C++ core.")
+        else:
+            self._bridge = None  # type: ignore[assignment]
+            print("CoreBridge unavailable — using REST API fallback.")
+
     # ── Model loading / training ──────────────────────────────────────────────
 
     def _build_model(self, d_spatial: int = 64, d_temporal: int = 128,
@@ -163,23 +172,31 @@ class NeuralAlphaShadowSession:
         print(f"Secondary model loaded from {path}")
 
     def train_on_recent(self, n_ticks: int) -> None:
+        from .pipeline import collect_from_core_bridge
         print(f"Collecting {n_ticks} ticks for in-place training...")
         rows: list[dict] = []
         interval_s = self.cfg.interval_ms / 1000.0
-        _fetchers = {
-            "BINANCE": _fetch_binance_l5,
-            "KRAKEN": _fetch_kraken_l5,
-            "SOLANA": _fetch_solana_l5,
-        }
-        for i in range(n_ticks):
-            for ex in self.cfg.exchanges:
-                fetcher = _fetchers.get(ex)
-                if fetcher:
-                    row = fetcher()
-                    if row:
-                        rows.append(row)
-            if i < n_ticks - 1:
-                time.sleep(interval_s)
+
+        # Try CoreBridge first for multi-exchange, WebSocket-precision data
+        core_df = collect_from_core_bridge(n_ticks, self.cfg.interval_ms)
+        if core_df is not None and len(core_df) >= n_ticks // 2:
+            rows = core_df.to_dicts()
+        else:
+            _fetchers = {
+                "BINANCE": _fetch_binance_l5,
+                "KRAKEN": _fetch_kraken_l5,
+                "SOLANA": _fetch_solana_l5,
+            }
+            for i in range(n_ticks):
+                for ex in self.cfg.exchanges:
+                    fetcher = _fetchers.get(ex)
+                    if fetcher:
+                        row = fetcher()
+                        if row:
+                            rows.append(row)
+                if i < n_ticks - 1:
+                    time.sleep(interval_s)
+
         if not rows:
             raise RuntimeError("No data collected for training.")
         df = pl.DataFrame(rows).sort("timestamp_ns")
@@ -318,6 +335,17 @@ class NeuralAlphaShadowSession:
     # ── Data collection ───────────────────────────────────────────────────────
 
     def _fetch_tick(self) -> list[dict]:
+        # Preferred: drain any new slots from the C++ mmap ring buffer.
+        # This delivers ticks from ALL connected exchanges (BINANCE, KRAKEN,
+        # OKX, COINBASE) at WebSocket precision with no REST overhead.
+        if self._bridge is not None:
+            ticks = self._bridge.read_new_ticks()
+            if ticks:
+                return ticks
+            # Bridge open but no new data yet — fall through to REST as backup
+            # so the inference loop doesn't stall during quiet periods.
+
+        # REST fallback: used when CoreBridge is unavailable or has no new data.
         ticks: list[dict] = []
         _fetchers = {
             "BINANCE": _fetch_binance_l5,
@@ -412,6 +440,8 @@ class NeuralAlphaShadowSession:
             self._print_summary()
             self._log_fp.close()
             self._publisher.close()
+            if self._bridge is not None:
+                self._bridge.close()
             print("Shadow session complete.")
 
     def stop(self) -> None:
