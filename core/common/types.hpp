@@ -111,6 +111,8 @@ enum class ConnectorResult : uint8_t {
     ERROR_RATE_LIMIT = 1,
     ERROR_INSUFFICIENT_FUNDS = 2,
     ERROR_INVALID_ORDER = 3,
+    ERROR_REST_FAILURE = 4,
+    AUTH_FAILED = 5,
     ERROR_UNKNOWN = 255,
 };
 
