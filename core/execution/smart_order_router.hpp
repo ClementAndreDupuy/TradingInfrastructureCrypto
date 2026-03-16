@@ -16,7 +16,16 @@ struct VenueQuote {
     double taker_fee_bps = 0.0;
     double latency_penalty_bps = 0.0;
     double risk_penalty_bps = 0.0;
+    double fill_probability = 0.5;
+    double queue_ahead_qty = 0.0;
+    double toxicity_bps = 0.0;
     bool healthy = false;
+};
+
+struct RoutingRegime {
+    double fill_weight_bps = 4.0;
+    double queue_weight_bps = 0.6;
+    double toxicity_weight = 1.0;
 };
 
 struct ChildOrder {
@@ -51,6 +60,9 @@ class SmartOrderRouter {
 
   private:
     static double effective_price_bps(const VenueQuote& v, Side side) noexcept;
+    static RoutingRegime infer_regime(const std::array<VenueQuote, MAX_VENUES>& venues) noexcept;
+    static double score_venue_bps(const VenueQuote& v, Side side,
+                                  const RoutingRegime& regime) noexcept;
 };
 
 } // namespace trading

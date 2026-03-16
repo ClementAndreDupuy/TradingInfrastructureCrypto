@@ -14,7 +14,7 @@
 ### HIGH
 - [ ] **H1** `core/risk/` — Add portfolio/global risk controls (gross/net notional caps, concentration limits, venue caps, cross-venue netting limits) independent from strategy layer
 - [ ] **H2** `core/shadow/shadow_engine.hpp` — Extend shadow simulator microstructure realism (queue position, partial fills, latency/slippage) and correct fee modeling for OKX/Coinbase
-- [ ] **H3** `core/execution/smart_order_router.cpp` — Upgrade SOR objective to include fill probability, queue priority, adverse-selection/toxicity signals, and dynamic regime adaptation
+- [x] **H3** `core/execution/smart_order_router.cpp` — Upgraded SOR objective to include fill probability, queue priority, adverse-selection/toxicity signals, and dynamic regime adaptation
 - [ ] **H4** `deploy/` + monitoring stack — Define production SLOs/error budgets and wire hard alerts for feed integrity, reject spikes, reconciliation drift, and risk trigger frequency
 - [ ] **H5** `tests/` + CI — Add sanitizer/race-test matrix (ASan/UBSan/TSan where applicable) and deterministic connector failure-injection suites
 
