@@ -205,6 +205,8 @@ ConnectorResult OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapsh
 
     const auto fills_resp =
         http::get(api_url() + "/api/v5/trade/fills", auth_headers("trade/fills"));
+    if (fills_resp.status == 404 || fills_resp.status == 405 || fills_resp.status == 501)
+        return ConnectorResult::OK;
     if (!fills_resp.ok())
         return classify_error(fills_resp.status);
 

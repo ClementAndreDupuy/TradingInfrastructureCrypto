@@ -470,5 +470,34 @@ TEST(ReconciliationServiceTest, SnapshotFetchFailsWhenFillIngestionFails) {
     EXPECT_TRUE(service.is_quarantined(Exchange::BINANCE));
 }
 
+TEST(ReconciliationServiceTest, SnapshotAllowsMissingFillEndpoint) {
+    ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
+                                     const std::vector<std::string>&) {
+        if (contains(url, "binance.test")) {
+            if (std::strcmp(method, "GET") != 0)
+                return http::HttpResponse{404, ""};
+            if (contains(url, "openOrders")) {
+                return http::HttpResponse{
+                    200,
+                    R"([{"orderId":"bn-1","symbol":"BTCUSDT","side":"BUY","origQty":1.0,"executedQty":0.2,"price":100.0,"status":"NEW"}])"};
+            }
+            if (contains(url, "/account")) {
+                return http::HttpResponse{
+                    200, R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
+            }
+            if (contains(url, "myTrades"))
+                return http::HttpResponse{404, ""};
+        }
+        return http::HttpResponse{404, ""};
+    });
+
+    BinanceConnector binance("k", "s", "https://binance.test");
+    ReconciliationService service;
+    ASSERT_TRUE(service.register_connector(binance));
+
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::OK);
+    EXPECT_FALSE(service.is_quarantined(Exchange::BINANCE));
+}
+
 } // namespace
 } // namespace trading

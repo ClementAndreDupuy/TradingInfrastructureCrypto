@@ -185,6 +185,8 @@ ConnectorResult KrakenConnector::fetch_reconciliation_snapshot(ReconciliationSna
 
     const auto trades_resp =
         http::post(api_url() + "/0/private/TradesHistory", "", auth_headers(""));
+    if (trades_resp.status == 404 || trades_resp.status == 405 || trades_resp.status == 501)
+        return ConnectorResult::OK;
     if (!trades_resp.ok())
         return classify_error(trades_resp.status);
 

@@ -194,6 +194,8 @@ ConnectorResult BinanceConnector::fetch_reconciliation_snapshot(ReconciliationSn
 
     const auto trades =
         http::get(api_url() + "/api/v3/myTrades", auth_headers("myTrades", "recon-trades"));
+    if (trades.status == 404 || trades.status == 405 || trades.status == 501)
+        return ConnectorResult::OK;
     if (!trades.ok())
         return classify_error(trades.status);
 

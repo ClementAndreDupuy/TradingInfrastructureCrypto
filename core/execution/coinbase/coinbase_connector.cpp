@@ -207,6 +207,8 @@ ConnectorResult CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationS
 
     const auto fills_resp =
         http::get(api_url() + "/api/v3/brokerage/orders/historical/fills", auth_headers("fills"));
+    if (fills_resp.status == 404 || fills_resp.status == 405 || fills_resp.status == 501)
+        return ConnectorResult::OK;
     if (!fills_resp.ok())
         return classify_error(fills_resp.status);
 
