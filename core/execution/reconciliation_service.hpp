@@ -106,6 +106,7 @@ class ReconciliationService {
         connectors_[connector_count_] = &connector;
         states_[connector_count_].exchange = connector.exchange_id();
         states_[connector_count_].registered = true;
+        reconnect_required_[connector_count_] = false;
         ++connector_count_;
         return true;
     }
@@ -128,6 +129,14 @@ class ReconciliationService {
     }
 
     ConnectorResult reconcile_on_reconnect() { return run_reconciliation_cycle(true); }
+
+    bool mark_reconnect_required(Exchange exchange) {
+        const size_t idx = index_for(exchange);
+        if (idx == MAX_CONNECTORS)
+            return false;
+        reconnect_required_[idx] = true;
+        return true;
+    }
 
     ConnectorResult run_periodic_drift_check() { return run_reconciliation_cycle(false); }
 
@@ -183,11 +192,24 @@ class ReconciliationService {
             if (states_[i].quarantined)
                 continue;
 
+            if (reconnect_phase && reconnect_required_[i]) {
+                const ConnectorResult local_res = connectors_[i]->reconcile();
+                reconnect_required_[i] = false;
+                if (local_res != ConnectorResult::OK) {
+                    const DriftDecision decision = classify_snapshot_failure(
+                        states_[i], reconnect_phase, local_res,
+                        "local reconcile failed");
+                    apply_decision(i, decision, reconnect_phase);
+                    return local_res;
+                }
+            }
+
             ReconciliationSnapshot snapshot;
             const ConnectorResult res = connectors_[i]->fetch_reconciliation_snapshot(snapshot);
             if (res != ConnectorResult::OK) {
-                const DriftDecision decision =
-                    classify_snapshot_failure(states_[i], reconnect_phase, res);
+                const DriftDecision decision = classify_snapshot_failure(
+                    states_[i], reconnect_phase, res,
+                    reconnect_phase ? "snapshot fetch failed" : "periodic snapshot fetch failed");
                 apply_decision(i, decision, reconnect_phase);
                 return res;
             }
@@ -232,12 +254,13 @@ class ReconciliationService {
     }
 
     DriftDecision classify_snapshot_failure(VenueState& state, bool reconnect_phase,
-                                            ConnectorResult res) const {
+                                            ConnectorResult res,
+                                            const char* failure_reason) const {
         DriftDecision out;
         out.mismatch = true;
         ++state.snapshot_failure_retries;
         out.retry_count = state.snapshot_failure_retries;
-        out.reason = reconnect_phase ? "snapshot fetch failed" : "periodic snapshot fetch failed";
+        out.reason = failure_reason;
         // Industry baseline: authentication/authorization failures are
         // deterministic and non-recoverable during the current session.
         if (res == ConnectorResult::AUTH_FAILED ||
@@ -648,6 +671,7 @@ class ReconciliationService {
     std::array<ReconciliationSnapshot, MAX_CONNECTORS> canonical_snapshots_{};
     std::array<CanonicalSnapshotFetcher, MAX_CONNECTORS> canonical_snapshot_fetchers_{};
     std::array<bool, MAX_CONNECTORS> has_canonical_snapshot_{};
+    std::array<bool, MAX_CONNECTORS> reconnect_required_{};
     RemediationHook cancel_all_hook_;
     RemediationHook risk_halt_hook_;
     std::array<ReconciliationIncident, MAX_INCIDENT_TRAIL> incident_trail_{};
