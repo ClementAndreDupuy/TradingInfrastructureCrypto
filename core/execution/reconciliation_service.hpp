@@ -198,9 +198,9 @@ class ReconciliationService {
             if (canonical_snapshot_fetchers_[i]) {
                 canonical_snapshot.clear();
                 if (!canonical_snapshot_fetchers_[i](canonical_snapshot)) {
-                    const DriftDecision decision = mismatch(
-                        MismatchClass::NONE, DriftAction::QUARANTINE_VENUE,
-                        SeverityLevel::CRITICAL, "canonical snapshot fetch failed", true);
+                    const DriftDecision decision =
+                        mismatch(MismatchClass::NONE, DriftAction::QUARANTINE_VENUE,
+                                 SeverityLevel::CRITICAL, "canonical snapshot fetch failed", true);
                     apply_decision(i, decision, reconnect_phase);
                     return ConnectorResult::ERROR_UNKNOWN;
                 }
@@ -257,17 +257,13 @@ class ReconciliationService {
         for (size_t i = 0; i < snapshot.open_orders.size; ++i) {
             const auto& order = snapshot.open_orders.items[i];
             if (order.quantity < 0.0 || order.filled_quantity < 0.0) {
-                out.mismatch = true;
-                out.action = DriftAction::QUARANTINE_VENUE;
-                out.reason = "negative order quantity";
-                return out;
+                return mismatch(MismatchClass::NONE, DriftAction::QUARANTINE_VENUE,
+                                SeverityLevel::CRITICAL, "negative order quantity", true);
             }
             const double remaining = order.quantity - order.filled_quantity;
             if (remaining < -thresholds_.max_order_fill_gap) {
-                out.mismatch = true;
-                out.action = DriftAction::QUARANTINE_VENUE;
-                out.reason = "order overfilled";
-                return out;
+                return mismatch(MismatchClass::NONE, DriftAction::QUARANTINE_VENUE,
+                                SeverityLevel::CRITICAL, "order overfilled", true);
             }
         }
 
@@ -275,44 +271,35 @@ class ReconciliationService {
             const auto& balance = snapshot.balances.items[i];
             const double drift = balance.total - balance.available;
             if (drift < -thresholds_.max_balance_drift) {
-                out.mismatch = true;
-                out.action = DriftAction::QUARANTINE_VENUE;
-                out.reason = "balance available exceeds total";
-                return out;
+                return mismatch(MismatchClass::NONE, DriftAction::QUARANTINE_VENUE,
+                                SeverityLevel::CRITICAL, "balance available exceeds total", true);
             }
         }
 
         for (size_t i = 0; i < snapshot.positions.size; ++i) {
             const auto& position = snapshot.positions.items[i];
             if (position.avg_entry_price < 0.0) {
-                out.mismatch = true;
-                out.action = DriftAction::QUARANTINE_VENUE;
-                out.reason = "negative average entry price";
-                return out;
+                return mismatch(MismatchClass::NONE, DriftAction::QUARANTINE_VENUE,
+                                SeverityLevel::CRITICAL, "negative average entry price", true);
             }
             if (position.quantity > 0.0 &&
                 position.avg_entry_price <= thresholds_.max_position_drift) {
-                out.mismatch = true;
-                out.action = DriftAction::QUARANTINE_VENUE;
-                out.reason = "positive position with invalid entry";
-                return out;
+                return mismatch(MismatchClass::NONE, DriftAction::QUARANTINE_VENUE,
+                                SeverityLevel::CRITICAL, "positive position with invalid entry",
+                                true);
             }
         }
 
         for (size_t i = 0; i < snapshot.fills.size; ++i) {
             const auto& fill = snapshot.fills.items[i];
             if (fill.quantity < 0.0 || fill.price < 0.0 || fill.notional < 0.0 || fill.fee < 0.0) {
-                out.mismatch = true;
-                out.action = DriftAction::QUARANTINE_VENUE;
-                out.reason = "negative fill values";
-                return out;
+                return mismatch(MismatchClass::NONE, DriftAction::QUARANTINE_VENUE,
+                                SeverityLevel::CRITICAL, "negative fill values", true);
             }
             if (fill.notional > 0.0 && drift(fill.notional, fill.quantity * fill.price) >
                                            thresholds_.max_fill_notional_drift) {
-                out.mismatch = true;
-                out.action = DriftAction::QUARANTINE_VENUE;
-                out.reason = "fill notional mismatch";
-                return out;
+                return mismatch(MismatchClass::NONE, DriftAction::QUARANTINE_VENUE,
+                                SeverityLevel::CRITICAL, "fill notional mismatch", true);
             }
         }
 
@@ -358,9 +345,8 @@ class ReconciliationService {
                     thresholds_.max_balance_drift ||
                 drift(venue_balance->available, internal_balance.available) >
                     thresholds_.max_balance_drift) {
-                return mismatch(MismatchClass::BALANCE_DRIFT,
-                                DriftAction::RISK_HALT_RECOMMENDED, SeverityLevel::CRITICAL,
-                                "balance_drift", true);
+                return mismatch(MismatchClass::BALANCE_DRIFT, DriftAction::RISK_HALT_RECOMMENDED,
+                                SeverityLevel::CRITICAL, "balance_drift", true);
             }
         }
 
@@ -373,9 +359,8 @@ class ReconciliationService {
                     thresholds_.max_position_drift ||
                 drift(venue_position->avg_entry_price, internal_position.avg_entry_price) >
                     thresholds_.max_position_drift) {
-                return mismatch(MismatchClass::POSITION_DRIFT,
-                                DriftAction::RISK_HALT_RECOMMENDED, SeverityLevel::CRITICAL,
-                                "position_drift", true);
+                return mismatch(MismatchClass::POSITION_DRIFT, DriftAction::RISK_HALT_RECOMMENDED,
+                                SeverityLevel::CRITICAL, "position_drift", true);
             }
         }
 

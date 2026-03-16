@@ -185,14 +185,14 @@ TEST(ReconciliationServiceTest, QuarantinesVenueOnDriftMismatch) {
     ASSERT_TRUE(service.register_connector(binance));
 
     EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::ERROR_UNKNOWN);
-    EXPECT_FALSE(service.is_quarantined(Exchange::BINANCE));
+    EXPECT_TRUE(service.is_quarantined(Exchange::BINANCE));
 
     const auto* state = service.state_for(Exchange::BINANCE);
     ASSERT_NE(state, nullptr);
-    EXPECT_EQ(state->mismatch_count, 0U);
+    EXPECT_EQ(state->mismatch_count, 1U);
     EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::NONE);
-    EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::CANCEL_ALL_ORDERS);
-    EXPECT_EQ(state->last_severity, ReconciliationService::SeverityLevel::WARNING);
+    EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::QUARANTINE_VENUE);
+    EXPECT_EQ(state->last_severity, ReconciliationService::SeverityLevel::CRITICAL);
 }
 
 TEST(ReconciliationServiceTest, UsesCanonicalSnapshotForReconnectAndPeriodicLoops) {
@@ -444,11 +444,8 @@ TEST(ReconciliationServiceTest, FillGapMismatchRequestsReplayAndQuarantines) {
     thresholds.max_fill_notional_drift = 1e-9;
     thresholds.max_fill_fee_drift = 1e-9;
 
-    ReconciliationService::RemediationPolicy policy;
-    policy.fill_gap_retry_budget = 0;
-
     BinanceConnector binance("k", "s", "https://binance.test");
-    ReconciliationService service(thresholds, policy);
+    ReconciliationService service(thresholds);
     ASSERT_TRUE(service.register_connector(binance));
 
     ReconciliationSnapshot canonical;
@@ -548,7 +545,6 @@ TEST(ReconciliationServiceTest, SnapshotAllowsMissingFillEndpoint) {
     EXPECT_FALSE(service.is_quarantined(Exchange::BINANCE));
 }
 
-
 TEST(ReconciliationServiceTest, StagedRemediationEscalatesOrderDriftToRiskHalt) {
     ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
                                      const std::vector<std::string>&) {
@@ -609,7 +605,8 @@ TEST(ReconciliationServiceTest, SnapshotFailureUsesRetryBudgetThenQuarantine) {
         if (contains(url, "binance.test") && contains(url, "openOrders"))
             return http::HttpResponse{503, ""};
         if (std::strcmp(method, "GET") == 0 && contains(url, "/account"))
-            return http::HttpResponse{200, R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
+            return http::HttpResponse{200,
+                                      R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
         return http::HttpResponse{404, ""};
     });
 
