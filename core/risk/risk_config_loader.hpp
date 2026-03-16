@@ -61,7 +61,8 @@ class RiskConfigLoader {
         apply_double(values, "max_drawdown_usd", out.circuit_breaker.max_drawdown_usd);
         apply_int64(values, "max_book_age_ms", out.circuit_breaker.max_book_age_ms);
         apply_int64(values, "max_age_ms", out.circuit_breaker.max_book_age_ms);
-        apply_double(values, "max_price_deviation_bps", out.circuit_breaker.max_price_deviation_bps);
+        apply_double(values, "max_price_deviation_bps",
+                     out.circuit_breaker.max_price_deviation_bps);
         apply_double(values, "price_ema_alpha", out.circuit_breaker.price_ema_alpha);
         apply_int(values, "circuit_breaker_count", out.circuit_breaker.consecutive_loss_count);
         apply_double(values, "circuit_breaker_loss_usd", out.circuit_breaker.per_leg_loss_usd);
