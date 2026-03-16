@@ -38,3 +38,12 @@ integrity so `SmartOrderRouter` inputs remain consistent across venues.
 - Accepting out-of-order sequence numbers.
 - Treating reconnect as a continuation instead of requiring re-sync.
 - Mixing exchange-specific precision rules without normalization.
+
+## Reusable Agent Memory (Updated)
+
+- Feed code should remain exchange-isolated (`<exchange>/`) with normalization only in shared/common paths.
+- When adding/changing a venue handler, document:
+  1. snapshot source + cadence
+  2. sequence/checksum continuity rule
+  3. exact re-sync trigger conditions
+- Reconnect handling is a correctness boundary: treat reconnect as fresh sync unless venue protocol guarantees continuity.

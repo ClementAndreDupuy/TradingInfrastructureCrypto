@@ -22,3 +22,12 @@ Flat array indexed by price tick grid — not `std::map`. Normalized L2 represen
 ## Testing
 
 Unit tests → replay tests (recorded feed, compare final state) → fuzz tests → gap injection (verify snapshot recovery).
+
+## Reusable Agent Memory (Updated)
+
+- Orderbook edits require **explicit invariants** in code review notes/tests:
+  - best bid < best ask violation handling
+  - zero/negative size normalization
+  - sequence reset behavior after reconnect
+- Prefer deterministic replay fixtures (`tests/replay/`) whenever changing delta/snapshot logic.
+- Any optimization must preserve all-or-nothing delta application semantics first, then latency.

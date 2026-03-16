@@ -34,3 +34,9 @@ Train 3 months → test 1 month → roll forward. Never evaluate in-sample.
 4. Ignoring market impact
 5. Survivorship bias
 6. Over-optimization on training period
+
+## Reusable Agent Memory (Updated)
+
+- Backtest realism > speed for validation runs; avoid shortcuts that bypass queue/latency modeling.
+- Keep parity between Python and C++ engine modes for key metrics (fills, slippage, drawdown).
+- If changing matching assumptions, re-run representative replay scenarios and compare before/after attribution.

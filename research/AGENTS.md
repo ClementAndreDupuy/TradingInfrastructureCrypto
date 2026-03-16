@@ -51,3 +51,10 @@ Higher effort:
 - [ ] **Rolling normalization** (`dataset.py`) — 500-tick rolling z-score instead of fold-level
 - [ ] **1-tick return head** (`model.py`) — add horizon 1; use in `shadow_session.py` as entry gate
 - [ ] **Ensemble two models** (`pipeline.py`) — second smaller model (`d_spatial=32, n_temp_layers=1`), average signals for ~20–30% ICIR improvement
+
+## Reusable Agent Memory (Updated)
+
+- Treat `pipeline.py` as orchestration glue: feature/model/backtest changes should be implemented in their owning modules first.
+- Maintain Python typing discipline (function signatures + return types) to support automated refactors.
+- Prefer synthetic pipeline runs for quick smoke validation, then live-exchange runs for realism checks.
+- Preserve IPC contract compatibility with `core/ipc/alpha_signal.hpp` when modifying signal publishing fields.

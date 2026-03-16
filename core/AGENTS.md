@@ -25,3 +25,13 @@
 - Order book update: < 1 µs
 - Risk check: < 1 µs
 - Feed handler: < 10 µs end-to-end
+
+## Reusable Agent Memory (Updated)
+
+- Keep `core/` edits tightly scoped: avoid cross-cutting refactors that blend feed/orderbook/risk changes in one commit.
+- Current directory map under `core/` includes: `common/`, `engine/`, `execution/`, `feeds/`, `ipc/`, `orderbook/`, `risk/`, `shadow/`.
+- For changes that influence trading decisions, validate in this order:
+  1. `tests/unit/`
+  2. `tests/integration/` (feed→book→risk path)
+  3. `tests/replay/` for sequence/regression confidence
+- If a change could impact latency, add or run `tests/perf/` checks before merging.
