@@ -1,16 +1,16 @@
-# Live trading risk limits — SOLUSDT (Binance spot)
+# Live trading risk limits — BTCUSDT (four-venue SOR: Binance/Kraken/OKX/Coinbase)
 # Tighter than shadow; kill switch is always active.
 
 strategy:
-  symbol_binance: SOLUSDT
-  trade_qty_sol: 1.0            # 1 SOL per leg (~$130 at $130/SOL)
+  symbol: BTCUSDT
+  trade_qty_btc: 0.001          # 0.001 BTC per leg (~$85 at ~$85,000/BTC)
   taker_threshold_bps: 12.0     # Min spread to cross as taker
   mm_spread_target_bps: 6.0     # Min spread to post as maker
   quote_ttl_ms: 500
-  tick_size: 0.01               # SOL/USDT tick size on Binance
+  tick_size: 0.01               # BTC/USDT price tick size
 
 position:
-  max_per_symbol_sol: 50.0      # 50 SOL (~$6500)
+  max_per_symbol_btc: 0.076     # ~0.076 BTC (~$6500 notional)
   max_notional_per_symbol: 6500 # USD
   max_portfolio_notional: 13000 # USD
 
@@ -21,6 +21,9 @@ pnl:
 fees_bps:
   binance_maker: 2.0
   binance_taker: 5.0
+  okx_taker: 8.0
+  kraken_taker: 10.0
+  coinbase_taker: 6.0
 
 rate_limits:
   max_orders_per_sec: 5         # conservative (Binance limit: 10/s)

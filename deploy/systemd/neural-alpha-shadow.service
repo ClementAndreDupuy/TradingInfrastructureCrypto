@@ -1,5 +1,5 @@
 [Unit]
-Description=Neural Alpha Shadow Session (BINANCE/KRAKEN live inference)
+Description=Neural Alpha Shadow Session (BINANCE/KRAKEN/OKX/COINBASE live inference)
 After=network-online.target
 Wants=network-online.target
 
@@ -10,12 +10,14 @@ WorkingDirectory=/opt/trading
 EnvironmentFile=/etc/trading/env
 Environment=PYTHONPATH=/opt/trading
 ExecStart=/opt/trading-venv/bin/python -m research.neural_alpha.shadow_session \
-    --model-path models/neural_alpha_latest.pt \
-    --secondary-model-path models/neural_alpha_secondary.pt \
+    --model-path models/neural_alpha_btcusdt_latest.pt \
+    --secondary-model-path models/neural_alpha_btcusdt_secondary.pt \
     --log-path logs/neural_alpha_shadow.jsonl \
+    --signal-file /tmp/neural_alpha_signal.bin \
+    --symbol BTCUSDT \
     --duration 86400 \
     --interval-ms 500 \
-    --exchanges BINANCE,KRAKEN
+    --exchanges BINANCE,KRAKEN,OKX,COINBASE
 Restart=always
 RestartSec=10
 StandardOutput=journal

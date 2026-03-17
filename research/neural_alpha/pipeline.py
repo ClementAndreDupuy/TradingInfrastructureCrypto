@@ -32,7 +32,6 @@ if TYPE_CHECKING:
 # ── Data fetcher ──────────────────────────────────────────────────────────────
 
 BINANCE_DEPTH_URL = "https://fapi.binance.com/fapi/v1/depth"
-BINANCE_SPOT_DEPTH_URL = "https://api.binance.com/api/v3/depth"
 KRAKEN_DEPTH_URL = "https://futures.kraken.com/derivatives/api/v3/orderbook"
 OKX_DEPTH_URL = "https://www.okx.com/api/v5/market/books"
 COINBASE_DEPTH_URL = "https://api.exchange.coinbase.com/products/{product_id}/book"
@@ -56,7 +55,6 @@ def _parse_binance_l5(d: dict, symbol: str, exchange_label: str) -> dict:
         row[f"ask_price_{i}"] = float(ap)
         row[f"ask_size_{i}"] = float(as_)
     return row
-
 
 
 
@@ -116,21 +114,6 @@ def _fetch_binance_l5(symbol: str = "BTCUSDT") -> dict | None:
         return _parse_binance_l5(r.json(), _binance_symbol(symbol), "BINANCE")
     except Exception as e:
         print(f"  [WARN] Binance L5 fetch: {e}")
-        return None
-
-
-def _fetch_solana_l5(symbol: str = "SOLUSDT") -> dict | None:
-    """Fetch L5 LOB snapshot for SOLUSDT from Binance spot."""
-    try:
-        r = requests.get(
-            BINANCE_SPOT_DEPTH_URL,
-            params={"symbol": _binance_symbol(symbol), "limit": N_LEVELS},
-            timeout=5,
-        )
-        r.raise_for_status()
-        return _parse_binance_l5(r.json(), _binance_symbol(symbol), "SOLANA")
-    except Exception as e:
-        print(f"  [WARN] Solana L5 fetch: {e}")
         return None
 
 
@@ -282,7 +265,6 @@ def _collect_l5_ticks_rest(n_ticks: int, interval_ms: int, exchanges: list[str],
         "KRAKEN": _fetch_kraken_l5,
         "OKX": _fetch_okx_l5,
         "COINBASE": _fetch_coinbase_l5,
-        "SOLANA": _fetch_solana_l5,
     }
 
     print(f"Collecting {n_ticks} L5 snapshots per exchange over REST (interval {interval_ms} ms)…")
