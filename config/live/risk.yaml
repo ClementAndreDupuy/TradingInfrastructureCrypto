@@ -21,6 +21,9 @@ pnl:
 fees_bps:
   binance_maker: 2.0
   binance_taker: 5.0
+  okx_taker: 8.0
+  kraken_taker: 10.0
+  coinbase_taker: 6.0
 
 rate_limits:
   max_orders_per_sec: 5         # conservative (Binance limit: 10/s)

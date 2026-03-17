@@ -10,7 +10,7 @@ secondary_model_path: models/neural_alpha_secondary.pt
 train_ticks: 400
 train_epochs: 5
 report_interval: 60
-alpha_exchanges: BINANCE,KRAKEN
+alpha_exchanges: BINANCE,KRAKEN,OKX,COINBASE
 alpha_seq_len: 64
 alpha_log_path: logs/neural_alpha_shadow.jsonl
 shadow_fallback_api_key: local-shadow-key
