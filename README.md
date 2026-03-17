@@ -37,7 +37,7 @@ flowchart LR
   end
 
   subgraph ColdPath["Python Cold Path (research + model)"]
-    PIPE["research/neural_alpha\nFeature pipeline + training"]
+    PIPE["research/neural_alpha\nFeature pipeline + training\n(direct core/ feature ingestion)"]
     BACKTEST["research/backtest\nEvent-driven backtests"]
     TESTS["tests/unit|integration|replay|perf\nRegression + performance checks"]
   end
@@ -55,6 +55,9 @@ flowchart LR
   COMMON --> ENGINE
   COMMON --> BIND
 
+  FEEDS -->|"Normalized market data stream"| PIPE
+  ORDERBOOK -->|"LOB state + derived microstructure features"| PIPE
+  EXEC -->|"Execution telemetry + fills"| PIPE
   PIPE -->|"Backtest-ready features/signals"| BACKTEST
   PIPE -->|"Alpha signal stream"| IPCW
   BIND -->|"Research helpers + native accelerators"| PIPE
@@ -66,10 +69,10 @@ flowchart LR
   ENGINE -->|"Start/stop + wiring"| SOR
   ENGINE -->|"Start/stop + wiring"| SHADOW
 
-  FEEDS -->|"WebSocket subscribe/auth"| BIN
-  FEEDS -->|"WebSocket subscribe/auth"| KRA
-  FEEDS -->|"WebSocket subscribe/auth"| OKX
-  FEEDS -->|"WebSocket subscribe/auth"| COI
+  FEEDS -->|"Live feed connector (production)"| BIN
+  FEEDS -->|"Live feed connector (production)"| KRA
+  FEEDS -->|"Live feed connector (production)"| OKX
+  FEEDS -->|"Live feed connector (production)"| COI
 
   BIN -->|"Market data\n(snapshot + deltas)"| FEEDS
   KRA -->|"Market data\n(snapshot + deltas)"| FEEDS
@@ -82,10 +85,10 @@ flowchart LR
   RISK -->|"Approve/reject"| EXEC
   EXEC -->|"Validated parent/child orders"| SOR
 
-  SOR -->|"Route venue-specific orders"| BIN
-  SOR -->|"Route venue-specific orders"| KRA
-  SOR -->|"Route venue-specific orders"| OKX
-  SOR -->|"Route venue-specific orders"| COI
+  SOR -->|"Live order connector (production)"| BIN
+  SOR -->|"Live order connector (production)"| KRA
+  SOR -->|"Live order connector (production)"| OKX
+  SOR -->|"Live order connector (production)"| COI
   BIN -->|"Ack/reject/fill updates"| SOR
   KRA -->|"Ack/reject/fill updates"| SOR
   OKX -->|"Ack/reject/fill updates"| SOR
@@ -108,6 +111,11 @@ flowchart LR
 
 ## How each block is used
 
+## Recent updates
+
+- ✅ **Four fully working venues for feeds and orders**: Binance, Kraken, OKX, and Coinbase are now represented as live production connectors on both the market data path (`core/feeds`) and execution path (`core/execution` smart order router).
+- ✅ **Neural network now consumes data directly from `core/`**: `research/neural_alpha` receives normalized market data, order book state, and execution telemetry directly from core components for model training/inference inputs.
+
 - **`core/feeds`**: Maintains real-time exchange market data streams and validates message order before updating internal state.
 - **`core/orderbook`**: Stores the in-memory book per symbol; execution logic reads this for spread, depth, and microstructure signals.
 - **`core/risk`**: Gatekeeper in front of trading actions; enforces limits and can halt trading fast.
@@ -115,7 +123,7 @@ flowchart LR
 - **`core/ipc`**: Shared-memory bridge between Python model output and C++ strategy input.
 - **`core/execution` smart order router**: Splits/routes validated orders to Binance/Kraken/OKX/Coinbase connectors and normalizes venue acks/fills back to execution.
 - **`core/shadow`**: Runs the same trading logic in paper mode to validate behavior before live deployment.
-- **`research/neural_alpha`**: Trains and generates alpha signals from historical/live features.
+- **`research/neural_alpha`**: Trains and generates alpha signals from features ingested directly from `core/feeds`, `core/orderbook`, and execution telemetry.
 - **`research/backtest`**: Replays market events to evaluate strategy quality offline.
 
 ## Typical lifecycle (short)
