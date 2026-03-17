@@ -18,12 +18,16 @@ from __future__ import annotations
 import argparse
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import polars as pl
 import requests
 
 from .core_bridge import CoreBridge
+
+if TYPE_CHECKING:
+    from .trainer import TrainerConfig
 
 # ── Data fetcher ──────────────────────────────────────────────────────────────
 
@@ -375,6 +379,46 @@ def _fold_slices(T: int, n_folds: int, train_frac: float) -> list[tuple[int, int
 
 # ── Main pipeline ─────────────────────────────────────────────────────────────
 
+
+
+def _evaluate_state_on_holdout(df: pl.DataFrame, state_dict: dict, cfg: TrainerConfig) -> float:
+    from torch.utils.data import DataLoader
+    from .dataset import DatasetConfig, LOBDataset
+    from .model import CryptoAlphaNet
+    import torch
+
+    dataset = LOBDataset(df, DatasetConfig(seq_len=cfg.seq_len))
+    if len(dataset) == 0:
+        return float("inf")
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    loader = DataLoader(dataset, batch_size=64, shuffle=False)
+    model = CryptoAlphaNet(
+        d_spatial=cfg.d_spatial,
+        d_temporal=cfg.d_temporal,
+        n_lob_heads=cfg.n_lob_heads,
+        n_lob_layers=cfg.n_lob_layers,
+        n_temp_heads=cfg.n_temp_heads,
+        n_temp_layers=cfg.n_temp_layers,
+        dropout=cfg.dropout,
+        seq_len=cfg.seq_len,
+    ).to(device).eval()
+    model.load_state_dict(state_dict, strict=False)
+
+    sqerr = 0.0
+    n = 0
+    with torch.no_grad():
+        for batch in loader:
+            lob = batch["lob"].to(device)
+            scalar = batch["scalar"].to(device)
+            pred_mid = model(lob, scalar)["returns"][:, -1, 2]
+            true_mid = batch["labels"][:, -1, 2].to(device)
+            diff = pred_mid - true_mid
+            sqerr += float((diff * diff).sum().item())
+            n += int(diff.numel())
+
+    return sqerr / max(n, 1)
+
 def run_pipeline(args: argparse.Namespace) -> None:
     from .alpha_regression import analyse_alpha, print_alpha_report
     from .backtest import BacktestConfig, NeuralAlphaBacktest
@@ -461,12 +505,41 @@ def run_pipeline(args: argparse.Namespace) -> None:
     # ── 5. Report ─────────────────────────────────────────────────────────────
     print_alpha_report(alpha_metrics, merged_bt)
 
-    # ── 6. Save model (best fold by validation loss) ──────────────────────────
+    # ── 6. Save model (holdout-based incumbent vs challenger selection) ───────
     if args.save_model:
         import torch
+
         best_fold = min(fold_results, key=lambda f: f["metrics"].get("loss_total", 1e9))
-        torch.save(best_fold["model_state"], args.save_model)
+        challenger_state = best_fold["model_state"]
+        selected_state = challenger_state
+
+        holdout_start = int(len(df) * 0.8)
+        holdout_df = df[holdout_start:]
+        incumbent_oos_mse: float | None = None
+        challenger_oos_mse: float | None = None
+
+        if len(holdout_df) >= trainer_cfg.seq_len * 2:
+            challenger_oos_mse = _evaluate_state_on_holdout(holdout_df, challenger_state, trainer_cfg)
+            incumbent_path = Path(args.save_model)
+            if incumbent_path.exists():
+                incumbent_state = torch.load(incumbent_path, map_location="cpu", weights_only=True)
+                incumbent_oos_mse = _evaluate_state_on_holdout(holdout_df, incumbent_state, trainer_cfg)
+                if incumbent_oos_mse < challenger_oos_mse:
+                    selected_state = incumbent_state
+                    print(
+                        "[MODEL_SELECT] challenger rejected on holdout "
+                        f"(incumbent_mse={incumbent_oos_mse:.6e}, "
+                        f"challenger_mse={challenger_oos_mse:.6e})"
+                    )
+
+        torch.save(selected_state, args.save_model)
         print(f"Best model saved → {args.save_model}")
+        if challenger_oos_mse is not None:
+            print(
+                "[MODEL_SELECT] holdout mid-return MSE "
+                f"incumbent={incumbent_oos_mse} challenger={challenger_oos_mse} "
+                f"selected={'incumbent' if selected_state is not challenger_state else 'challenger'}"
+            )
 
 
 def main() -> None:
