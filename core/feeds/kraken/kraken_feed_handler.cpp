@@ -42,11 +42,14 @@ static auto kraken_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, voi
     case LWS_CALLBACK_CLIENT_RECEIVE: {
         const char* data = static_cast<const char*>(input);
         bool is_final = lws_is_final_fragment(wsi) != 0;
-        if (session->frag_len + len < sizeof(session->frag_buf)) {
+        if (session->frag_len + len <= sizeof(session->frag_buf)) {
             std::memcpy(session->frag_buf + session->frag_len, data, len);
             session->frag_len += len;
+        } else {
+            // Message exceeds buffer: discard the entire fragmented message.
+            session->frag_len = 0;
         }
-        if (is_final && (session->handler != nullptr)) {
+        if (is_final && session->frag_len > 0 && (session->handler != nullptr)) {
             session->handler->process_message(std::string(session->frag_buf, session->frag_len));
             session->frag_len = 0;
         }
