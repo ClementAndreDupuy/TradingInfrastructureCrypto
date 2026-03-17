@@ -24,6 +24,7 @@ env/
 *.egg-info/
 dist/
 .pytest_cache/
+.cache/
 
 # IDEs
 .idea/
