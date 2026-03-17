@@ -7,7 +7,7 @@ Open items carried forward from the previous TODO cycle, ranked by priority/seve
 
 ### HIGH
 - [ ] **H4** `deploy/` + monitoring stack — Define production SLOs/error budgets and wire hard alerts for feed integrity, reject spikes, reconciliation drift, and risk trigger frequency
-- [ ] **H5** `research/neural_alpha/` + `deploy/` — Productionize secondary-model ensemble rollout: add canary guardrails, live IC/ICIR degradation rollback thresholds, and publish promotion/rollback events to ops alerts
+- [x] **H5** `research/neural_alpha/` + `deploy/` — Productionize secondary-model ensemble rollout: add canary guardrails, live IC/ICIR degradation rollback thresholds, and publish promotion/rollback events to ops alerts
 - [ ] **H6** `deploy/` + `research/` + `docs/` — Establish a formal database SLO framework (ingest freshness, write availability, completeness, correctness, durability, lineage) with 28-day error budgets and burn-rate paging
   - acceptance criteria:
     - [ ] Published SLO spec in `docs/` defining SLIs, targets, windows, and owners for freshness, availability, completeness, correctness, durability, and lineage
@@ -21,7 +21,7 @@ Open items carried forward from the previous TODO cycle, ranked by priority/seve
 
 ### MEDIUM
 - [ ] **M2** `core/feeds/` + `tests/replay/` — Build feed-certification replay harness with venue-specific pathological scenarios and acceptance thresholds
-- [ ] **M3** `research/neural_alpha/pipeline.py` — Enforce live-data-only training in deployment jobs (no synthetic dataset execution paths in prod runtime wrappers)
+- [x] **M3** `research/neural_alpha/pipeline.py` — Enforce live-data-only training in deployment jobs (no synthetic dataset execution paths in prod runtime wrappers)
 - [ ] **M4** `research/neural_alpha/` + `tests/integration/` — Add live-capture integration validation for ensemble checkpoints against core IPC feed snapshots (no mocked data path)
 - [ ] **M5** `research/neural_alpha/` + `deploy/daily_train.py` — Add strict data-quality gates (schema validation, null-rate bounds, sequence-gap checks, timestamp skew limits, duplicate detection) before training and model promotion
   - acceptance criteria:

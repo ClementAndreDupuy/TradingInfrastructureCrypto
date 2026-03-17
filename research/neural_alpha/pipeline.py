@@ -317,35 +317,6 @@ def collect_l5_ticks(
     raise RuntimeError("Core bridge unavailable and REST fallback disabled.")
 
 
-# ── Synthetic data for offline testing ───────────────────────────────────────
-
-def generate_synthetic_lob(n_ticks: int = 1000, seed: int = 42) -> pl.DataFrame:
-    """
-    Generate a synthetic L5 LOB dataset for offline testing.
-    Prices follow a mean-reverting process; sizes are log-normal.
-    """
-    rng = np.random.default_rng(seed)
-    mid = 50000.0
-    rows = []
-    for t in range(n_ticks):
-        mid += rng.normal(0, 5)   # random walk
-        spread = abs(rng.normal(10, 3)) + 1.0
-        row: dict = {
-            "timestamp_ns": int(1_700_000_000_000_000_000 + t * 500_000_000),
-            "exchange":     "BINANCE",
-            "best_bid":     mid - spread / 2,
-            "best_ask":     mid + spread / 2,
-        }
-        for i in range(1, N_LEVELS + 1):
-            row[f"bid_price_{i}"] = mid - spread / 2 - (i - 1) * spread
-            row[f"bid_size_{i}"]  = float(rng.lognormal(1, 0.5))
-            row[f"ask_price_{i}"] = mid + spread / 2 + (i - 1) * spread
-            row[f"ask_size_{i}"]  = float(rng.lognormal(1, 0.5))
-        rows.append(row)
-
-    return pl.DataFrame(rows)
-
-
 # ── Walk-forward test slice tracking ─────────────────────────────────────────
 
 def _fold_slices(T: int, n_folds: int, train_frac: float) -> list[tuple[int, int]]:
@@ -434,29 +405,13 @@ def _blend_fold_results(
     return blended
 
 def run_pipeline(args: argparse.Namespace) -> None:
-    import os
     from .alpha_regression import analyse_alpha, print_alpha_report
     from .backtest import BacktestConfig, NeuralAlphaBacktest
     from research.regime import RegimeConfig, save_regime_artifact, train_regime_model_from_ipc
     from .trainer import TrainerConfig, walk_forward_train
 
-    if getattr(args, "synthetic", False) and os.getenv("NEURAL_ALPHA_PROD"):
-        raise RuntimeError(
-            "Synthetic data is disabled in production (NEURAL_ALPHA_PROD env var is set). "
-            "Remove --synthetic to run with live market data."
-        )
-
-    if args.ensemble_secondary and args.synthetic:
-        raise ValueError(
-            "Secondary ensembling is production-only and requires real market data. "
-            "Remove --synthetic to enable --ensemble-secondary."
-        )
-
     # ── 1. Data ──────────────────────────────────────────────────────────────
-    if args.synthetic:
-        print("Using synthetic LOB data.")
-        df = generate_synthetic_lob(n_ticks=args.ticks)
-    elif args.data_path and Path(args.data_path).exists():
+    if args.data_path and Path(args.data_path).exists():
         print(f"Loading data from {args.data_path}")
         df = pl.read_parquet(args.data_path)
     else:
@@ -644,8 +599,6 @@ def main() -> None:
     ap.add_argument("--interval-ms",     type=int,   default=500,   dest="interval_ms")
     ap.add_argument("--symbol",          type=str,   default="BTCUSDT")
     ap.add_argument("--exchanges", type=str, default="BINANCE,KRAKEN,OKX,COINBASE")
-    ap.add_argument("--synthetic",       action="store_true",
-                    help="Use synthetic LOB data (offline testing)")
     ap.add_argument("--core-only", action="store_true",
                     help="Require core feed bridge data; disable REST fallback")
     ap.add_argument("--data-path",       type=str,   default=None,  dest="data_path",

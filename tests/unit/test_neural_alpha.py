@@ -52,7 +52,6 @@ from research.neural_alpha.model import (
     MultiTaskLoss,
     TemporalEncoder,
 )
-from research.neural_alpha.pipeline import generate_synthetic_lob
 from research.neural_alpha.shadow_session import (
     NeuralAlphaShadowSession,
     ShadowSessionConfig,
@@ -60,17 +59,43 @@ from research.neural_alpha.shadow_session import (
 )
 
 
+# ── Test data helpers ─────────────────────────────────────────────────────────
+
+
+def _make_lob_df(n_ticks: int, seed: int = 0) -> pl.DataFrame:
+    """Build a minimal L5 LOB DataFrame for unit tests."""
+    rng = np.random.default_rng(seed)
+    mid = 50_000.0
+    rows = []
+    for t in range(n_ticks):
+        mid += rng.normal(0, 5)
+        spread = abs(rng.normal(10, 3)) + 1.0
+        row: dict = {
+            "timestamp_ns": int(1_700_000_000_000_000_000 + t * 500_000_000),
+            "exchange": "BINANCE",
+            "best_bid": mid - spread / 2,
+            "best_ask": mid + spread / 2,
+        }
+        for i in range(1, 6):
+            row[f"bid_price_{i}"] = mid - spread / 2 - (i - 1) * spread
+            row[f"bid_size_{i}"] = float(rng.lognormal(1, 0.5))
+            row[f"ask_price_{i}"] = mid + spread / 2 + (i - 1) * spread
+            row[f"ask_size_{i}"] = float(rng.lognormal(1, 0.5))
+        rows.append(row)
+    return pl.DataFrame(rows)
+
+
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
 @pytest.fixture
 def small_df() -> pl.DataFrame:
-    return generate_synthetic_lob(n_ticks=200, seed=0)
+    return _make_lob_df(n_ticks=200, seed=0)
 
 
 @pytest.fixture
 def medium_df() -> pl.DataFrame:
-    return generate_synthetic_lob(n_ticks=500, seed=1)
+    return _make_lob_df(n_ticks=500, seed=1)
 
 
 # ── Feature engineering ───────────────────────────────────────────────────────
@@ -262,7 +287,7 @@ class TestDataset:
     # ── Backtest ──────────────────────────────────────────────────────────────────
 
     def test_walk_forward_with_tiny_dataset_has_non_empty_train(self) -> None:
-        tiny = generate_synthetic_lob(n_ticks=40, seed=2)
+        tiny = _make_lob_df(n_ticks=40, seed=2)
         cfg = DatasetConfig(seq_len=8, horizons=(1, 5, 10, 20))
         splits = split_walk_forward(
             tiny,
