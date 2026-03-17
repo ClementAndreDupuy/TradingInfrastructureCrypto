@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import mmap
-import os
 import struct
 import time
 from dataclasses import asdict, dataclass
@@ -67,26 +66,29 @@ def _load_ipc_lob_frame(ipc_dir: str) -> pl.DataFrame:
         raise FileNotFoundError(f"No *.parquet or *.csv files found under {ipc_dir}")
 
     frames: list[pl.DataFrame] = []
+    required = {"timestamp_ns", "best_bid", "best_ask", "bid_size_1", "ask_size_1"}
     for path in candidates:
         if path.suffix == ".parquet":
             frame = pl.read_parquet(path)
         else:
             frame = pl.read_csv(path)
 
-        required = {
-            "timestamp_ns",
-            "best_bid",
-            "best_ask",
-            "bid_size_1",
-            "ask_size_1",
-        }
         if required.issubset(set(frame.columns)):
             frames.append(frame)
 
     if not frames:
         raise ValueError(f"No IPC files in {ipc_dir} had required LOB columns")
 
-    return pl.concat(frames, how="vertical_relaxed").sort("timestamp_ns")
+    lob = pl.concat(frames, how="vertical_relaxed").sort("timestamp_ns")
+
+    null_cols = [
+        c for c in ("best_bid", "best_ask", "bid_size_1", "ask_size_1")
+        if lob[c].is_null().any()
+    ]
+    if null_cols:
+        raise ValueError(f"Null values found in LOB columns: {null_cols}")
+
+    return lob
 
 
 def _kmeans(x: np.ndarray, cfg: RegimeConfig) -> tuple[np.ndarray, np.ndarray]:
@@ -112,17 +114,29 @@ def _kmeans(x: np.ndarray, cfg: RegimeConfig) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _semantic_regime_names(raw_centers: np.ndarray) -> list[str]:
-    vol_rank = np.argsort(raw_centers[:, 0])
-    spread_rank = np.argsort(raw_centers[:, 1])
-    depth_rank = np.argsort(raw_centers[:, 2])
+    n = raw_centers.shape[0]
+    names = [f"regime_{i}" for i in range(n)]
 
-    names = [f"regime_{i}" for i in range(raw_centers.shape[0])]
+    def _assign_first_free(ranked: np.ndarray, label: str) -> None:
+        for idx in reversed(ranked):
+            if names[idx].startswith("regime_"):
+                names[idx] = label
+                return
+
+    vol_rank = np.argsort(raw_centers[:, 0])
+
+    # "calm" always wins the lowest-volatility cluster
     names[vol_rank[0]] = "calm"
-    names[vol_rank[-1]] = "shock"
-    if raw_centers.shape[0] >= 3:
-        names[spread_rank[-1]] = "illiquid"
-    if raw_centers.shape[0] >= 4:
-        names[depth_rank[-1]] = "trending"
+    # Remaining labels use next-best free cluster to prevent collisions.
+    # Collision example: if highest-vol == highest-spread cluster, the old
+    # code would overwrite "shock" with "illiquid" leaving no shock label and
+    # breaking the C++ market-maker's shock-gating threshold.
+    _assign_first_free(vol_rank, "shock")
+    if n >= 3:
+        _assign_first_free(np.argsort(raw_centers[:, 1]), "illiquid")
+    if n >= 4:
+        _assign_first_free(np.argsort(raw_centers[:, 2]), "trending")
+
     return names
 
 
@@ -204,8 +218,8 @@ def infer_regime_probabilities(df: pl.DataFrame, artifact: RegimeArtifact) -> di
     if residual > 1e-9:
         total_named = assigned if assigned > 1e-9 else 1.0
         scale = (assigned + residual) / total_named
-        p_calm     *= scale
-        p_shock    *= scale
+        p_calm *= scale
+        p_shock *= scale
         p_illiquid *= scale
         p_trending *= scale
 
@@ -247,9 +261,24 @@ class RegimeSignalPublisher:
         self._mm.flush()
 
     def close(self) -> None:
+        # Close mmap and file handle but intentionally do NOT delete the file.
+        # Deleting the signal file on close would create a window during model
+        # reloads where the C++ RegimeSignalReader has no file to mmap and
+        # falls back to stale/default probabilities.
         try:
             self._mm.close()
-            self._f.close()
-            os.unlink(self._path)
-        except OSError:
+        except Exception:
             pass
+        try:
+            self._f.close()
+        except Exception:
+            pass
+
+    def __enter__(self) -> "RegimeSignalPublisher":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        self.close()

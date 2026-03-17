@@ -88,7 +88,12 @@ class RegimeSignalReader {
         if (s.ts_ns == 0)
             return true;
         using namespace std::chrono;
-        int64_t now = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+        // Python publishes time.time_ns() which is UNIX wall-clock time.
+        // steady_clock has a different epoch (system boot) so it must NOT be
+        // used here — the comparison would always return true (signal always
+        // "stale"), causing the market maker to permanently fall back to
+        // conservative defaults and never react to regime changes.
+        int64_t now = duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
         return (now - s.ts_ns) > stale_ns;
     }
 

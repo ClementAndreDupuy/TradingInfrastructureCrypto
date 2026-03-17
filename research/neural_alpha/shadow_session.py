@@ -55,7 +55,7 @@ from .dataset import rolling_normalise
 from .features import compute_lob_tensor, compute_scalar_features
 from .governance import ChampionChallengerRegistry, DriftGuard
 from .model import CryptoAlphaNet
-from .regime import RegimeSignalPublisher, infer_regime_probabilities, load_regime_artifact
+from research.regime import RegimeSignalPublisher, infer_regime_probabilities, load_regime_artifact
 from .pipeline import (
     _fetch_binance_l5,
     _fetch_coinbase_l5,
