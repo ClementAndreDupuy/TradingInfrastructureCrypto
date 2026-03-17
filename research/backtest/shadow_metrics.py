@@ -50,8 +50,14 @@ def analyse_decisions(rows: list[dict]) -> dict:
     rejects  = [r for r in rows if r.get("event") == "REJECTED"]
     resting  = [r for r in rows if r.get("event") == "RESTING"]
 
-    total_orders = len(fills) + len(cancels) + len(rejects) + len(resting)
-    fill_rate = len(fills) / total_orders if total_orders else 0.0
+    # fill_rate denominator must only include terminal states (FILL / CANCELED /
+    # REJECTED).  RESTING is an intermediate state — an order that is currently
+    # resting on the book may still become a FILL or CANCELED later, so counting
+    # it here would inflate the denominator and produce an artificially low fill
+    # rate.  We report resting count separately for transparency.
+    terminal_orders = len(fills) + len(cancels) + len(rejects)
+    fill_rate = len(fills) / terminal_orders if terminal_orders else 0.0
+    total_orders = terminal_orders + len(resting)
 
     pnl_series: list[float] = []
     for r in fills:
@@ -72,7 +78,6 @@ def analyse_decisions(rows: list[dict]) -> dict:
             exchanges[ex]["taker"] += 1
         exchanges[ex]["fees"] += r.get("fee_usd", 0.0)
 
-    # Latency: time from submit to fill (submit_ts_ns not in fill log, use fill ts only)
     fill_qty = sum(r.get("qty", 0.0) for r in fills)
 
     # Max drawdown from cumulative P&L series
@@ -90,6 +95,7 @@ def analyse_decisions(rows: list[dict]) -> dict:
         "total_fills":   len(fills),
         "total_cancels": len(cancels),
         "total_rejects": len(rejects),
+        "total_resting": len(resting),
         "fill_rate":     fill_rate,
         "net_pnl_usd":   net_pnl,
         "max_drawdown_usd": max_dd,
@@ -104,26 +110,39 @@ def analyse_signals(rows: list[dict]) -> dict:
     if not rows:
         return {}
 
-    sigs = np.array([r.get("signal", 0.0) for r in rows], dtype=np.float64)
-    risk = np.array([r.get("risk_score", 0.0) for r in rows], dtype=np.float64)
+    sigs = np.nan_to_num(
+        np.array([r.get("signal", 0.0) for r in rows], dtype=np.float64)
+    )
+    risk = np.nan_to_num(
+        np.array([r.get("risk_score", 0.0) for r in rows], dtype=np.float64)
+    )
     ts   = np.array([r.get("timestamp_ns", 0) for r in rows], dtype=np.int64)
 
     # IC: signal vs realised return (next-tick mid return)
-    mids = np.array([r.get("mid_price", 0.0) for r in rows], dtype=np.float64)
+    mids = np.nan_to_num(
+        np.array([r.get("mid_price", 0.0) for r in rows], dtype=np.float64)
+    )
     with np.errstate(invalid="ignore", divide="ignore"):
         realised = np.where(mids[:-1] > 0, (mids[1:] - mids[:-1]) / mids[:-1], 0.0)
 
     ic = 0.0
     icir = 0.0
-    if len(realised) >= 10 and sigs[:-1].std() > 0:
+    _IC_WINDOW = 20
+    if len(realised) >= _IC_WINDOW and sigs[:-1].std() > 0:
+        # Only compute correlation once we have a full window of _IC_WINDOW
+        # samples; earlier estimates (i < _IC_WINDOW) are statistically
+        # meaningless (2-sample correlation is always ±1 or NaN).
         ic_series = np.array([
-            float(np.corrcoef(sigs[max(0, i-20):i], realised[max(0, i-20):i])[0, 1])
-            if i >= 2 else 0.0
+            float(np.corrcoef(sigs[i - _IC_WINDOW:i], realised[i - _IC_WINDOW:i])[0, 1])
+            if i >= _IC_WINDOW else 0.0
             for i in range(1, len(sigs))
         ])
         ic_series = np.nan_to_num(ic_series)
-        ic   = float(np.mean(ic_series))
-        icir = float(ic / (np.std(ic_series) + 1e-9)) * math.sqrt(252)
+        ic = float(np.mean(ic_series))
+        ic_std = float(np.std(ic_series))
+        # Guard: if ic_series is constant (std ≈ 0) ICIR would blow up to ±∞.
+        # Treat a flat IC series as uninformative and report 0.
+        icir = float(ic / ic_std) * math.sqrt(252) if ic_std > 1e-6 else 0.0
 
     # Duration in minutes
     duration_min = (int(ts[-1]) - int(ts[0])) / 1e9 / 60.0 if len(ts) > 1 else 0.0
@@ -168,6 +187,7 @@ def print_report(dec: dict, sig: dict, out_path: str | None = None) -> None:
         f"  Fills                  : {dec.get('total_fills', 0)}",
         f"  Cancels                : {dec.get('total_cancels', 0)}",
         f"  Rejects                : {dec.get('total_rejects', 0)}",
+        f"  Resting (open)         : {dec.get('total_resting', 0)}",
         f"  Fill rate              : {dec.get('fill_rate', 0.0):.2%}",
         f"  Net P&L                : ${dec.get('net_pnl_usd', 0.0):.4f}",
         f"  Max drawdown           : ${dec.get('max_drawdown_usd', 0.0):.4f}",
