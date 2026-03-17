@@ -7,7 +7,8 @@ Type=oneshot
 User=ubuntu
 WorkingDirectory=/opt/trading
 EnvironmentFile=/etc/trading/env
-ExecStart=/opt/trading/venv/bin/python /opt/trading/deploy/slo_engine.py
+Environment=PYTHONPATH=/opt/trading
+ExecStart=/opt/trading-venv/bin/python /opt/trading/deploy/slo_engine.py
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=slo-engine
