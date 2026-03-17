@@ -422,6 +422,7 @@ def _evaluate_state_on_holdout(df: pl.DataFrame, state_dict: dict, cfg: TrainerC
 def run_pipeline(args: argparse.Namespace) -> None:
     from .alpha_regression import analyse_alpha, print_alpha_report
     from .backtest import BacktestConfig, NeuralAlphaBacktest
+    from .regime import RegimeConfig, save_regime_artifact, train_regime_model_from_ipc
     from .trainer import TrainerConfig, walk_forward_train
 
     # ── 1. Data ──────────────────────────────────────────────────────────────
@@ -505,7 +506,20 @@ def run_pipeline(args: argparse.Namespace) -> None:
     # ── 5. Report ─────────────────────────────────────────────────────────────
     print_alpha_report(alpha_metrics, merged_bt)
 
-    # ── 6. Save model (holdout-based incumbent vs challenger selection) ───────
+    # ── 6. Train and save R2 regime model from IPC data ─────────────────────
+    try:
+        regime_cfg = RegimeConfig(n_regimes=args.regimes)
+        regime_artifact, regime_dist = train_regime_model_from_ipc(args.ipc_dir, regime_cfg)
+        save_regime_artifact(regime_artifact, args.save_regime_model)
+        print(
+            f"R2 regime model trained (n_regimes={regime_cfg.n_regimes}) "
+            f"from {args.ipc_dir} and saved → {args.save_regime_model}"
+        )
+        print(f"R2 regime distribution: {regime_dist}")
+    except Exception as exc:
+        print(f"[WARN] R2 regime training skipped: {exc}")
+
+    # ── 7. Save model (holdout-based incumbent vs challenger selection) ───────
     if args.save_model:
         import torch
 
@@ -557,6 +571,16 @@ def main() -> None:
                     help="Load existing Parquet instead of fetching")
     ap.add_argument("--save-data",       type=str,   default=None,  dest="save_data")
     ap.add_argument("--save-model",      type=str,   default=None,  dest="save_model")
+    ap.add_argument("--ipc-dir",         type=str,   default="/ipc", dest="ipc_dir")
+    ap.add_argument("--regimes",         type=int,   default=4,
+                    help="R2 regime count (supported: 3 or 4)")
+    ap.add_argument(
+        "--save-regime-model",
+        type=str,
+        default="models/r2_regime_model.json",
+        dest="save_regime_model",
+        help="Path to save trained R2 regime model artifact",
+    )
 
     # Model
     ap.add_argument("--d-spatial",       type=int,   default=64,    dest="d_spatial")

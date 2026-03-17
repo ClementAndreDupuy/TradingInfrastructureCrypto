@@ -30,6 +30,7 @@
 #include "../common/logging.hpp"
 #include "../feeds/common/book_manager.hpp"
 #include "../ipc/alpha_signal.hpp"
+#include "../ipc/regime_signal.hpp"
 #include "../risk/circuit_breaker.hpp"
 #include "../risk/kill_switch.hpp"
 #include "order_manager.hpp"
@@ -65,6 +66,11 @@ struct MarketMakerConfig {
     double signal_min_bps = 1.5;             // don't skew below this signal magnitude
     double inventory_skew_decay_power = 2.0; // stronger decay as inventory approaches flat
 
+    // Regime-aware gating
+    double shock_block_threshold = 0.75;
+    double illiquid_block_threshold = 0.80;
+    double regime_widen_bps = 2.0;
+
     // Signal staleness
     int64_t stale_ns = 2'000'000'000LL; // 2 s
 };
@@ -91,6 +97,7 @@ class NeuralAlphaMarketMaker {
             return;
 
         AlphaSignal sig = alpha_reader_.read();
+        RegimeSignal regime = regime_reader_.read();
         const double mid = book_.mid_price();
         if (mid <= 0.0)
             return;
@@ -104,10 +111,10 @@ class NeuralAlphaMarketMaker {
         const bool sig_changed = std::abs(sig_bps - last_signal_bps_) >= cfg_.requote_signal;
 
         if (!bid_id_ && !ask_id_) {
-            post_quotes(mid, sig);
+            post_quotes(mid, sig, regime);
         } else if (mid_moved || sig_changed) {
             cancel_quotes();
-            post_quotes(mid, sig);
+            post_quotes(mid, sig, regime);
         }
     }
 
@@ -131,6 +138,7 @@ class NeuralAlphaMarketMaker {
     CircuitBreaker* circuit_breaker_ = nullptr;
     MarketMakerConfig cfg_;
     AlphaSignalReader alpha_reader_;
+    RegimeSignalReader regime_reader_;
 
     uint64_t bid_id_ = 0;
     uint64_t ask_id_ = 0;
@@ -145,7 +153,7 @@ class NeuralAlphaMarketMaker {
 
     // ── Quote logic ──────────────────────────────────────────────────────────
 
-    void post_quotes(double mid, const AlphaSignal& sig) {
+    void post_quotes(double mid, const AlphaSignal& sig, const RegimeSignal& regime) {
         double net_pos = om_.position();
 
         // Read signal (prefer injected for tests, else mmap)
@@ -156,6 +164,15 @@ class NeuralAlphaMarketMaker {
         if (stale) {
             signal_bps = 0.0;
             risk_score = 0.0;
+        }
+
+        const bool regime_stale = regime_reader_.is_stale(regime, cfg_.stale_ns);
+        const double p_shock = regime_stale ? 0.0 : regime.p_shock;
+        const double p_illiquid = regime_stale ? 0.0 : regime.p_illiquid;
+
+        if (p_shock >= cfg_.shock_block_threshold || p_illiquid >= cfg_.illiquid_block_threshold) {
+            cancel_quotes();
+            return;
         }
 
         // Skew: clip to ±max_skew, zero below min_bps
@@ -176,6 +193,7 @@ class NeuralAlphaMarketMaker {
 
         // Risk widening
         double extra = (risk_score >= cfg_.risk_max) ? cfg_.risk_widen_bps : 0.0;
+        extra += cfg_.regime_widen_bps * (p_shock + 0.5 * p_illiquid);
 
         double half_bid = cfg_.half_spread_bps - skew + extra; // wider if negative skew
         double half_ask = cfg_.half_spread_bps + skew + extra;
