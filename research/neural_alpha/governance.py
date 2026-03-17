@@ -145,6 +145,6 @@ class DriftGuard:
 
         sig = np.asarray(self._signals, dtype=np.float64)
         out = np.asarray(self._outcomes, dtype=np.float64)
-        if sig.std() == 0 or out.std() == 0:
+        if sig.std() < 1e-9 or out.std() < 1e-9:
             return None
         return float(np.corrcoef(sig, out)[0, 1])

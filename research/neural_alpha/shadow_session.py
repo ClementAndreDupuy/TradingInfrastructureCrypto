@@ -310,7 +310,11 @@ class NeuralAlphaShadowSession:
 
         loader = DataLoader(dataset, batch_size=64, shuffle=False)
         model = self._build_model(self.cfg.d_spatial, self.cfg.d_temporal)
-        model.load_state_dict(state_dict, strict=False)
+        try:
+            model.load_state_dict(state_dict, strict=True)
+        except RuntimeError:
+            # Architecture mismatch — this state is incompatible; treat as worst-case.
+            return float("inf")
         model.eval()
 
         sqerr = 0.0
@@ -536,6 +540,10 @@ class NeuralAlphaShadowSession:
 
                 self._maybe_continuous_train()
                 signal_info = self._infer()
+                if signal_info is None:
+                    # Not enough data or model not loaded — publish neutral signal
+                    # so the C++ reader never consumes a stale value.
+                    self._publisher.publish(0.0, 0.0)
                 if signal_info:
                     if prev_mid is not None and prev_mid > 0:
                         realised = (signal_info["mid_price"] - prev_mid) / prev_mid

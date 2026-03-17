@@ -321,11 +321,13 @@ def run_backtest_on_fold(
     # Align: each prediction corresponds to the last tick of a window.
     # We replicate each prediction for seq_len ticks (nearest-assignment).
     from .dataset import DatasetConfig
-    seq_len = DatasetConfig().seq_len
+    ds_cfg  = DatasetConfig()
+    seq_len = ds_cfg.seq_len
+    stride  = ds_cfg.stride
     T_test  = len(test_df)
     signals = np.zeros(T_test, dtype=np.float32)
     for i, pred in enumerate(preds):
-        tick_idx = min(i * 1 + seq_len - 1, T_test - 1)  # stride=1
+        tick_idx = min(i * stride + seq_len - 1, T_test - 1)
         signals[tick_idx] = pred
 
     bt = NeuralAlphaBacktest(cfg)

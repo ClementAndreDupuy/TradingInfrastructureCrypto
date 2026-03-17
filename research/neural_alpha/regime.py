@@ -196,8 +196,18 @@ def infer_regime_probabilities(df: pl.DataFrame, artifact: RegimeArtifact) -> di
     p_illiquid = prob_by_name.get("illiquid", 0.0)
     p_trending = prob_by_name.get("trending", 0.0)
     assigned = p_calm + p_shock + p_illiquid + p_trending
-    if assigned < 1.0:
-        p_trending += 1.0 - assigned
+
+    # If some regimes carry non-semantic names (e.g. "regime_1"), their
+    # probability mass is not captured by the four named keys.  Distribute
+    # the residual proportionally so the returned probabilities sum to 1.0.
+    residual = 1.0 - assigned
+    if residual > 1e-9:
+        total_named = assigned if assigned > 1e-9 else 1.0
+        scale = (assigned + residual) / total_named
+        p_calm     *= scale
+        p_shock    *= scale
+        p_illiquid *= scale
+        p_trending *= scale
 
     return {
         "p_calm": p_calm,
