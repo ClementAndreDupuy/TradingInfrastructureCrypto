@@ -47,7 +47,9 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 import torch
+from torch.utils.data import DataLoader
 
+from .dataset import DatasetConfig, LOBDataset
 from .dataset import rolling_normalise
 from .features import compute_lob_tensor, compute_scalar_features
 from .governance import ChampionChallengerRegistry, DriftGuard
@@ -217,14 +219,35 @@ class NeuralAlphaShadowSession:
             raise RuntimeError("Training produced no fold results — dataset too small.")
 
         best = min(fold_results, key=lambda f: f["metrics"].get("loss_total", 1e9))
+        candidate_state = best["model_state"]
+
+        incumbent_oos_mse: float | None = None
+        challenger_oos_mse: float | None = None
+        keep_challenger = True
+
+        holdout_start = int(len(df) * 0.8)
+        holdout_df = df[holdout_start:]
+        if len(holdout_df) >= self.cfg.seq_len * 2:
+            challenger_oos_mse = self._evaluate_state_on_holdout(candidate_state, holdout_df)
+            if resume_state is not None:
+                incumbent_oos_mse = self._evaluate_state_on_holdout(resume_state, holdout_df)
+                keep_challenger = challenger_oos_mse <= incumbent_oos_mse
+                if not keep_challenger:
+                    candidate_state = resume_state
+                    print(
+                        "[MODEL_SELECT] challenger rejected on holdout "
+                        f"(incumbent_mse={incumbent_oos_mse:.6e}, "
+                        f"challenger_mse={challenger_oos_mse:.6e})"
+                    )
+
         model = self._build_model(self.cfg.d_spatial, self.cfg.d_temporal)
-        model.load_state_dict(best["model_state"])
+        model.load_state_dict(candidate_state)
         self._model = model
 
         out_path = Path(self.cfg.model_path) if self.cfg.model_path else Path("models/neural_alpha_latest.pt")
         out_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_out = out_path.with_suffix(out_path.suffix + ".tmp")
-        torch.save(best["model_state"], tmp_out)
+        torch.save(candidate_state, tmp_out)
         tmp_out.replace(out_path)
 
         meta = {
@@ -235,6 +258,11 @@ class NeuralAlphaShadowSession:
             "d_spatial": self.cfg.d_spatial,
             "d_temporal": self.cfg.d_temporal,
             "metrics": best.get("metrics", {}),
+            "oos_holdout_mse": {
+                "incumbent": incumbent_oos_mse,
+                "challenger": challenger_oos_mse,
+                "selected": "challenger" if keep_challenger else "incumbent",
+            },
         }
         out_meta = out_path.with_suffix(".json")
         out_meta.write_text(json.dumps(meta, indent=2))
@@ -244,6 +272,30 @@ class NeuralAlphaShadowSession:
             f"Val loss: {best['metrics'].get('loss_total', 'n/a'):.4f} "
             f"saved={out_path}"
         )
+
+    def _evaluate_state_on_holdout(self, state_dict: dict[str, torch.Tensor], holdout_df: pl.DataFrame) -> float:
+        dataset = LOBDataset(holdout_df, DatasetConfig(seq_len=self.cfg.seq_len))
+        if len(dataset) == 0:
+            return float("inf")
+
+        loader = DataLoader(dataset, batch_size=64, shuffle=False)
+        model = self._build_model(self.cfg.d_spatial, self.cfg.d_temporal)
+        model.load_state_dict(state_dict, strict=False)
+        model.eval()
+
+        sqerr = 0.0
+        n = 0
+        with torch.no_grad():
+            for batch in loader:
+                lob = batch["lob"].to(self._device)
+                scalar = batch["scalar"].to(self._device)
+                pred_mid = model(lob, scalar)["returns"][:, -1, 2]
+                true_mid = batch["labels"][:, -1, 2].to(self._device)
+                diff = pred_mid - true_mid
+                sqerr += float((diff * diff).sum().item())
+                n += int(diff.numel())
+
+        return sqerr / max(n, 1)
 
     # ── Inference + publish ───────────────────────────────────────────────────
 
