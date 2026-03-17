@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import time
 from pathlib import Path
 
@@ -31,8 +32,37 @@ BINANCE_DEPTH_URL = "https://fapi.binance.com/fapi/v1/depth"
 BINANCE_SPOT_DEPTH_URL = "https://api.binance.com/api/v3/depth"
 KRAKEN_DEPTH_URL = "https://futures.kraken.com/derivatives/api/v3/orderbook"
 OKX_DEPTH_URL = "https://www.okx.com/api/v5/market/books"
-COINBASE_DEPTH_URL = "https://api.exchange.coinbase.com/products/BTC-USD/book"
+COINBASE_DEPTH_URL_TMPL = "https://api.exchange.coinbase.com/products/{product}/book"
 N_LEVELS = 5
+SUPPORTED_EXCHANGES = ("BINANCE", "KRAKEN", "OKX", "COINBASE")
+
+
+def _canonical_symbol(symbol: str) -> str:
+    clean = symbol.upper().replace("-", "")
+    clean = clean.replace("PI_", "")
+    clean = clean.replace("XBT", "BTC")
+    return re.sub(r"[^A-Z0-9]", "", clean)
+
+
+def _filter_rows(
+    df: pl.DataFrame,
+    exchanges: list[str],
+    symbol: str,
+) -> pl.DataFrame:
+    expected = {ex.upper() for ex in exchanges}
+    target_symbol = _canonical_symbol(symbol)
+    rows: list[dict] = []
+    for row in df.iter_rows(named=True):
+        ex = str(row.get("exchange", "")).upper()
+        if ex not in expected:
+            continue
+        if _canonical_symbol(str(row.get("symbol", ""))) != target_symbol:
+            continue
+        row["exchange"] = ex
+        rows.append(row)
+    if not rows:
+        return pl.DataFrame(schema=df.schema)
+    return pl.DataFrame(rows).sort("timestamp_ns")
 
 
 def _parse_binance_l5(d: dict, symbol: str, exchange_label: str) -> dict:
@@ -184,7 +214,11 @@ def _fetch_okx_l5(symbol: str = "BTCUSDT") -> dict | None:
 
 def _fetch_coinbase_l5(symbol: str = "BTCUSDT") -> dict | None:
     try:
-        r = requests.get(COINBASE_DEPTH_URL, params={"level": 2}, timeout=5)
+        r = requests.get(
+            COINBASE_DEPTH_URL_TMPL.format(product=_coinbase_symbol(symbol)),
+            params={"level": 2},
+            timeout=5,
+        )
         r.raise_for_status()
         d = r.json()
         bids = [(float(px), float(sz)) for px, sz, *_ in d.get("bids", [])][:N_LEVELS]
@@ -210,23 +244,41 @@ def _fetch_coinbase_l5(symbol: str = "BTCUSDT") -> dict | None:
         return None
 
 
-def collect_from_core_bridge(n_ticks: int, interval_ms: int) -> pl.DataFrame | None:
+def collect_from_core_bridge(
+    n_ticks: int,
+    interval_ms: int,
+    exchanges: list[str] | None = None,
+    symbol: str = "BTCUSDT",
+) -> pl.DataFrame | None:
+    exchanges = [ex.strip().upper() for ex in (exchanges or list(SUPPORTED_EXCHANGES)) if ex.strip()]
+
     bridge = CoreBridge()
     if not bridge.open():
         return None
 
     rows: list[dict] = []
+    target_total = n_ticks * len(exchanges)
+    expected = {ex.upper() for ex in exchanges}
     interval_s = interval_ms / 1000.0
-    while len(rows) < n_ticks:
-        rows.extend(bridge.read_new_ticks())
-        if len(rows) >= n_ticks:
+    while len(rows) < target_total:
+        batch = bridge.read_new_ticks()
+        if batch:
+            batch_df = pl.DataFrame(batch)
+            filtered = _filter_rows(batch_df, exchanges, symbol)
+            if len(filtered) > 0:
+                rows.extend(filtered.to_dicts())
+        if len(rows) >= target_total:
             break
         time.sleep(interval_s)
     bridge.close()
 
     if not rows:
         return None
-    return pl.DataFrame(rows[:n_ticks]).sort("timestamp_ns")
+    out = pl.DataFrame(rows).sort("timestamp_ns")
+    available = set(out["exchange"].to_list())
+    if not expected.issubset(available):
+        return None
+    return out.head(target_total)
 
 
 def _collect_l5_ticks_rest(n_ticks: int, interval_ms: int, exchanges: list[str], symbol: str = "BTCUSDT") -> pl.DataFrame:
@@ -266,23 +318,38 @@ def collect_l5_ticks(
     symbol: str = "BTCUSDT",
 ) -> pl.DataFrame:
     """Fetch L5 LOB snapshots from core feed bridge, optionally topped up via REST."""
-    exchanges = exchanges or ["BINANCE", "KRAKEN", "OKX", "COINBASE"]
-    bridge_df = collect_from_core_bridge(n_ticks=n_ticks, interval_ms=interval_ms)
+    exchanges = [ex.strip().upper() for ex in (exchanges or list(SUPPORTED_EXCHANGES)) if ex.strip()]
+    unsupported = [ex for ex in exchanges if ex not in SUPPORTED_EXCHANGES]
+    if unsupported:
+        raise ValueError(f"Unsupported exchanges requested: {unsupported}; supported={SUPPORTED_EXCHANGES}")
 
-    if bridge_df is not None and len(bridge_df) >= n_ticks // 2:
-        if len(bridge_df) < n_ticks and allow_rest_fallback:
-            print(f"[WARN] bridge returned {len(bridge_df)} ticks (< {n_ticks}); topping up with REST")
-            rest_df = _collect_l5_ticks_rest(n_ticks - len(bridge_df), interval_ms, exchanges, symbol=symbol)
-            return pl.concat([bridge_df, rest_df]).sort("timestamp_ns")
-        if len(bridge_df) < n_ticks:
+    target_total = n_ticks * len(exchanges)
+    bridge_df = collect_from_core_bridge(
+        n_ticks=n_ticks,
+        interval_ms=interval_ms,
+        exchanges=exchanges,
+        symbol=symbol,
+    )
+
+    if bridge_df is not None and len(bridge_df) >= target_total // 2:
+        if len(bridge_df) < target_total and allow_rest_fallback:
+            bridge_counts = bridge_df.group_by("exchange").len().to_dicts()
+            per_exchange = {row["exchange"]: row["len"] for row in bridge_counts}
+            topup = max(0, n_ticks - min(per_exchange.get(ex, 0) for ex in exchanges))
+            print(f"[WARN] bridge returned {len(bridge_df)} rows (< {target_total}); topping up with REST")
+            rest_df = _collect_l5_ticks_rest(topup, interval_ms, exchanges, symbol=symbol)
+            combined = pl.concat([bridge_df, rest_df]).sort("timestamp_ns")
+            return _filter_rows(combined, exchanges, symbol)
+        if len(bridge_df) < target_total:
             raise RuntimeError(
-                f"Core bridge returned {len(bridge_df)} ticks (< {n_ticks}) and REST fallback is disabled."
+                f"Core bridge returned {len(bridge_df)} rows (< {target_total}) and REST fallback is disabled."
             )
         return bridge_df
 
     if allow_rest_fallback:
         print("[WARN] core bridge unavailable or insufficient; falling back to REST collection")
-        return _collect_l5_ticks_rest(n_ticks, interval_ms, exchanges, symbol=symbol)
+        rest_df = _collect_l5_ticks_rest(n_ticks, interval_ms, exchanges, symbol=symbol)
+        return _filter_rows(rest_df, exchanges, symbol)
 
     raise RuntimeError("Core bridge unavailable and REST fallback disabled.")
 

@@ -158,9 +158,22 @@ def test_collect_l5_ticks_prefers_bridge_then_tops_up(monkeypatch) -> None:
         ]
     )
 
-    monkeypatch.setattr(pipeline, "collect_from_core_bridge", lambda n_ticks, interval_ms: bridge_df)
-    monkeypatch.setattr(pipeline, "_collect_l5_ticks_rest", lambda n_ticks, interval_ms, exchanges: rest_df)
+    monkeypatch.setattr(pipeline, "collect_from_core_bridge", lambda n_ticks, interval_ms, exchanges=None, symbol="BTCUSDT": bridge_df)
+    monkeypatch.setattr(pipeline, "_collect_l5_ticks_rest", lambda n_ticks, interval_ms, exchanges, symbol="BTCUSDT": rest_df)
 
-    out = pipeline.collect_l5_ticks(n_ticks=4, interval_ms=1)
+    out = pipeline.collect_l5_ticks(n_ticks=1, interval_ms=1)
     assert len(out) == 4
     assert set(out["exchange"].to_list()) == {"BINANCE", "KRAKEN", "OKX", "COINBASE"}
+
+
+@pytest.mark.skipif(pl is None or pipeline is None, reason="polars is not installed")
+def test_filter_rows_normalises_symbol_aliases() -> None:
+    assert pl is not None
+    df = pl.DataFrame([
+        {"timestamp_ns": 1, "exchange": "KRAKEN", "symbol": "PI_XBTUSD"},
+        {"timestamp_ns": 2, "exchange": "COINBASE", "symbol": "BTC-USD"},
+        {"timestamp_ns": 3, "exchange": "KRAKEN", "symbol": "ETHUSD"},
+    ])
+    out = pipeline._filter_rows(df, ["KRAKEN", "COINBASE"], symbol="BTCUSDT")
+    assert len(out) == 2
+    assert set(out["exchange"].to_list()) == {"KRAKEN", "COINBASE"}
