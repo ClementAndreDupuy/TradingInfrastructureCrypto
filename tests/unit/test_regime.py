@@ -12,6 +12,7 @@ from research.regime import (
     RegimeConfig,
     RegimeSignalPublisher,
     infer_regime_probabilities,
+    load_regime_artifact,
     save_regime_artifact,
     train_regime_model_from_ipc,
 )
@@ -43,7 +44,9 @@ def test_train_regime_model_reads_ipc_and_saves_artifact(tmp_path: Path) -> None
     artifact, distribution = train_regime_model_from_ipc(str(ipc_dir), RegimeConfig(n_regimes=4))
 
     assert artifact.n_regimes == 4
-    assert len(artifact.centers) == 4
+    assert len(artifact.means) == 4
+    assert len(artifact.variances) == 4
+    assert len(artifact.transition_matrix) == 4
     assert set(distribution.keys()) == set(artifact.regime_names)
     assert abs(sum(distribution.values()) - 1.0) < 1e-6
 
@@ -51,7 +54,7 @@ def test_train_regime_model_reads_ipc_and_saves_artifact(tmp_path: Path) -> None
     save_regime_artifact(artifact, str(out))
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload["n_regimes"] == 4
-    assert payload["version"] == "r2-regime-v1"
+    assert payload["version"] == "r2-regime-hmm-v1"
 
 
 def test_train_regime_model_rejects_invalid_count(tmp_path: Path) -> None:
@@ -74,6 +77,26 @@ def test_infer_regime_probabilities_shape(tmp_path: Path) -> None:
 
     assert set(probs.keys()) == {"p_calm", "p_trending", "p_shock", "p_illiquid"}
     assert abs(sum(probs.values()) - 1.0) < 1e-6
+
+
+def test_hmm_artifact_roundtrip_and_stochastic_constraints(tmp_path: Path) -> None:
+    ipc_dir = tmp_path / "ipc"
+    ipc_dir.mkdir()
+    frame = _make_lob_frame(n=180)
+    frame.write_parquet(ipc_dir / "lob.parquet")
+
+    artifact, _ = train_regime_model_from_ipc(str(ipc_dir), RegimeConfig(n_regimes=4))
+    out = tmp_path / "regime_hmm.json"
+    save_regime_artifact(artifact, str(out))
+    loaded = load_regime_artifact(str(out))
+
+    transition = np.array(loaded.transition_matrix)
+    initial = np.array(loaded.initial_probs)
+
+    assert np.allclose(transition.sum(axis=1), 1.0, atol=1e-6)
+    assert np.all(transition >= 0.0)
+    assert np.isclose(initial.sum(), 1.0, atol=1e-6)
+    assert np.all(initial >= 0.0)
 
 
 def test_regime_signal_publisher_writes_file(tmp_path: Path) -> None:
@@ -158,3 +181,48 @@ def test_load_ipc_rejects_null_values(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Null values"):
         train_regime_model_from_ipc(str(ipc_dir), RegimeConfig(n_regimes=4))
+
+
+def test_load_legacy_kmeans_artifact_upgrades_to_hmm_schema(tmp_path: Path) -> None:
+    legacy = {
+        "version": "r2-regime-v1",
+        "n_regimes": 3,
+        "feature_columns": ["vol_20", "spread_20", "depth_20", "queue_imbalance", "log_ret_1"],
+        "regime_names": ["calm", "shock", "illiquid"],
+        "centers": [
+            [0.1, 0.2, 0.3, 0.0, 0.0],
+            [0.5, 0.6, 0.2, 0.1, 0.0],
+            [0.3, 0.8, 0.4, -0.1, 0.0],
+        ],
+        "scales": [1.0, 1.0, 1.0, 1.0, 1.0],
+    }
+    path = tmp_path / "legacy.json"
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+
+    loaded = load_regime_artifact(str(path))
+
+    assert loaded.version == "r2-regime-hmm-v1-legacy-upgraded"
+    assert len(loaded.means) == loaded.n_regimes
+    assert len(loaded.variances) == loaded.n_regimes
+    assert len(loaded.initial_probs) == loaded.n_regimes
+    assert len(loaded.transition_matrix) == loaded.n_regimes
+
+
+def test_infer_normalizes_invalid_probabilities_in_artifact(tmp_path: Path) -> None:
+    ipc_dir = tmp_path / "ipc"
+    ipc_dir.mkdir()
+    frame = _make_lob_frame(n=160)
+    frame.write_parquet(ipc_dir / "lob.parquet")
+    artifact, _ = train_regime_model_from_ipc(str(ipc_dir), RegimeConfig(n_regimes=4))
+
+    artifact.initial_probs = [10.0, 0.0, 0.0, 0.0]
+    artifact.transition_matrix = [
+        [9.0, 1.0, 0.0, 0.0],
+        [0.0, 7.0, 3.0, 0.0],
+        [0.0, 0.0, 10.0, 0.0],
+        [5.0, 0.0, 0.0, 5.0],
+    ]
+
+    probs = infer_regime_probabilities(frame, artifact)
+    assert abs(sum(probs.values()) - 1.0) < 1e-6
+    assert all(v >= 0.0 for v in probs.values())

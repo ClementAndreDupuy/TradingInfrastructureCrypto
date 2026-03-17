@@ -12,8 +12,8 @@ shared-memory IPC file read by the C++ hot path (`core/ipc/regime_signal.hpp`).
 
 - `regime.py` — all regime logic:
   - `RegimeConfig` / `RegimeArtifact` — config and serialisable model artifact
-  - `train_regime_model_from_ipc()` — k-means training from LOB snapshots
-  - `infer_regime_probabilities()` — soft probability assignment for one tick
+  - `train_regime_model_from_ipc()` — Gaussian HMM training (EM + forward/backward) from LOB snapshots
+  - `infer_regime_probabilities()` — HMM posterior probability assignment for current tick
   - `save_regime_artifact()` / `load_regime_artifact()` — JSON persistence
   - `RegimeSignalPublisher` — seqlock-based mmap writer (`/tmp/regime_signal.bin`)
 
@@ -43,3 +43,5 @@ The C++ reader (`RegimeSignalReader`) uses seqlock: reads are valid only when
    staleness check must use `std::chrono::system_clock`, not `steady_clock`.
 4. `_semantic_regime_names` must never produce duplicate labels; use
    priority-based assignment that skips already-named clusters.
+
+5. Regime artifact loading must preserve backward compatibility with legacy `r2-regime-v1` k-means artifacts by upgrading them in-place to the HMM schema (`initial_probs`, `transition_matrix`, `means`, `variances`) during load.
