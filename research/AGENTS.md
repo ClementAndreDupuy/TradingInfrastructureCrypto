@@ -35,22 +35,7 @@ Signal bridge: `shadow_session.py` → `/tmp/neural_alpha_signal.bin` → `core/
 
 ## Neural Alpha Improvements TODO
 
-Quick wins:
-
-- [x] **Direction-head gating** (`shadow_session.py`) — gates signal by `direction_probs > 0.55`
-- [x] **More OFI lags** (`features.py`) — OFI at lags 5, 10, 20; `D_SCALAR` = 13
-
-Medium effort:
-
-- [ ] **Per-level queue imbalance** (`features.py`) — `(bid_size_i - ask_size_i) / (bid_size_i + ask_size_i + 1e-8)` for each LOB level; adds 5 scalar features
-- [ ] **Wider volatility windows + vol ratio** (`features.py`) — add `vol_60`, `vol_200`, `vol_5 / vol_60`
-- [x] **Better adverse selection label** (`features.py`) — replaced spread-widening proxy with price reversion after fill within 10 ticks
-
-Higher effort:
-
-- [ ] **Rolling normalization** (`dataset.py`) — 500-tick rolling z-score instead of fold-level
-- [ ] **1-tick return head** (`model.py`) — add horizon 1; use in `shadow_session.py` as entry gate
-- [ ] **Ensemble two models** (`pipeline.py`) — second smaller model (`d_spatial=32, n_temp_layers=1`), average signals for ~20–30% ICIR improvement
+All listed neural-alpha improvement items in this file have now been implemented in the codebase; remove stale TODO entries here and track any new follow-up work in `docs/TODOS.md`.
 
 ## Reusable Agent Memory (Updated)
 

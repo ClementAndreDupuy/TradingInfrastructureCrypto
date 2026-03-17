@@ -401,11 +401,49 @@ def _evaluate_state_on_holdout(df: pl.DataFrame, state_dict: dict, cfg: TrainerC
 
     return sqerr / max(n, 1)
 
+
+def _blend_fold_results(
+    primary_folds: list[dict],
+    secondary_folds: list[dict],
+) -> list[dict]:
+    """Average prediction tensors from two fold-result lists."""
+    if len(primary_folds) != len(secondary_folds):
+        raise ValueError("Primary/secondary fold counts do not match for ensembling.")
+
+    blended: list[dict] = []
+    for primary, secondary in zip(primary_folds, secondary_folds):
+        p_pred = primary.get("predictions")
+        s_pred = secondary.get("predictions")
+        p_lbl = primary.get("labels")
+        s_lbl = secondary.get("labels")
+
+        if p_pred is None or s_pred is None or p_lbl is None or s_lbl is None:
+            raise ValueError("Missing predictions/labels while building fold ensemble.")
+        if p_pred.shape != s_pred.shape or p_lbl.shape != s_lbl.shape:
+            raise ValueError("Primary/secondary fold tensor shapes do not match.")
+
+        blended.append(
+            {
+                **primary,
+                "predictions": ((p_pred + s_pred) / 2.0).astype(np.float32),
+                "labels": p_lbl,
+                "ensemble": True,
+            }
+        )
+
+    return blended
+
 def run_pipeline(args: argparse.Namespace) -> None:
     from .alpha_regression import analyse_alpha, print_alpha_report
     from .backtest import BacktestConfig, NeuralAlphaBacktest
     from research.regime import RegimeConfig, save_regime_artifact, train_regime_model_from_ipc
     from .trainer import TrainerConfig, walk_forward_train
+
+    if args.ensemble_secondary and args.synthetic:
+        raise ValueError(
+            "Secondary ensembling is production-only and requires real market data. "
+            "Remove --synthetic to enable --ensemble-secondary."
+        )
 
     # ── 1. Data ──────────────────────────────────────────────────────────────
     if args.synthetic:
@@ -450,6 +488,28 @@ def run_pipeline(args: argparse.Namespace) -> None:
         print("No fold results — dataset too small for the chosen seq_len / n_folds.")
         return
 
+    secondary_fold_results: list[dict] | None = None
+    effective_folds = fold_results
+    if args.ensemble_secondary:
+        print("Training secondary ensemble model (d_spatial=32, d_temporal=64, n_temp_layers=1)…")
+        secondary_cfg = TrainerConfig(
+            epochs=args.epochs,
+            n_folds=args.folds,
+            pretrain=not args.no_pretrain,
+            pretrain_epochs=args.pretrain_epochs,
+            d_spatial=32,
+            d_temporal=64,
+            n_temp_layers=1,
+            seq_len=args.seq_len,
+            batch_size=args.batch_size,
+            lr=args.lr,
+        )
+        secondary_fold_results = walk_forward_train(df, secondary_cfg)
+        if not secondary_fold_results:
+            raise RuntimeError("Secondary ensemble model produced no fold results.")
+        effective_folds = _blend_fold_results(fold_results, secondary_fold_results)
+        print("Secondary model blended with primary predictions (50/50).")
+
     # ── 3. Backtest ───────────────────────────────────────────────────────────
     bt_cfg = BacktestConfig(
         entry_threshold_bps=args.entry_bps,
@@ -458,7 +518,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
     test_slices = _fold_slices(len(df), args.folds, trainer_cfg.train_frac)
 
     all_bt_metrics: list[dict] = []
-    for fold, (start, end) in zip(fold_results, test_slices):
+    for fold, (start, end) in zip(effective_folds, test_slices):
         test_df  = df[start:end]
         signals  = fold["predictions"][:, 2]  # mid-horizon (index 2 = 100t)
 
@@ -483,7 +543,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
     merged_bt["total_trades"] = sum(m.get("total_trades", 0) for m in all_bt_metrics)
 
     # ── 4. Alpha regression ───────────────────────────────────────────────────
-    alpha_metrics = analyse_alpha(fold_results, horizon_idx=1)
+    alpha_metrics = analyse_alpha(effective_folds, horizon_idx=1)
 
     # ── 5. Report ─────────────────────────────────────────────────────────────
     print_alpha_report(alpha_metrics, merged_bt)
@@ -537,6 +597,38 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 f"selected={'incumbent' if selected_state is not challenger_state else 'challenger'}"
             )
 
+        if args.ensemble_secondary and secondary_fold_results:
+            secondary_cfg = TrainerConfig(
+                epochs=args.epochs,
+                n_folds=args.folds,
+                pretrain=not args.no_pretrain,
+                pretrain_epochs=args.pretrain_epochs,
+                d_spatial=32,
+                d_temporal=64,
+                n_temp_layers=1,
+                seq_len=args.seq_len,
+                batch_size=args.batch_size,
+                lr=args.lr,
+            )
+            best_secondary = min(
+                secondary_fold_results,
+                key=lambda f: f["metrics"].get("loss_total", 1e9),
+            )
+            secondary_path = Path(args.save_model).with_name(
+                f"{Path(args.save_model).stem}_secondary{Path(args.save_model).suffix}"
+            )
+            secondary_state = best_secondary["model_state"]
+            torch.save(secondary_state, secondary_path)
+            secondary_mse = None
+            holdout_start = int(len(df) * 0.8)
+            holdout_df = df[holdout_start:]
+            if len(holdout_df) >= secondary_cfg.seq_len * 2:
+                secondary_mse = _evaluate_state_on_holdout(holdout_df, secondary_state, secondary_cfg)
+            print(
+                f"Secondary ensemble model saved → {secondary_path}"
+                + (f" (holdout_mse={secondary_mse:.6e})" if secondary_mse is not None else "")
+            )
+
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Neural crypto alpha pipeline")
@@ -580,6 +672,12 @@ def main() -> None:
     # Backtest
     ap.add_argument("--entry-bps",       type=float, default=5.0,   dest="entry_bps")
     ap.add_argument("--fee-bps",         type=float, default=5.0,   dest="fee_bps")
+    ap.add_argument(
+        "--ensemble-secondary",
+        action="store_true",
+        dest="ensemble_secondary",
+        help="Train a smaller secondary model and average fold predictions with primary model.",
+    )
 
     args = ap.parse_args()
     run_pipeline(args)
