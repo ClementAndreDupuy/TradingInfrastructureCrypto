@@ -2,11 +2,13 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include "../core/common/types.hpp"
-#include "../core/feeds/binance/binance_feed_handler.hpp"
-#include "../core/feeds/kraken/kraken_feed_handler.hpp"
-#include "../core/orderbook/orderbook.hpp"
-#include "../core/risk/kill_switch.hpp"
+#include "../common/types.hpp"
+#include "../feeds/binance/binance_feed_handler.hpp"
+#include "../feeds/coinbase/coinbase_feed_handler.hpp"
+#include "../feeds/kraken/kraken_feed_handler.hpp"
+#include "../feeds/okx/okx_feed_handler.hpp"
+#include "../orderbook/orderbook.hpp"
+#include "../risk/kill_switch.hpp"
 
 #include <iomanip>
 #include <memory>
@@ -47,6 +49,76 @@ static std::string fmt_double(double v) {
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(8) << v;
     return oss.str();
+}
+
+// ── Feed handler binding helper ───────────────────────────────────────────────
+//
+// Both BinanceFeedHandler and KrakenFeedHandler expose an identical Python
+// interface.  This template registers all shared methods so the concrete
+// handler blocks below only need to supply the constructor (which differs by
+// default URL values) and the exchange-specific docstring.
+//
+// Thread model: start() spawns a background WebSocket thread and blocks up to
+// 30 s waiting for STREAMING state.  The GIL is released for the entire
+// duration of start() and stop() so the background thread can acquire it when
+// invoking Python callbacks.  Callbacks are wrapped with a GIL-safe shared_ptr
+// deleter so their py::object is always released with the GIL held.
+template <typename Handler>
+static py::class_<Handler> bind_feed_handler(py::module_& m, const char* class_name,
+                                             const char* class_doc) {
+    return py::class_<Handler>(m, class_name, class_doc)
+        .def(
+            "set_snapshot_callback",
+            [](Handler& h, py::object cb) {
+                h.set_snapshot_callback(make_safe_cb<const Snapshot&>(std::move(cb)));
+            },
+            py::arg("callback"),
+            py::keep_alive<1, 2>(), // keep callback alive as long as handler is alive
+            "Register a callback invoked on each full book snapshot. "
+            "The handler holds a reference to the callable for its lifetime.")
+        .def(
+            "set_delta_callback",
+            [](Handler& h, py::object cb) {
+                h.set_delta_callback(make_safe_cb<const Delta&>(std::move(cb)));
+            },
+            py::arg("callback"), py::keep_alive<1, 2>(),
+            "Register a callback invoked on each incremental book update.")
+        .def(
+            "set_error_callback",
+            [](Handler& h, py::object cb) {
+                h.set_error_callback(make_safe_cb<const std::string&>(std::move(cb)));
+            },
+            py::arg("callback"), py::keep_alive<1, 2>(),
+            "Register a callback invoked on WebSocket errors. Argument is an error string.")
+        .def("start", &Handler::start, py::call_guard<py::gil_scoped_release>(),
+             "Connect to WebSocket and sync the order book. "
+             "BLOCKS up to 30 s waiting for STREAMING state. "
+             "Returns Result.SUCCESS or Result.ERROR_CONNECTION_LOST.")
+        .def("stop", &Handler::stop, py::call_guard<py::gil_scoped_release>(),
+             "Disconnect and join the background WebSocket thread.")
+        .def("is_running", &Handler::is_running)
+        .def("get_sequence", &Handler::get_sequence)
+        .def("process_message", &Handler::process_message, py::arg("message"),
+             "TESTING ONLY — Parse and dispatch a raw WebSocket JSON message directly. "
+             "Bypasses the normal feed state machine. Do not call in production; "
+             "calling with fabricated data will corrupt the order book state.")
+        .def("__enter__",
+             [class_name](py::object self) -> py::object {
+                 Handler& h = self.cast<Handler&>();
+                 Result r;
+                 {
+                     py::gil_scoped_release release;
+                     r = h.start();
+                 }
+                 if (r != Result::SUCCESS)
+                     throw std::runtime_error(std::string(class_name) + ".start() failed");
+                 return self;
+             })
+        .def("__exit__", [](Handler& h, py::object, py::object, py::object) -> bool {
+            py::gil_scoped_release release;
+            h.stop();
+            return false;
+        });
 }
 
 PYBIND11_MODULE(trading_core, m) {
@@ -206,129 +278,40 @@ PYBIND11_MODULE(trading_core, m) {
         .def_static("reason_to_string", &KillSwitch::reason_to_string, py::arg("reason"));
 
     // ── BinanceFeedHandler ────────────────────────────────────────────────────
-    //
-    // Thread model: start() spawns a background WebSocket thread and blocks up
-    // to 30 s waiting for STREAMING state.  The GIL is released for the entire
-    // duration of start() and stop() so the background thread can acquire it
-    // when invoking Python callbacks.  Callbacks are wrapped with a GIL-safe
-    // shared_ptr deleter so their py::object is always released with the GIL.
 
-    py::class_<BinanceFeedHandler>(m, "BinanceFeedHandler")
+    bind_feed_handler<BinanceFeedHandler>(
+        m, "BinanceFeedHandler",
+        "Binance spot order book feed handler using the diff-depth WebSocket stream.")
         .def(py::init<const std::string&, const std::string&, const std::string&,
                       const std::string&, const std::string&>(),
              py::arg("symbol"), py::arg("api_key") = "", py::arg("api_secret") = "",
              py::arg("api_url") = "https://api.binance.com",
-             py::arg("ws_url") = "wss://stream.binance.com:9443/ws")
-        .def(
-            "set_snapshot_callback",
-            [](BinanceFeedHandler& h, py::object cb) {
-                h.set_snapshot_callback(make_safe_cb<const Snapshot&>(std::move(cb)));
-            },
-            py::arg("callback"),
-            py::keep_alive<1, 2>(), // keep callback alive as long as handler is alive
-            "Register a callback invoked on each full book snapshot. "
-            "The handler holds a reference to the callable for its lifetime.")
-        .def(
-            "set_delta_callback",
-            [](BinanceFeedHandler& h, py::object cb) {
-                h.set_delta_callback(make_safe_cb<const Delta&>(std::move(cb)));
-            },
-            py::arg("callback"), py::keep_alive<1, 2>(),
-            "Register a callback invoked on each incremental book update.")
-        .def(
-            "set_error_callback",
-            [](BinanceFeedHandler& h, py::object cb) {
-                h.set_error_callback(make_safe_cb<const std::string&>(std::move(cb)));
-            },
-            py::arg("callback"), py::keep_alive<1, 2>(),
-            "Register a callback invoked on WebSocket errors. Argument is an error string.")
-        .def("start", &BinanceFeedHandler::start, py::call_guard<py::gil_scoped_release>(),
-             "Connect to Binance WebSocket and sync the order book. "
-             "BLOCKS up to 30 s waiting for STREAMING state. "
-             "Returns Result.SUCCESS or Result.ERROR_CONNECTION_LOST.")
-        .def("stop", &BinanceFeedHandler::stop, py::call_guard<py::gil_scoped_release>(),
-             "Disconnect and join the background WebSocket thread.")
-        .def("is_running", &BinanceFeedHandler::is_running)
-        .def("get_sequence", &BinanceFeedHandler::get_sequence)
-        .def("process_message", &BinanceFeedHandler::process_message, py::arg("message"),
-             "TESTING ONLY — Parse and dispatch a raw WebSocket JSON message directly. "
-             "Bypasses the normal feed state machine. Do not call in production; "
-             "calling with fabricated data will corrupt the order book state.")
-        .def("__enter__",
-             [](py::object self) -> py::object {
-                 BinanceFeedHandler& h = self.cast<BinanceFeedHandler&>();
-                 Result r;
-                 {
-                     py::gil_scoped_release release;
-                     r = h.start();
-                 }
-                 if (r != Result::SUCCESS)
-                     throw std::runtime_error("BinanceFeedHandler.start() failed");
-                 return self;
-             })
-        .def("__exit__", [](BinanceFeedHandler& h, py::object, py::object, py::object) -> bool {
-            py::gil_scoped_release release;
-            h.stop();
-            return false;
-        });
+             py::arg("ws_url") = "wss://stream.binance.com:9443/ws");
 
     // ── KrakenFeedHandler ─────────────────────────────────────────────────────
 
-    py::class_<KrakenFeedHandler>(m, "KrakenFeedHandler")
+    bind_feed_handler<KrakenFeedHandler>(
+        m, "KrakenFeedHandler",
+        "Kraken order book feed handler using the WebSocket v2 book channel.")
         .def(py::init<const std::string&, const std::string&, const std::string&,
                       const std::string&, const std::string&>(),
              py::arg("symbol"), py::arg("api_key") = "", py::arg("api_secret") = "",
              py::arg("api_url") = "https://api.kraken.com",
-             py::arg("ws_url") = "wss://ws.kraken.com/v2")
-        .def(
-            "set_snapshot_callback",
-            [](KrakenFeedHandler& h, py::object cb) {
-                h.set_snapshot_callback(make_safe_cb<const Snapshot&>(std::move(cb)));
-            },
-            py::arg("callback"), py::keep_alive<1, 2>(),
-            "Register a callback invoked on each full book snapshot. "
-            "The handler holds a reference to the callable for its lifetime.")
-        .def(
-            "set_delta_callback",
-            [](KrakenFeedHandler& h, py::object cb) {
-                h.set_delta_callback(make_safe_cb<const Delta&>(std::move(cb)));
-            },
-            py::arg("callback"), py::keep_alive<1, 2>(),
-            "Register a callback invoked on each incremental book update.")
-        .def(
-            "set_error_callback",
-            [](KrakenFeedHandler& h, py::object cb) {
-                h.set_error_callback(make_safe_cb<const std::string&>(std::move(cb)));
-            },
-            py::arg("callback"), py::keep_alive<1, 2>(),
-            "Register a callback invoked on WebSocket errors. Argument is an error string.")
-        .def("start", &KrakenFeedHandler::start, py::call_guard<py::gil_scoped_release>(),
-             "Connect to Kraken WebSocket v2 and sync the order book. "
-             "BLOCKS up to 30 s waiting for STREAMING state. "
-             "Returns Result.SUCCESS or Result.ERROR_CONNECTION_LOST.")
-        .def("stop", &KrakenFeedHandler::stop, py::call_guard<py::gil_scoped_release>(),
-             "Disconnect and join the background WebSocket thread.")
-        .def("is_running", &KrakenFeedHandler::is_running)
-        .def("get_sequence", &KrakenFeedHandler::get_sequence)
-        .def("process_message", &KrakenFeedHandler::process_message, py::arg("message"),
-             "TESTING ONLY — Parse and dispatch a raw WebSocket JSON message directly. "
-             "Bypasses the normal feed state machine. Do not call in production; "
-             "calling with fabricated data will corrupt the order book state.")
-        .def("__enter__",
-             [](py::object self) -> py::object {
-                 KrakenFeedHandler& h = self.cast<KrakenFeedHandler&>();
-                 Result r;
-                 {
-                     py::gil_scoped_release release;
-                     r = h.start();
-                 }
-                 if (r != Result::SUCCESS)
-                     throw std::runtime_error("KrakenFeedHandler.start() failed");
-                 return self;
-             })
-        .def("__exit__", [](KrakenFeedHandler& h, py::object, py::object, py::object) -> bool {
-            py::gil_scoped_release release;
-            h.stop();
-            return false;
-        });
+             py::arg("ws_url") = "wss://ws.kraken.com/v2");
+
+    // ── OkxFeedHandler ────────────────────────────────────────────────────────
+
+    bind_feed_handler<OkxFeedHandler>(
+        m, "OkxFeedHandler", "OKX order book feed handler using the WebSocket v5 public channel.")
+        .def(py::init<const std::string&, const std::string&, const std::string&>(),
+             py::arg("symbol"), py::arg("api_url") = "https://www.okx.com",
+             py::arg("ws_url") = "wss://ws.okx.com:8443/ws/v5/public");
+
+    // ── CoinbaseFeedHandler ───────────────────────────────────────────────────
+
+    bind_feed_handler<CoinbaseFeedHandler>(
+        m, "CoinbaseFeedHandler",
+        "Coinbase Advanced Trade order book feed handler using the WebSocket channel.")
+        .def(py::init<const std::string&, const std::string&>(), py::arg("symbol"),
+             py::arg("ws_url") = "wss://advanced-trade-ws.coinbase.com");
 }

@@ -20,7 +20,7 @@ import os
 import pytest
 
 # Allow import from bindings/ when the .so was built in-place
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../bindings"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../core/bindings"))
 
 try:
     import trading_core as tc
