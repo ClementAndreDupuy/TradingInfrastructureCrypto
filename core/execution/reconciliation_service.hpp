@@ -497,7 +497,7 @@ class ReconciliationService {
 
     static double drift(double a, double b) noexcept { return std::fabs(a - b); }
 
-    static bool ccstr_eq(const char* lhs, const char* rhs) noexcept {
+    static bool cstr_eq(const char* lhs, const char* rhs) noexcept {
         return std::strcmp(lhs, rhs) == 0;
     }
 
@@ -514,7 +514,7 @@ class ReconciliationService {
             return false;
 
         if (!is_empty_trade_id(lhs.venue_trade_id) && !is_empty_trade_id(rhs.venue_trade_id) &&
-            ccstr_eq(lhs.venue_trade_id, rhs.venue_trade_id)) {
+            cstr_eq(lhs.venue_trade_id, rhs.venue_trade_id)) {
             return true;
         }
 
@@ -526,7 +526,7 @@ class ReconciliationService {
         }
 
         if (!is_empty_venue_id(lhs.venue_order_id) && !is_empty_venue_id(rhs.venue_order_id) &&
-            ccstr_eq(lhs.venue_order_id, rhs.venue_order_id) &&
+            cstr_eq(lhs.venue_order_id, rhs.venue_order_id) &&
             lhs.exchange_ts_ns == rhs.exchange_ts_ns &&
             drift(lhs.quantity, rhs.quantity) <= 1e-12 && drift(lhs.price, rhs.price) <= 1e-12) {
             return true;
@@ -545,7 +545,7 @@ class ReconciliationService {
             }
             if (!is_empty_venue_id(candidate.venue_order_id) &&
                 !is_empty_venue_id(key.venue_order_id) &&
-                ccstr_eq(candidate.venue_order_id, key.venue_order_id)) {
+                cstr_eq(candidate.venue_order_id, key.venue_order_id)) {
                 return &candidate;
             }
         }
