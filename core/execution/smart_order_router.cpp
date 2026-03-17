@@ -13,8 +13,8 @@ auto quote_price_for_side(const VenueQuote& venue_quote, Side side) noexcept -> 
     return (side == Side::BID) ? venue_quote.best_ask : venue_quote.best_bid;
 }
 
-auto find_best_price(Side side, const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES>& venues)
-    -> double {
+auto find_best_price(Side side,
+                     const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES>& venues) -> double {
     double best_px = k_infinite_price;
     for (const auto& venue_quote : venues) {
         if (!venue_quote.healthy || venue_quote.depth_qty <= 0.0) {
@@ -80,8 +80,8 @@ void append_child_order(RoutingDecision& out, Side side, const VenueQuote& winne
 
 } // namespace
 
-auto SmartOrderRouter::effective_price_bps(const VenueQuote& venue_quote, Side side) noexcept
-    -> double {
+auto SmartOrderRouter::effective_price_bps(const VenueQuote& venue_quote,
+                                           Side side) noexcept -> double {
     const double quote_price = (side == Side::BID) ? venue_quote.best_ask : venue_quote.best_bid;
     if (quote_price <= 0.0) {
         return 1e12;
