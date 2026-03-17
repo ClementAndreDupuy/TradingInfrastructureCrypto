@@ -1,0 +1,16 @@
+[Unit]
+Description=SLO Sanity-Check Engine — Algorithm health report
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/trading
+EnvironmentFile=/etc/trading/env
+ExecStart=/opt/trading/venv/bin/python /opt/trading/deploy/slo_engine.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=slo-engine
+
+[Install]
+WantedBy=multi-user.target
