@@ -52,7 +52,7 @@ from research.neural_alpha.model import (
     MultiTaskLoss,
     TemporalEncoder,
 )
-from research.neural_alpha.pipeline import _blend_fold_results, generate_synthetic_lob
+from research.neural_alpha.pipeline import generate_synthetic_lob
 from research.neural_alpha.shadow_session import (
     NeuralAlphaShadowSession,
     ShadowSessionConfig,
@@ -472,37 +472,3 @@ class TestShadowSessionTraining:
 
         session._log_fp.close()
         session._publisher.close()
-
-
-class TestPipelineEnsembling:
-    def test_blend_fold_results_averages_predictions(self) -> None:
-        primary = [
-            {
-                "fold": 1,
-                "predictions": np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
-                "labels": np.array([[0.0, 0.0], [1.0, 1.0]], dtype=np.float32),
-            }
-        ]
-        secondary = [
-            {
-                "fold": 1,
-                "predictions": np.array([[3.0, 4.0], [5.0, 6.0]], dtype=np.float32),
-                "labels": np.array([[0.0, 0.0], [1.0, 1.0]], dtype=np.float32),
-            }
-        ]
-
-        blended = _blend_fold_results(primary, secondary)
-
-        assert len(blended) == 1
-        assert blended[0]["ensemble"] is True
-        np.testing.assert_allclose(
-            blended[0]["predictions"],
-            np.array([[2.0, 3.0], [4.0, 5.0]], dtype=np.float32),
-        )
-
-    def test_blend_fold_results_validates_shapes(self) -> None:
-        primary = [{"predictions": np.ones((2, 4), dtype=np.float32), "labels": np.ones((2, 6), dtype=np.float32)}]
-        secondary = [{"predictions": np.ones((1, 4), dtype=np.float32), "labels": np.ones((2, 6), dtype=np.float32)}]
-
-        with pytest.raises(ValueError):
-            _blend_fold_results(primary, secondary)

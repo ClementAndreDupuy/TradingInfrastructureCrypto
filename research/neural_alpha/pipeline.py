@@ -439,6 +439,12 @@ def run_pipeline(args: argparse.Namespace) -> None:
     from research.regime import RegimeConfig, save_regime_artifact, train_regime_model_from_ipc
     from .trainer import TrainerConfig, walk_forward_train
 
+    if args.ensemble_secondary and args.synthetic:
+        raise ValueError(
+            "Secondary ensembling is production-only and requires real market data. "
+            "Remove --synthetic to enable --ensemble-secondary."
+        )
+
     # ── 1. Data ──────────────────────────────────────────────────────────────
     if args.synthetic:
         print("Using synthetic LOB data.")
