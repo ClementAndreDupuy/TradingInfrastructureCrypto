@@ -1,4 +1,5 @@
 #include "core/feeds/okx/okx_feed_handler.hpp"
+#include "core/feeds/common/symbol_mapper.hpp"
 #include <gtest/gtest.h>
 
 using namespace trading;
@@ -74,6 +75,50 @@ TEST_F(OkxFeedHandlerTest, BuffersBookDeltasBeforeStreaming) {
     EXPECT_TRUE(last_error_.empty());
 }
 
+
+TEST_F(OkxFeedHandlerTest, IgnoresMessagesForOtherInstrument) {
+    handler_->set_streaming_state_for_test(100);
+    handler_->seed_book_state_for_test({PriceLevel{50000.0, 1.0}}, {PriceLevel{50001.0, 1.0}});
+
+    std::string msg =
+        R"({"arg":{"channel":"books","instId":"ETH-USDT"},"data":[{"seqId":"101","prevSeqId":"100","bids":[["50000","1.0","0","1"]],"asks":[["50001","1.0","0","1"]]}]})";
+
+    EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
+    EXPECT_TRUE(deltas_.empty());
+}
+
+TEST(OkxFeedHandlerSymbolTest, NormalizesCompactSymbolToOkxInstId) {
+    OkxFeedHandler handler("BTCUSDT");
+    handler.set_streaming_state_for_test(100);
+    handler.seed_book_state_for_test({PriceLevel{50000.0, 1.0}}, {PriceLevel{50001.0, 1.0}});
+
+    std::vector<Delta> deltas;
+    handler.set_delta_callback([&deltas](const Delta& d) { deltas.push_back(d); });
+
+    std::string msg =
+        R"({"arg":{"channel":"books","instId":"BTC-USDT"},"data":[{"seqId":"101","prevSeqId":"100","bids":[["50000","1.0","0","1"]],"asks":[["50001","1.2","0","1"]]}]})";
+
+    EXPECT_EQ(handler.process_message(msg), Result::SUCCESS);
+    EXPECT_EQ(handler.get_sequence(), 101u);
+    EXPECT_FALSE(deltas.empty());
+}
+
+TEST(SymbolMapperTest, MapsCompactSymbolAcrossExchanges) {
+    const VenueSymbols symbols = SymbolMapper::map_all("BTCUSDT");
+    EXPECT_EQ(symbols.binance, "BTCUSDT");
+    EXPECT_EQ(symbols.okx, "BTC-USDT");
+    EXPECT_EQ(symbols.coinbase, "BTC-USDT");
+    EXPECT_EQ(symbols.kraken_ws, "BTC/USDT");
+    EXPECT_EQ(symbols.kraken_rest, "BTC/USDT");
+}
+
+TEST(SymbolMapperTest, PreservesDelimitedInputAcrossExchanges) {
+    const VenueSymbols symbols = SymbolMapper::map_all("eth-usdc");
+    EXPECT_EQ(symbols.binance, "ETHUSDC");
+    EXPECT_EQ(symbols.okx, "ETH-USDC");
+    EXPECT_EQ(symbols.coinbase, "ETH-USDC");
+    EXPECT_EQ(symbols.kraken_ws, "ETH/USDC");
+}
 TEST_F(OkxFeedHandlerTest, ChecksumMismatchTriggersResnapshot) {
     handler_->set_streaming_state_for_test(100);
     handler_->seed_book_state_for_test({PriceLevel{50000.0, 1.0}}, {PriceLevel{50001.0, 1.0}});

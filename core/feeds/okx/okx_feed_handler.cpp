@@ -102,8 +102,10 @@ static struct lws_protocols k_okx_protocols[] = {
 
 OkxFeedHandler::OkxFeedHandler(const std::string& symbol, const std::string& api_url,
                                const std::string& ws_url)
-    : symbol_(symbol), api_url_(api_url), ws_url_(ws_url) {
-    LOG_INFO("OkxFeedHandler created", "symbol", symbol_.c_str());
+    : symbol_(symbol), venue_symbols_(SymbolMapper::map_all(symbol)),
+      inst_id_(venue_symbols_.okx), api_url_(api_url), ws_url_(ws_url) {
+    LOG_INFO("OkxFeedHandler created", "symbol", symbol_.c_str(), "inst_id",
+             inst_id_.c_str());
 }
 
 OkxFeedHandler::~OkxFeedHandler() { stop(); }
@@ -199,7 +201,7 @@ void OkxFeedHandler::ws_event_loop() {
 
         nlohmann::json sub = {
             {"op", "subscribe"},
-            {"args", nlohmann::json::array({{{"channel", "books"}, {"instId", symbol_}}})},
+            {"args", nlohmann::json::array({{{"channel", "books"}, {"instId", inst_id_}}})},
         };
         session.subscribe_msg = sub.dump();
 
@@ -294,7 +296,7 @@ void OkxFeedHandler::ws_event_loop() {
 }
 
 auto OkxFeedHandler::fetch_snapshot() -> Result {
-    const std::string url = api_url_ + "/api/v5/market/books?instId=" + symbol_ + "&sz=400";
+    const std::string url = api_url_ + "/api/v5/market/books?instId=" + inst_id_ + "&sz=400";
 
     auto resp = http::get(url);
     if (resp.body.empty()) {
@@ -422,6 +424,11 @@ auto OkxFeedHandler::process_message(const std::string& message) -> Result {
     }
     auto ch_it = arg_it->find("channel");
     if (ch_it == arg_it->end() || !ch_it->is_string() || ch_it->get<std::string>() != "books") {
+        return Result::SUCCESS;
+    }
+
+    auto inst_it = arg_it->find("instId");
+    if (inst_it == arg_it->end() || !inst_it->is_string() || inst_it->get<std::string>() != inst_id_) {
         return Result::SUCCESS;
     }
 

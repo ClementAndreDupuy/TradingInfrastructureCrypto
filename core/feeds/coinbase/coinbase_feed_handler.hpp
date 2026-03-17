@@ -2,6 +2,7 @@
 
 #include "../../common/logging.hpp"
 #include "../../common/types.hpp"
+#include "../common/symbol_mapper.hpp"
 #ifdef __has_include
 #if __has_include(<nlohmann/json.hpp>)
 #include <nlohmann/json.hpp>
@@ -54,6 +55,7 @@ class CoinbaseFeedHandler {
 
     std::string symbol_;
     std::string ws_url_;
+    VenueSymbols venue_symbols_;
 
     std::atomic<bool> running_{false};
     std::atomic<uint64_t> last_sequence_{0};

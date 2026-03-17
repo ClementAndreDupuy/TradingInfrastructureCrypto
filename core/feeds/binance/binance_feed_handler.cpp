@@ -115,7 +115,7 @@ BinanceFeedHandler::BinanceFeedHandler(const std::string& symbol, const std::str
                                        const std::string& ws_url)
     : symbol_(symbol), api_key_(api_key.empty() ? get_api_key_from_env() : api_key),
       api_secret_(api_secret.empty() ? get_api_secret_from_env() : api_secret), api_url_(api_url),
-      ws_url_(ws_url) {
+      ws_url_(ws_url), venue_symbols_(SymbolMapper::map_all(symbol)) {
     if (!api_key_.empty()) {
         LOG_INFO("BinanceFeedHandler created with API key", "symbol", symbol_.c_str());
     } else {
@@ -193,7 +193,7 @@ void BinanceFeedHandler::ws_event_loop() {
     uint32_t delay_ms = 100;
 
     // Build stream path  /ws/<symbol_lower>@depth@100ms
-    std::string sym_lower = symbol_;
+    std::string sym_lower = venue_symbols_.binance;
     for (auto& character : sym_lower) {
         character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
     }
@@ -339,7 +339,7 @@ auto BinanceFeedHandler::fetch_snapshot() -> Result {
     }
     last_snapshot_time_ = clock::now();
 
-    const std::string url = api_url_ + "/api/v3/depth?symbol=" + symbol_ + "&limit=1000";
+    const std::string url = api_url_ + "/api/v3/depth?symbol=" + venue_symbols_.binance + "&limit=1000";
 
     LOG_INFO("Fetching snapshot", "symbol", symbol_.c_str());
 
