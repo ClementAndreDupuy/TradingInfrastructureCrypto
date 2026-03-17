@@ -55,6 +55,7 @@ from .dataset import rolling_normalise
 from .features import compute_lob_tensor, compute_scalar_features
 from .governance import ChampionChallengerRegistry, DriftGuard
 from .model import CryptoAlphaNet
+from .regime import RegimeSignalPublisher, infer_regime_probabilities, load_regime_artifact
 from .pipeline import (
     _fetch_binance_l5,
     _fetch_coinbase_l5,
@@ -80,6 +81,8 @@ _SEQ_FMT = "=Q"    # native-endian uint64 (seqlock counter)
 _SEQ_OFFSET = 0
 _DATA_FMT = "=ddq" # native-endian: float64 signal_bps, float64 risk_score, int64 ts_ns
 _DATA_OFFSET = 8
+
+_REGIME_SIGNAL_FILE = "/tmp/regime_signal.bin"
 
 
 class _SignalPublisher:
@@ -131,6 +134,8 @@ class ShadowSessionConfig:
     symbol: str = "BTCUSDT"
     exchanges: list[str] = field(default_factory=lambda: ["BINANCE", "KRAKEN", "OKX", "COINBASE"])
     signal_file: str = _SIGNAL_FILE
+    regime_signal_file: str = _REGIME_SIGNAL_FILE
+    regime_model_path: str = "models/r2_regime_model.json"
     registry_path: str = "models/model_registry.json"
     drift_window: int = 200
     drift_min_samples: int = 60
@@ -156,6 +161,14 @@ class NeuralAlphaShadowSession:
         self._max_ring = max(500, cfg.seq_len * 2)
         self._log_fp = open(cfg.log_path, "a")
         self._publisher = _SignalPublisher(cfg.signal_file)
+        self._regime_publisher = RegimeSignalPublisher(cfg.regime_signal_file)
+        self._regime_artifact = None
+        if Path(cfg.regime_model_path).exists():
+            try:
+                self._regime_artifact = load_regime_artifact(cfg.regime_model_path)
+                print(f"Regime model loaded from {cfg.regime_model_path}")
+            except Exception as exc:
+                print(f"[WARN] failed to load regime model {cfg.regime_model_path}: {exc}")
         self._running = False
         self._signals: list[float] = []
         self._outcomes: list[float] = []
@@ -372,6 +385,19 @@ class NeuralAlphaShadowSession:
         # Publish to shared memory — C++ reads on next book update (< 100 ns)
         self._publisher.publish(signal_bps, risk)
 
+        regime_probs = {"p_calm": 1.0, "p_trending": 0.0, "p_shock": 0.0, "p_illiquid": 0.0}
+        if self._regime_artifact is not None:
+            try:
+                regime_probs = infer_regime_probabilities(df_ring, self._regime_artifact)
+            except Exception as exc:
+                print(f"[WARN] regime inference failed: {exc}")
+        self._regime_publisher.publish(
+            regime_probs["p_calm"],
+            regime_probs["p_trending"],
+            regime_probs["p_shock"],
+            regime_probs["p_illiquid"],
+        )
+
         last = self._ring[-1]
         mid = (last.get("best_bid", last.get("bid_price_1", 0.0)) +
                last.get("best_ask", last.get("ask_price_1", 0.0))) / 2.0
@@ -391,6 +417,10 @@ class NeuralAlphaShadowSession:
             "dir_p_up":       float(dir_probs[2]),
             "gated":          signal_bps == 0.0 and raw_signal_bps != 0.0,
             "safe_mode":      self._safe_mode_ticks_remaining > 0,
+            "p_calm":         regime_probs["p_calm"],
+            "p_trending":     regime_probs["p_trending"],
+            "p_shock":        regime_probs["p_shock"],
+            "p_illiquid":     regime_probs["p_illiquid"],
         }
 
     def _trigger_safe_mode(self, reason: str) -> None:
@@ -488,7 +518,8 @@ class NeuralAlphaShadowSession:
         print(
             f"Shadow session started — duration={self.cfg.duration_s}s  "
             f"interval={self.cfg.interval_ms}ms  symbol={self.cfg.symbol}  "
-            f"exchanges={','.join(self.cfg.exchanges)}  signal_file={self.cfg.signal_file}"
+            f"exchanges={','.join(self.cfg.exchanges)}  signal_file={self.cfg.signal_file} "
+            f"regime_signal_file={self.cfg.regime_signal_file}"
         )
 
         try:
@@ -530,6 +561,7 @@ class NeuralAlphaShadowSession:
             self._log_fp.close()
             self._bridge.close()
             self._publisher.close()
+            self._regime_publisher.close()
             print("Shadow session complete.")
 
     def stop(self) -> None:
@@ -546,6 +578,10 @@ def main() -> None:
                     dest="log_path")
     ap.add_argument("--signal-file",          type=str, default=_SIGNAL_FILE, dest="signal_file",
                     help="Shared memory file path read by C++ AlphaSignalReader")
+    ap.add_argument("--regime-signal-file",   type=str, default=_REGIME_SIGNAL_FILE, dest="regime_signal_file",
+                    help="Shared memory file path read by C++ RegimeSignalReader")
+    ap.add_argument("--regime-model-path",    type=str, default="models/r2_regime_model.json", dest="regime_model_path",
+                    help="Trained R2 regime artifact JSON for live regime inference")
     ap.add_argument("--interval-ms",          type=int, default=500, dest="interval_ms")
     ap.add_argument("--duration",             type=int, default=3600)
     ap.add_argument("--report-interval",      type=int, default=60, dest="report_interval_s")
@@ -584,6 +620,8 @@ def main() -> None:
         symbol=args.symbol,
         exchanges=args.exchanges.split(","),
         signal_file=args.signal_file,
+        regime_signal_file=args.regime_signal_file,
+        regime_model_path=args.regime_model_path,
         registry_path=args.registry_path,
         drift_window=args.drift_window,
         drift_min_samples=args.drift_min_samples,

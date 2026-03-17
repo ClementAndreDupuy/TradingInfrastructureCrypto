@@ -363,3 +363,36 @@ This approach is currently the best balance of:
 - operational safety for live crypto execution.
 
 It is directly implementable within the existing ThamesRiverTrading architecture and provides a clear path to measurable execution/risk improvements.
+
+---
+
+## 14) Implementation update (2026-03-17)
+
+Implemented in codebase with a practical first production candidate:
+
+1. Added `research/neural_alpha/regime.py` with a lightweight real-time regime trainer:
+   - Reads LOB snapshots from an IPC directory (`/ipc` by default).
+   - Builds real-time features (`vol_20`, `spread_20`, `depth_20`, `queue_imbalance`, `log_ret_1`).
+   - Trains a compact K-Means regime model constrained to **3 or 4** regimes.
+   - Assigns semantic regime names (`calm`, `shock`, plus `illiquid` / `trending` where available).
+   - Persists artifact JSON (`version`, feature columns, scales, regime centers, regime names).
+
+2. Integrated into `research/neural_alpha/pipeline.py` so regime training runs alongside neural alpha training.
+   - New CLI flags:
+     - `--ipc-dir` (default: `/ipc`)
+     - `--regimes` (supported: `3` or `4`)
+     - `--save-regime-model` (default: `models/r2_regime_model.json`)
+   - Pipeline now trains/saves the R2 regime model in the same run as neural model training.
+
+3. Added unit coverage in `tests/unit/test_regime.py`:
+   - Verifies IPC ingestion and artifact persistence.
+   - Verifies invalid regime-count rejection.
+
+This establishes R2 as a working cold-path component that is trainable, reproducible, and persisted for downstream deployment/integration.
+
+
+4. Added runtime IPC publishing + hot-path consumption for regimes:
+   - `shadow_session.py` now publishes regime probabilities to `/tmp/regime_signal.bin` each inference tick.
+   - `core/ipc/regime_signal.hpp` added seqlock reader for `p_calm/p_trending/p_shock/p_illiquid`.
+   - `core/execution/market_maker.hpp` now reads regime IPC before quoting and blocks/widens orders under shock/illiquid states.
+
