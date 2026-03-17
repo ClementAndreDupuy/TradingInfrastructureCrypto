@@ -71,11 +71,14 @@ static auto binance_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, vo
     case LWS_CALLBACK_CLIENT_RECEIVE: {
         const char* data = static_cast<const char*>(input);
         bool is_final = lws_is_final_fragment(wsi) != 0;
-        if (session->frag_len + len < sizeof(session->frag_buf)) {
+        if (session->frag_len + len <= sizeof(session->frag_buf)) {
             std::memcpy(session->frag_buf + session->frag_len, data, len);
             session->frag_len += len;
+        } else {
+            // Message exceeds buffer: discard the entire fragmented message.
+            session->frag_len = 0;
         }
-        if (is_final && (session->handler != nullptr)) {
+        if (is_final && session->frag_len > 0 && (session->handler != nullptr)) {
             session->handler->process_message(std::string(session->frag_buf, session->frag_len));
             session->frag_len = 0;
         }
@@ -506,7 +509,6 @@ auto BinanceFeedHandler::process_delta(const nlohmann::json& json, uint64_t seq)
 // ─── Buffered-delta replay ────────────────────────────────────────────────────
 auto BinanceFeedHandler::apply_buffered_deltas() -> Result {
     size_t applied = 0, skipped = 0;
-    uint64_t last_id = last_update_id_.load(std::memory_order_acquire);
 
     for (const auto& msg : delta_buffer_) {
         auto json = nlohmann::json::parse(msg, nullptr, false);
@@ -522,6 +524,8 @@ auto BinanceFeedHandler::apply_buffered_deltas() -> Result {
 
         uint64_t first_update_id = first_update_it->get<uint64_t>();
         uint64_t last_update_id = last_update_it->get<uint64_t>();
+        // Reload last_id each iteration so it reflects updates made by process_delta.
+        uint64_t last_id = last_update_id_.load(std::memory_order_acquire);
 
         if (first_update_id <= last_id + 1 && last_id + 1 <= last_update_id) {
             if (process_delta(json, last_update_id) == Result::SUCCESS) {

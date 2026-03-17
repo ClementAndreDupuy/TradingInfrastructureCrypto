@@ -40,11 +40,14 @@ static auto coinbase_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, v
     case LWS_CALLBACK_CLIENT_RECEIVE: {
         const char* data = static_cast<const char*>(input);
         bool is_final = lws_is_final_fragment(wsi) != 0;
-        if (session->frag_len + len < sizeof(session->frag_buf)) {
+        if (session->frag_len + len <= sizeof(session->frag_buf)) {
             std::memcpy(session->frag_buf + session->frag_len, data, len);
             session->frag_len += len;
+        } else {
+            // Message exceeds buffer: discard the entire fragmented message.
+            session->frag_len = 0;
         }
-        if (is_final && (session->handler != nullptr)) {
+        if (is_final && session->frag_len > 0 && (session->handler != nullptr)) {
             session->handler->process_message(std::string(session->frag_buf, session->frag_len));
             session->frag_len = 0;
         }
@@ -238,6 +241,7 @@ void CoinbaseFeedHandler::ws_event_loop() {
         }
 
         LOG_INFO("Coinbase WebSocket established", "symbol", symbol_.c_str());
+        delay_ms = 100; // reset backoff on successful connection
 
         while (running_.load() && !session.closed) {
             int64_t now_ns = http::now_ns();
@@ -290,15 +294,20 @@ auto CoinbaseFeedHandler::process_snapshot(const nlohmann::json& json, uint64_t 
                 continue;
             }
 
-            PriceLevel level;
-            level.price = std::stod(px_it->get<std::string>());
-            level.size = std::stod(qty_it->get<std::string>());
+            try {
+                PriceLevel level;
+                level.price = std::stod(px_it->get<std::string>());
+                level.size = std::stod(qty_it->get<std::string>());
 
-            const std::string side = side_it->get<std::string>();
-            if (side == "bid") {
-                snap.bids.push_back(level);
-            } else if (side == "offer" || side == "ask") {
-                snap.asks.push_back(level);
+                const std::string side = side_it->get<std::string>();
+                if (side == "bid") {
+                    snap.bids.push_back(level);
+                } else if (side == "offer" || side == "ask") {
+                    snap.asks.push_back(level);
+                }
+            } catch (const std::exception& ex) {
+                LOG_WARN("Coinbase snapshot level parse failed", "symbol", symbol_.c_str(), "error",
+                         ex.what());
             }
         }
     }
@@ -338,14 +347,19 @@ auto CoinbaseFeedHandler::process_update(const nlohmann::json& json, uint64_t se
                 continue;
             }
 
-            Delta delta;
-            delta.side = (side_it->get<std::string>() == "bid") ? Side::BID : Side::ASK;
-            delta.price = std::stod(px_it->get<std::string>());
-            delta.size = std::stod(qty_it->get<std::string>());
-            delta.sequence = seq;
-            delta.timestamp_local_ns = timestamp_ns;
-            if (delta_callback_) {
-                delta_callback_(delta);
+            try {
+                Delta delta;
+                delta.side = (side_it->get<std::string>() == "bid") ? Side::BID : Side::ASK;
+                delta.price = std::stod(px_it->get<std::string>());
+                delta.size = std::stod(qty_it->get<std::string>());
+                delta.sequence = seq;
+                delta.timestamp_local_ns = timestamp_ns;
+                if (delta_callback_) {
+                    delta_callback_(delta);
+                }
+            } catch (const std::exception& ex) {
+                LOG_WARN("Coinbase delta level parse failed", "symbol", symbol_.c_str(), "sequence",
+                         seq, "error", ex.what());
             }
         }
     }

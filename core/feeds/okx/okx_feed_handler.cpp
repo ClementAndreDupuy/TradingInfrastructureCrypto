@@ -54,11 +54,14 @@ static auto okx_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* 
     case LWS_CALLBACK_CLIENT_RECEIVE: {
         const char* data = static_cast<const char*>(input);
         bool is_final = lws_is_final_fragment(wsi) != 0;
-        if (session->frag_len + len < sizeof(session->frag_buf)) {
+        if (session->frag_len + len <= sizeof(session->frag_buf)) {
             std::memcpy(session->frag_buf + session->frag_len, data, len);
             session->frag_len += len;
+        } else {
+            // Message exceeds buffer: discard the entire fragmented message.
+            session->frag_len = 0;
         }
-        if (is_final && (session->handler != nullptr)) {
+        if (is_final && session->frag_len > 0 && (session->handler != nullptr)) {
             session->handler->process_message(std::string(session->frag_buf, session->frag_len));
             session->frag_len = 0;
         }
@@ -329,7 +332,8 @@ auto OkxFeedHandler::fetch_snapshot() -> Result {
         }
     }
 
-    auto parse_levels = [](const nlohmann::json& arr) -> std::vector<PriceLevel> {
+    const char* symbol = symbol_.c_str();
+    auto parse_levels = [symbol](const nlohmann::json& arr) -> std::vector<PriceLevel> {
         std::vector<PriceLevel> out;
         if (!arr.is_array()) {
             return out;
@@ -339,8 +343,12 @@ auto OkxFeedHandler::fetch_snapshot() -> Result {
             if (!lvl.is_array() || lvl.size() < 2) {
                 continue;
             }
-            out.push_back(
-                {std::stod(lvl[0].get<std::string>()), std::stod(lvl[1].get<std::string>())});
+            try {
+                out.push_back(
+                    {std::stod(lvl[0].get<std::string>()), std::stod(lvl[1].get<std::string>())});
+            } catch (const std::exception& ex) {
+                LOG_WARN("OKX snapshot level parse failed", "symbol", symbol, "error", ex.what());
+            }
         }
         return out;
     };
