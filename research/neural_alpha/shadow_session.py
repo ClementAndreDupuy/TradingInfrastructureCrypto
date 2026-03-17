@@ -61,7 +61,6 @@ from .pipeline import (
     _fetch_coinbase_l5,
     _fetch_kraken_l5,
     _fetch_okx_l5,
-    _fetch_solana_l5,
     collect_from_core_bridge,
 )
 from .core_bridge import CoreBridge
@@ -457,7 +456,6 @@ class NeuralAlphaShadowSession:
             "KRAKEN": _fetch_kraken_l5,
             "OKX": _fetch_okx_l5,
             "COINBASE": _fetch_coinbase_l5,
-            "SOLANA": _fetch_solana_l5,
         }
         for ex in self.cfg.exchanges:
             fetcher = _fetchers.get(ex)
