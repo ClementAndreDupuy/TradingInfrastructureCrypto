@@ -425,3 +425,24 @@ set_tests_properties(ShadowEngineTest PROPERTIES
     TIMEOUT 10
     LABELS "unit;shadow"
 )
+
+# IPC layer unit tests (AlphaSignalReader + LobPublisher)
+add_executable(ipc_test
+    unit/ipc_test.cpp
+)
+
+target_link_libraries(ipc_test
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(ipc_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME IpcTest COMMAND ipc_test)
+set_tests_properties(IpcTest PROPERTIES
+    TIMEOUT 15
+    LABELS "unit;ipc"
+)
