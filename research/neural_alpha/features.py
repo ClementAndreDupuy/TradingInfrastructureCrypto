@@ -59,10 +59,16 @@ def _extract_levels(df: pl.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarra
     as_ = _list_col("ask_sizes", "ask_size_{}")
 
     # Pad or truncate to N_LEVELS
-    for arr in (bp, bs, ap, as_):
+    def _pad_to_levels(arr: np.ndarray) -> np.ndarray:
         if arr.shape[1] < N_LEVELS:
             pad = N_LEVELS - arr.shape[1]
-            arr = np.pad(arr, ((0, 0), (0, pad)))
+            return np.pad(arr, ((0, 0), (0, pad)))
+        return arr
+
+    bp  = _pad_to_levels(bp)
+    bs  = _pad_to_levels(bs)
+    ap  = _pad_to_levels(ap)
+    as_ = _pad_to_levels(as_)
 
     return bp, bs, ap, as_
 
