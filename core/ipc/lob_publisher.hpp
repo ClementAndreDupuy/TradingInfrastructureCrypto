@@ -40,6 +40,12 @@ class LobPublisher {
     static_assert(alignof(LobSlot) == 8, "LobSlot must remain 8-byte aligned");
     static_assert(sizeof(LobSlot) == k_slot_size, "LobSlot must be exactly 256 bytes");
 
+    // Verify that the write_seq atomic is lock-free so it is safe to use across
+    // process boundaries via mmap.  A non-lock-free implementation would store a
+    // mutex inside the object, which would be invalid in shared memory.
+    static_assert(std::atomic<uint64_t>::is_always_lock_free,
+                  "std::atomic<uint64_t> must be lock-free for cross-process mmap use");
+
     LobPublisher() = default;
     explicit LobPublisher(std::string path) : path_(std::move(path)) {}
     ~LobPublisher() { close(); }
@@ -47,7 +53,7 @@ class LobPublisher {
     LobPublisher(const LobPublisher&) = delete;
     LobPublisher& operator=(const LobPublisher&) = delete;
 
-    bool open() {
+    [[nodiscard]] bool open() {
         if (is_open()) {
             return true;
         }
@@ -95,6 +101,10 @@ class LobPublisher {
 
     bool is_open() const noexcept { return base_ != nullptr && header_ != nullptr; }
 
+    // Publish an L5 LOB snapshot into the ring buffer.
+    //
+    // NOT thread-safe: this class assumes a single writer (SPSC ring).  Concurrent
+    // calls from multiple threads will produce a data race on write_seq and the slot.
     void publish(Exchange exchange, const std::string& symbol, int64_t timestamp_ns,
                  double mid_price, const std::vector<PriceLevel>& bids,
                  const std::vector<PriceLevel>& asks) noexcept {

@@ -17,10 +17,11 @@ Ensemble:
     - Optional secondary (smaller) model; signals averaged before gating.
 
 Shared memory bridge:
-    Writes to /tmp/neural_alpha_signal.bin (24 bytes):
-        offset  0: float64  signal_bps  — mid-horizon return prediction (bps)
-        offset  8: float64  risk_score  — adverse-selection probability [0, 1]
-        offset 16: int64    ts_ns       — nanosecond timestamp
+    Writes to /tmp/neural_alpha_signal.bin (32 bytes, seqlock-protected):
+        offset  0: uint64   seq         — seqlock counter (even=stable, odd=writing)
+        offset  8: float64  signal_bps  — mid-horizon return prediction (bps)
+        offset 16: float64  risk_score  — adverse-selection probability [0, 1]
+        offset 24: int64    ts_ns       — nanosecond timestamp
     The C++ AlphaSignalReader (core/ipc/alpha_signal.hpp) mmaps this file.
 
 Usage:
@@ -65,14 +66,24 @@ from .pipeline import (
 from .core_bridge import CoreBridge
 from .trainer import TrainerConfig, walk_forward_train
 
-# Shared memory file layout: [float64 signal_bps][float64 risk_score][int64 ts_ns]
+# Shared memory file layout (32 bytes, seqlock-protected):
+#   offset  0: uint64  seq        — seqlock counter (even=stable, odd=write in progress)
+#   offset  8: float64 signal_bps — mid-horizon return prediction (bps)
+#   offset 16: float64 risk_score — adverse-selection probability [0, 1]
+#   offset 24: int64   ts_ns      — nanosecond timestamp of last update
+#
+# Write protocol: increment seq to odd → write fields → increment seq to even.
+# The C++ AlphaSignalReader spins until seq is even and stable across the read.
 _SIGNAL_FILE = "/tmp/neural_alpha_signal.bin"
-_SIGNAL_FMT  = "ddq"   # double, double, long long
-_SIGNAL_SIZE = struct.calcsize(_SIGNAL_FMT)  # 24 bytes
+_SIGNAL_SIZE = 32  # uint64 + float64 + float64 + int64
+_SEQ_FMT = "=Q"    # native-endian uint64 (seqlock counter)
+_SEQ_OFFSET = 0
+_DATA_FMT = "=ddq" # native-endian: float64 signal_bps, float64 risk_score, int64 ts_ns
+_DATA_OFFSET = 8
 
 
 class _SignalPublisher:
-    """Writes neural alpha signal to a memory-mapped file every inference tick."""
+    """Writes neural alpha signal to a seqlock-protected memory-mapped file."""
 
     def __init__(self, path: str = _SIGNAL_FILE) -> None:
         self._path = path
@@ -83,9 +94,15 @@ class _SignalPublisher:
 
     def publish(self, signal_bps: float, risk_score: float) -> None:
         ts_ns = time.time_ns()
-        packed = struct.pack(_SIGNAL_FMT, signal_bps, risk_score, ts_ns)
-        self._mm.seek(0)
-        self._mm.write(packed)
+        # Seqlock write protocol (single writer assumed):
+        #   1. read current seq (always even when no write is in flight)
+        #   2. write seq+1 (odd)  → signals write-in-progress to C++ readers
+        #   3. write data fields
+        #   4. write seq+2 (even) → signals write-complete; readers can now consume
+        seq: int = struct.unpack_from(_SEQ_FMT, self._mm, _SEQ_OFFSET)[0]
+        struct.pack_into(_SEQ_FMT, self._mm, _SEQ_OFFSET, seq + 1)
+        struct.pack_into(_DATA_FMT, self._mm, _DATA_OFFSET, signal_bps, risk_score, ts_ns)
+        struct.pack_into(_SEQ_FMT, self._mm, _SEQ_OFFSET, seq + 2)
         self._mm.flush()
 
     def close(self) -> None:
