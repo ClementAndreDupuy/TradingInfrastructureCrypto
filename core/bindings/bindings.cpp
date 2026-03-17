@@ -65,7 +65,7 @@ static std::string fmt_double(double v) {
 // deleter so their py::object is always released with the GIL held.
 template <typename Handler>
 static py::class_<Handler> bind_feed_handler(py::module_& m, const char* class_name,
-                                              const char* class_doc) {
+                                             const char* class_doc) {
     return py::class_<Handler>(m, class_name, class_doc)
         .def(
             "set_snapshot_callback",
@@ -302,11 +302,9 @@ PYBIND11_MODULE(trading_core, m) {
     // ── OkxFeedHandler ────────────────────────────────────────────────────────
 
     bind_feed_handler<OkxFeedHandler>(
-        m, "OkxFeedHandler",
-        "OKX order book feed handler using the WebSocket v5 public channel.")
+        m, "OkxFeedHandler", "OKX order book feed handler using the WebSocket v5 public channel.")
         .def(py::init<const std::string&, const std::string&, const std::string&>(),
-             py::arg("symbol"),
-             py::arg("api_url") = "https://www.okx.com",
+             py::arg("symbol"), py::arg("api_url") = "https://www.okx.com",
              py::arg("ws_url") = "wss://ws.okx.com:8443/ws/v5/public");
 
     // ── CoinbaseFeedHandler ───────────────────────────────────────────────────
@@ -314,7 +312,6 @@ PYBIND11_MODULE(trading_core, m) {
     bind_feed_handler<CoinbaseFeedHandler>(
         m, "CoinbaseFeedHandler",
         "Coinbase Advanced Trade order book feed handler using the WebSocket channel.")
-        .def(py::init<const std::string&, const std::string&>(),
-             py::arg("symbol"),
+        .def(py::init<const std::string&, const std::string&>(), py::arg("symbol"),
              py::arg("ws_url") = "wss://advanced-trade-ws.coinbase.com");
 }
