@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly SLO Sanity Check — fires at the top of every hour
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+Unit=slo-engine.service
+
+[Install]
+WantedBy=timers.target
