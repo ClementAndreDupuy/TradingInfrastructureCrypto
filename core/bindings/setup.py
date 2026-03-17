@@ -3,10 +3,10 @@ Build script for the trading_core pybind11 extension module.
 
 Usage (from repo root):
     pip3 install pybind11 numpy
-    python3 bindings/setup.py build_ext --inplace
+    python3 core/bindings/setup.py build_ext --inplace
 
-The resulting trading_core.so lands in bindings/ and can be imported as:
-    import sys; sys.path.insert(0, 'bindings')
+The resulting trading_core.so lands in core/bindings/ and can be imported as:
+    import sys; sys.path.insert(0, 'core/bindings')
     import trading_core
 
 Prefer the CMake + scikit-build-core path for production builds:
@@ -92,7 +92,7 @@ _require_pkg(
 from setuptools import Extension, setup  # noqa: E402
 
 _here = os.path.dirname(os.path.abspath(__file__))
-_root = os.path.dirname(_here)
+_root = os.path.dirname(os.path.dirname(_here))  # core/bindings -> core -> repo root
 _core = os.path.join(_root, "core")
 
 include_dirs: list[str] = [pybind11.get_include(), _core]

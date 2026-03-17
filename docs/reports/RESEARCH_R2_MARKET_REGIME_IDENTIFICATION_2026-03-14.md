@@ -241,7 +241,7 @@ Require every regime model release to pass:
 
 ## 8.1 New Python cold-path modules
 
-Under `research/alpha/neural_alpha/` add:
+Under `research/neural_alpha/` add:
 
 1. `regime_features.py`
    - Build real-time-compatible feature pipeline (Polars).
@@ -324,7 +324,7 @@ Risk overrides:
 
 ## 11) Concrete backlog for this repo
 
-1. Add regime research modules and tests in `research/alpha/neural_alpha/`.
+1. Add regime research modules and tests in `research/neural_alpha/`.
 2. Add `RegimeState` IPC schema and reader in `core/ipc/`.
 3. Add execution/risk policy adapters in `core/execution/` and `core/risk/`.
 4. Add replay tests:

@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
 BUILD_CPP=1
@@ -27,13 +27,13 @@ PYTHON_BIN="${PYTHON_BIN:-}"
 
 usage() {
     cat <<USAGE
-Usage: ./scripts/build.sh [options]
+Usage: ./deploy/scripts/build.sh [options]
 
 Options:
   --skip-cpp              Skip C++ CMake build
   --skip-python           Skip all Python steps (install, bindings, compileall, tests)
   --skip-python-install   Skip 'python3 -m pip install -e .'
-  --skip-bindings         Skip 'python3 bindings/setup.py build_ext --inplace'
+  --skip-bindings         Skip 'python3 core/bindings/setup.py build_ext --inplace'
   --skip-compileall       Skip Python byte-compilation check
   --skip-tests            Skip Python unit tests ('pytest tests/unit/')
   --skip-cpp-tests        Skip C++ tests ('ctest --output-on-failure')
@@ -123,7 +123,7 @@ action_python_install() {
 
 action_bindings() {
     echo "[build] Building pybind11 bindings in-place"
-    "$PYTHON_BIN" bindings/setup.py build_ext --inplace
+    "$PYTHON_BIN" core/bindings/setup.py build_ext --inplace
 }
 
 action_compileall() {

@@ -30,7 +30,7 @@ except ImportError:
 
 pytestmark = pytest.mark.skipif(
     not BINDINGS_AVAILABLE,
-    reason="trading_core extension not built — run: python3 bindings/setup.py build_ext --inplace",
+    reason="trading_core extension not built — run: python3 core/bindings/setup.py build_ext --inplace",
 )
 
 

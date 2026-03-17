@@ -30,10 +30,10 @@
 
 ### MEDIUM — Quality and Correctness Gaps
 
-- [x] **M1** `research/alpha/neural_alpha/backtest.py` — Fix Sharpe calculation: use actual timestamp-based equity curve returns (annualize on time elapsed, not trade count proxy)
-- [x] **M2** `research/alpha/neural_alpha/backtest.py` — Add queue position simulation (Poisson arrival model, fill probability by queue depth and size)
-- [x] **M3** `research/alpha/neural_alpha/features.py` — Improve adverse-selection label: replace sign-flip heuristic with fill-reversion model (check if price reverts against fill direction within N ticks)
-- [x] **M4** `research/alpha/neural_alpha/backtest.py` — Add basic market impact model (linear or square-root impact based on order size / ADV)
+- [x] **M1** `research/neural_alpha/backtest.py` — Fix Sharpe calculation: use actual timestamp-based equity curve returns (annualize on time elapsed, not trade count proxy)
+- [x] **M2** `research/neural_alpha/backtest.py` — Add queue position simulation (Poisson arrival model, fill probability by queue depth and size)
+- [x] **M3** `research/neural_alpha/features.py` — Improve adverse-selection label: replace sign-flip heuristic with fill-reversion model (check if price reverts against fill direction within N ticks)
+- [x] **M4** `research/neural_alpha/backtest.py` — Add basic market impact model (linear or square-root impact based on order size / ADV)
 - [x] **M5** `core/common/logging.hpp` — Replace `std::chrono::system_clock` with PTP-synchronized clock or at minimum RDTSC-based timestamps for sub-microsecond precision
 - [x] **M6** `core/execution/order_manager.hpp` lines 264–272 — Fix entry price VWAP: `new_avg = (old_avg * old_qty + fill_px * fill_qty) / (old_qty + fill_qty)`; remove `1e-12` epsilon hack
 - [x] **M7** `core/feeds/binance/binance_feed_handler.cpp` — Added REST rate limit tracking: minimum 1s between snapshot calls; HTTP 429/418 responses trigger 60s backoff
@@ -48,7 +48,7 @@
 
 - [x] **L1** `core/orderbook/orderbook.hpp` — Add guard against pathologically wide spreads (e.g., snapshot with $1M range from malformed data)
 - [x] **L2** `core/orderbook/orderbook.hpp` — Add Binance depth snapshot checksum validation (Binance provides checksum field in snapshot response)
-- [x] **L3** `research/alpha/neural_alpha/features.py` — Expanded per-level queue imbalance generation to scale with `N_LEVELS` (no hardcoded 5-level wiring), so features automatically include all configured depth levels
+- [x] **L3** `research/neural_alpha/features.py` — Expanded per-level queue imbalance generation to scale with `N_LEVELS` (no hardcoded 5-level wiring), so features automatically include all configured depth levels
 - [ ] **L4** `deploy/daily_train.py` — Add alerting webhook (Slack/PagerDuty) when model fails to promote or IC drops below floor (mail-only fallback is acceptable interim mitigation)
 - [x] **L5** `core/execution/market_maker.hpp` — Add inventory skew decay: reduce skew magnitude as position approaches zero to avoid over-trading a flat book
 - [x] **L6** `tests/` — Verified complete: `tests/perf/latency_budget_test.cpp` enforces orderbook/risk/feed latency budgets and CI runs `ctest -L perf` as a hard gate
@@ -57,7 +57,7 @@
 ### RESEARCH - Needs investigating, come with a plan to implement it for our server
 
 - [ ] **R1** — Research on integrate On-Chain metrics (Netflow, Spent Output Profit Ratio, Net Unrealised Profit/Loss, Whale transaction analysis, Defi Protocol metrics...)
-- [x] **R2** — Research completed in `agents/reports/RESEARCH_R2_MARKET_REGIME_IDENTIFICATION_2026-03-14.md`: State-of-the-art real-time market regime identification and implementation blueprint for hybrid CPD + HMM/HSMM + microstructure overlays
+- [x] **R2** — Research completed in `docs/reports/RESEARCH_R2_MARKET_REGIME_IDENTIFICATION_2026-03-14.md`: State-of-the-art real-time market regime identification and implementation blueprint for hybrid CPD + HMM/HSMM + microstructure overlays
 - [ ] **R3** — Research on deep reinforcement learning for autonomous execution (State Space Design, Action Space design, Reward function formulation)
-- [x] **R4** — Research completed in `agents/reports/RESEARCH_R4_SMART_ORDER_ROUTING_2026-03-14.md`: Smart Order Routing plan (Binance/Kraken/OKX/Coinbase) and implementation path unblocking C9/C10
+- [x] **R4** — Research completed in `docs/reports/RESEARCH_R4_SMART_ORDER_ROUTING_2026-03-14.md`: Smart Order Routing plan (Binance/Kraken/OKX/Coinbase) and implementation path unblocking C9/C10
 - [ ] **R5** — Research on hardware execution with Field-Programmable Gate Arrays and co-locating servers in the same clusters as exchanges

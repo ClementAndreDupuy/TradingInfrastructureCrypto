@@ -35,13 +35,13 @@ import torch
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from research.alpha.neural_alpha.alpha_regression import analyse_alpha
-from research.alpha.neural_alpha.backtest import BacktestConfig, NeuralAlphaBacktest
-from research.alpha.neural_alpha.features import compute_lob_tensor, compute_scalar_features, normalise_scalar
-from research.alpha.neural_alpha.governance import ChampionChallengerRegistry
-from research.alpha.neural_alpha.model import CryptoAlphaNet
-from research.alpha.neural_alpha.pipeline import collect_l5_ticks
-from research.alpha.neural_alpha.trainer import TrainerConfig, walk_forward_train
+from research.neural_alpha.alpha_regression import analyse_alpha
+from research.neural_alpha.backtest import BacktestConfig, NeuralAlphaBacktest
+from research.neural_alpha.features import compute_lob_tensor, compute_scalar_features, normalise_scalar
+from research.neural_alpha.governance import ChampionChallengerRegistry
+from research.neural_alpha.model import CryptoAlphaNet
+from research.neural_alpha.pipeline import collect_l5_ticks
+from research.neural_alpha.trainer import TrainerConfig, walk_forward_train
 
 logging.basicConfig(
     level=logging.INFO,
