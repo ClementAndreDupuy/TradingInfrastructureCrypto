@@ -53,7 +53,7 @@ from torch.utils.data import DataLoader
 from .dataset import DatasetConfig, LOBDataset
 from .dataset import rolling_normalise
 from .features import compute_lob_tensor, compute_scalar_features
-from .governance import ChampionChallengerRegistry, DriftGuard
+from .governance import ChampionChallengerRegistry, DriftGuard, EnsembleCanary
 from .model import CryptoAlphaNet
 from research.regime import RegimeSignalPublisher, infer_regime_probabilities, load_regime_artifact
 from .pipeline import (
@@ -147,6 +147,11 @@ class ShadowSessionConfig:
     safe_mode_ticks: int = 120
     continuous_train_every_ticks: int = 1000
     continuous_train_window_ticks: int = 2000
+    canary_ic_margin: float = 0.02      # ensemble must not lag primary IC by more than this
+    canary_icir_floor: float = 0.0      # ensemble ICIR must stay above this
+    canary_window: int = 200            # rolling window for canary IC calculation
+    canary_min_samples: int = 60        # minimum samples before canary can fire
+    ops_events_log: str = "logs/ops_events.jsonl"
 
 
 class NeuralAlphaShadowSession:
@@ -187,6 +192,9 @@ class NeuralAlphaShadowSession:
         self._bridge.open()
         self._processed_ticks = 0
         self._last_continuous_train_tick = 0
+        self._canary: EnsembleCanary | None = None
+        self._prev_primary_signal: float | None = None
+        self._prev_ensemble_signal: float | None = None
 
     # ── Model loading / training ──────────────────────────────────────────────
 
@@ -212,7 +220,24 @@ class NeuralAlphaShadowSession:
         state = torch.load(path, map_location=self._device, weights_only=True)
         model.load_state_dict(state)
         self._secondary_model = model
+        self._canary = EnsembleCanary(
+            window=self.cfg.canary_window,
+            min_samples=self.cfg.canary_min_samples,
+            ic_margin=self.cfg.canary_ic_margin,
+            icir_floor=self.cfg.canary_icir_floor,
+        )
+        self._prev_primary_signal = None
+        self._prev_ensemble_signal = None
         print(f"Secondary model loaded from {path}")
+
+    def _unload_secondary_model(self, reason: str) -> None:
+        """Disable the secondary model after a canary failure and enter safe mode."""
+        self._secondary_model = None
+        self._canary = None
+        self._prev_primary_signal = None
+        self._prev_ensemble_signal = None
+        self._trigger_safe_mode(reason=f"ensemble_canary: {reason}")
+        self._emit_ops_event("ensemble_canary_rollback", {"reason": reason})
 
     def _collect_training_ticks(self, n_ticks: int) -> pl.DataFrame:
         df = collect_from_core_bridge(n_ticks=n_ticks, interval_ms=self.cfg.interval_ms)
@@ -361,7 +386,8 @@ class NeuralAlphaShadowSession:
         risk = float(out["risk"][0, -1].cpu().item())
 
         # Mid-horizon signal: index 2 = 100-tick return
-        raw_signal_bps = float(ret[2]) * 1e4
+        primary_signal = float(ret[2])              # primary-only, return units (used by canary)
+        raw_signal_bps = primary_signal * 1e4
 
         # Ensemble: average with secondary model if available
         if self._secondary_model is not None:
@@ -370,6 +396,7 @@ class NeuralAlphaShadowSession:
             ret2 = out2["returns"][0, -1].cpu().numpy()
             raw_signal_bps = (raw_signal_bps + float(ret2[2]) * 1e4) / 2.0
 
+        ensemble_signal = raw_signal_bps * 1e-4     # post-average, return units (used by canary)
         signal_bps = raw_signal_bps
 
         # Direction-head gating: require dir confidence > 0.55
@@ -425,6 +452,8 @@ class NeuralAlphaShadowSession:
             "dir_p_up":       float(dir_probs[2]),
             "gated":          signal_bps == 0.0 and raw_signal_bps != 0.0,
             "safe_mode":      self._safe_mode_ticks_remaining > 0,
+            "primary_signal": primary_signal,
+            "ensemble_signal": ensemble_signal,
             "p_calm":         regime_probs["p_calm"],
             "p_trending":     regime_probs["p_trending"],
             "p_shock":        regime_probs["p_shock"],
@@ -464,6 +493,19 @@ class NeuralAlphaShadowSession:
                 if row:
                     ticks.append(row)
         return ticks
+
+    # ── Ops event publishing ──────────────────────────────────────────────────
+
+    def _emit_ops_event(self, event_type: str, details: dict) -> None:
+        event = {"event": event_type, "timestamp_ns": time.time_ns(), **details}
+        ops_log = Path(self.cfg.ops_events_log)
+        try:
+            ops_log.parent.mkdir(parents=True, exist_ok=True)
+            with open(ops_log, "a") as f:
+                f.write(json.dumps(event) + "\n")
+        except OSError:
+            pass
+        print(f"[OPS_EVENT] {event_type}: {details}")
 
     # ── Logging ───────────────────────────────────────────────────────────────
 
@@ -558,6 +600,29 @@ class NeuralAlphaShadowSession:
                                 reason=f"drift_ic_breach ic={ic:.4f} floor={self.cfg.drift_ic_floor:.4f}"
                             )
 
+                        if (
+                            self._canary is not None
+                            and self._prev_primary_signal is not None
+                            and self._prev_ensemble_signal is not None
+                        ):
+                            canary_triggered = self._canary.update(
+                                self._prev_primary_signal,
+                                self._prev_ensemble_signal,
+                                realised,
+                            )
+                            if canary_triggered:
+                                e_ic = self._canary.ensemble_ic()
+                                p_ic = self._canary.primary_ic()
+                                self._unload_secondary_model(
+                                    reason=(
+                                        f"ic_degradation "
+                                        f"ensemble_ic={e_ic:.4f} primary_ic={p_ic:.4f} "
+                                        f"margin={self.cfg.canary_ic_margin}"
+                                    )
+                                )
+
+                    self._prev_primary_signal = signal_info["primary_signal"]
+                    self._prev_ensemble_signal = signal_info["ensemble_signal"]
                     self._signals.append(signal_info["signal"])
                     prev_mid = signal_info["mid_price"]
                     self._log(signal_info)
@@ -613,6 +678,14 @@ def main() -> None:
                     dest="continuous_train_every_ticks")
     ap.add_argument("--continuous-train-window-ticks", type=int, default=2000,
                     dest="continuous_train_window_ticks")
+    ap.add_argument("--canary-ic-margin", type=float, default=0.02, dest="canary_ic_margin",
+                    help="Max IC degradation of ensemble vs primary before canary fires")
+    ap.add_argument("--canary-icir-floor", type=float, default=0.0, dest="canary_icir_floor",
+                    help="Min ensemble ICIR before canary fires")
+    ap.add_argument("--canary-window", type=int, default=200, dest="canary_window")
+    ap.add_argument("--canary-min-samples", type=int, default=60, dest="canary_min_samples")
+    ap.add_argument("--ops-events-log", type=str, default="logs/ops_events.jsonl",
+                    dest="ops_events_log")
     args = ap.parse_args()
 
     cfg = ShadowSessionConfig(
@@ -640,6 +713,11 @@ def main() -> None:
         safe_mode_ticks=args.safe_mode_ticks,
         continuous_train_every_ticks=args.continuous_train_every_ticks,
         continuous_train_window_ticks=args.continuous_train_window_ticks,
+        canary_ic_margin=args.canary_ic_margin,
+        canary_icir_floor=args.canary_icir_floor,
+        canary_window=args.canary_window,
+        canary_min_samples=args.canary_min_samples,
+        ops_events_log=args.ops_events_log,
     )
 
     session = NeuralAlphaShadowSession(cfg)
