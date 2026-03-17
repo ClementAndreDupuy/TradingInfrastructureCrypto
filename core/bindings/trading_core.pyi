@@ -348,3 +348,24 @@ class KrakenFeedHandler(_FeedHandlerBase):
         api_url: str = "https://api.kraken.com",
         ws_url: str = "wss://ws.kraken.com/v2",
     ) -> None: ...
+
+
+class OkxFeedHandler(_FeedHandlerBase):
+    """OKX order book feed handler using the WebSocket v5 public channel."""
+
+    def __init__(
+        self,
+        symbol: str,
+        api_url: str = "https://www.okx.com",
+        ws_url: str = "wss://ws.okx.com:8443/ws/v5/public",
+    ) -> None: ...
+
+
+class CoinbaseFeedHandler(_FeedHandlerBase):
+    """Coinbase Advanced Trade order book feed handler using the WebSocket channel."""
+
+    def __init__(
+        self,
+        symbol: str,
+        ws_url: str = "wss://advanced-trade-ws.coinbase.com",
+    ) -> None: ...

@@ -154,7 +154,9 @@ ext = Extension(
     sources=[
         os.path.join(_here, "bindings.cpp"),
         os.path.join(_core, "feeds", "binance", "binance_feed_handler.cpp"),
+        os.path.join(_core, "feeds", "coinbase", "coinbase_feed_handler.cpp"),
         os.path.join(_core, "feeds", "kraken", "kraken_feed_handler.cpp"),
+        os.path.join(_core, "feeds", "okx", "okx_feed_handler.cpp"),
     ],
     include_dirs=include_dirs,
     library_dirs=library_dirs,

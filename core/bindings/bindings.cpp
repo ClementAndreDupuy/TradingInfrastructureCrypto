@@ -4,7 +4,9 @@
 
 #include "../common/types.hpp"
 #include "../feeds/binance/binance_feed_handler.hpp"
+#include "../feeds/coinbase/coinbase_feed_handler.hpp"
 #include "../feeds/kraken/kraken_feed_handler.hpp"
+#include "../feeds/okx/okx_feed_handler.hpp"
 #include "../orderbook/orderbook.hpp"
 #include "../risk/kill_switch.hpp"
 
@@ -296,4 +298,23 @@ PYBIND11_MODULE(trading_core, m) {
              py::arg("symbol"), py::arg("api_key") = "", py::arg("api_secret") = "",
              py::arg("api_url") = "https://api.kraken.com",
              py::arg("ws_url") = "wss://ws.kraken.com/v2");
+
+    // ── OkxFeedHandler ────────────────────────────────────────────────────────
+
+    bind_feed_handler<OkxFeedHandler>(
+        m, "OkxFeedHandler",
+        "OKX order book feed handler using the WebSocket v5 public channel.")
+        .def(py::init<const std::string&, const std::string&, const std::string&>(),
+             py::arg("symbol"),
+             py::arg("api_url") = "https://www.okx.com",
+             py::arg("ws_url") = "wss://ws.okx.com:8443/ws/v5/public");
+
+    // ── CoinbaseFeedHandler ───────────────────────────────────────────────────
+
+    bind_feed_handler<CoinbaseFeedHandler>(
+        m, "CoinbaseFeedHandler",
+        "Coinbase Advanced Trade order book feed handler using the WebSocket channel.")
+        .def(py::init<const std::string&, const std::string&>(),
+             py::arg("symbol"),
+             py::arg("ws_url") = "wss://advanced-trade-ws.coinbase.com");
 }
