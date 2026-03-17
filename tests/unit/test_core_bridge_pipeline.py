@@ -159,8 +159,49 @@ def test_collect_l5_ticks_prefers_bridge_then_tops_up(monkeypatch) -> None:
     )
 
     monkeypatch.setattr(pipeline, "collect_from_core_bridge", lambda n_ticks, interval_ms: bridge_df)
-    monkeypatch.setattr(pipeline, "_collect_l5_ticks_rest", lambda n_ticks, interval_ms, exchanges: rest_df)
+    monkeypatch.setattr(
+        pipeline,
+        "_collect_l5_ticks_rest",
+        lambda n_ticks, interval_ms, exchanges, symbol="BTCUSDT": rest_df,
+    )
 
     out = pipeline.collect_l5_ticks(n_ticks=4, interval_ms=1)
     assert len(out) == 4
     assert set(out["exchange"].to_list()) == {"BINANCE", "KRAKEN", "OKX", "COINBASE"}
+
+
+@pytest.mark.skipif(pl is None or pipeline is None, reason="polars is not installed")
+def test_collect_l5_ticks_rejects_missing_exchange(monkeypatch) -> None:
+    assert pl is not None
+    bridge_df = pl.DataFrame(
+        [
+            {
+                "timestamp_ns": 1,
+                "exchange": "BINANCE",
+                "symbol": "BTCUSDT",
+                "best_bid": 1.0,
+                "best_ask": 2.0,
+                **{f"bid_price_{i}": 1.0 for i in range(1, 6)},
+                **{f"bid_size_{i}": 1.0 for i in range(1, 6)},
+                **{f"ask_price_{i}": 2.0 for i in range(1, 6)},
+                **{f"ask_size_{i}": 1.0 for i in range(1, 6)},
+            }
+        ]
+    )
+
+    monkeypatch.setattr(pipeline, "collect_from_core_bridge", lambda n_ticks, interval_ms: bridge_df)
+    with pytest.raises(RuntimeError, match="missing"):
+        pipeline.collect_l5_ticks(
+            n_ticks=1,
+            interval_ms=1,
+            exchanges=["BINANCE", "KRAKEN"],
+            allow_rest_fallback=False,
+            symbol="BTCUSDT",
+        )
+
+
+@pytest.mark.skipif(pl is None or pipeline is None, reason="polars is not installed")
+def test_symbol_family_normalises_exchange_symbols() -> None:
+    assert pipeline._symbol_family("PI_XBTUSD") == "BTCUSD"
+    assert pipeline._symbol_family("BTC-USD") == "BTCUSD"
+    assert pipeline._symbol_family("BTCUSDT") == "BTCUSDT"

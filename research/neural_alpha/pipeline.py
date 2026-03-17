@@ -31,7 +31,7 @@ BINANCE_DEPTH_URL = "https://fapi.binance.com/fapi/v1/depth"
 BINANCE_SPOT_DEPTH_URL = "https://api.binance.com/api/v3/depth"
 KRAKEN_DEPTH_URL = "https://futures.kraken.com/derivatives/api/v3/orderbook"
 OKX_DEPTH_URL = "https://www.okx.com/api/v5/market/books"
-COINBASE_DEPTH_URL = "https://api.exchange.coinbase.com/products/BTC-USD/book"
+COINBASE_DEPTH_URL = "https://api.exchange.coinbase.com/products/{product_id}/book"
 N_LEVELS = 5
 
 
@@ -76,6 +76,17 @@ def _coinbase_symbol(symbol: str) -> str:
     if clean.endswith("USD"):
         return f"{clean[:-3]}-USD"
     return clean
+
+
+def _symbol_family(symbol: str) -> str:
+    """Normalise venue-specific symbols (e.g. XBTUSD / BTC-USD / BTCUSDT) to basequote."""
+    s = symbol.upper().replace("-", "").replace("_", "")
+    if s.startswith("PI_"):
+        s = s[3:]
+    s = s.replace("XBT", "BTC")
+    if s.endswith("PERP"):
+        s = s[:-4]
+    return s
 
 
 def _kraken_symbol(symbol: str) -> str:
@@ -184,7 +195,8 @@ def _fetch_okx_l5(symbol: str = "BTCUSDT") -> dict | None:
 
 def _fetch_coinbase_l5(symbol: str = "BTCUSDT") -> dict | None:
     try:
-        r = requests.get(COINBASE_DEPTH_URL, params={"level": 2}, timeout=5)
+        product_id = _coinbase_symbol(symbol)
+        r = requests.get(COINBASE_DEPTH_URL.format(product_id=product_id), params={"level": 2}, timeout=5)
         r.raise_for_status()
         d = r.json()
         bids = [(float(px), float(sz)) for px, sz, *_ in d.get("bids", [])][:N_LEVELS]
@@ -194,7 +206,7 @@ def _fetch_coinbase_l5(symbol: str = "BTCUSDT") -> dict | None:
         row: dict = {
             "timestamp_ns": time.time_ns(),
             "exchange": "COINBASE",
-            "symbol": _coinbase_symbol(symbol),
+            "symbol": product_id,
             "best_bid": bids[0][0],
             "best_ask": asks[0][0],
         }
@@ -227,6 +239,35 @@ def collect_from_core_bridge(n_ticks: int, interval_ms: int) -> pl.DataFrame | N
     if not rows:
         return None
     return pl.DataFrame(rows[:n_ticks]).sort("timestamp_ns")
+
+
+def _enforce_symbol_and_exchange_coverage(
+    df: pl.DataFrame,
+    exchanges: list[str],
+    symbol: str,
+) -> pl.DataFrame:
+    wanted_symbol_family = _symbol_family(symbol)
+    wanted_exchanges = {ex.upper() for ex in exchanges}
+
+    filtered = [
+        row
+        for row in df.to_dicts()
+        if row.get("exchange", "").upper() in wanted_exchanges
+        and _symbol_family(str(row.get("symbol", ""))) == wanted_symbol_family
+    ]
+    out = pl.DataFrame(filtered).sort("timestamp_ns") if filtered else pl.DataFrame([])
+
+    if len(out) == 0:
+        return out
+
+    found_exchanges = {ex.upper() for ex in out["exchange"].to_list()}
+    missing = sorted(wanted_exchanges - found_exchanges)
+    if missing:
+        raise RuntimeError(
+            "Dataset does not include all configured exchanges for requested symbol "
+            f"{symbol}: missing={missing}, found={sorted(found_exchanges)}"
+        )
+    return out
 
 
 def _collect_l5_ticks_rest(n_ticks: int, interval_ms: int, exchanges: list[str], symbol: str = "BTCUSDT") -> pl.DataFrame:
@@ -270,10 +311,12 @@ def collect_l5_ticks(
     bridge_df = collect_from_core_bridge(n_ticks=n_ticks, interval_ms=interval_ms)
 
     if bridge_df is not None and len(bridge_df) >= n_ticks // 2:
+        bridge_df = _enforce_symbol_and_exchange_coverage(bridge_df, exchanges, symbol)
         if len(bridge_df) < n_ticks and allow_rest_fallback:
             print(f"[WARN] bridge returned {len(bridge_df)} ticks (< {n_ticks}); topping up with REST")
             rest_df = _collect_l5_ticks_rest(n_ticks - len(bridge_df), interval_ms, exchanges, symbol=symbol)
-            return pl.concat([bridge_df, rest_df]).sort("timestamp_ns")
+            merged_df = pl.concat([bridge_df, rest_df]).sort("timestamp_ns")
+            return _enforce_symbol_and_exchange_coverage(merged_df, exchanges, symbol)
         if len(bridge_df) < n_ticks:
             raise RuntimeError(
                 f"Core bridge returned {len(bridge_df)} ticks (< {n_ticks}) and REST fallback is disabled."
@@ -282,7 +325,8 @@ def collect_l5_ticks(
 
     if allow_rest_fallback:
         print("[WARN] core bridge unavailable or insufficient; falling back to REST collection")
-        return _collect_l5_ticks_rest(n_ticks, interval_ms, exchanges, symbol=symbol)
+        rest_df = _collect_l5_ticks_rest(n_ticks, interval_ms, exchanges, symbol=symbol)
+        return _enforce_symbol_and_exchange_coverage(rest_df, exchanges, symbol)
 
     raise RuntimeError("Core bridge unavailable and REST fallback disabled.")
 
