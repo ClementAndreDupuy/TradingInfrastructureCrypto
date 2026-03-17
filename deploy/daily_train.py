@@ -19,6 +19,9 @@ Environment variables:
     EPOCHS           Training epochs per fold (default: 30)
     PROMOTE_IC_MIN   Min IC on held-out data to promote (default: 0.02)
     TRAIN_SYMBOL     Symbol to train (default: SOLUSDT)
+    DQ_MAX_NULL_RATE Max null fraction per column before gate fails (default: 0.05)
+    DQ_MAX_GAP_S     Max inter-tick gap per venue in seconds (default: 300)
+    DQ_MAX_AGE_H     Max age of oldest tick in hours (default: 26)
 """
 from __future__ import annotations
 
@@ -38,6 +41,13 @@ sys.path.insert(0, str(ROOT))
 
 from research.neural_alpha.alpha_regression import analyse_alpha
 from research.neural_alpha.backtest import BacktestConfig, NeuralAlphaBacktest
+from research.neural_alpha.data_quality import (
+    DataQualityConfig,
+    DataQualityError,
+    assert_quality_passed,
+    run_quality_gates,
+    write_quality_report,
+)
 from research.neural_alpha.features import compute_lob_tensor, compute_scalar_features, normalise_scalar
 from research.neural_alpha.governance import ChampionChallengerRegistry
 from research.neural_alpha.model import CryptoAlphaNet
@@ -60,6 +70,11 @@ TRAIN_INTERVAL_MS = int(os.getenv("TRAIN_INTERVAL_MS", "500"))
 EPOCHS = int(os.getenv("EPOCHS", "30"))
 PROMOTE_IC_MIN = float(os.getenv("PROMOTE_IC_MIN", "0.02"))
 TRAIN_SYMBOL = os.getenv("TRAIN_SYMBOL", "SOLUSDT")
+
+# Data quality gate thresholds
+DQ_MAX_NULL_RATE = float(os.getenv("DQ_MAX_NULL_RATE", "0.05"))
+DQ_MAX_GAP_S = float(os.getenv("DQ_MAX_GAP_S", "300"))
+DQ_MAX_AGE_H = float(os.getenv("DQ_MAX_AGE_H", "26"))
 _SYMBOL_TAG = TRAIN_SYMBOL.lower()
 
 PROD_MODEL_PATH = MODEL_DIR / f"neural_alpha_{_SYMBOL_TAG}_latest.pt"
@@ -105,6 +120,22 @@ def _publish_ops_event(event_type: str, details: dict) -> None:
     with open(ops_log, "a") as f:
         f.write(json.dumps(event) + "\n")
     log.info("[OPS_EVENT] %s: %s", event_type, details)
+
+
+def _quality_report_path(date_str: str) -> Path:
+    return LOG_DIR / f"data_quality_{date_str}.json"
+
+
+def _run_data_quality_gates(df, date_str: str) -> None:
+    """Run data quality gates and write the report. Raises DataQualityError on breach."""
+    cfg = DataQualityConfig(
+        max_null_rate=DQ_MAX_NULL_RATE,
+        max_gap_ns=int(DQ_MAX_GAP_S * 1_000_000_000),
+        max_age_ns=int(DQ_MAX_AGE_H * 3_600 * 1_000_000_000),
+    )
+    report = run_quality_gates(df, cfg)
+    write_quality_report(report, _quality_report_path(date_str))
+    assert_quality_passed(report)
 
 
 def _write_train_log(date_str: str, metrics: dict) -> None:
@@ -163,7 +194,24 @@ def run() -> dict:
         df.write_parquet(cached)
         log.info("Tick data cached → %s  rows=%d", cached, len(df))
 
-    # 2. Train
+    # 2. Data quality gates — fail closed before training or promotion
+    try:
+        _run_data_quality_gates(df, date_str)
+    except DataQualityError as dqe:
+        log.error("Data quality gates FAILED — aborting training: %s", dqe)
+        _publish_ops_event("data_quality_failed", {
+            "date": date_str,
+            "breaches": [c["check"] for c in dqe.report.to_dict()["checks"] if not c["passed"]],
+            "quality_report_path": str(_quality_report_path(date_str)),
+        })
+        return {
+            "error": "data_quality_failed",
+            "date": date_str,
+            "quality_report_path": str(_quality_report_path(date_str)),
+        }
+    log.info("Data quality gates passed.")
+
+    # 3. Train
     cfg = TrainerConfig(
         epochs=EPOCHS,
         n_folds=4,
@@ -260,6 +308,7 @@ def run() -> dict:
 
     train_metrics = {
         "date": date_str,
+        "quality_report_path": str(_quality_report_path(date_str)),
         "n_ticks": len(df),
         "n_folds": len(fold_results),
         "ic_mean": round(alpha_metrics.ic_mean, 6),
