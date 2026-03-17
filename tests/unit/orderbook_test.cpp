@@ -374,6 +374,72 @@ TEST(OrderBook, NegativeSizeDeltaRejected) {
     EXPECT_EQ(book.get_sequence(), 100u);
 }
 
+// Snapshot + delta round-trip for all four exchanges.
+// The exchange field is metadata only; verifies it doesn't affect book logic.
+TEST(OrderBook, CompatibleWithAllFourExchanges) {
+    struct Case {
+        Exchange ex;
+        const char* symbol;
+        double bid;
+        double ask;
+        double tick;
+    };
+    const Case cases[] = {
+        {Exchange::BINANCE, "BTCUSDT", 50000.0, 50001.0, 1.0},
+        {Exchange::OKX, "BTC-USDT", 50000.0, 50001.0, 1.0},
+        {Exchange::COINBASE, "BTC-USD", 50000.0, 50001.0, 1.0},
+        {Exchange::KRAKEN, "XBT/USD", 50000.0, 50001.0, 1.0},
+    };
+
+    for (const auto& c : cases) {
+        OrderBook book(c.symbol, c.ex, c.tick, 20000);
+        Snapshot s;
+        s.symbol   = c.symbol;
+        s.exchange = c.ex;
+        s.sequence = 100;
+        s.bids.push_back(PriceLevel(c.bid, 1.0));
+        s.asks.push_back(PriceLevel(c.ask, 1.0));
+
+        EXPECT_EQ(book.apply_snapshot(s), Result::SUCCESS) << "exchange=" << (int)c.ex;
+        EXPECT_TRUE(book.is_initialized())                 << "exchange=" << (int)c.ex;
+        EXPECT_EQ(book.exchange(), c.ex)                   << "exchange=" << (int)c.ex;
+
+        Delta d = make_delta(Side::BID, c.bid, 2.5, 101);
+        EXPECT_EQ(book.apply_delta(d), Result::SUCCESS)    << "exchange=" << (int)c.ex;
+        EXPECT_DOUBLE_EQ(book.get_best_bid(), c.bid)       << "exchange=" << (int)c.ex;
+    }
+}
+
+// Low-priced asset where base_price_ goes negative.
+// SOL at $20 with tick=0.01, max_levels=20000: base = 20 - 10000*0.01 = -80.
+// price_to_index must correctly handle a negative base.
+TEST(OrderBook, NegativeBasePriceAsset) {
+    OrderBook book("SOLUSD", Exchange::COINBASE, 0.01, 20000);
+    Snapshot s;
+    s.symbol   = "SOLUSD";
+    s.exchange = Exchange::COINBASE;
+    s.sequence = 1;
+    s.bids.push_back(PriceLevel(20.00, 10.0));
+    s.asks.push_back(PriceLevel(20.01, 8.0));
+
+    EXPECT_EQ(book.apply_snapshot(s), Result::SUCCESS);
+    EXPECT_TRUE(book.is_initialized());
+    EXPECT_LT(book.base_price(), 0.0); // confirms the negative-base scenario
+
+    EXPECT_DOUBLE_EQ(book.get_best_bid(), 20.00);
+    EXPECT_DOUBLE_EQ(book.get_best_ask(), 20.01);
+
+    // Confirm a delta is also applied correctly with a negative base.
+    Delta d = make_delta(Side::BID, 19.99, 3.0, 2);
+    EXPECT_EQ(book.apply_delta(d), Result::SUCCESS);
+
+    std::vector<PriceLevel> bids, asks;
+    book.get_top_levels(5, bids, asks);
+    ASSERT_GE(bids.size(), 2u);
+    EXPECT_DOUBLE_EQ(bids[0].price, 20.00); // best bid still 20.00
+    EXPECT_DOUBLE_EQ(bids[1].price, 19.99);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
