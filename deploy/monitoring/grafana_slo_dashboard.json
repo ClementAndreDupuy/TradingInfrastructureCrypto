@@ -1,0 +1,19 @@
+{
+  "title": "Trading + Database SLO Dashboard",
+  "timezone": "utc",
+  "panels": [
+    {"title": "Feed Integrity", "type": "timeseries", "targets": [{"expr": "trading_sli_feed_integrity"}]},
+    {"title": "Reject Health", "type": "timeseries", "targets": [{"expr": "trading_sli_reject_health"}]},
+    {"title": "Reconciliation Health", "type": "timeseries", "targets": [{"expr": "trading_sli_reconciliation_health"}]},
+    {"title": "Risk Trigger Health", "type": "timeseries", "targets": [{"expr": "trading_sli_risk_health"}]},
+    {"title": "DB Ingest Freshness", "type": "timeseries", "targets": [{"expr": "db_sli_ingest_freshness"}]},
+    {"title": "DB Write Availability", "type": "timeseries", "targets": [{"expr": "db_sli_write_availability"}]},
+    {"title": "DB Completeness", "type": "timeseries", "targets": [{"expr": "db_sli_completeness"}]},
+    {"title": "DB Correctness", "type": "timeseries", "targets": [{"expr": "db_sli_correctness"}]},
+    {"title": "DB Durability", "type": "timeseries", "targets": [{"expr": "db_sli_durability"}]},
+    {"title": "DB Lineage", "type": "timeseries", "targets": [{"expr": "db_sli_lineage"}]}
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s"
+}

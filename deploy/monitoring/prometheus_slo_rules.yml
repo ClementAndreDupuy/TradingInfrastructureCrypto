@@ -1,0 +1,102 @@
+groups:
+  - name: trading-slo-alerts
+    rules:
+      - alert: TradingFeedIntegrityFastBurn
+        expr: trading_sli_feed_integrity_burn_rate > 14
+        for: 10m
+        labels:
+          severity: critical
+          team: trading
+        annotations:
+          summary: "Trading feed integrity fast burn"
+      - alert: TradingFeedIntegritySlowBurn
+        expr: trading_sli_feed_integrity_burn_rate > 2
+        for: 1h
+        labels:
+          severity: warning
+          team: trading
+        annotations:
+          summary: "Trading feed integrity slow burn"
+      - alert: TradingRejectSpikeFastBurn
+        expr: trading_sli_reject_health_burn_rate > 14
+        for: 10m
+        labels:
+          severity: critical
+          team: trading
+        annotations:
+          summary: "Trading reject spike fast burn"
+      - alert: TradingReconciliationDriftFastBurn
+        expr: trading_sli_reconciliation_health_burn_rate > 14
+        for: 10m
+        labels:
+          severity: critical
+          team: trading
+        annotations:
+          summary: "Reconciliation drift fast burn"
+      - alert: TradingRiskTriggerFastBurn
+        expr: trading_sli_risk_health_burn_rate > 14
+        for: 10m
+        labels:
+          severity: critical
+          team: risk
+        annotations:
+          summary: "Risk trigger frequency fast burn"
+
+  - name: db-slo-alerts
+    rules:
+      - alert: DBIngestFreshnessFastBurn
+        expr: db_sli_ingest_freshness_burn_rate > 14
+        for: 10m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "DB ingest freshness fast burn"
+      - alert: DBIngestFreshnessSlowBurn
+        expr: db_sli_ingest_freshness_burn_rate > 2
+        for: 1h
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "DB ingest freshness slow burn"
+      - alert: DBWriteAvailabilityFastBurn
+        expr: db_sli_write_availability_burn_rate > 14
+        for: 10m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "DB write availability fast burn"
+      - alert: DBCompletenessFastBurn
+        expr: db_sli_completeness_burn_rate > 14
+        for: 10m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "DB completeness fast burn"
+      - alert: DBCorrectnessFastBurn
+        expr: db_sli_correctness_burn_rate > 14
+        for: 10m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "DB correctness fast burn"
+      - alert: DBDurabilityFastBurn
+        expr: db_sli_durability_burn_rate > 14
+        for: 10m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "DB durability fast burn"
+      - alert: DBLineageFastBurn
+        expr: db_sli_lineage_burn_rate > 14
+        for: 10m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "DB lineage fast burn"

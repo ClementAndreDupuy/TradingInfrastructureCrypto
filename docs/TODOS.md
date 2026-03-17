@@ -6,13 +6,13 @@ Open items carried forward from the previous TODO cycle, ranked by priority/seve
 - _No open critical items._
 
 ### HIGH
-- [ ] **H4** `deploy/` + monitoring stack — Define production SLOs/error budgets and wire hard alerts for feed integrity, reject spikes, reconciliation drift, and risk trigger frequency
+- [x] **H4** `deploy/` + monitoring stack — Define production SLOs/error budgets and wire hard alerts for feed integrity, reject spikes, reconciliation drift, and risk trigger frequency
 - [ ] **H5** `research/neural_alpha/` + `deploy/` — Productionize secondary-model ensemble rollout: add canary guardrails, live IC/ICIR degradation rollback thresholds, and publish promotion/rollback events to ops alerts
-- [ ] **H6** `deploy/` + `research/` + `docs/` — Establish a formal database SLO framework (ingest freshness, write availability, completeness, correctness, durability, lineage) with 28-day error budgets and burn-rate paging
+- [x] **H6** `deploy/` + `research/` + `docs/` — Establish a formal database SLO framework (ingest freshness, write availability, completeness, correctness, durability, lineage) with 28-day error budgets and burn-rate paging
   - acceptance criteria:
-    - [ ] Published SLO spec in `docs/` defining SLIs, targets, windows, and owners for freshness, availability, completeness, correctness, durability, and lineage
-    - [ ] Prometheus/CloudWatch metrics emitted for each SLI with Grafana dashboard panels and burn-rate alerts (fast + slow) wired to on-call
-    - [ ] 28-day error-budget policy enforced in operations runbook with explicit freeze/escalation rules after budget exhaustion
+    - [x] Published SLO spec in `docs/` defining SLIs, targets, windows, and owners for freshness, availability, completeness, correctness, durability, and lineage
+    - [x] Prometheus/CloudWatch metrics emitted for each SLI with Grafana dashboard panels and burn-rate alerts (fast + slow) wired to on-call
+    - [x] 28-day error-budget policy enforced in operations runbook with explicit freeze/escalation rules after budget exhaustion
 - [ ] **H7** `deploy/aws/terraform/` — Harden data durability/security posture: enforce SSE-KMS on S3 artifacts bucket, add immutable retention controls for critical datasets, and implement tested backup/restore drills with explicit RPO/RTO targets
   - acceptance criteria:
     - [ ] Terraform enforces SSE-KMS and blocks unencrypted object uploads for artifacts paths

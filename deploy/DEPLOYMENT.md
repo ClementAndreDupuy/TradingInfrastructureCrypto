@@ -205,6 +205,22 @@ for line in sys.stdin:
 - [ ] Kill switch test: `sudo kill -SIGTERM $(pgrep -f shadow_session)` restarts cleanly
 - [ ] CloudWatch dashboards showing signal + position at `/trading/shadow`
 
+### SLO monitoring bootstrap (required)
+
+```bash
+# Build daily SLO scorecard + prometheus gauges
+python /opt/trading/deploy/slo_metrics.py
+
+# Verify emitted metrics
+cat /opt/trading/logs/slo_metrics.prom
+```
+
+Load monitoring assets:
+- Prometheus rules: `deploy/monitoring/prometheus_slo_rules.yml`
+- Grafana dashboard: `deploy/monitoring/grafana_slo_dashboard.json`
+- SLO spec: `docs/SLO_FRAMEWORK.md`
+- Error-budget runbook: `docs/operations/SLO_RUNBOOK.md`
+
 ---
 
 ## Step 8 — Enable live trading
