@@ -63,8 +63,7 @@ class AlphaSignalReader {
         if (fd_ < 0)
             return false;
 
-        ptr_ = static_cast<const char*>(
-            ::mmap(nullptr, FILE_SIZE, PROT_READ, MAP_SHARED, fd_, 0));
+        ptr_ = static_cast<const char*>(::mmap(nullptr, FILE_SIZE, PROT_READ, MAP_SHARED, fd_, 0));
         if (ptr_ == MAP_FAILED) {
             ::close(fd_);
             fd_ = -1;
@@ -112,9 +111,9 @@ class AlphaSignalReader {
             std::atomic_thread_fence(std::memory_order_acquire);
 
             AlphaSignal s;
-            std::memcpy(&s.signal_bps, ptr_ + 8,  sizeof(s.signal_bps));
+            std::memcpy(&s.signal_bps, ptr_ + 8, sizeof(s.signal_bps));
             std::memcpy(&s.risk_score, ptr_ + 16, sizeof(s.risk_score));
-            std::memcpy(&s.ts_ns,      ptr_ + 24, sizeof(s.ts_ns));
+            std::memcpy(&s.ts_ns, ptr_ + 24, sizeof(s.ts_ns));
 
             // Acquire fence: loads above must not be reordered after the seq2 load.
             std::atomic_thread_fence(std::memory_order_acquire);
