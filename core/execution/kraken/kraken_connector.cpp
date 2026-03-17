@@ -18,22 +18,6 @@ auto order_payload(const Order& order) -> std::string {
            "&volume=" + std::to_string(order.quantity);
 }
 
-auto classify_error(int status) -> ConnectorResult {
-    if (status == 401 || status == 403) {
-        return ConnectorResult::AUTH_FAILED;
-    }
-    if (status == 429) {
-        return ConnectorResult::ERROR_RATE_LIMIT;
-    }
-    if (status >= 500) {
-        return ConnectorResult::ERROR_REST_FAILURE;
-    }
-    if (status >= 400 && status < 500) {
-        return ConnectorResult::ERROR_INVALID_ORDER;
-    }
-    return ConnectorResult::ERROR_UNKNOWN;
-}
-
 auto parse_kraken_order_id(const std::string& body, std::string& venue_order_id) -> bool {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded()) {
@@ -100,7 +84,7 @@ auto KrakenConnector::submit_to_venue(const Order& order, const std::string& ide
     const auto headers = auth_headers("POST", "/0/private/AddOrder", payload, idempotency_key);
     const auto resp = http::post(api_url() + "/0/private/AddOrder", payload, headers);
     if (!resp.ok()) {
-        return classify_error(resp.status);
+        return classify_http_error(resp.status);
     }
 
     if (!parse_kraken_order_id(resp.body, venue_order_id)) {
@@ -114,7 +98,7 @@ auto KrakenConnector::cancel_at_venue(const VenueOrderEntry& entry) -> Connector
     const auto resp = http::post(api_url() + "/0/private/CancelOrder", payload,
                                  auth_headers("POST", "/0/private/CancelOrder", payload));
     if (!resp.ok()) {
-        return classify_error(resp.status);
+        return classify_http_error(resp.status);
     }
     return parse_kraken_cancel_ack(resp.body) ? ConnectorResult::OK
                                               : ConnectorResult::ERROR_UNKNOWN;
@@ -127,7 +111,7 @@ auto KrakenConnector::replace_at_venue(const VenueOrderEntry& entry, const Order
     const auto resp = http::post(api_url() + "/0/private/EditOrder", payload,
                                  auth_headers("POST", "/0/private/EditOrder", payload));
     if (!resp.ok()) {
-        return classify_error(resp.status);
+        return classify_http_error(resp.status);
     }
     return parse_kraken_order_id(resp.body, new_venue_order_id) ? ConnectorResult::OK
                                                                 : ConnectorResult::ERROR_UNKNOWN;
@@ -139,7 +123,7 @@ auto KrakenConnector::query_at_venue(const VenueOrderEntry& entry,
     const auto resp = http::post(api_url() + "/0/private/QueryOrders", payload,
                                  auth_headers("POST", "/0/private/QueryOrders", payload));
     if (!resp.ok()) {
-        return classify_error(resp.status);
+        return classify_http_error(resp.status);
     }
     return parse_kraken_query(resp.body, status) ? ConnectorResult::OK
                                                  : ConnectorResult::ERROR_UNKNOWN;
@@ -150,7 +134,7 @@ auto KrakenConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResult
     const auto resp = http::post(api_url() + "/0/private/CancelAllOrdersAfter", payload,
                                  auth_headers("POST", "/0/private/CancelAllOrdersAfter", payload));
     if (!resp.ok()) {
-        return classify_error(resp.status);
+        return classify_http_error(resp.status);
     }
     const auto json = nlohmann::json::parse(resp.body, nullptr, false);
     return (!json.is_discarded() && json.find("result") != json.end())
@@ -169,7 +153,7 @@ auto KrakenConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snap
     const auto open_resp = http::post(api_url() + "/0/private/OpenOrders", "",
                                       auth_headers("POST", "/0/private/OpenOrders", ""));
     if (!open_resp.ok()) {
-        return classify_error(open_resp.status);
+        return classify_http_error(open_resp.status);
     }
 
     const auto open_json = nlohmann::json::parse(open_resp.body, nullptr, false);
@@ -197,7 +181,7 @@ auto KrakenConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snap
     const auto balance_resp = http::post(api_url() + "/0/private/Balance", "",
                                          auth_headers("POST", "/0/private/Balance", ""));
     if (!balance_resp.ok()) {
-        return classify_error(balance_resp.status);
+        return classify_http_error(balance_resp.status);
     }
 
     const auto balance_json = nlohmann::json::parse(balance_resp.body, nullptr, false);
@@ -222,7 +206,7 @@ auto KrakenConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snap
         return ConnectorResult::OK;
     }
     if (!trades_resp.ok()) {
-        return classify_error(trades_resp.status);
+        return classify_http_error(trades_resp.status);
     }
 
     const auto trades_json = nlohmann::json::parse(trades_resp.body, nullptr, false);

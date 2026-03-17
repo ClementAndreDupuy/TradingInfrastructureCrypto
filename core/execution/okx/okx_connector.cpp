@@ -19,22 +19,6 @@ auto order_payload(const Order& order) -> std::string {
            std::to_string(order.quantity) + R"("})";
 }
 
-auto classify_error(int status) -> ConnectorResult {
-    if (status == 401 || status == 403) {
-        return ConnectorResult::AUTH_FAILED;
-    }
-    if (status == 429) {
-        return ConnectorResult::ERROR_RATE_LIMIT;
-    }
-    if (status >= 500) {
-        return ConnectorResult::ERROR_REST_FAILURE;
-    }
-    if (status >= 400 && status < 500) {
-        return ConnectorResult::ERROR_INVALID_ORDER;
-    }
-    return ConnectorResult::ERROR_UNKNOWN;
-}
-
 auto parse_okx_order_id(const std::string& body, std::string& venue_order_id) -> bool {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded()) {
@@ -202,7 +186,7 @@ auto OkxConnector::submit_to_venue(const Order& order, const std::string& idempo
     const auto headers = auth_headers("POST", "/api/v5/trade/order", payload, idempotency_key);
     const auto resp = http::post(api_url() + "/api/v5/trade/order", payload, headers);
     if (!resp.ok()) {
-        return classify_error(resp.status);
+        return classify_http_error(resp.status);
     }
 
     if (!parse_okx_order_id(resp.body, venue_order_id)) {
@@ -216,7 +200,7 @@ auto OkxConnector::cancel_at_venue(const VenueOrderEntry& entry) -> ConnectorRes
     const auto resp = http::post(api_url() + "/api/v5/trade/cancel-order", payload,
                                  auth_headers("POST", "/api/v5/trade/cancel-order", payload));
     if (!resp.ok()) {
-        return classify_error(resp.status);
+        return classify_http_error(resp.status);
     }
     return parse_okx_cancel_ack(resp.body) ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
 }
@@ -229,7 +213,7 @@ auto OkxConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& r
     const auto resp = http::post(api_url() + "/api/v5/trade/amend-order", payload,
                                  auth_headers("POST", "/api/v5/trade/amend-order", payload));
     if (!resp.ok()) {
-        return classify_error(resp.status);
+        return classify_http_error(resp.status);
     }
     return parse_okx_order_id(resp.body, new_venue_order_id) ? ConnectorResult::OK
                                                              : ConnectorResult::ERROR_UNKNOWN;
@@ -241,7 +225,7 @@ auto OkxConnector::query_at_venue(const VenueOrderEntry& entry,
         api_url() + "/api/v5/trade/order?ordId=" + std::string(entry.venue_order_id),
         auth_headers("GET", std::string("/api/v5/trade/order?ordId=") + entry.venue_order_id, ""));
     if (!resp.ok()) {
-        return classify_error(resp.status);
+        return classify_http_error(resp.status);
     }
     return parse_okx_query(resp.body, status) ? ConnectorResult::OK
                                               : ConnectorResult::ERROR_UNKNOWN;
@@ -254,7 +238,7 @@ auto OkxConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResult {
         http::post(api_url() + "/api/v5/trade/cancel-batch-orders", payload,
                    auth_headers("POST", "/api/v5/trade/cancel-batch-orders", payload));
     if (!resp.ok()) {
-        return classify_error(resp.status);
+        return classify_http_error(resp.status);
     }
     return parse_okx_cancel_ack(resp.body) ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
 }
@@ -270,7 +254,7 @@ auto OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapsho
     const auto open_orders = http::get(api_url() + "/api/v5/trade/orders-pending",
                                        auth_headers("GET", "/api/v5/trade/orders-pending", ""));
     if (!open_orders.ok()) {
-        return classify_error(open_orders.status);
+        return classify_http_error(open_orders.status);
     }
 
     ConnectorResult result = append_okx_open_orders(open_orders.body, snapshot);
@@ -281,7 +265,7 @@ auto OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapsho
     const auto account = http::get(api_url() + "/api/v5/account/balance",
                                    auth_headers("GET", "/api/v5/account/balance", ""));
     if (!account.ok()) {
-        return classify_error(account.status);
+        return classify_http_error(account.status);
     }
     result = append_okx_balances(account.body, snapshot);
     if (result != ConnectorResult::OK) {
@@ -291,7 +275,7 @@ auto OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapsho
     const auto pos_resp = http::get(api_url() + "/api/v5/account/positions",
                                     auth_headers("GET", "/api/v5/account/positions", ""));
     if (!pos_resp.ok()) {
-        return classify_error(pos_resp.status);
+        return classify_http_error(pos_resp.status);
     }
     result = append_okx_positions(pos_resp.body, snapshot);
     if (result != ConnectorResult::OK) {
@@ -304,7 +288,7 @@ auto OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapsho
         return ConnectorResult::OK;
     }
     if (!fills_resp.ok()) {
-        return classify_error(fills_resp.status);
+        return classify_http_error(fills_resp.status);
     }
     return append_okx_fills(fills_resp.body, snapshot);
 }

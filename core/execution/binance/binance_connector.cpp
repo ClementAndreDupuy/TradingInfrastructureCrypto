@@ -18,22 +18,6 @@ auto order_payload(const Order& order) -> std::string {
            std::to_string(order.quantity) + R"(,"price":)" + std::to_string(order.price) + "}";
 }
 
-auto classify_error(int status) -> ConnectorResult {
-    if (status == 401 || status == 403) {
-        return ConnectorResult::AUTH_FAILED;
-    }
-    if (status == 429) {
-        return ConnectorResult::ERROR_RATE_LIMIT;
-    }
-    if (status >= 500) {
-        return ConnectorResult::ERROR_REST_FAILURE;
-    }
-    if (status >= 400 && status < 500) {
-        return ConnectorResult::ERROR_INVALID_ORDER;
-    }
-    return ConnectorResult::ERROR_UNKNOWN;
-}
-
 auto parse_binance_order_id(const std::string& body, std::string& venue_order_id) -> bool {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded()) {
@@ -104,7 +88,7 @@ auto BinanceConnector::submit_to_venue(const Order& order, const std::string& id
     const auto headers = auth_headers("POST", "/api/v3/order", payload, idempotency_key);
     const auto resp = http::post(api_url() + "/api/v3/order", payload, headers);
     if (!resp.ok()) {
-        return classify_error(resp.status);
+        return classify_http_error(resp.status);
     }
 
     if (!parse_binance_order_id(resp.body, venue_order_id)) {
@@ -118,7 +102,7 @@ auto BinanceConnector::cancel_at_venue(const VenueOrderEntry& entry) -> Connecto
         api_url() + "/api/v3/order?orderId=" + std::string(entry.venue_order_id),
         auth_headers("DELETE", std::string("/api/v3/order?orderId=") + entry.venue_order_id, ""));
     if (!resp.ok()) {
-        return classify_error(resp.status);
+        return classify_http_error(resp.status);
     }
     return parse_binance_cancel_ack(resp.body) ? ConnectorResult::OK
                                                : ConnectorResult::ERROR_UNKNOWN;
@@ -131,7 +115,7 @@ auto BinanceConnector::replace_at_venue(const VenueOrderEntry& entry, const Orde
         api_url() + "/api/v3/order?orderId=" + std::string(entry.venue_order_id), payload,
         auth_headers("PUT", std::string("/api/v3/order?orderId=") + entry.venue_order_id, payload));
     if (!resp.ok()) {
-        return classify_error(resp.status);
+        return classify_http_error(resp.status);
     }
 
     if (!parse_binance_order_id(resp.body, new_venue_order_id)) {
@@ -146,7 +130,7 @@ auto BinanceConnector::query_at_venue(const VenueOrderEntry& entry,
         api_url() + "/api/v3/order?orderId=" + std::string(entry.venue_order_id),
         auth_headers("GET", std::string("/api/v3/order?orderId=") + entry.venue_order_id, ""));
     if (!resp.ok()) {
-        return classify_error(resp.status);
+        return classify_http_error(resp.status);
     }
     return parse_binance_query(resp.body, status) ? ConnectorResult::OK
                                                   : ConnectorResult::ERROR_UNKNOWN;
@@ -159,7 +143,7 @@ auto BinanceConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResul
             "DELETE",
             std::string("/api/v3/openOrders?symbol=") + ((symbol != nullptr) ? symbol : ""), ""));
     if (!resp.ok()) {
-        return classify_error(resp.status);
+        return classify_http_error(resp.status);
     }
     const auto json = nlohmann::json::parse(resp.body, nullptr, false);
     return (!json.is_discarded() && json.is_array()) ? ConnectorResult::OK
@@ -177,7 +161,7 @@ auto BinanceConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sna
     const auto open_orders =
         http::get(api_url() + "/api/v3/openOrders", auth_headers("GET", "/api/v3/openOrders", ""));
     if (!open_orders.ok()) {
-        return classify_error(open_orders.status);
+        return classify_http_error(open_orders.status);
     }
 
     const auto order_json = nlohmann::json::parse(open_orders.body, nullptr, false);
@@ -204,7 +188,7 @@ auto BinanceConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sna
     const auto account =
         http::get(api_url() + "/api/v3/account", auth_headers("GET", "/api/v3/account", ""));
     if (!account.ok()) {
-        return classify_error(account.status);
+        return classify_http_error(account.status);
     }
 
     const auto account_json = nlohmann::json::parse(account.body, nullptr, false);
@@ -229,7 +213,7 @@ auto BinanceConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sna
         return ConnectorResult::OK;
     }
     if (!trades.ok()) {
-        return classify_error(trades.status);
+        return classify_http_error(trades.status);
     }
 
     const auto trades_json = nlohmann::json::parse(trades.body, nullptr, false);

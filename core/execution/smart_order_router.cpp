@@ -8,6 +8,25 @@ namespace {
 constexpr double k_infinite_price = 1e18;
 constexpr double k_missing_best_price = 1e17;
 constexpr double k_min_remaining_qty = 1e-12;
+constexpr double k_min_fill_probability = 0.05;
+
+// Regime thresholds
+constexpr double k_high_toxicity_threshold = 2.0;
+constexpr double k_low_fill_threshold = 0.45;
+constexpr double k_high_fill_threshold = 0.75;
+
+// Regime weights: {fill_weight_bps, queue_weight_bps, toxicity_weight}
+constexpr double k_high_toxicity_fill_weight = 7.0;
+constexpr double k_high_toxicity_queue_weight = 1.1;
+constexpr double k_high_toxicity_tox_weight = 3.2;
+
+constexpr double k_low_fill_fill_weight = 6.0;
+constexpr double k_low_fill_queue_weight = 0.9;
+constexpr double k_low_fill_tox_weight = 1.2;
+
+constexpr double k_high_fill_fill_weight = 3.0;
+constexpr double k_high_fill_queue_weight = 0.4;
+constexpr double k_high_fill_tox_weight = 0.8;
 
 auto quote_price_for_side(const VenueQuote& venue_quote, Side side) noexcept -> double {
     return (side == Side::BID) ? venue_quote.best_ask : venue_quote.best_bid;
@@ -46,8 +65,9 @@ auto find_best_venue_index(const std::array<VenueQuote, SmartOrderRouter::MAX_VE
         const double quote_px = quote_price_for_side(venue_quote, side);
         const double base_cost = venue_quote.taker_fee_bps + venue_quote.latency_penalty_bps +
                                  venue_quote.risk_penalty_bps;
-        const double clipped_fill =
-            (venue_quote.fill_probability < 0.05) ? 0.05 : venue_quote.fill_probability;
+        const double clipped_fill = (venue_quote.fill_probability < k_min_fill_probability)
+                                        ? k_min_fill_probability
+                                        : venue_quote.fill_probability;
         const double fill_penalty = regime.fill_weight_bps * (1.0 - clipped_fill);
         const double queue_penalty = regime.queue_weight_bps * venue_quote.queue_ahead_qty;
         const double toxicity_penalty = regime.toxicity_weight * venue_quote.toxicity_bps;
@@ -114,24 +134,24 @@ auto SmartOrderRouter::infer_regime(const std::array<VenueQuote, MAX_VENUES>& ve
     const double avg_toxicity = total_toxicity / healthy_count;
     const double avg_fill = total_fill / healthy_count;
 
-    if (avg_toxicity >= 2.0) {
-        regime.fill_weight_bps = 7.0;
-        regime.queue_weight_bps = 1.1;
-        regime.toxicity_weight = 3.2;
+    if (avg_toxicity >= k_high_toxicity_threshold) {
+        regime.fill_weight_bps = k_high_toxicity_fill_weight;
+        regime.queue_weight_bps = k_high_toxicity_queue_weight;
+        regime.toxicity_weight = k_high_toxicity_tox_weight;
         return regime;
     }
 
-    if (avg_fill < 0.45) {
-        regime.fill_weight_bps = 6.0;
-        regime.queue_weight_bps = 0.9;
-        regime.toxicity_weight = 1.2;
+    if (avg_fill < k_low_fill_threshold) {
+        regime.fill_weight_bps = k_low_fill_fill_weight;
+        regime.queue_weight_bps = k_low_fill_queue_weight;
+        regime.toxicity_weight = k_low_fill_tox_weight;
         return regime;
     }
 
-    if (avg_fill > 0.75) {
-        regime.fill_weight_bps = 3.0;
-        regime.queue_weight_bps = 0.4;
-        regime.toxicity_weight = 0.8;
+    if (avg_fill > k_high_fill_threshold) {
+        regime.fill_weight_bps = k_high_fill_fill_weight;
+        regime.queue_weight_bps = k_high_fill_queue_weight;
+        regime.toxicity_weight = k_high_fill_tox_weight;
     }
 
     return regime;
@@ -140,8 +160,9 @@ auto SmartOrderRouter::infer_regime(const std::array<VenueQuote, MAX_VENUES>& ve
 auto SmartOrderRouter::score_venue_bps(const VenueQuote& venue_quote, Side side,
                                        const RoutingRegime& regime) noexcept -> double {
     const double base_cost = effective_price_bps(venue_quote, side);
-    const double clipped_fill =
-        (venue_quote.fill_probability < 0.05) ? 0.05 : venue_quote.fill_probability;
+    const double clipped_fill = (venue_quote.fill_probability < k_min_fill_probability)
+                                    ? k_min_fill_probability
+                                    : venue_quote.fill_probability;
     const double fill_penalty = regime.fill_weight_bps * (1.0 - clipped_fill);
     const double queue_penalty = regime.queue_weight_bps * venue_quote.queue_ahead_qty;
     const double toxicity_penalty = regime.toxicity_weight * venue_quote.toxicity_bps;

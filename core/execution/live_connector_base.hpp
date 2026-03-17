@@ -214,6 +214,18 @@ class LiveConnectorBase : public ExchangeConnector {
                code == ConnectorResult::ERROR_UNKNOWN;
     }
 
+    static ConnectorResult classify_http_error(int status) noexcept {
+        if (status == 401 || status == 403)
+            return ConnectorResult::AUTH_FAILED;
+        if (status == 429)
+            return ConnectorResult::ERROR_RATE_LIMIT;
+        if (status >= 500)
+            return ConnectorResult::ERROR_REST_FAILURE;
+        if (status >= 400)
+            return ConnectorResult::ERROR_INVALID_ORDER;
+        return ConnectorResult::ERROR_UNKNOWN;
+    }
+
     std::string make_idempotency_key(uint64_t client_order_id) const {
         return std::string("TRT-") + std::to_string(client_order_id) + "-" +
                exchange_to_string(exchange_);
@@ -284,20 +296,7 @@ class LiveConnectorBase : public ExchangeConnector {
 
     std::string hmac_sha256_hex(const std::string& payload) const {
 #if TRT_HAS_OPENSSL
-        unsigned char digest[EVP_MAX_MD_SIZE] = {};
-        unsigned int digest_len = 0;
-        HMAC(EVP_sha256(), api_secret_.data(), static_cast<int>(api_secret_.size()),
-             reinterpret_cast<const unsigned char*>(payload.data()), payload.size(), digest,
-             &digest_len);
-
-        static const char* hex = "0123456789abcdef";
-        std::string out;
-        out.resize(digest_len * 2);
-        for (unsigned int i = 0; i < digest_len; ++i) {
-            out[2 * i] = hex[(digest[i] >> 4) & 0xF];
-            out[2 * i + 1] = hex[digest[i] & 0xF];
-        }
-        return out;
+        return encode_hex(compute_hmac(EVP_sha256(), payload));
 #else
         (void)payload;
         return std::string();
@@ -306,18 +305,7 @@ class LiveConnectorBase : public ExchangeConnector {
 
     std::string hmac_sha256_base64(const std::string& payload) const {
 #if TRT_HAS_OPENSSL
-        unsigned char digest[EVP_MAX_MD_SIZE] = {};
-        unsigned int digest_len = 0;
-        HMAC(EVP_sha256(), api_secret_.data(), static_cast<int>(api_secret_.size()),
-             reinterpret_cast<const unsigned char*>(payload.data()), payload.size(), digest,
-             &digest_len);
-
-        std::string out;
-        out.resize((digest_len + 2) / 3 * 4);
-        const int out_len = EVP_EncodeBlock(reinterpret_cast<unsigned char*>(&out[0]), digest,
-                                            static_cast<int>(digest_len));
-        out.resize(static_cast<size_t>(out_len));
-        return out;
+        return encode_base64(compute_hmac(EVP_sha256(), payload));
 #else
         (void)payload;
         return std::string();
@@ -326,18 +314,7 @@ class LiveConnectorBase : public ExchangeConnector {
 
     std::string hmac_sha512_base64(const std::string& payload) const {
 #if TRT_HAS_OPENSSL
-        unsigned char digest[EVP_MAX_MD_SIZE] = {};
-        unsigned int digest_len = 0;
-        HMAC(EVP_sha512(), api_secret_.data(), static_cast<int>(api_secret_.size()),
-             reinterpret_cast<const unsigned char*>(payload.data()), payload.size(), digest,
-             &digest_len);
-
-        std::string out;
-        out.resize((digest_len + 2) / 3 * 4);
-        const int out_len = EVP_EncodeBlock(reinterpret_cast<unsigned char*>(&out[0]), digest,
-                                            static_cast<int>(digest_len));
-        out.resize(static_cast<size_t>(out_len));
-        return out;
+        return encode_base64(compute_hmac(EVP_sha512(), payload));
 #else
         (void)payload;
         return std::string();
@@ -348,20 +325,49 @@ class LiveConnectorBase : public ExchangeConnector {
 #if TRT_HAS_OPENSSL
         unsigned char digest[SHA256_DIGEST_LENGTH] = {};
         SHA256(reinterpret_cast<const unsigned char*>(payload.data()), payload.size(), digest);
-
-        static const char* hex = "0123456789abcdef";
-        std::string out;
-        out.resize(SHA256_DIGEST_LENGTH * 2);
-        for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
-            out[2 * i] = hex[(digest[i] >> 4) & 0xF];
-            out[2 * i + 1] = hex[digest[i] & 0xF];
-        }
-        return out;
+        return encode_hex(digest, SHA256_DIGEST_LENGTH);
 #else
         (void)payload;
         return std::string();
 #endif
     }
+
+#if TRT_HAS_OPENSSL
+    struct HmacDigest {
+        unsigned char data[EVP_MAX_MD_SIZE] = {};
+        unsigned int len = 0;
+    };
+
+    HmacDigest compute_hmac(const EVP_MD* algo, const std::string& payload) const {
+        HmacDigest result;
+        HMAC(algo, api_secret_.data(), static_cast<int>(api_secret_.size()),
+             reinterpret_cast<const unsigned char*>(payload.data()), payload.size(), result.data,
+             &result.len);
+        return result;
+    }
+
+    static std::string encode_hex(const HmacDigest& d) { return encode_hex(d.data, d.len); }
+
+    static std::string encode_hex(const unsigned char* data, unsigned int len) {
+        static const char hex_chars[] = "0123456789abcdef";
+        std::string out;
+        out.resize(len * 2);
+        for (unsigned int i = 0; i < len; ++i) {
+            out[2 * i] = hex_chars[(data[i] >> 4) & 0xF];
+            out[2 * i + 1] = hex_chars[data[i] & 0xF];
+        }
+        return out;
+    }
+
+    static std::string encode_base64(const HmacDigest& d) {
+        std::string out;
+        out.resize((d.len + 2) / 3 * 4);
+        const int out_len = EVP_EncodeBlock(reinterpret_cast<unsigned char*>(&out[0]), d.data,
+                                            static_cast<int>(d.len));
+        out.resize(static_cast<size_t>(out_len));
+        return out;
+    }
+#endif
 
     Exchange exchange_;
     std::string api_key_;

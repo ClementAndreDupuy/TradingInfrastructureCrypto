@@ -424,9 +424,6 @@ class ReconciliationService {
 
     void apply_decision(size_t idx, DriftDecision decision, bool reconnect_phase) {
         auto& state = states_[idx];
-        state.last_mismatch = decision.mismatch_class;
-        state.last_action = decision.action;
-        state.last_severity = decision.severity;
 
         if (decision.mismatch_class == MismatchClass::FILL_GAP) {
             ++state.fill_gap_retries;
@@ -500,12 +497,8 @@ class ReconciliationService {
 
     static double drift(double a, double b) noexcept { return std::fabs(a - b); }
 
-    static bool str_eq(const char* lhs, const char* rhs) noexcept {
-        return std::strncmp(lhs, rhs, 16) == 0;
-    }
-
-    static bool venue_id_eq(const char* lhs, const char* rhs) noexcept {
-        return std::strncmp(lhs, rhs, 64) == 0;
+    static bool cstr_eq(const char* lhs, const char* rhs) noexcept {
+        return std::strcmp(lhs, rhs) == 0;
     }
 
     static bool is_empty_venue_id(const char* venue_order_id) noexcept {
@@ -521,7 +514,7 @@ class ReconciliationService {
             return false;
 
         if (!is_empty_trade_id(lhs.venue_trade_id) && !is_empty_trade_id(rhs.venue_trade_id) &&
-            venue_id_eq(lhs.venue_trade_id, rhs.venue_trade_id)) {
+            cstr_eq(lhs.venue_trade_id, rhs.venue_trade_id)) {
             return true;
         }
 
@@ -533,7 +526,7 @@ class ReconciliationService {
         }
 
         if (!is_empty_venue_id(lhs.venue_order_id) && !is_empty_venue_id(rhs.venue_order_id) &&
-            venue_id_eq(lhs.venue_order_id, rhs.venue_order_id) &&
+            cstr_eq(lhs.venue_order_id, rhs.venue_order_id) &&
             lhs.exchange_ts_ns == rhs.exchange_ts_ns &&
             drift(lhs.quantity, rhs.quantity) <= 1e-12 && drift(lhs.price, rhs.price) <= 1e-12) {
             return true;
@@ -552,7 +545,7 @@ class ReconciliationService {
             }
             if (!is_empty_venue_id(candidate.venue_order_id) &&
                 !is_empty_venue_id(key.venue_order_id) &&
-                venue_id_eq(candidate.venue_order_id, key.venue_order_id)) {
+                cstr_eq(candidate.venue_order_id, key.venue_order_id)) {
                 return &candidate;
             }
         }
@@ -563,7 +556,7 @@ class ReconciliationService {
                                                  const char* asset) noexcept {
         for (size_t i = 0; i < snapshot.balances.size; ++i) {
             const ReconciledBalance& candidate = snapshot.balances.items[i];
-            if (str_eq(candidate.asset, asset))
+            if (cstr_eq(candidate.asset, asset))
                 return &candidate;
         }
         return nullptr;
@@ -573,7 +566,7 @@ class ReconciliationService {
                                                    const char* symbol) noexcept {
         for (size_t i = 0; i < snapshot.positions.size; ++i) {
             const ReconciledPosition& candidate = snapshot.positions.items[i];
-            if (str_eq(candidate.symbol, symbol))
+            if (cstr_eq(candidate.symbol, symbol))
                 return &candidate;
         }
         return nullptr;
