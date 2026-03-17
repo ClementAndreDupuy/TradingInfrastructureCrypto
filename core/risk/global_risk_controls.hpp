@@ -36,6 +36,8 @@ enum class GlobalRiskCheckResult : uint8_t {
 class GlobalRiskControls {
   public:
     static constexpr size_t MAX_SYMBOLS = 32;
+    static constexpr size_t NUM_VENUES = 4;
+    static_assert(NUM_VENUES == 4, "Update NUM_VENUES to match the number of Exchange enum values");
 
     GlobalRiskControls(const GlobalRiskConfig& cfg, KillSwitch& kill_switch) noexcept
         : cfg_(cfg), kill_switch_(kill_switch) {
@@ -155,8 +157,13 @@ class GlobalRiskControls {
 
     std::atomic<double> gross_notional_{0.0};
     std::atomic<double> net_notional_{0.0};
-    std::array<std::atomic<double>, 4> venue_gross_notional_{};
+    std::array<std::atomic<double>, NUM_VENUES> venue_gross_notional_{};
     std::array<SymbolState, MAX_SYMBOLS> symbol_states_{};
+    // Linear allocator index: each new symbol claims the next slot atomically.
+    // Ensures that the symbol name is written to a privately-owned slot before
+    // active is published, so find_symbol never observes an active slot with a
+    // stale/empty symbol name.
+    std::atomic<size_t> next_slot_{0};
 
     static void atomic_add(std::atomic<double>& target, double delta) noexcept {
         double current = target.load(std::memory_order_acquire);
@@ -180,7 +187,9 @@ class GlobalRiskControls {
     }
 
     const SymbolState* find_symbol(const char* symbol) const noexcept {
-        for (const auto& state : symbol_states_) {
+        const size_t used = next_slot_.load(std::memory_order_acquire);
+        for (size_t i = 0; i < used; ++i) {
+            const SymbolState& state = symbol_states_[i];
             if (!state.active.load(std::memory_order_acquire))
                 continue;
             if (std::strncmp(state.symbol, symbol, sizeof(state.symbol)) == 0)
@@ -190,26 +199,32 @@ class GlobalRiskControls {
     }
 
     SymbolState* get_or_create_symbol(const char* symbol) noexcept {
-        for (auto& state : symbol_states_) {
+        const size_t used = next_slot_.load(std::memory_order_acquire);
+        for (size_t i = 0; i < used; ++i) {
+            SymbolState& state = symbol_states_[i];
             if (state.active.load(std::memory_order_acquire) &&
                 std::strncmp(state.symbol, symbol, sizeof(state.symbol)) == 0) {
                 return &state;
             }
         }
 
-        for (auto& state : symbol_states_) {
-            bool expected = false;
-            if (!state.active.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
-                continue;
-            std::strncpy(state.symbol, symbol, sizeof(state.symbol) - 1);
-            state.symbol[sizeof(state.symbol) - 1] = '\0';
-            state.gross_notional.store(0.0, std::memory_order_release);
-            state.net_notional.store(0.0, std::memory_order_release);
-            return &state;
+        // Claim the next free slot atomically.  Each thread gets a distinct
+        // index so the symbol write below is free of data races.  active is
+        // stored last (with release ordering) so that find_symbol never sees a
+        // slot where active==true but symbol[] is still zeroed.
+        const size_t idx = next_slot_.fetch_add(1, std::memory_order_acq_rel);
+        if (idx >= MAX_SYMBOLS) {
+            LOG_ERROR("Global risk symbol table exhausted", "max_symbols", MAX_SYMBOLS);
+            return nullptr;
         }
 
-        LOG_ERROR("Global risk symbol table exhausted", "max_symbols", MAX_SYMBOLS);
-        return nullptr;
+        SymbolState& state = symbol_states_[idx];
+        std::strncpy(state.symbol, symbol, sizeof(state.symbol) - 1);
+        state.symbol[sizeof(state.symbol) - 1] = '\0';
+        // gross_notional and net_notional are already 0 from default-member-init;
+        // no explicit store needed.
+        state.active.store(true, std::memory_order_release); // publish after symbol is written
+        return &state;
     }
 };
 

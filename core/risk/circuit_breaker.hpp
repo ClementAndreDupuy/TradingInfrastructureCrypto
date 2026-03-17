@@ -191,7 +191,7 @@ class CircuitBreaker {
         if (deviation_bps > cfg_.max_price_deviation_bps) {
             LOG_ERROR("Circuit breaker: flash crash detected", "price", price, "ref", ref,
                       "dev_bps", deviation_bps, "limit_bps", cfg_.max_price_deviation_bps);
-            kill_switch_.trigger(KillReason::BOOK_CORRUPTED);
+            kill_switch_.trigger(KillReason::CIRCUIT_BREAKER);
             return CircuitCheckResult::FLASH_CRASH;
         }
         return CircuitCheckResult::OK;
