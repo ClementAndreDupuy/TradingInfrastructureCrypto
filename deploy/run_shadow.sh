@@ -345,11 +345,13 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# Ensure IPC directory exists before either process starts.  The C++ engine
+# writes the LOB ring buffer here even when --skip-alpha is set.
+mkdir -p "$(dirname "$LOB_FEED_PATH")"
+
 if [[ "$SKIP_ALPHA" -eq 0 ]]; then
     choose_python
     mkdir -p "$REPO_ROOT/logs" "$REPO_ROOT/models"
-    # Ensure IPC directory exists before both processes try to open the ring buffer.
-    mkdir -p "$(dirname "$LOB_FEED_PATH")"
     ALPHA_ARGS=(
         -m research.neural_alpha.shadow_session
         --signal-file "$SIGNAL_FILE"

@@ -33,7 +33,7 @@ Options:
   --skip-cpp              Skip C++ CMake build
   --skip-python           Skip all Python steps (install, bindings, compileall, tests)
   --skip-python-install   Skip 'python3 -m pip install -e .'
-  --skip-bindings         Skip 'python3 core/bindings/setup.py build_ext --inplace'
+  --skip-bindings         Skip pybind11 extension in-place build (core/bindings/)
   --skip-compileall       Skip Python byte-compilation check
   --skip-tests            Skip Python unit tests ('pytest tests/unit/')
   --skip-cpp-tests        Skip C++ tests ('ctest --output-on-failure')
@@ -106,6 +106,23 @@ ensure_pip() {
     return 1
 }
 
+action_preflight() {
+    # Use the first Python 3 available; does not require pip or any venv.
+    local py=""
+    for candidate in python3.12 python3.11 python3.10 python3 python; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            py="$candidate"
+            break
+        fi
+    done
+    if [[ -z "$py" ]]; then
+        echo "[build] WARNING: no Python found to run preflight_check.py; skipping."
+        return 0
+    fi
+    echo "[build] Running preflight dependency check"
+    "$py" "$PROJECT_ROOT/deploy/scripts/preflight_check.py"
+}
+
 action_cpp() {
     echo "[build] Configuring CMake in $BUILD_DIR"
     cmake -S . -B "$BUILD_DIR" || return 1
@@ -123,7 +140,10 @@ action_python_install() {
 
 action_bindings() {
     echo "[build] Building pybind11 bindings in-place"
-    "$PYTHON_BIN" core/bindings/setup.py build_ext --inplace
+    # Run from core/bindings/ so --inplace puts trading_core.so there, not in
+    # the repo root.  The setup.py docstring documents core/bindings/ as the
+    # intended output location.
+    (cd "$PROJECT_ROOT/core/bindings" && "$PYTHON_BIN" setup.py build_ext --inplace)
 }
 
 action_compileall() {
@@ -133,7 +153,8 @@ action_compileall() {
 
 action_tests() {
     echo "[build] Running Python unit tests"
-    "$PYTHON_BIN" -m pytest tests/unit/
+    # PYTHONPATH is required so 'import research.*' resolves without an editable install.
+    PYTHONPATH="$PROJECT_ROOT" "$PYTHON_BIN" -m pytest tests/unit/
 }
 
 action_cpp_tests() {
@@ -142,6 +163,13 @@ action_cpp_tests() {
 }
 
 if [[ "$BUILD_CPP" -eq 1 ]]; then
+    if ! action_preflight; then
+        if [[ "$STRICT_CPP" -eq 1 ]]; then
+            echo "[build] ERROR: Preflight check failed (--strict-cpp enabled)."
+            exit 1
+        fi
+        echo "[build] WARNING: Preflight check failed — C++ build may fail due to missing system deps."
+    fi
     if ! action_cpp; then
         if [[ "$STRICT_CPP" -eq 1 ]]; then
             echo "[build] ERROR: C++ build failed (--strict-cpp enabled)."
