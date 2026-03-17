@@ -27,9 +27,9 @@ class OrderBook {
     OrderBook(const std::string& symbol, Exchange exchange, double tick_size = 1.0,
               size_t max_levels = 20000)
         : symbol_(symbol), exchange_(exchange), tick_size_(tick_size), max_levels_(max_levels),
-          base_price_(0.0), sequence_(0), bid_sizes_(max_levels, 0.0), ask_sizes_(max_levels, 0.0),
-          scratch_bid_sizes_(max_levels, 0.0), scratch_ask_sizes_(max_levels, 0.0),
-          out_of_range_streak_(0) {}
+          base_price_(0.0), sequence_(0), initialized_(false), bid_sizes_(max_levels, 0.0),
+          ask_sizes_(max_levels, 0.0), scratch_bid_sizes_(max_levels, 0.0),
+          scratch_ask_sizes_(max_levels, 0.0), out_of_range_streak_(0) {}
 
     // Clears the book and re-centers the price grid around the snapshot's best bid.
     Result apply_snapshot(const Snapshot& snapshot) {
@@ -66,12 +66,18 @@ class OrderBook {
         // Center grid: base = best_bid - half_range
         double new_base = best_bid - static_cast<double>(max_levels_ / 2) * tick_size_;
 
-        // Reset state
+        // Reset state — mark uninitialized first so concurrent readers see a clean boundary
+        // (either fully old book or fully new book, never a half-cleared one).
+        // base_price_ and initialized_ are then updated together before repopulating,
+        // because price_to_index() requires initialized_ == true to map levels.
+        initialized_.store(false, std::memory_order_release);
         std::fill(bid_sizes_.begin(), bid_sizes_.end(), 0.0);
         std::fill(ask_sizes_.begin(), ask_sizes_.end(), 0.0);
         base_price_.store(new_base, std::memory_order_release);
         sequence_.store(snapshot.sequence, std::memory_order_release);
         out_of_range_streak_ = 0;
+        // Re-enable after base_price_ is committed so price_to_index() works during populate.
+        initialized_.store(true, std::memory_order_release);
 
         size_t skipped = 0;
         for (const auto& level : snapshot.bids) {
@@ -105,6 +111,10 @@ class OrderBook {
     Result apply_delta(const Delta& delta) {
         if (!is_initialized()) {
             return Result::ERROR_BOOK_CORRUPTED;
+        }
+
+        if (delta.size < 0.0) {
+            return Result::ERROR_INVALID_SIZE;
         }
 
         // Skip stale deltas (already reflected in a newer snapshot or earlier delta)
@@ -170,7 +180,7 @@ class OrderBook {
 
     uint64_t get_sequence() const { return sequence_.load(std::memory_order_acquire); }
 
-    bool is_initialized() const { return base_price_.load(std::memory_order_acquire) != 0.0; }
+    bool is_initialized() const { return initialized_.load(std::memory_order_acquire); }
 
     void get_top_levels(size_t n, std::vector<PriceLevel>& bids,
                         std::vector<PriceLevel>& asks) const {
@@ -235,6 +245,7 @@ class OrderBook {
 
     std::atomic<double> base_price_;
     std::atomic<uint64_t> sequence_;
+    std::atomic<bool> initialized_;
 
     std::vector<double> bid_sizes_;
     std::vector<double> ask_sizes_;
@@ -295,9 +306,9 @@ class OrderBook {
 
     // Maps price → flat-array index. Returns false if uninitialized or out of range.
     bool price_to_index(double price, size_t& out_idx) const {
-        double base = base_price_.load(std::memory_order_acquire);
-        if (base == 0.0)
+        if (!initialized_.load(std::memory_order_acquire))
             return false;
+        double base = base_price_.load(std::memory_order_acquire);
         double relative = (price - base) / tick_size_;
         int64_t idx = static_cast<int64_t>(relative + 0.5); // round to nearest tick
         if (idx < 0 || static_cast<size_t>(idx) >= max_levels_)

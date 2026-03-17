@@ -340,6 +340,40 @@ TEST(OrderBook, RejectsSnapshotWithInvalidChecksum) {
     EXPECT_FALSE(book.is_initialized());
 }
 
+// Regression: base_price_ can be exactly 0.0 for low-priced assets.
+// E.g. ETH at $1000, tick=0.10, max_levels=20000 → base = 1000 - 10000*0.10 = 0.
+// The old code used (base_price_ != 0.0) as the initialized sentinel, giving a false
+// negative that permanently blocked all delta processing.
+TEST(OrderBook, IsInitializedWhenBasePriceIsZero) {
+    // tick=0.10, max_levels=20000 → half_range = 10000 * 0.10 = 1000
+    // best_bid=1000 → base = 1000 - 1000 = 0.0  (the problematic case)
+    OrderBook book("ETHUSD", Exchange::KRAKEN, 0.10, 20000);
+    Snapshot s;
+    s.symbol   = "ETHUSD";
+    s.exchange = Exchange::KRAKEN;
+    s.sequence = 1;
+    s.bids.push_back(PriceLevel(1000.0, 5.0));
+    s.asks.push_back(PriceLevel(1000.1, 5.0));
+
+    EXPECT_EQ(book.apply_snapshot(s), Result::SUCCESS);
+    EXPECT_TRUE(book.is_initialized());
+
+    // Deltas must also be accepted — base_price_ == 0.0 must not block them.
+    Delta d = make_delta(Side::BID, 1000.0, 3.0, 2);
+    EXPECT_EQ(book.apply_delta(d), Result::SUCCESS);
+    EXPECT_DOUBLE_EQ(book.get_best_bid(), 1000.0);
+}
+
+TEST(OrderBook, NegativeSizeDeltaRejected) {
+    OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
+    book.apply_snapshot(make_snapshot(50000.0, 50001.0, 1, 1.0, 100));
+
+    Delta d = make_delta(Side::BID, 50000.0, -1.0, 101);
+    EXPECT_EQ(book.apply_delta(d), Result::ERROR_INVALID_SIZE);
+    // Sequence must not advance on a rejected delta.
+    EXPECT_EQ(book.get_sequence(), 100u);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
