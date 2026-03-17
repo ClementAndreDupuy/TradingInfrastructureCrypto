@@ -10,8 +10,8 @@ Steps:
     6. Print full report
 
 Usage:
-    python -m research.alpha.neural_alpha.pipeline [options]
-    python research/alpha/neural_alpha/pipeline.py --ticks 200 --epochs 10
+    python -m research.neural_alpha.pipeline [options]
+    python research/neural_alpha/pipeline.py --ticks 200 --epochs 10
 """
 from __future__ import annotations
 

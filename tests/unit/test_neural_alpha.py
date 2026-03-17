@@ -24,21 +24,21 @@ import torch
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from research.alpha.neural_alpha.alpha_regression import (
+from research.neural_alpha.alpha_regression import (
     analyse_alpha,
     compute_hit_rate,
     compute_ic,
     compute_turnover,
     ols_regression,
 )
-from research.alpha.neural_alpha.backtest import BacktestConfig, NeuralAlphaBacktest
-from research.alpha.neural_alpha.dataset import (
+from research.neural_alpha.backtest import BacktestConfig, NeuralAlphaBacktest
+from research.neural_alpha.dataset import (
     DatasetConfig,
     LOBDataset,
     rolling_normalise,
     split_walk_forward,
 )
-from research.alpha.neural_alpha.features import (
+from research.neural_alpha.features import (
     compute_labels,
     compute_lob_tensor,
     compute_scalar_features,
@@ -46,14 +46,14 @@ from research.alpha.neural_alpha.features import (
     D_SCALAR,
     N_LEVELS,
 )
-from research.alpha.neural_alpha.model import (
+from research.neural_alpha.model import (
     CryptoAlphaNet,
     LOBSpatialEncoder,
     MultiTaskLoss,
     TemporalEncoder,
 )
-from research.alpha.neural_alpha.pipeline import generate_synthetic_lob
-from research.alpha.neural_alpha.shadow_session import NeuralAlphaShadowSession, ShadowSessionConfig
+from research.neural_alpha.pipeline import generate_synthetic_lob
+from research.neural_alpha.shadow_session import NeuralAlphaShadowSession, ShadowSessionConfig
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -446,10 +446,10 @@ class TestShadowSessionTraining:
             return [{"metrics": {"loss_total": 0.1234}, "model_state": model.state_dict()}]
 
         monkeypatch.setattr(
-            "research.alpha.neural_alpha.shadow_session._fetch_binance_l5", _fake_fetch
+            "research.neural_alpha.shadow_session._fetch_binance_l5", _fake_fetch
         )
         monkeypatch.setattr(
-            "research.alpha.neural_alpha.shadow_session.walk_forward_train",
+            "research.neural_alpha.shadow_session.walk_forward_train",
             _fake_walk_forward_train,
         )
 

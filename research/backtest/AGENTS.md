@@ -8,7 +8,7 @@ Python strategy layer → signal generation → C++ matching engine (pybind11) �
 
 ## C++ Bridge
 
-Built from `bindings/`. Run `python3 bindings/setup.py build_ext --inplace` to compile. Use `--engine cpp` flag in `fetch_and_run.py` to activate. Falls back to pure Python if not built.
+Built from `core/bindings/`. Run `python3 core/bindings/setup.py build_ext --inplace` to compile. Use `--engine cpp` flag in `fetch_and_run.py` to activate. Falls back to pure Python if not built.
 
 ## Critical Requirements
 

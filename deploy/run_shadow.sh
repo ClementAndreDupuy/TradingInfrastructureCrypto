@@ -332,7 +332,7 @@ if [[ "$SKIP_ALPHA" -eq 0 ]]; then
     choose_python
     mkdir -p "$REPO_ROOT/logs" "$REPO_ROOT/models"
     ALPHA_ARGS=(
-        -m research.alpha.neural_alpha.shadow_session
+        -m research.neural_alpha.shadow_session
         --signal-file "$SIGNAL_FILE"
         --duration "$DURATION_SECS"
         --interval-ms "$INTERVAL_MS"

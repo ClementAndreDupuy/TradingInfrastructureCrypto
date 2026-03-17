@@ -24,29 +24,29 @@ pytest tests/unit/
 
 # pybind11 bridge
 pip3 install pybind11
-python3 bindings/setup.py build_ext --inplace
+python3 core/bindings/setup.py build_ext --inplace
 
 # Neural alpha pipeline (live data)
-python -m research.alpha.neural_alpha.pipeline --exchanges KRAKEN --ticks 300 --epochs 20
+python -m research.neural_alpha.pipeline --exchanges KRAKEN --ticks 300 --epochs 20
 
 # Neural alpha pipeline (synthetic, for testing)
-python -m research.alpha.neural_alpha.pipeline --synthetic --ticks 400 --epochs 5
+python -m research.neural_alpha.pipeline --synthetic --ticks 400 --epochs 5
 ```
 
 ## Perform an audit of the codebase
 Audit guidelines of the project
 
-[Audit guidelines](/agents/AUDIT.md)
+[Audit guidelines](/docs/AUDIT.md)
 
 ## Development Guidelines
 Development guidelines of the project.
 
-[Development guidelines](/agents/DEVELOPMENT_GUIDELINES.md)
+[Development guidelines](/docs/DEVELOPMENT_GUIDELINES.md)
 
 ## Project TODOs
 All the project todos should be placed in the TODO file below, ranked by priority and severity.
 
-[TODOS file](/agents/TODOS.md)
+[TODOS file](/docs/TODOS.md)
 
 ## Components
 
@@ -56,7 +56,7 @@ All the project todos should be placed in the TODO file below, ranked by priorit
 - **`core/execution/`** — `ExchangeConnector` interface + live connectors (Binance/Kraken/OKX/Coinbase), `OrderManager` (position tracking), `NeuralAlphaMarketMaker` (GTX limit orders, signal skew, stop-limit stop-loss).
 - **`core/ipc/`** — Shared memory bridge: Python publishes neural alpha signal → C++ reads via `AlphaSignalReader`.
 - **`core/shadow/`** — `ShadowConnector` + `ShadowEngine` — paper trading with identical code path to live. Run ≥ 2 weeks before live.
-- **`research/alpha/neural_alpha/`** — GNN spatial + Transformer temporal model, walk-forward training, backtest, shadow session.
+- **`research/neural_alpha/`** — GNN spatial + Transformer temporal model, walk-forward training, backtest, shadow session.
 
 ## Technology Stack
 
@@ -68,23 +68,25 @@ All the project todos should be placed in the TODO file below, ranked by priorit
 ## Directory Structure
 
 ```
-core/          C++ hot path
-  common/      Shared types (Order, FillUpdate, OrderType, etc.)
-  orderbook/   Book structure
-  feeds/       Exchange WebSocket handlers (Binance/Kraken/OKX/Coinbase)
-  ipc/         Shared memory (neural alpha signal bridge)
-  risk/        Pre-trade checks, kill switch
-  execution/   Market maker, order manager, exchange connector
-  shadow/      Shadow trading engine
+core/            C++ hot path
+  common/        Shared types (Order, FillUpdate, OrderType, etc.)
+  orderbook/     Book structure
+  feeds/         Exchange WebSocket handlers (Binance/Kraken/OKX/Coinbase)
+  ipc/           Shared memory (neural alpha signal bridge)
+  risk/          Pre-trade checks, kill switch
+  execution/     Market maker, order manager, exchange connector
+  shadow/        Shadow trading engine
+  bindings/      pybind11 C++↔Python bridge
 
-research/      Python cold path
-  alpha/
-    neural_alpha/   GNN+Transformer model, features, backtest, shadow session
-  backtest/    Event-driven backtest engine
+research/        Python cold path
+  neural_alpha/  GNN+Transformer model, features, backtest, shadow session
+  backtest/      Shared backtest utilities (shadow_metrics)
 
-bindings/      pybind11 C++↔Python bridge
-config/        dev / shadow / live configs
-tests/         unit / integration / replay
+config/          dev / shadow / live runtime + risk configs
+deploy/          AWS infrastructure, systemd services, operational scripts
+  scripts/       Build and preflight scripts
+docs/            Audit reports, development guidelines, TODOs
+tests/           unit / integration / replay / perf
 ```
 
 ## Code Style

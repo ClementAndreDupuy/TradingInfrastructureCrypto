@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from research.alpha.neural_alpha.governance import ChampionChallengerRegistry, DriftGuard
+from research.neural_alpha.governance import ChampionChallengerRegistry, DriftGuard
 
 
 def test_registry_register_and_promote(tmp_path: Path) -> None:

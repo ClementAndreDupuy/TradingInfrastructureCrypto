@@ -24,7 +24,7 @@ Shared memory bridge:
     The C++ AlphaSignalReader (core/ipc/alpha_signal.hpp) mmaps this file.
 
 Usage:
-    python -m research.alpha.neural_alpha.shadow_session \
+    python -m research.neural_alpha.shadow_session \
         --model-path models/neural_alpha_latest.pt \
         --secondary-model-path models/neural_alpha_secondary.pt \
         --duration 86400 \

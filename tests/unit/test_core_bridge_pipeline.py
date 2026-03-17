@@ -11,7 +11,7 @@ ROOT = Path(__file__).parent.parent.parent
 import sys
 sys.path.insert(0, str(ROOT))
 
-from research.alpha.neural_alpha.core_bridge import CoreBridge
+from research.neural_alpha.core_bridge import CoreBridge
 
 try:
     import polars as pl
@@ -19,7 +19,7 @@ except ModuleNotFoundError:  # pragma: no cover - environment-dependent
     pl = None
 
 if pl is not None:
-    from research.alpha.neural_alpha import pipeline
+    from research.neural_alpha import pipeline
 else:
     pipeline = None
 

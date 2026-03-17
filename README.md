@@ -23,7 +23,7 @@ flowchart LR
     COMMON["core/common\nOrder, fills, enums, shared types"]
     IPCW["core/ipc\nPython shared-memory signal writer"]
     IPCR["core/ipc\nC++ AlphaSignalReader"]
-    BIND["bindings/\npybind11 bridge"]
+    BIND["core/bindings/\npybind11 bridge"]
   end
 
   subgraph HotPath["C++ Hot Path (latency critical)"]
@@ -37,7 +37,7 @@ flowchart LR
   end
 
   subgraph ColdPath["Python Cold Path (research + model)"]
-    PIPE["research/alpha/neural_alpha\nFeature pipeline + training"]
+    PIPE["research/neural_alpha\nFeature pipeline + training"]
     BACKTEST["research/backtest\nEvent-driven backtests"]
     TESTS["tests/unit|integration|replay|perf\nRegression + performance checks"]
   end
@@ -115,7 +115,7 @@ flowchart LR
 - **`core/ipc`**: Shared-memory bridge between Python model output and C++ strategy input.
 - **`core/execution` smart order router**: Splits/routes validated orders to Binance/Kraken/OKX/Coinbase connectors and normalizes venue acks/fills back to execution.
 - **`core/shadow`**: Runs the same trading logic in paper mode to validate behavior before live deployment.
-- **`research/alpha/neural_alpha`**: Trains and generates alpha signals from historical/live features.
+- **`research/neural_alpha`**: Trains and generates alpha signals from historical/live features.
 - **`research/backtest`**: Replays market events to evaluate strategy quality offline.
 
 ## Typical lifecycle (short)
@@ -131,7 +131,7 @@ flowchart LR
 Run the dependency checker before local builds or production bootstrap:
 
 ```bash
-python3 scripts/preflight_check.py
+python3 deploy/scripts/preflight_check.py
 ```
 
 It validates required tooling and native dependencies (`cmake`, `pkg-config`, `libwebsockets`, `libcurl`, `nlohmann/json`) and exits non-zero on missing prerequisites.

@@ -9,7 +9,7 @@ User=ubuntu
 WorkingDirectory=/opt/trading
 EnvironmentFile=/etc/trading/env
 Environment=PYTHONPATH=/opt/trading
-ExecStart=/opt/trading-venv/bin/python -m research.alpha.neural_alpha.shadow_session \
+ExecStart=/opt/trading-venv/bin/python -m research.neural_alpha.shadow_session \
     --model-path models/neural_alpha_latest.pt \
     --secondary-model-path models/neural_alpha_secondary.pt \
     --log-path logs/neural_alpha_shadow.jsonl \
