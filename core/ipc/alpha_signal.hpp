@@ -162,9 +162,12 @@ class AlphaSignalReader {
 
   private:
     static int64_t now_ns() noexcept {
-        // Use steady_clock to avoid NTP-driven discontinuities in the staleness check.
+        // Python writes ts_ns via time.time_ns() which is UNIX wall-clock time.
+        // system_clock shares the same epoch, so the staleness delta is correct.
+        // steady_clock has a different epoch (system boot) and must NOT be used here —
+        // the comparison would always return true (signal always "stale").
         using namespace std::chrono;
-        return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+        return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
     }
 
     bool is_stale(const AlphaSignal& s) const noexcept {

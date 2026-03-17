@@ -392,7 +392,11 @@ class NeuralAlphaMarketMaker {
         if (s.ts_ns == 0)
             return true;
         using namespace std::chrono;
-        int64_t now = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+        // Python writes ts_ns via time.time_ns() which is UNIX wall-clock time.
+        // system_clock shares the same epoch; steady_clock must NOT be used here
+        // as its epoch differs (system boot), making the delta always huge and the
+        // signal perpetually stale.
+        int64_t now = duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
         return (now - s.ts_ns) > cfg_.stale_ns;
     }
 };
