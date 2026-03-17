@@ -51,8 +51,8 @@ auto parse_args(int argc, char** argv) -> CliOptions {
             try {
                 out.loop_interval_ms = std::stoi(argv[++i]);
             } catch (...) {
-                LOG_WARN("parse_args: invalid --loop-interval-ms value, using default",
-                         "value", argv[i], "default_ms", out.loop_interval_ms);
+                LOG_WARN("parse_args: invalid --loop-interval-ms value, using default", "value",
+                         argv[i], "default_ms", out.loop_interval_ms);
             }
         }
     }
@@ -130,8 +130,8 @@ auto main(int argc, char** argv) -> int {
         // Bug fix: failure was silently ignored, leaving risk limits at their (potentially
         // unsafe) defaults. Now we log a warning so operators notice misconfiguration.
         if (!RiskConfigLoader::load(risk_path, risk_cfg)) {
-            LOG_WARN("Risk config not loaded — using compiled-in defaults",
-                     "path", risk_path.c_str());
+            LOG_WARN("Risk config not loaded — using compiled-in defaults", "path",
+                     risk_path.c_str());
         }
 
         KillSwitch kill_switch(risk_cfg.heartbeat_timeout_ns);
@@ -246,8 +246,7 @@ auto main(int argc, char** argv) -> int {
         if (any_reconnected) {
             const ConnectorResult reconcile_res = reconciliation.reconcile_on_reconnect();
             if (reconcile_res != ConnectorResult::OK) {
-                LOG_WARN("reconcile_on_reconnect failed", "code",
-                         static_cast<int>(reconcile_res));
+                LOG_WARN("reconcile_on_reconnect failed", "code", static_cast<int>(reconcile_res));
             }
         }
 
@@ -264,8 +263,8 @@ auto main(int argc, char** argv) -> int {
 
         uint64_t next_id = 1;
 
-        LOG_INFO("trading_engine started", "mode", opts.mode.c_str(), "venues",
-                 opts.venues.c_str(), "symbol", opts.symbol.c_str());
+        LOG_INFO("trading_engine started", "mode", opts.mode.c_str(), "venues", opts.venues.c_str(),
+                 "symbol", opts.symbol.c_str());
 
         while (g_running.load(std::memory_order_acquire)) {
             if (kill_switch.is_active()) {
@@ -306,8 +305,8 @@ auto main(int argc, char** argv) -> int {
                     const double signed_notional = child.quantity * child.limit_price;
                     if (global_risk.commit_order(child.exchange, child_order.symbol,
                                                  signed_notional) != GlobalRiskCheckResult::OK) {
-                        LOG_WARN("global-risk blocked submit",
-                                 "venue", exchange_to_string(child.exchange));
+                        LOG_WARN("global-risk blocked submit", "venue",
+                                 exchange_to_string(child.exchange));
                         continue;
                     }
 
@@ -338,9 +337,9 @@ auto main(int argc, char** argv) -> int {
                         break;
                     }
 
-                    LOG_INFO("order submitted", "child", static_cast<int>(i),
-                             "venue", exchange_to_string(child.exchange),
-                             "qty", child.quantity, "result", static_cast<int>(res));
+                    LOG_INFO("order submitted", "child", static_cast<int>(i), "venue",
+                             exchange_to_string(child.exchange), "qty", child.quantity, "result",
+                             static_cast<int>(res));
                 }
             }
 
@@ -365,8 +364,7 @@ auto main(int argc, char** argv) -> int {
             if (now >= next_reconciliation) {
                 const ConnectorResult drift_res = reconciliation.run_periodic_drift_check();
                 if (drift_res != ConnectorResult::OK) {
-                    LOG_WARN("periodic_reconciliation failed", "code",
-                             static_cast<int>(drift_res));
+                    LOG_WARN("periodic_reconciliation failed", "code", static_cast<int>(drift_res));
                 }
                 next_reconciliation = now + reconciliation_interval;
             }
