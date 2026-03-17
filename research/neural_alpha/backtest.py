@@ -256,21 +256,23 @@ class NeuralAlphaBacktest:
         mean_pnl = np.mean(net_pnls)
         sharpe = self._compute_time_aware_sharpe()
 
-        slippage = 0.0
-        if "gross_pnl" in trades_df.columns and "net_pnl" in trades_df.columns:
-            slippage = float((trades_df["gross_pnl"] - trades_df["net_pnl"]).mean())
+        # avg_fee_per_trade: gross_pnl - net_pnl = entry_fee + exit_fee
+        # (this is the round-trip fee cost, not market-impact slippage)
+        avg_fee_per_trade = 0.0
+        if "gross_pnl" in trades_df.columns:
+            avg_fee_per_trade = float((trades_df["gross_pnl"] - trades_df["net_pnl"]).mean())
 
         return {
-            "total_trades":      len(net_pnls),
-            "total_net_pnl":     float(np.sum(net_pnls)),
-            "avg_net_pnl":       float(mean_pnl),
-            "sharpe_annualised": float(sharpe),
-            "win_rate":          float(len(wins) / len(net_pnls)),
-            "profit_factor":     float(np.sum(wins) / abs(np.sum(losses))) if losses.size else float("inf"),
-            "max_drawdown_usd":  float(self._max_dd),
-            "avg_slippage_usd":  float(slippage),
-            "signal_mean":       float(np.mean(signals)),
-            "signal_std":        float(np.std(signals)),
+            "total_trades":         len(net_pnls),
+            "total_net_pnl":        float(np.sum(net_pnls)),
+            "avg_net_pnl":          float(mean_pnl),
+            "sharpe_annualised":    float(sharpe),
+            "win_rate":             float(len(wins) / len(net_pnls)),
+            "profit_factor":        float(np.sum(wins) / abs(np.sum(losses))) if losses.size else float("inf"),
+            "max_drawdown_usd":     float(self._max_dd),
+            "avg_fee_per_trade_usd": avg_fee_per_trade,
+            "signal_mean":          float(np.mean(signals)),
+            "signal_std":           float(np.std(signals)),
         }
 
     def _compute_time_aware_sharpe(self) -> float:
@@ -313,19 +315,25 @@ def run_backtest_on_fold(
 ) -> dict:
     """
     Convenience wrapper: aligns fold predictions with the test slice of df.
+
+    Each prediction[i] corresponds to the window ending at tick
+    ``seq_len - 1 + i`` (stride=1).  Predictions whose target tick falls
+    outside [0, T_test) are silently dropped to avoid corrupting the last
+    tick with stale signals.
     """
     test_df = df[test_slice_start:test_slice_end]
     # predictions is (N_windows, 3); use mid-horizon signal (col 1)
     preds = fold_result["predictions"][:, 1]
 
-    # Align: each prediction corresponds to the last tick of a window.
-    # We replicate each prediction for seq_len ticks (nearest-assignment).
     from .dataset import DatasetConfig
     seq_len = DatasetConfig().seq_len
     T_test  = len(test_df)
     signals = np.zeros(T_test, dtype=np.float32)
     for i, pred in enumerate(preds):
-        tick_idx = min(i * 1 + seq_len - 1, T_test - 1)  # stride=1
+        tick_idx = seq_len - 1 + i  # stride=1; exact target tick
+        if tick_idx >= T_test:
+            # Prediction falls outside the test window — drop it.
+            break
         signals[tick_idx] = pred
 
     bt = NeuralAlphaBacktest(cfg)
