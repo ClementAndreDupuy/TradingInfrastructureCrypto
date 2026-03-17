@@ -17,7 +17,7 @@ Ensemble:
     - Optional secondary (smaller) model; signals averaged before gating.
 
 Shared memory bridge:
-    Writes to /tmp/neural_alpha_signal.bin (32 bytes, seqlock-protected):
+    Writes to /ipc/neural_alpha_signal.bin (32 bytes, seqlock-protected):
         offset  0: uint64   seq         — seqlock counter (even=stable, odd=writing)
         offset  8: float64  signal_bps  — mid-horizon return prediction (bps)
         offset 16: float64  risk_score  — adverse-selection probability [0, 1]
@@ -63,7 +63,7 @@ from .pipeline import (
     _fetch_okx_l5,
     collect_from_core_bridge,
 )
-from .core_bridge import CoreBridge
+from .core_bridge import CoreBridge, RING_PATH
 from .trainer import TrainerConfig, walk_forward_train
 
 # Shared memory file layout (32 bytes, seqlock-protected):
@@ -74,14 +74,14 @@ from .trainer import TrainerConfig, walk_forward_train
 #
 # Write protocol: increment seq to odd → write fields → increment seq to even.
 # The C++ AlphaSignalReader spins until seq is even and stable across the read.
-_SIGNAL_FILE = "/tmp/neural_alpha_signal.bin"
+_SIGNAL_FILE = "/ipc/neural_alpha_signal.bin"
 _SIGNAL_SIZE = 32  # uint64 + float64 + float64 + int64
 _SEQ_FMT = "=Q"    # native-endian uint64 (seqlock counter)
 _SEQ_OFFSET = 0
 _DATA_FMT = "=ddq" # native-endian: float64 signal_bps, float64 risk_score, int64 ts_ns
 _DATA_OFFSET = 8
 
-_REGIME_SIGNAL_FILE = "/tmp/regime_signal.bin"
+_REGIME_SIGNAL_FILE = "/ipc/regime_signal.bin"
 
 
 def _symbol_model_path(symbol: str, variant: str = "latest") -> Path:
@@ -139,6 +139,7 @@ class ShadowSessionConfig:
     exchanges: list[str] = field(default_factory=lambda: ["BINANCE", "KRAKEN", "OKX", "COINBASE"])
     signal_file: str = _SIGNAL_FILE
     regime_signal_file: str = _REGIME_SIGNAL_FILE
+    lob_feed_path: str = RING_PATH
     regime_model_path: str = "models/r2_regime_model.json"
     registry_path: str = "models/model_registry.json"
     drift_window: int = 200
@@ -188,7 +189,7 @@ class NeuralAlphaShadowSession:
             ic_floor=cfg.drift_ic_floor,
         )
         self._safe_mode_ticks_remaining = 0
-        self._bridge = CoreBridge()
+        self._bridge = CoreBridge(cfg.lob_feed_path)
         self._bridge.open()
         self._processed_ticks = 0
         self._last_continuous_train_tick = 0
@@ -654,6 +655,8 @@ def main() -> None:
                     dest="log_path")
     ap.add_argument("--signal-file",          type=str, default=_SIGNAL_FILE, dest="signal_file",
                     help="Shared memory file path read by C++ AlphaSignalReader")
+    ap.add_argument("--lob-feed-path",        type=str, default=RING_PATH, dest="lob_feed_path",
+                    help="Path to C++ LOB feed ring buffer (written by LobPublisher, read by CoreBridge)")
     ap.add_argument("--regime-signal-file",   type=str, default=_REGIME_SIGNAL_FILE, dest="regime_signal_file",
                     help="Shared memory file path read by C++ RegimeSignalReader")
     ap.add_argument("--regime-model-path",    type=str, default="models/r2_regime_model.json", dest="regime_model_path",
@@ -704,6 +707,7 @@ def main() -> None:
         symbol=args.symbol,
         exchanges=args.exchanges.split(","),
         signal_file=args.signal_file,
+        lob_feed_path=args.lob_feed_path,
         regime_signal_file=args.regime_signal_file,
         regime_model_path=args.regime_model_path,
         registry_path=args.registry_path,

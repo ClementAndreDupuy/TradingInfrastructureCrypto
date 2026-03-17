@@ -55,7 +55,8 @@ apply_config_defaults() {
     fi
 
     local symbol_from_cfg venues_from_cfg duration_from_cfg interval_from_cfg
-    local env_from_cfg signal_file_from_cfg model_path_from_cfg secondary_model_from_cfg
+    local env_from_cfg signal_file_from_cfg lob_feed_path_from_cfg
+    local model_path_from_cfg secondary_model_from_cfg
     local train_ticks_from_cfg train_epochs_from_cfg report_interval_from_cfg
     local alpha_seq_len_from_cfg alpha_log_path_from_cfg
     local fallback_key_from_cfg fallback_secret_from_cfg
@@ -66,6 +67,7 @@ apply_config_defaults() {
     interval_from_cfg="$(read_yaml_value "$CONFIG_FILE" "interval_ms")"
     env_from_cfg="$(read_yaml_value "$CONFIG_FILE" "env_file")"
     signal_file_from_cfg="$(read_yaml_value "$CONFIG_FILE" "signal_file")"
+    lob_feed_path_from_cfg="$(read_yaml_value "$CONFIG_FILE" "lob_feed_path")"
     model_path_from_cfg="$(read_yaml_value "$CONFIG_FILE" "model_path")"
     secondary_model_from_cfg="$(read_yaml_value "$CONFIG_FILE" "secondary_model_path")"
     train_ticks_from_cfg="$(read_yaml_value "$CONFIG_FILE" "train_ticks")"
@@ -82,6 +84,7 @@ apply_config_defaults() {
     [[ -n "$interval_from_cfg" ]] && INTERVAL_MS="$interval_from_cfg"
     [[ -n "$env_from_cfg" ]] && ENV_FILE="$(resolve_config_path "$env_from_cfg")"
     [[ -n "$signal_file_from_cfg" ]] && SIGNAL_FILE="$signal_file_from_cfg"
+    [[ -n "$lob_feed_path_from_cfg" ]] && LOB_FEED_PATH="$lob_feed_path_from_cfg"
     [[ -n "$model_path_from_cfg" ]] && MODEL_PATH="$(resolve_config_path "$model_path_from_cfg")"
     [[ -n "$secondary_model_from_cfg" ]] && SECONDARY_MODEL_PATH="$(resolve_config_path "$secondary_model_from_cfg")"
     [[ -n "$train_ticks_from_cfg" ]] && TRAIN_TICKS="$train_ticks_from_cfg"
@@ -104,8 +107,10 @@ Options:
   --duration <SECONDS>          Total runtime (default: 900)
   --interval-ms <MS>            Engine + Python loop interval (default: 1000)
   --env-file <PATH>             Optional env file (default: config/shadow/trading.env if present)
-  --signal-file <PATH>          Alpha mmap file for Python->C++ bridge
-                                (default: /tmp/neural_alpha_signal.bin)
+  --signal-file <PATH>          Alpha signal mmap (Python→C++ bridge)
+                                (default: /ipc/neural_alpha_signal.bin)
+  --lob-feed-path <PATH>        LOB ring-buffer mmap (C++→Python bridge)
+                                (default: /ipc/trt_lob_feed.bin)
   --model-path <PATH>           Primary model checkpoint path
                                 (default: models/neural_alpha_latest.pt)
   --secondary-model-path <PATH> Secondary model checkpoint path
@@ -129,7 +134,8 @@ DURATION_SECS=900
 INTERVAL_MS=1000
 RUN_ONCE=0
 ENV_FILE="$ENV_FILE_DEFAULT"
-SIGNAL_FILE="/tmp/neural_alpha_signal.bin"
+SIGNAL_FILE="/ipc/neural_alpha_signal.bin"
+LOB_FEED_PATH="/ipc/trt_lob_feed.bin"
 MODEL_PATH="$REPO_ROOT/models/neural_alpha_latest.pt"
 SECONDARY_MODEL_PATH="$REPO_ROOT/models/neural_alpha_secondary.pt"
 MODEL_PATH_SET=0
@@ -164,6 +170,7 @@ while [[ $# -gt 0 ]]; do
         --interval-ms) INTERVAL_MS="$2"; shift 2 ;;
         --env-file) ENV_FILE="$2"; shift 2 ;;
         --signal-file) SIGNAL_FILE="$2"; shift 2 ;;
+        --lob-feed-path) LOB_FEED_PATH="$2"; shift 2 ;;
         --model-path) MODEL_PATH="$2"; MODEL_PATH_SET=1; shift 2 ;;
         --secondary-model-path) SECONDARY_MODEL_PATH="$2"; SECONDARY_MODEL_PATH_SET=1; shift 2 ;;
         --train-ticks) TRAIN_TICKS="$2"; shift 2 ;;
@@ -338,12 +345,17 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# Ensure IPC directory exists before either process starts.  The C++ engine
+# writes the LOB ring buffer here even when --skip-alpha is set.
+mkdir -p "$(dirname "$LOB_FEED_PATH")"
+
 if [[ "$SKIP_ALPHA" -eq 0 ]]; then
     choose_python
     mkdir -p "$REPO_ROOT/logs" "$REPO_ROOT/models"
     ALPHA_ARGS=(
         -m research.neural_alpha.shadow_session
         --signal-file "$SIGNAL_FILE"
+        --lob-feed-path "$LOB_FEED_PATH"
         --duration "$DURATION_SECS"
         --interval-ms "$INTERVAL_MS"
         --report-interval "$REPORT_INTERVAL"

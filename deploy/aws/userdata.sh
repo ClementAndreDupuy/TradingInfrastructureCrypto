@@ -94,10 +94,14 @@ systemctl daemon-reload
 
 # ── 7. Create directories ─────────────────────────────────────────────────────
 mkdir -p /opt/trading/models /opt/trading/data /opt/trading/logs
+# IPC shared-memory directory used by LobPublisher, AlphaSignalReader, and
+# RegimeSignalReader for cross-process ring buffers and signal files.
+mkdir -p /ipc
+chmod 1777 /ipc
 
-# ── 8. Enable and start training timer and shadow session ─────────────────────
-systemctl enable neural-alpha-train.timer neural-alpha-shadow.service
-systemctl start neural-alpha-train.timer neural-alpha-shadow.service
+# ── 8. Enable and start training timer, shadow session, and SLO engine ────────
+systemctl enable neural-alpha-train.timer neural-alpha-shadow.service slo-engine.timer
+systemctl start neural-alpha-train.timer neural-alpha-shadow.service slo-engine.timer
 
 # trading-engine.service is deliberately left disabled until shadow is validated
 

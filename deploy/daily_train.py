@@ -190,7 +190,7 @@ def run() -> dict:
         log.info("Loading cached ticks from %s", cached)
         df = pl.read_parquet(cached)
     else:
-        df = collect_l5_ticks(TRAIN_TICKS, TRAIN_INTERVAL_MS, exchanges=["SOLANA"], symbol=TRAIN_SYMBOL)
+        df = collect_l5_ticks(TRAIN_TICKS, TRAIN_INTERVAL_MS, exchanges=["BINANCE", "KRAKEN", "OKX", "COINBASE"], symbol=TRAIN_SYMBOL)
         df.write_parquet(cached)
         log.info("Tick data cached → %s  rows=%d", cached, len(df))
 
@@ -229,12 +229,12 @@ def run() -> dict:
         log.error("Training produced no fold results — dataset too small.")
         return {"error": "no_fold_results", "date": date_str}
 
-    # 3. Alpha regression
+    # 4. Alpha regression
     alpha_metrics = analyse_alpha(fold_results, horizon_idx=2)
     log.info("Alpha: IC=%.4f  ICIR=%.4f  HitRate=%.3f",
              alpha_metrics.ic_mean, alpha_metrics.icir, alpha_metrics.hit_rate)
 
-    # 4. Backtest on held-out fold
+    # 5. Backtest on held-out fold
     bt_cfg = BacktestConfig(entry_threshold_bps=5.0, taker_fee_bps=5.0)
     last_fold = fold_results[-1]
     bt = NeuralAlphaBacktest(bt_cfg)
@@ -256,7 +256,7 @@ def run() -> dict:
              bt_metrics.get("total_net_pnl", 0.0),
              sharpe)
 
-    # 5. Save candidate
+    # 6. Save candidate
     best_fold = min(fold_results, key=lambda f: f["metrics"].get("loss_total", 1e9))
     torch.save(best_fold["model_state"], CANDIDATE_MODEL_PATH)
 
@@ -329,14 +329,22 @@ def run() -> dict:
     registry = ChampionChallengerRegistry(REGISTRY_PATH)
     challenger_id = registry.register_challenger(CANDIDATE_MODEL_PATH, train_metrics)
 
-    # 6. Promote if better than current production model
+    # 7. Promote if better than current production model
     prod_ic = _load_prod_model_ic()
-    promoted = False
-    if alpha_metrics.ic_mean >= PROMOTE_IC_MIN and alpha_metrics.ic_mean > prod_ic:
+    promoted = alpha_metrics.ic_mean >= PROMOTE_IC_MIN and alpha_metrics.ic_mean > prod_ic
+
+    train_metrics["challenger_id"] = challenger_id
+    train_metrics["registry_path"] = str(REGISTRY_PATH)
+    train_metrics["promoted"] = promoted
+    # Save candidate meta BEFORE _promote_candidate() so the .json file exists
+    # when promote moves it to latest.json (required for _load_prod_model_ic() on
+    # subsequent runs to return the correct IC rather than always -1.0).
+    _save_model_meta(CANDIDATE_MODEL_PATH, train_metrics)
+
+    if promoted:
         log.info("Promoting candidate (IC %.4f > prod IC %.4f)", alpha_metrics.ic_mean, prod_ic)
         _promote_candidate()
         registry.promote(challenger_id, reason="candidate_outperformed_champion")
-        promoted = True
         _publish_ops_event("model_promoted", {
             "challenger_id": challenger_id,
             "ic_mean": alpha_metrics.ic_mean,
@@ -362,10 +370,6 @@ def run() -> dict:
             "date": date_str,
         })
 
-    train_metrics["challenger_id"] = challenger_id
-    train_metrics["registry_path"] = str(REGISTRY_PATH)
-    train_metrics["promoted"] = promoted
-    _save_model_meta(CANDIDATE_MODEL_PATH, train_metrics)
     _write_train_log(date_str, train_metrics)
 
     log.info("Daily train complete — promoted=%s", promoted)
