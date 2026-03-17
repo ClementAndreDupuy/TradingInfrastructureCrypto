@@ -90,8 +90,8 @@ auto parse_coinbase_cancel_ack(const std::string& body) -> bool {
     return results[0].value("success", false);
 }
 
-auto append_coinbase_open_orders(const std::string& body, ReconciliationSnapshot& snapshot)
-    -> ConnectorResult {
+auto append_coinbase_open_orders(const std::string& body,
+                                 ReconciliationSnapshot& snapshot) -> ConnectorResult {
     const auto open_json = nlohmann::json::parse(body, nullptr, false);
     const auto& orders = open_json["orders"];
     if (!orders.is_array()) {
@@ -116,8 +116,8 @@ auto append_coinbase_open_orders(const std::string& body, ReconciliationSnapshot
     return ConnectorResult::OK;
 }
 
-auto append_coinbase_balances(const std::string& body, ReconciliationSnapshot& snapshot)
-    -> ConnectorResult {
+auto append_coinbase_balances(const std::string& body,
+                              ReconciliationSnapshot& snapshot) -> ConnectorResult {
     const auto account_json = nlohmann::json::parse(body, nullptr, false);
     const auto& accounts = account_json["accounts"];
     if (!accounts.is_array()) {
@@ -138,8 +138,8 @@ auto append_coinbase_balances(const std::string& body, ReconciliationSnapshot& s
     return ConnectorResult::OK;
 }
 
-auto append_coinbase_positions(const std::string& body, ReconciliationSnapshot& snapshot)
-    -> ConnectorResult {
+auto append_coinbase_positions(const std::string& body,
+                               ReconciliationSnapshot& snapshot) -> ConnectorResult {
     const auto pos_json = nlohmann::json::parse(body, nullptr, false);
     const auto& positions = pos_json["positions"];
     if (!positions.is_array()) {
@@ -160,8 +160,8 @@ auto append_coinbase_positions(const std::string& body, ReconciliationSnapshot& 
     return ConnectorResult::OK;
 }
 
-auto append_coinbase_fills(const std::string& body, ReconciliationSnapshot& snapshot)
-    -> ConnectorResult {
+auto append_coinbase_fills(const std::string& body,
+                           ReconciliationSnapshot& snapshot) -> ConnectorResult {
     const auto fills_json = nlohmann::json::parse(body, nullptr, false);
     const auto& fills = fills_json["fills"];
     if (!fills.is_array()) {
@@ -236,8 +236,8 @@ auto CoinbaseConnector::replace_at_venue(const VenueOrderEntry& entry, const Ord
                                                                   : ConnectorResult::ERROR_UNKNOWN;
 }
 
-auto CoinbaseConnector::query_at_venue(const VenueOrderEntry& entry, FillUpdate& status)
-    -> ConnectorResult {
+auto CoinbaseConnector::query_at_venue(const VenueOrderEntry& entry,
+                                       FillUpdate& status) -> ConnectorResult {
     const auto resp = http::get(
         api_url() + "/api/v3/brokerage/orders/historical/" + std::string(entry.venue_order_id),
         auth_headers(

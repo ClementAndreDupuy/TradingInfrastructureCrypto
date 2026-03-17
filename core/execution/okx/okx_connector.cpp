@@ -95,8 +95,8 @@ auto parse_okx_cancel_ack(const std::string& body) -> bool {
     return data[0].value("sCode", std::string("")) == "0";
 }
 
-auto append_okx_open_orders(const std::string& body, ReconciliationSnapshot& snapshot)
-    -> ConnectorResult {
+auto append_okx_open_orders(const std::string& body,
+                            ReconciliationSnapshot& snapshot) -> ConnectorResult {
     const auto order_json = nlohmann::json::parse(body, nullptr, false);
     const auto& orders = order_json["data"];
     if (!orders.is_array()) {
@@ -121,8 +121,8 @@ auto append_okx_open_orders(const std::string& body, ReconciliationSnapshot& sna
     return ConnectorResult::OK;
 }
 
-auto append_okx_balances(const std::string& body, ReconciliationSnapshot& snapshot)
-    -> ConnectorResult {
+auto append_okx_balances(const std::string& body,
+                         ReconciliationSnapshot& snapshot) -> ConnectorResult {
     const auto account_json = nlohmann::json::parse(body, nullptr, false);
     const auto& details = account_json["data"][0]["details"];
     if (!details.is_array()) {
@@ -142,8 +142,8 @@ auto append_okx_balances(const std::string& body, ReconciliationSnapshot& snapsh
     return ConnectorResult::OK;
 }
 
-auto append_okx_positions(const std::string& body, ReconciliationSnapshot& snapshot)
-    -> ConnectorResult {
+auto append_okx_positions(const std::string& body,
+                          ReconciliationSnapshot& snapshot) -> ConnectorResult {
     const auto pos_json = nlohmann::json::parse(body, nullptr, false);
     const auto& positions = pos_json["data"];
     if (!positions.is_array()) {
@@ -163,8 +163,8 @@ auto append_okx_positions(const std::string& body, ReconciliationSnapshot& snaps
     return ConnectorResult::OK;
 }
 
-auto append_okx_fills(const std::string& body, ReconciliationSnapshot& snapshot)
-    -> ConnectorResult {
+auto append_okx_fills(const std::string& body,
+                      ReconciliationSnapshot& snapshot) -> ConnectorResult {
     const auto fills_json = nlohmann::json::parse(body, nullptr, false);
     const auto& fills = fills_json["data"];
     if (!fills.is_array()) {
@@ -235,8 +235,8 @@ auto OkxConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& r
                                                              : ConnectorResult::ERROR_UNKNOWN;
 }
 
-auto OkxConnector::query_at_venue(const VenueOrderEntry& entry, FillUpdate& status)
-    -> ConnectorResult {
+auto OkxConnector::query_at_venue(const VenueOrderEntry& entry,
+                                  FillUpdate& status) -> ConnectorResult {
     const auto resp = http::get(
         api_url() + "/api/v5/trade/order?ordId=" + std::string(entry.venue_order_id),
         auth_headers("GET", std::string("/api/v5/trade/order?ordId=") + entry.venue_order_id, ""));
