@@ -434,10 +434,17 @@ def _blend_fold_results(
     return blended
 
 def run_pipeline(args: argparse.Namespace) -> None:
+    import os
     from .alpha_regression import analyse_alpha, print_alpha_report
     from .backtest import BacktestConfig, NeuralAlphaBacktest
     from research.regime import RegimeConfig, save_regime_artifact, train_regime_model_from_ipc
     from .trainer import TrainerConfig, walk_forward_train
+
+    if getattr(args, "synthetic", False) and os.getenv("NEURAL_ALPHA_PROD"):
+        raise RuntimeError(
+            "Synthetic data is disabled in production (NEURAL_ALPHA_PROD env var is set). "
+            "Remove --synthetic to run with live market data."
+        )
 
     if args.ensemble_secondary and args.synthetic:
         raise ValueError(

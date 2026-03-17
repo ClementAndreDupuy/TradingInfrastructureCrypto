@@ -41,7 +41,7 @@ from research.neural_alpha.backtest import BacktestConfig, NeuralAlphaBacktest
 from research.neural_alpha.features import compute_lob_tensor, compute_scalar_features, normalise_scalar
 from research.neural_alpha.governance import ChampionChallengerRegistry
 from research.neural_alpha.model import CryptoAlphaNet
-from research.neural_alpha.pipeline import collect_l5_ticks
+from research.neural_alpha.pipeline import _blend_fold_results, collect_l5_ticks
 from research.neural_alpha.trainer import TrainerConfig, walk_forward_train
 
 logging.basicConfig(
@@ -98,6 +98,15 @@ def _promote_candidate() -> None:
     log.info("Candidate promoted to production: %s", PROD_MODEL_PATH)
 
 
+def _publish_ops_event(event_type: str, details: dict) -> None:
+    """Append a structured ops event to logs/ops_events.jsonl."""
+    ops_log = LOG_DIR / "ops_events.jsonl"
+    event = {"event": event_type, "timestamp_ns": time.time_ns(), **details}
+    with open(ops_log, "a") as f:
+        f.write(json.dumps(event) + "\n")
+    log.info("[OPS_EVENT] %s: %s", event_type, details)
+
+
 def _write_train_log(date_str: str, metrics: dict) -> None:
     out = LOG_DIR / f"train_{date_str}.json"
     with open(out, "w") as f:
@@ -119,6 +128,15 @@ def _write_train_log(date_str: str, metrics: dict) -> None:
         "# HELP neural_alpha_promoted Whether the candidate was promoted (1=yes)",
         "# TYPE neural_alpha_promoted gauge",
         f"neural_alpha_promoted {1 if metrics.get('promoted') else 0}",
+        "# HELP neural_alpha_ensemble_ic IC of ensemble (primary+secondary) model",
+        "# TYPE neural_alpha_ensemble_ic gauge",
+        f"neural_alpha_ensemble_ic {metrics.get('ensemble_ic_mean', 0.0):.6f}",
+        "# HELP neural_alpha_ensemble_icir ICIR of ensemble model",
+        "# TYPE neural_alpha_ensemble_icir gauge",
+        f"neural_alpha_ensemble_icir {metrics.get('ensemble_icir', 0.0):.6f}",
+        "# HELP neural_alpha_ensemble_promoted Whether the ensemble was promoted (1=yes)",
+        "# TYPE neural_alpha_ensemble_promoted gauge",
+        f"neural_alpha_ensemble_promoted {1 if metrics.get('ensemble_promoted') else 0}",
     ]
     prom_out.write_text("\n".join(lines) + "\n")
 
@@ -212,10 +230,33 @@ def run() -> dict:
     )
     log.info("Training secondary model (d_spatial=32, d_temporal=64)…")
     fold_results_small = walk_forward_train(df, cfg_small)
+    ensemble_ic_mean = 0.0
+    ensemble_icir = 0.0
+    ensemble_promoted = False
     if fold_results_small:
         best_small = min(fold_results_small, key=lambda f: f["metrics"].get("loss_total", 1e9))
         torch.save(best_small["model_state"], SECONDARY_MODEL_PATH)
         log.info("Secondary model saved → %s", SECONDARY_MODEL_PATH)
+        try:
+            blended = _blend_fold_results(fold_results, fold_results_small)
+            ensemble_alpha = analyse_alpha(blended, horizon_idx=2)
+            ensemble_ic_mean = ensemble_alpha.ic_mean
+            ensemble_icir = ensemble_alpha.icir
+            log.info(
+                "Ensemble alpha: IC=%.4f  ICIR=%.4f  HitRate=%.3f",
+                ensemble_ic_mean,
+                ensemble_icir,
+                ensemble_alpha.hit_rate,
+            )
+            ensemble_promoted = ensemble_ic_mean >= PROMOTE_IC_MIN and ensemble_ic_mean > alpha_metrics.ic_mean
+            if ensemble_promoted:
+                log.info(
+                    "Ensemble IC %.4f beats primary IC %.4f — ensemble is production candidate",
+                    ensemble_ic_mean,
+                    alpha_metrics.ic_mean,
+                )
+        except Exception as exc:
+            log.warning("Ensemble alpha evaluation failed: %s", exc)
 
     train_metrics = {
         "date": date_str,
@@ -231,6 +272,9 @@ def run() -> dict:
         "backtest_pnl": round(bt_metrics.get("total_net_pnl", 0.0), 4),
         "sharpe": round(sharpe, 4),
         "win_rate": round(bt_metrics.get("win_rate", 0.0), 4),
+        "ensemble_ic_mean": round(ensemble_ic_mean, 6),
+        "ensemble_icir": round(ensemble_icir, 6),
+        "ensemble_promoted": ensemble_promoted,
     }
 
     registry = ChampionChallengerRegistry(REGISTRY_PATH)
@@ -244,6 +288,15 @@ def run() -> dict:
         _promote_candidate()
         registry.promote(challenger_id, reason="candidate_outperformed_champion")
         promoted = True
+        _publish_ops_event("model_promoted", {
+            "challenger_id": challenger_id,
+            "ic_mean": alpha_metrics.ic_mean,
+            "prod_ic": prod_ic,
+            "ensemble_ic_mean": ensemble_ic_mean,
+            "ensemble_icir": ensemble_icir,
+            "ensemble_promoted": ensemble_promoted,
+            "date": date_str,
+        })
     else:
         reason = (
             f"IC {alpha_metrics.ic_mean:.4f} < threshold {PROMOTE_IC_MIN}"
@@ -251,6 +304,14 @@ def run() -> dict:
             else f"IC {alpha_metrics.ic_mean:.4f} <= prod IC {prod_ic:.4f}"
         )
         log.info("Candidate not promoted: %s", reason)
+        _publish_ops_event("model_rejected", {
+            "challenger_id": challenger_id,
+            "reason": reason,
+            "ic_mean": alpha_metrics.ic_mean,
+            "prod_ic": prod_ic,
+            "ensemble_ic_mean": ensemble_ic_mean,
+            "date": date_str,
+        })
 
     train_metrics["challenger_id"] = challenger_id
     train_metrics["registry_path"] = str(REGISTRY_PATH)
