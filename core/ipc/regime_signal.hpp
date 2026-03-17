@@ -9,6 +9,9 @@
 
 namespace trading {
 
+// Probabilities are produced by the Python R2 regime model (Gaussian HMM
+// posterior over semantic states). Keep this payload contract stable; only
+// producer-side model internals may change.
 struct RegimeSignal {
     double p_calm = 1.0;
     double p_trending = 0.0;

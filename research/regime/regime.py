@@ -11,12 +11,16 @@ import numpy as np
 import polars as pl
 
 
+_EPS = 1e-12
+
+
 @dataclass
 class RegimeConfig:
     n_regimes: int = 4
-    max_iter: int = 50
+    max_iter: int = 75
     tol: float = 1e-4
     random_seed: int = 7
+    covariance_floor: float = 1e-6
 
 
 @dataclass
@@ -25,7 +29,10 @@ class RegimeArtifact:
     n_regimes: int
     feature_columns: list[str]
     regime_names: list[str]
-    centers: list[list[float]]
+    initial_probs: list[float]
+    transition_matrix: list[list[float]]
+    means: list[list[float]]
+    variances: list[list[float]]
     scales: list[float]
 
 
@@ -48,8 +55,16 @@ def _feature_frame(df: pl.DataFrame) -> pl.DataFrame:
     ).with_columns(
         [
             pl.col("log_ret_1").rolling_std(window_size=20).fill_null(0.0).alias("vol_20"),
-            pl.col("spread").rolling_mean(window_size=20).fill_null(strategy="backward").fill_null(0.0).alias("spread_20"),
-            pl.col("top_depth").rolling_mean(window_size=20).fill_null(strategy="backward").fill_null(0.0).alias("depth_20"),
+            pl.col("spread")
+            .rolling_mean(window_size=20)
+            .fill_null(strategy="backward")
+            .fill_null(0.0)
+            .alias("spread_20"),
+            pl.col("top_depth")
+            .rolling_mean(window_size=20)
+            .fill_null(strategy="backward")
+            .fill_null(0.0)
+            .alias("depth_20"),
         ]
     )
 
@@ -68,11 +83,7 @@ def _load_ipc_lob_frame(ipc_dir: str) -> pl.DataFrame:
     frames: list[pl.DataFrame] = []
     required = {"timestamp_ns", "best_bid", "best_ask", "bid_size_1", "ask_size_1"}
     for path in candidates:
-        if path.suffix == ".parquet":
-            frame = pl.read_parquet(path)
-        else:
-            frame = pl.read_csv(path)
-
+        frame = pl.read_parquet(path) if path.suffix == ".parquet" else pl.read_csv(path)
         if required.issubset(set(frame.columns)):
             frames.append(frame)
 
@@ -81,40 +92,136 @@ def _load_ipc_lob_frame(ipc_dir: str) -> pl.DataFrame:
 
     lob = pl.concat(frames, how="vertical_relaxed").sort("timestamp_ns")
 
-    null_cols = [
-        c for c in ("best_bid", "best_ask", "bid_size_1", "ask_size_1")
-        if lob[c].is_null().any()
-    ]
+    null_cols = [c for c in ("best_bid", "best_ask", "bid_size_1", "ask_size_1") if lob[c].is_null().any()]
     if null_cols:
         raise ValueError(f"Null values found in LOB columns: {null_cols}")
 
     return lob
 
 
-def _kmeans(x: np.ndarray, cfg: RegimeConfig) -> tuple[np.ndarray, np.ndarray]:
+def _kmeans_init(x: np.ndarray, cfg: RegimeConfig) -> np.ndarray:
     rng = np.random.default_rng(cfg.random_seed)
     centers = x[rng.choice(len(x), size=cfg.n_regimes, replace=False)].copy()
-    labels = np.zeros(len(x), dtype=np.int32)
 
-    for _ in range(cfg.max_iter):
+    for _ in range(max(10, cfg.max_iter // 3)):
         dist = ((x[:, None, :] - centers[None, :, :]) ** 2).sum(axis=2)
-        new_labels = np.argmin(dist, axis=1).astype(np.int32)
+        labels = np.argmin(dist, axis=1)
         new_centers = centers.copy()
         for k in range(cfg.n_regimes):
-            mask = new_labels == k
+            mask = labels == k
             if np.any(mask):
                 new_centers[k] = x[mask].mean(axis=0)
         shift = float(np.linalg.norm(new_centers - centers))
         centers = new_centers
-        labels = new_labels
         if shift < cfg.tol:
             break
 
-    return labels, centers
+    return centers
 
 
-def _semantic_regime_names(raw_centers: np.ndarray) -> list[str]:
-    n = raw_centers.shape[0]
+def _logsumexp(arr: np.ndarray, axis: int) -> np.ndarray:
+    maxv = np.max(arr, axis=axis, keepdims=True)
+    stable = arr - maxv
+    return np.squeeze(maxv, axis=axis) + np.log(np.sum(np.exp(stable), axis=axis) + _EPS)
+
+
+def _log_gaussian_diag(x: np.ndarray, means: np.ndarray, variances: np.ndarray) -> np.ndarray:
+    inv_var = 1.0 / np.maximum(variances, _EPS)
+    diff = x[:, None, :] - means[None, :, :]
+    quadratic = np.sum((diff * diff) * inv_var[None, :, :], axis=2)
+    log_det = np.sum(np.log(2.0 * np.pi * np.maximum(variances, _EPS)), axis=1)
+    return -0.5 * (quadratic + log_det[None, :])
+
+
+def _forward_backward(
+    emissions: np.ndarray,
+    log_initial: np.ndarray,
+    log_transition: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    n_samples, n_states = emissions.shape
+
+    alpha = np.empty((n_samples, n_states), dtype=np.float64)
+    alpha[0] = log_initial + emissions[0]
+    for t in range(1, n_samples):
+        scores = alpha[t - 1][:, None] + log_transition
+        alpha[t] = emissions[t] + _logsumexp(scores, axis=0)
+
+    beta = np.empty((n_samples, n_states), dtype=np.float64)
+    beta[-1] = 0.0
+    for t in range(n_samples - 2, -1, -1):
+        scores = log_transition + emissions[t + 1][None, :] + beta[t + 1][None, :]
+        beta[t] = _logsumexp(scores, axis=1)
+
+    ll = float(_logsumexp(alpha[-1], axis=0))
+    gamma_log = alpha + beta - ll
+    gamma = np.exp(gamma_log)
+
+    xi = np.empty((n_samples - 1, n_states, n_states), dtype=np.float64)
+    for t in range(n_samples - 1):
+        joint = (
+            alpha[t][:, None]
+            + log_transition
+            + emissions[t + 1][None, :]
+            + beta[t + 1][None, :]
+            - ll
+        )
+        xi[t] = np.exp(joint)
+
+    return gamma, xi, alpha, ll
+
+
+def _fit_hmm(x: np.ndarray, cfg: RegimeConfig) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    n_samples, n_features = x.shape
+    if n_samples < cfg.n_regimes * 20:
+        raise ValueError("IPC dataset too small for stable regime training")
+
+    means = _kmeans_init(x, cfg)
+    variances = np.full((cfg.n_regimes, n_features), np.var(x, axis=0) + cfg.covariance_floor, dtype=np.float64)
+    initial = np.full(cfg.n_regimes, 1.0 / cfg.n_regimes, dtype=np.float64)
+    transition = np.full((cfg.n_regimes, cfg.n_regimes), 1.0 / cfg.n_regimes, dtype=np.float64)
+
+    prev_ll: float | None = None
+    for _ in range(cfg.max_iter):
+        emissions = _log_gaussian_diag(x, means, variances)
+        gamma, xi, _, ll = _forward_backward(
+            emissions=emissions,
+            log_initial=np.log(np.maximum(initial, _EPS)),
+            log_transition=np.log(np.maximum(transition, _EPS)),
+        )
+
+        gamma_sum = gamma.sum(axis=0)
+        initial = np.maximum(gamma[0], _EPS)
+        initial = initial / initial.sum()
+
+        transition = xi.sum(axis=0)
+        transition = transition / np.maximum(transition.sum(axis=1, keepdims=True), _EPS)
+        transition = np.maximum(transition, _EPS)
+        transition = transition / transition.sum(axis=1, keepdims=True)
+
+        means = (gamma.T @ x) / np.maximum(gamma_sum[:, None], _EPS)
+
+        diff = x[:, None, :] - means[None, :, :]
+        weighted_var = (gamma[:, :, None] * (diff * diff)).sum(axis=0)
+        variances = weighted_var / np.maximum(gamma_sum[:, None], _EPS)
+        variances = np.maximum(variances, cfg.covariance_floor)
+
+        if prev_ll is not None and abs(ll - prev_ll) < cfg.tol:
+            break
+        prev_ll = ll
+
+    emissions = _log_gaussian_diag(x, means, variances)
+    gamma, _, _, _ = _forward_backward(
+        emissions=emissions,
+        log_initial=np.log(np.maximum(initial, _EPS)),
+        log_transition=np.log(np.maximum(transition, _EPS)),
+    )
+    labels = np.argmax(gamma, axis=1)
+
+    return labels, initial, transition, means, variances
+
+
+def _semantic_regime_names(raw_means: np.ndarray) -> list[str]:
+    n = raw_means.shape[0]
     names = [f"regime_{i}" for i in range(n)]
 
     def _assign_first_free(ranked: np.ndarray, label: str) -> None:
@@ -123,61 +230,99 @@ def _semantic_regime_names(raw_centers: np.ndarray) -> list[str]:
                 names[idx] = label
                 return
 
-    vol_rank = np.argsort(raw_centers[:, 0])
-
-    # "calm" always wins the lowest-volatility cluster
+    vol_rank = np.argsort(raw_means[:, 0])
     names[vol_rank[0]] = "calm"
-    # Remaining labels use next-best free cluster to prevent collisions.
-    # Collision example: if highest-vol == highest-spread cluster, the old
-    # code would overwrite "shock" with "illiquid" leaving no shock label and
-    # breaking the C++ market-maker's shock-gating threshold.
     _assign_first_free(vol_rank, "shock")
     if n >= 3:
-        _assign_first_free(np.argsort(raw_centers[:, 1]), "illiquid")
+        _assign_first_free(np.argsort(raw_means[:, 1]), "illiquid")
     if n >= 4:
-        _assign_first_free(np.argsort(raw_centers[:, 2]), "trending")
+        _assign_first_free(np.argsort(raw_means[:, 2]), "trending")
 
     return names
 
 
-def train_regime_model_from_ipc(
-    ipc_dir: str,
-    cfg: RegimeConfig,
-) -> tuple[RegimeArtifact, dict[str, float]]:
+def train_regime_model_from_ipc(ipc_dir: str, cfg: RegimeConfig) -> tuple[RegimeArtifact, dict[str, float]]:
     if cfg.n_regimes not in {3, 4}:
         raise ValueError("R2 regime model supports exactly 3 or 4 regimes")
 
     df = _load_ipc_lob_frame(ipc_dir)
     feat = _feature_frame(df)
-    if len(feat) < cfg.n_regimes * 20:
-        raise ValueError("IPC dataset too small for stable regime training")
 
     x_raw = feat.to_numpy().astype(np.float64)
     scales = x_raw.std(axis=0)
     scales = np.where(scales < 1e-8, 1.0, scales)
     x = x_raw / scales
 
-    labels, centers = _kmeans(x, cfg)
-    regime_names = _semantic_regime_names(centers)
+    labels, initial, transition, means, variances = _fit_hmm(x, cfg)
+    regime_names = _semantic_regime_names(means)
 
     counts = np.bincount(labels, minlength=cfg.n_regimes)
-    distribution = {
-        regime_names[i]: float(counts[i] / max(len(labels), 1))
-        for i in range(cfg.n_regimes)
-    }
+    distribution = {regime_names[i]: float(counts[i] / max(len(labels), 1)) for i in range(cfg.n_regimes)}
 
     artifact = RegimeArtifact(
-        version="r2-regime-v1",
+        version="r2-regime-hmm-v1",
         n_regimes=cfg.n_regimes,
         feature_columns=feat.columns,
         regime_names=regime_names,
-        centers=centers.tolist(),
+        initial_probs=initial.tolist(),
+        transition_matrix=transition.tolist(),
+        means=means.tolist(),
+        variances=variances.tolist(),
         scales=scales.tolist(),
     )
     return artifact, distribution
 
 
+
+def _normalize_prob_vector(values: np.ndarray) -> np.ndarray:
+    clipped = np.maximum(values.astype(np.float64), _EPS)
+    return clipped / np.maximum(clipped.sum(), _EPS)
+
+
+def _normalize_transition_matrix(values: np.ndarray) -> np.ndarray:
+    clipped = np.maximum(values.astype(np.float64), _EPS)
+    denom = np.maximum(clipped.sum(axis=1, keepdims=True), _EPS)
+    return clipped / denom
+
+
+def _validate_artifact(artifact: RegimeArtifact) -> None:
+    n = artifact.n_regimes
+    if n not in {3, 4}:
+        raise ValueError("Regime artifact must contain 3 or 4 regimes")
+    if len(artifact.regime_names) != n:
+        raise ValueError("Regime artifact regime_names length mismatch")
+    if len(set(artifact.regime_names)) != len(artifact.regime_names):
+        raise ValueError("Regime artifact regime_names must be unique")
+    if len(artifact.initial_probs) != n:
+        raise ValueError("Regime artifact initial_probs length mismatch")
+    if len(artifact.transition_matrix) != n or any(len(row) != n for row in artifact.transition_matrix):
+        raise ValueError("Regime artifact transition_matrix shape mismatch")
+    if len(artifact.means) != n or len(artifact.variances) != n:
+        raise ValueError("Regime artifact emission parameter shape mismatch")
+
+
+def _upgrade_legacy_artifact(payload: dict[str, object]) -> dict[str, object]:
+    if "centers" not in payload:
+        return payload
+
+    centers = np.array(payload.get("centers", []), dtype=np.float64)
+    if centers.ndim != 2 or centers.shape[0] == 0:
+        raise ValueError("Legacy regime artifact has invalid centers")
+
+    n_regimes = int(payload.get("n_regimes", centers.shape[0]))
+    n_features = int(centers.shape[1])
+
+    upgraded = dict(payload)
+    upgraded["version"] = "r2-regime-hmm-v1-legacy-upgraded"
+    upgraded["means"] = centers.tolist()
+    upgraded["variances"] = np.ones((n_regimes, n_features), dtype=np.float64).tolist()
+    upgraded["initial_probs"] = (np.full(n_regimes, 1.0 / n_regimes, dtype=np.float64)).tolist()
+    upgraded["transition_matrix"] = (np.eye(n_regimes, dtype=np.float64) * 0.9 + 0.1 / n_regimes).tolist()
+    upgraded.pop("centers", None)
+    return upgraded
+
 def save_regime_artifact(artifact: RegimeArtifact, output_path: str) -> None:
+    _validate_artifact(artifact)
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(asdict(artifact), indent=2), encoding="utf-8")
@@ -185,35 +330,43 @@ def save_regime_artifact(artifact: RegimeArtifact, output_path: str) -> None:
 
 def load_regime_artifact(path: str) -> RegimeArtifact:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    return RegimeArtifact(**payload)
+    payload = _upgrade_legacy_artifact(payload)
+    artifact = RegimeArtifact(**payload)
+    _validate_artifact(artifact)
+    return artifact
 
 
 def infer_regime_probabilities(df: pl.DataFrame, artifact: RegimeArtifact) -> dict[str, float]:
-    feat = _feature_frame(df).tail(1)
+    feat = _feature_frame(df)
     if len(feat) == 0:
         return {"p_calm": 1.0, "p_trending": 0.0, "p_shock": 0.0, "p_illiquid": 0.0}
 
-    x_raw = feat.select(artifact.feature_columns).to_numpy().astype(np.float64)[0]
+    x_raw = feat.select(artifact.feature_columns).to_numpy().astype(np.float64)
     scales = np.array(artifact.scales, dtype=np.float64)
     x = x_raw / np.where(scales < 1e-8, 1.0, scales)
-    centers = np.array(artifact.centers, dtype=np.float64)
 
-    dist = ((centers - x[None, :]) ** 2).sum(axis=1)
-    logits = -dist
-    logits = logits - np.max(logits)
-    probs = np.exp(logits)
-    probs = probs / np.sum(probs)
+    means = np.array(artifact.means, dtype=np.float64)
+    variances = np.array(artifact.variances, dtype=np.float64)
+    transition = _normalize_transition_matrix(np.array(artifact.transition_matrix, dtype=np.float64))
+    initial = _normalize_prob_vector(np.array(artifact.initial_probs, dtype=np.float64))
 
-    prob_by_name = {name: float(probs[i]) for i, name in enumerate(artifact.regime_names)}
+    emissions = _log_gaussian_diag(x, means, variances)
+    gamma, _, _, _ = _forward_backward(
+        emissions=emissions,
+        log_initial=np.log(np.maximum(initial, _EPS)),
+        log_transition=np.log(np.maximum(transition, _EPS)),
+    )
+
+    last_probs = gamma[-1]
+    last_probs = last_probs / np.maximum(last_probs.sum(), _EPS)
+    prob_by_name = {name: float(last_probs[i]) for i, name in enumerate(artifact.regime_names)}
+
     p_calm = prob_by_name.get("calm", 0.0)
     p_shock = prob_by_name.get("shock", 0.0)
     p_illiquid = prob_by_name.get("illiquid", 0.0)
     p_trending = prob_by_name.get("trending", 0.0)
     assigned = p_calm + p_shock + p_illiquid + p_trending
 
-    # If some regimes carry non-semantic names (e.g. "regime_1"), their
-    # probability mass is not captured by the four named keys.  Distribute
-    # the residual proportionally so the returned probabilities sum to 1.0.
     residual = 1.0 - assigned
     if residual > 1e-9:
         total_named = assigned if assigned > 1e-9 else 1.0
