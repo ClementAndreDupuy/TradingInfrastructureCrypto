@@ -53,7 +53,11 @@ from research.neural_alpha.model import (
     TemporalEncoder,
 )
 from research.neural_alpha.pipeline import generate_synthetic_lob
-from research.neural_alpha.shadow_session import NeuralAlphaShadowSession, ShadowSessionConfig
+from research.neural_alpha.shadow_session import (
+    NeuralAlphaShadowSession,
+    ShadowSessionConfig,
+    _symbol_model_path,
+)
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -390,6 +394,10 @@ class TestAlphaRegression:
 
 
 class TestShadowSessionTraining:
+    def test_symbol_model_path_uses_symbol_specific_name(self) -> None:
+        assert _symbol_model_path("BTCUSDT") == Path("models/neural_alpha_btcusdt_latest.pt")
+        assert _symbol_model_path("ETHUSDT", "secondary") == Path("models/neural_alpha_ethusdt_secondary.pt")
+
     def test_train_on_recent_persists_model_weights(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

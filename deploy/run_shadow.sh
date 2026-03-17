@@ -132,6 +132,8 @@ ENV_FILE="$ENV_FILE_DEFAULT"
 SIGNAL_FILE="/tmp/neural_alpha_signal.bin"
 MODEL_PATH="$REPO_ROOT/models/neural_alpha_latest.pt"
 SECONDARY_MODEL_PATH="$REPO_ROOT/models/neural_alpha_secondary.pt"
+MODEL_PATH_SET=0
+SECONDARY_MODEL_PATH_SET=0
 TRAIN_TICKS=400
 TRAIN_EPOCHS=5
 REPORT_INTERVAL=60
@@ -162,8 +164,8 @@ while [[ $# -gt 0 ]]; do
         --interval-ms) INTERVAL_MS="$2"; shift 2 ;;
         --env-file) ENV_FILE="$2"; shift 2 ;;
         --signal-file) SIGNAL_FILE="$2"; shift 2 ;;
-        --model-path) MODEL_PATH="$2"; shift 2 ;;
-        --secondary-model-path) SECONDARY_MODEL_PATH="$2"; shift 2 ;;
+        --model-path) MODEL_PATH="$2"; MODEL_PATH_SET=1; shift 2 ;;
+        --secondary-model-path) SECONDARY_MODEL_PATH="$2"; SECONDARY_MODEL_PATH_SET=1; shift 2 ;;
         --train-ticks) TRAIN_TICKS="$2"; shift 2 ;;
         --train-epochs) TRAIN_EPOCHS="$2"; shift 2 ;;
         --report-interval) REPORT_INTERVAL="$2"; shift 2 ;;
@@ -174,6 +176,14 @@ while [[ $# -gt 0 ]]; do
         *) log_error "Unknown argument: $1"; usage; exit 1 ;;
     esac
 done
+
+SYMBOL_TAG="$(echo "$SYMBOL" | tr '[:upper:]' '[:lower:]')"
+if [[ "$MODEL_PATH_SET" -eq 0 && "$MODEL_PATH" == "$REPO_ROOT/models/neural_alpha_latest.pt" ]]; then
+    MODEL_PATH="$REPO_ROOT/models/neural_alpha_${SYMBOL_TAG}_latest.pt"
+fi
+if [[ "$SECONDARY_MODEL_PATH_SET" -eq 0 && "$SECONDARY_MODEL_PATH" == "$REPO_ROOT/models/neural_alpha_secondary.pt" ]]; then
+    SECONDARY_MODEL_PATH="$REPO_ROOT/models/neural_alpha_${SYMBOL_TAG}_secondary.pt"
+fi
 
 if [[ -f "$ENV_FILE" ]]; then
     log_info "Loading env file: $ENV_FILE"

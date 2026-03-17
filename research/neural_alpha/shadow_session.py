@@ -26,8 +26,8 @@ Shared memory bridge:
 
 Usage:
     python -m research.neural_alpha.shadow_session \
-        --model-path models/neural_alpha_latest.pt \
-        --secondary-model-path models/neural_alpha_secondary.pt \
+        --model-path models/neural_alpha_btcusdt_latest.pt \
+        --secondary-model-path models/neural_alpha_btcusdt_secondary.pt \
         --duration 86400 \
         --interval-ms 500 \
         --symbol BTCUSDT \
@@ -83,6 +83,11 @@ _DATA_FMT = "=ddq" # native-endian: float64 signal_bps, float64 risk_score, int6
 _DATA_OFFSET = 8
 
 _REGIME_SIGNAL_FILE = "/tmp/regime_signal.bin"
+
+
+def _symbol_model_path(symbol: str, variant: str = "latest") -> Path:
+    symbol_tag = symbol.lower()
+    return Path(f"models/neural_alpha_{symbol_tag}_{variant}.pt")
 
 
 class _SignalPublisher:
@@ -274,7 +279,7 @@ class NeuralAlphaShadowSession:
         model.load_state_dict(candidate_state)
         self._model = model
 
-        out_path = Path(self.cfg.model_path) if self.cfg.model_path else Path("models/neural_alpha_latest.pt")
+        out_path = Path(self.cfg.model_path) if self.cfg.model_path else _symbol_model_path(self.cfg.symbol)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_out = out_path.with_suffix(out_path.suffix + ".tmp")
         torch.save(candidate_state, tmp_out)
@@ -647,10 +652,17 @@ def main() -> None:
 
     signal.signal(signal.SIGINT, _handle_sigint)
 
-    if cfg.model_path and Path(cfg.model_path).exists():
-        session.load_model(cfg.model_path)
-        if cfg.secondary_model_path and Path(cfg.secondary_model_path).exists():
-            session.load_secondary_model(cfg.secondary_model_path)
+    primary_model_path = Path(cfg.model_path) if cfg.model_path else _symbol_model_path(cfg.symbol, "latest")
+    secondary_model_path = (
+        Path(cfg.secondary_model_path)
+        if cfg.secondary_model_path
+        else _symbol_model_path(cfg.symbol, "secondary")
+    )
+
+    if primary_model_path.exists():
+        session.load_model(str(primary_model_path))
+        if secondary_model_path.exists():
+            session.load_secondary_model(str(secondary_model_path))
     elif cfg.train_ticks > 0:
         session.train_on_recent(cfg.train_ticks)
     else:

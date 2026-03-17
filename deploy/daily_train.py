@@ -1,11 +1,11 @@
 """
-Daily model retraining job for CryptoAlphaNet on SOLUSDT.
+Daily model retraining job for CryptoAlphaNet.
 
 Run via cron at 00:30 UTC (markets quietest, data from previous day settled):
     30 0 * * * /path/to/venv/bin/python /path/to/deploy/daily_train.py
 
 What it does:
-    1. Collects a fresh window of L5 LOB ticks from Binance SOLUSDT.
+    1. Collects a fresh window of L5 LOB ticks for a target symbol.
     2. Trains CryptoAlphaNet with walk-forward cross-validation.
     3. Compares the new model against the current production model.
     4. Promotes the new model only if it beats current on held-out data.
@@ -18,6 +18,7 @@ Environment variables:
     TRAIN_INTERVAL_MS Polling interval while collecting (default: 500)
     EPOCHS           Training epochs per fold (default: 30)
     PROMOTE_IC_MIN   Min IC on held-out data to promote (default: 0.02)
+    TRAIN_SYMBOL     Symbol to train (default: SOLUSDT)
 """
 from __future__ import annotations
 
@@ -58,10 +59,12 @@ TRAIN_TICKS = int(os.getenv("TRAIN_TICKS", "2000"))
 TRAIN_INTERVAL_MS = int(os.getenv("TRAIN_INTERVAL_MS", "500"))
 EPOCHS = int(os.getenv("EPOCHS", "30"))
 PROMOTE_IC_MIN = float(os.getenv("PROMOTE_IC_MIN", "0.02"))
+TRAIN_SYMBOL = os.getenv("TRAIN_SYMBOL", "SOLUSDT")
+_SYMBOL_TAG = TRAIN_SYMBOL.lower()
 
-PROD_MODEL_PATH = MODEL_DIR / "neural_alpha_latest.pt"
-CANDIDATE_MODEL_PATH = MODEL_DIR / "neural_alpha_candidate.pt"
-SECONDARY_MODEL_PATH = MODEL_DIR / "neural_alpha_secondary.pt"
+PROD_MODEL_PATH = MODEL_DIR / f"neural_alpha_{_SYMBOL_TAG}_latest.pt"
+CANDIDATE_MODEL_PATH = MODEL_DIR / f"neural_alpha_{_SYMBOL_TAG}_candidate.pt"
+SECONDARY_MODEL_PATH = MODEL_DIR / f"neural_alpha_{_SYMBOL_TAG}_secondary.pt"
 NORM_STATS_PATH = MODEL_DIR / "scalar_norm_stats.npz"
 REGISTRY_PATH = MODEL_DIR / "model_registry.json"
 
@@ -73,7 +76,7 @@ def _ensure_dirs() -> None:
 
 def _load_prod_model_ic() -> float:
     """Read the IC of the current production model from its metadata file."""
-    meta_path = MODEL_DIR / "neural_alpha_latest.json"
+    meta_path = PROD_MODEL_PATH.with_suffix(".json")
     if not meta_path.exists():
         return -1.0
     with open(meta_path) as f:
@@ -123,16 +126,22 @@ def _write_train_log(date_str: str, metrics: dict) -> None:
 def run() -> dict:
     _ensure_dirs()
     date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
-    log.info("Daily train started — date=%s  ticks=%d  epochs=%d", date_str, TRAIN_TICKS, EPOCHS)
+    log.info(
+        "Daily train started — date=%s  symbol=%s  ticks=%d  epochs=%d",
+        date_str,
+        TRAIN_SYMBOL,
+        TRAIN_TICKS,
+        EPOCHS,
+    )
 
     # 1. Collect data
-    cached = DATA_DIR / f"ticks_{date_str}.parquet"
+    cached = DATA_DIR / f"ticks_{_SYMBOL_TAG}_{date_str}.parquet"
     if cached.exists():
         import polars as pl
         log.info("Loading cached ticks from %s", cached)
         df = pl.read_parquet(cached)
     else:
-        df = collect_l5_ticks(TRAIN_TICKS, TRAIN_INTERVAL_MS, exchanges=["SOLANA"])
+        df = collect_l5_ticks(TRAIN_TICKS, TRAIN_INTERVAL_MS, exchanges=["SOLANA"], symbol=TRAIN_SYMBOL)
         df.write_parquet(cached)
         log.info("Tick data cached → %s  rows=%d", cached, len(df))
 
