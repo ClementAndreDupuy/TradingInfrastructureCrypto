@@ -89,7 +89,7 @@ static struct lws_protocols k_coinbase_protocols[] = {
 };
 
 CoinbaseFeedHandler::CoinbaseFeedHandler(const std::string& symbol, const std::string& ws_url)
-    : symbol_(symbol), ws_url_(ws_url) {
+    : symbol_(symbol), ws_url_(ws_url), venue_symbols_(SymbolMapper::map_all(symbol)) {
     LOG_INFO("CoinbaseFeedHandler created", "symbol", symbol_.c_str());
 }
 
@@ -188,7 +188,7 @@ void CoinbaseFeedHandler::ws_event_loop() {
 
         nlohmann::json sub = {
             {"type", "subscribe"},
-            {"product_ids", nlohmann::json::array({symbol_})},
+            {"product_ids", nlohmann::json::array({venue_symbols_.coinbase})},
             {"channel", "l2_data"},
         };
         session.subscribe_msg = sub.dump();

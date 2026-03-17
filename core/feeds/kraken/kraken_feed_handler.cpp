@@ -93,7 +93,7 @@ KrakenFeedHandler::KrakenFeedHandler(const std::string& symbol, const std::strin
                                      const std::string& ws_url)
     : symbol_(symbol), api_key_(api_key.empty() ? get_api_key_from_env() : api_key),
       api_secret_(api_secret.empty() ? get_api_secret_from_env() : api_secret), api_url_(api_url),
-      ws_url_(ws_url) {
+      ws_url_(ws_url), venue_symbols_(SymbolMapper::map_all(symbol)) {
     LOG_INFO("KrakenFeedHandler created (public data, no auth required)", "symbol",
              symbol_.c_str());
 }
@@ -188,11 +188,8 @@ void KrakenFeedHandler::ws_event_loop() {
         }
     }
 
-    // Kraken v2 subscription: symbol format "XBT/USD" (insert '/' before last 3 chars).
-    std::string ws_sym = symbol_;
-    if (ws_sym.find('/') == std::string::npos && ws_sym.size() > 3) {
-        ws_sym.insert(ws_sym.size() - 3, "/");
-    }
+    // Kraken v2 subscription uses slash-delimited symbols.
+    const std::string ws_sym = venue_symbols_.kraken_ws;
 
     const std::string subscribe_msg =
         R"({"method":"subscribe","params":{"channel":"book","symbol":[")" + ws_sym +
@@ -304,7 +301,7 @@ void KrakenFeedHandler::ws_event_loop() {
 // Kraken REST response: {"error":[],"result":{"XXBTZUSD":{"bids":[["px","vol",ts],...],...}}}
 // The result key is the internal pair name (may differ from the requested symbol).
 auto KrakenFeedHandler::fetch_snapshot() -> Result {
-    const std::string url = api_url_ + "/0/public/Depth?pair=" + symbol_ + "&count=500";
+    const std::string url = api_url_ + "/0/public/Depth?pair=" + venue_symbols_.kraken_rest + "&count=500";
 
     LOG_INFO("Fetching Kraken snapshot", "symbol", symbol_.c_str());
 

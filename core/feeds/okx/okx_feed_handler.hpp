@@ -3,6 +3,7 @@
 #include "../../common/logging.hpp"
 #include "../../common/rest_client.hpp"
 #include "../../common/types.hpp"
+#include "../common/symbol_mapper.hpp"
 #ifdef __has_include
 #if __has_include(<nlohmann/json.hpp>)
 #include <nlohmann/json.hpp>
@@ -71,6 +72,8 @@ class OkxFeedHandler {
     enum class State { DISCONNECTED, BUFFERING, STREAMING };
 
     std::string symbol_;
+    VenueSymbols venue_symbols_;
+    std::string inst_id_;
     std::string api_url_;
     std::string ws_url_;
 

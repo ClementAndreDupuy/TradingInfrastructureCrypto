@@ -3,6 +3,7 @@
 #include "../../common/logging.hpp"
 #include "../../common/rest_client.hpp"
 #include "../../common/types.hpp"
+#include "../common/symbol_mapper.hpp"
 #ifdef __has_include
 #if __has_include(<nlohmann/json.hpp>)
 #include <nlohmann/json.hpp>
@@ -75,6 +76,7 @@ class KrakenFeedHandler {
     std::string api_secret_;
     std::string api_url_;
     std::string ws_url_;
+    VenueSymbols venue_symbols_;
 
     std::atomic<bool> running_{false};
     std::atomic<uint64_t> last_seq_{0};
