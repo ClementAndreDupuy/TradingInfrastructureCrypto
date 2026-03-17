@@ -156,7 +156,7 @@ auto main(int argc, char** argv) -> int {
 
         LobPublisher lob_publisher;
         if (!lob_publisher.open()) {
-            LOG_WARN("LOB publisher unavailable", "path", "/tmp/trt_lob_feed.bin");
+            LOG_WARN("LOB publisher unavailable", "path", LobPublisher::k_default_path);
         }
 
         LobPublisher* pub = lob_publisher.is_open() ? &lob_publisher : nullptr;

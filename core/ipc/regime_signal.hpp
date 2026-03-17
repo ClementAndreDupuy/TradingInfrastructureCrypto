@@ -25,7 +25,7 @@ class RegimeSignalReader {
     static constexpr size_t FILE_SIZE = 48; // [seq][4xdouble probs][int64 ts_ns]
     static constexpr int k_max_retries = 16;
 
-    explicit RegimeSignalReader(const std::string& path = "/ipc/regime_signal.bin") : path_(path) {}
+    explicit RegimeSignalReader(const std::string& path = "/tmp/trt_ipc/regime_signal.bin") : path_(path) {}
 
     ~RegimeSignalReader() { close(); }
 

@@ -74,14 +74,14 @@ from .trainer import TrainerConfig, walk_forward_train
 #
 # Write protocol: increment seq to odd → write fields → increment seq to even.
 # The C++ AlphaSignalReader spins until seq is even and stable across the read.
-_SIGNAL_FILE = "/ipc/neural_alpha_signal.bin"
+_SIGNAL_FILE = "/tmp/trt_ipc/neural_alpha_signal.bin"
 _SIGNAL_SIZE = 32  # uint64 + float64 + float64 + int64
 _SEQ_FMT = "=Q"    # native-endian uint64 (seqlock counter)
 _SEQ_OFFSET = 0
 _DATA_FMT = "=ddq" # native-endian: float64 signal_bps, float64 risk_score, int64 ts_ns
 _DATA_OFFSET = 8
 
-_REGIME_SIGNAL_FILE = "/ipc/regime_signal.bin"
+_REGIME_SIGNAL_FILE = "/tmp/trt_ipc/regime_signal.bin"
 
 
 def _symbol_model_path(symbol: str, variant: str = "latest") -> Path:

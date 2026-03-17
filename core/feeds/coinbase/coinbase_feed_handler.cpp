@@ -1,6 +1,7 @@
 #include "coinbase_feed_handler.hpp"
 #include "../../common/rest_client.hpp"
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <libwebsockets.h>

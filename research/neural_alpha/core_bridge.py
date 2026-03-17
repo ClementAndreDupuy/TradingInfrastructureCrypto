@@ -5,7 +5,7 @@ import os
 import struct
 from typing import Any
 
-RING_PATH = "/ipc/trt_lob_feed.bin"
+RING_PATH = "/tmp/trt_ipc/trt_lob_feed.bin"
 HEADER_FMT = "<8sIIIIQ32s"
 SLOT_FMT = "<B15sqd" + "d" * 20 + "64s"
 HEADER_SIZE = struct.calcsize(HEADER_FMT)

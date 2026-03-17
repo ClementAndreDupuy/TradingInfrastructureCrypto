@@ -390,7 +390,7 @@ _REGIME_DATA_FMT = "=ddddq"
 
 
 class RegimeSignalPublisher:
-    def __init__(self, path: str = "/tmp/regime_signal.bin") -> None:
+    def __init__(self, path: str = "/tmp/trt_ipc/regime_signal.bin") -> None:
         self._path = path
         self._f = open(path, "w+b")
         self._f.write(b"\x00" * _REGIME_SIGNAL_SIZE)

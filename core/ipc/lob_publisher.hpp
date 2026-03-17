@@ -20,7 +20,7 @@ namespace trading {
 
 class LobPublisher {
   public:
-    static constexpr const char* k_default_path = "/ipc/trt_lob_feed.bin";
+    static constexpr const char* k_default_path = "/tmp/trt_ipc/trt_lob_feed.bin";
     static constexpr size_t k_capacity = 10000;
     static constexpr size_t k_slot_size = 256;
     static constexpr size_t k_header_size = 64;

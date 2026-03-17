@@ -4,8 +4,8 @@ venues: BINANCE,KRAKEN,OKX,COINBASE
 duration_secs: 900
 interval_ms: 1000
 env_file: config/shadow/trading.env
-signal_file: /ipc/neural_alpha_signal.bin
-lob_feed_path: /ipc/trt_lob_feed.bin
+signal_file: /tmp/trt_ipc/neural_alpha_signal.bin
+lob_feed_path: /tmp/trt_ipc/trt_lob_feed.bin
 model_path: models/neural_alpha_latest.pt
 secondary_model_path: models/neural_alpha_secondary.pt
 train_ticks: 400

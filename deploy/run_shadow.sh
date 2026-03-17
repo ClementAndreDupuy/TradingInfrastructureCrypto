@@ -108,9 +108,9 @@ Options:
   --interval-ms <MS>            Engine + Python loop interval (default: 1000)
   --env-file <PATH>             Optional env file (default: config/shadow/trading.env if present)
   --signal-file <PATH>          Alpha signal mmap (Python→C++ bridge)
-                                (default: /ipc/neural_alpha_signal.bin)
+                                (default: /tmp/trt_ipc/neural_alpha_signal.bin)
   --lob-feed-path <PATH>        LOB ring-buffer mmap (C++→Python bridge)
-                                (default: /ipc/trt_lob_feed.bin)
+                                (default: /tmp/trt_ipc/trt_lob_feed.bin)
   --model-path <PATH>           Primary model checkpoint path
                                 (default: models/neural_alpha_latest.pt)
   --secondary-model-path <PATH> Secondary model checkpoint path
@@ -134,8 +134,8 @@ DURATION_SECS=900
 INTERVAL_MS=1000
 RUN_ONCE=0
 ENV_FILE="$ENV_FILE_DEFAULT"
-SIGNAL_FILE="/ipc/neural_alpha_signal.bin"
-LOB_FEED_PATH="/ipc/trt_lob_feed.bin"
+SIGNAL_FILE="/tmp/trt_ipc/neural_alpha_signal.bin"
+LOB_FEED_PATH="/tmp/trt_ipc/trt_lob_feed.bin"
 MODEL_PATH="$REPO_ROOT/models/neural_alpha_latest.pt"
 SECONDARY_MODEL_PATH="$REPO_ROOT/models/neural_alpha_secondary.pt"
 MODEL_PATH_SET=0
@@ -335,6 +335,26 @@ if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
     engine_args+=("${EXTRA_ARGS[@]}")
 fi
 
+portable_timeout() {
+    local secs="$1"; shift
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$secs" "$@"; return $?
+    elif command -v gtimeout >/dev/null 2>&1; then
+        gtimeout "$secs" "$@"; return $?
+    fi
+    # Fallback for macOS without coreutils: background child + timer killer
+    "$@" &
+    local child=$!
+    ( sleep "$secs"; kill "$child" 2>/dev/null ) &
+    local timer=$!
+    wait "$child"
+    local rc=$?
+    kill "$timer" 2>/dev/null
+    wait "$timer" 2>/dev/null
+    [[ $rc -eq 143 ]] && return 124  # SIGTERM -> match timeout(1) exit code
+    return $rc
+}
+
 PY_PID=""
 cleanup() {
     if [[ -n "$PY_PID" ]]; then
@@ -380,7 +400,7 @@ if [[ "$RUN_ONCE" -eq 1 ]]; then
     DURATION_SECS="$(awk "BEGIN { printf \"%.3f\", ($INTERVAL_MS * 2)/1000 }")"
 fi
 
-if timeout "$DURATION_SECS" "$ENGINE_BIN" "${engine_args[@]}"; then
+if portable_timeout "$DURATION_SECS" "$ENGINE_BIN" "${engine_args[@]}"; then
     :
 else
     timeout_status=$?

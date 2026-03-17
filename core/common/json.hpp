@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -37,6 +39,29 @@ class json {
     json(const std::string& v) : type_(value_t::string), s_(v) {}
     json(std::string&& v) : type_(value_t::string), s_(std::move(v)) {}
 
+    // Initializer-list constructor: mirrors nlohmann behaviour.
+    // If every element is a 2-element array whose first item is a string,
+    // the result is an object; otherwise it is an array.
+    json(std::initializer_list<json> init) {
+        bool all_pairs = true;
+        for (const auto& elem : init) {
+            if (!elem.is_array() || !elem.arr_ || elem.arr_->size() != 2 ||
+                !(*elem.arr_)[0].is_string()) {
+                all_pairs = false;
+                break;
+            }
+        }
+        if (all_pairs) {
+            type_ = value_t::object;
+            obj_ = new object_t();
+            for (const auto& elem : init)
+                obj_->emplace_back((*elem.arr_)[0].s_, (*elem.arr_)[1]);
+        } else {
+            type_ = value_t::array;
+            arr_ = new array_t(init);
+        }
+    }
+
     json(const json& o) { copy_from(o); }
     json(json&& o) noexcept { move_from(std::move(o)); }
 
@@ -61,6 +86,13 @@ class json {
     static json array() {
         json j;
         j.type_ = value_t::array;
+        j.arr_ = new array_t();
+        return j;
+    }
+    static json array(std::initializer_list<json> init) {
+        json j;
+        j.type_ = value_t::array;
+        j.arr_ = new array_t(init);
         return j;
     }
     static json object() {
@@ -209,6 +241,13 @@ class json {
         }
     }
 
+    // ── dump ─────────────────────────────────────────────────────────────────
+    std::string dump(int /*indent*/ = -1) const {
+        std::ostringstream os;
+        serialize(os);
+        return os.str();
+    }
+
   private:
     // ── Storage ─────────────────────────────────────────────────────────────
     value_t type_{value_t::null};
@@ -292,6 +331,67 @@ class json {
             break;
         }
         o.type_ = value_t::null;
+    }
+
+    void serialize(std::ostream& os) const {
+        switch (type_) {
+        case value_t::null:
+            os << "null";
+            break;
+        case value_t::boolean:
+            os << (b_ ? "true" : "false");
+            break;
+        case value_t::number_integer:
+            os << i_;
+            break;
+        case value_t::number_unsigned:
+            os << u_;
+            break;
+        case value_t::number_float:
+            os << d_;
+            break;
+        case value_t::string: {
+            os << '"';
+            for (char c : s_) {
+                switch (c) {
+                case '"':  os << "\\\""; break;
+                case '\\': os << "\\\\"; break;
+                case '\b': os << "\\b";  break;
+                case '\f': os << "\\f";  break;
+                case '\n': os << "\\n";  break;
+                case '\r': os << "\\r";  break;
+                case '\t': os << "\\t";  break;
+                default:   os << c;      break;
+                }
+            }
+            os << '"';
+            break;
+        }
+        case value_t::array:
+            os << '[';
+            if (arr_) {
+                for (size_t i = 0; i < arr_->size(); ++i) {
+                    if (i) os << ',';
+                    (*arr_)[i].serialize(os);
+                }
+            }
+            os << ']';
+            break;
+        case value_t::object:
+            os << '{';
+            if (obj_) {
+                for (size_t i = 0; i < obj_->size(); ++i) {
+                    if (i) os << ',';
+                    os << '"' << (*obj_)[i].first << "\":";
+                    (*obj_)[i].second.serialize(os);
+                }
+            }
+            os << '}';
+            break;
+        default:
+            os << "null";
+            break;
+        }
     }
 
     const json& at_key(const std::string& key) const {

@@ -2,7 +2,7 @@
 
 // Alpha signal bridge: Python neural model → C++ strategy via mmap file.
 //
-// Layout of /ipc/neural_alpha_signal.bin (32 bytes):
+// Layout of /tmp/trt_ipc/neural_alpha_signal.bin (32 bytes):
 //   offset  0 : uint64  seq         — seqlock counter (even = stable, odd = writer active)
 //   offset  8 : float64 signal_bps  — mid-horizon return prediction (bps)
 //   offset 16 : float64 risk_score  — adverse-selection probability [0, 1]
@@ -47,7 +47,7 @@ class AlphaSignalReader {
     static constexpr double DEFAULT_RISK = 0.5;
     static constexpr int k_max_retries = 16; // seqlock spin limit before fail-open
 
-    explicit AlphaSignalReader(const std::string& path = "/ipc/neural_alpha_signal.bin",
+    explicit AlphaSignalReader(const std::string& path = "/tmp/trt_ipc/neural_alpha_signal.bin",
                                double signal_min_bps = 3.0, double risk_max = 0.65)
         : path_(path), signal_min_bps_(signal_min_bps), risk_max_(risk_max) {}
 

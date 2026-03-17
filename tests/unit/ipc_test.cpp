@@ -131,7 +131,7 @@ TEST(AlphaSignalReader, AllowsLongWithFreshBullishSignal) {
 
     using namespace std::chrono;
     const int64_t ts_now =
-        duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+        duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 
     write_signal_file(tmp.path, 0, 10.0, 0.2, ts_now);
 
@@ -147,7 +147,7 @@ TEST(AlphaSignalReader, AllowsShortWithFreshBearishSignal) {
 
     using namespace std::chrono;
     const int64_t ts_now =
-        duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+        duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 
     write_signal_file(tmp.path, 0, -10.0, 0.2, ts_now);
 
@@ -163,7 +163,7 @@ TEST(AlphaSignalReader, BlockedByHighRiskScore) {
 
     using namespace std::chrono;
     const int64_t ts_now =
-        duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+        duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 
     // Strong bullish signal but high adverse-selection risk.
     write_signal_file(tmp.path, 0, 10.0, 0.9, ts_now);
