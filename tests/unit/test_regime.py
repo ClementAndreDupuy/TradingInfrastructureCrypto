@@ -3,17 +3,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 pl = pytest.importorskip("polars")
 
-from research.neural_alpha.regime import (
+from research.regime import (
     RegimeConfig,
     RegimeSignalPublisher,
     infer_regime_probabilities,
     save_regime_artifact,
     train_regime_model_from_ipc,
 )
+from research.regime.regime import _semantic_regime_names
 
 
 def _make_lob_frame(n: int = 120) -> "pl.DataFrame":
@@ -83,3 +85,76 @@ def test_regime_signal_publisher_writes_file(tmp_path: Path) -> None:
     assert signal_path.stat().st_size == 48
 
     pub.close()
+
+
+def test_regime_signal_publisher_close_preserves_file(tmp_path: Path) -> None:
+    # Bug fix regression: close() must NOT delete the signal file.
+    # Deleting it creates a window during model reloads where the C++
+    # RegimeSignalReader falls back to stale defaults.
+    signal_path = tmp_path / "regime_signal.bin"
+    pub = RegimeSignalPublisher(str(signal_path))
+    pub.publish(0.5, 0.2, 0.2, 0.1)
+    pub.close()
+
+    assert signal_path.exists(), "Signal file must persist after close()"
+
+
+def test_regime_signal_publisher_context_manager(tmp_path: Path) -> None:
+    signal_path = tmp_path / "regime_signal.bin"
+    with RegimeSignalPublisher(str(signal_path)) as pub:
+        pub.publish(0.6, 0.1, 0.2, 0.1)
+    assert signal_path.exists()
+
+
+def test_semantic_regime_names_no_collision_3_regimes() -> None:
+    # Bug fix regression: when highest-vol and highest-spread cluster coincide,
+    # the old code overwrote "shock" with "illiquid", leaving no shock label
+    # and disabling the C++ market-maker's shock-gating threshold.
+    # Centers: cluster 2 has the highest volatility AND highest spread.
+    raw_centers = np.array(
+        [
+            [0.01, 0.10, 5.0],  # lowest vol, lowest spread  → calm
+            [0.05, 0.30, 8.0],  # mid vol,    mid spread     → illiquid (fallback)
+            [0.20, 0.50, 3.0],  # highest vol, highest spread → shock (must not be overwritten)
+        ]
+    )
+    names = _semantic_regime_names(raw_centers)
+    assert len(set(names)) == 3, f"Duplicate regime names: {names}"
+    assert "calm" in names
+    assert "shock" in names
+    assert "illiquid" in names
+
+
+def test_semantic_regime_names_no_collision_4_regimes() -> None:
+    # All four features point to the same cluster (cluster 3 is extreme in all).
+    raw_centers = np.array(
+        [
+            [0.01, 0.10, 2.0, 0.0],  # calm
+            [0.05, 0.20, 4.0, 0.1],
+            [0.10, 0.30, 6.0, 0.2],
+            [0.50, 0.80, 9.0, 0.5],  # highest vol, highest spread, highest depth
+        ]
+    )
+    names = _semantic_regime_names(raw_centers)
+    assert len(set(names)) == 4, f"Duplicate regime names: {names}"
+    assert "calm" in names
+    assert "shock" in names
+    assert "illiquid" in names
+    assert "trending" in names
+
+
+def test_load_ipc_rejects_null_values(tmp_path: Path) -> None:
+    ipc_dir = tmp_path / "ipc"
+    ipc_dir.mkdir()
+    frame = _make_lob_frame()
+    # Inject a null into best_bid
+    nulled = frame.with_columns(
+        pl.when(pl.col("timestamp_ns") == frame["timestamp_ns"][5])
+        .then(None)
+        .otherwise(pl.col("best_bid"))
+        .alias("best_bid")
+    )
+    nulled.write_parquet(ipc_dir / "lob.parquet")
+
+    with pytest.raises(ValueError, match="Null values"):
+        train_regime_model_from_ipc(str(ipc_dir), RegimeConfig(n_regimes=4))

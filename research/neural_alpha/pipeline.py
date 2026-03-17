@@ -422,7 +422,7 @@ def _evaluate_state_on_holdout(df: pl.DataFrame, state_dict: dict, cfg: TrainerC
 def run_pipeline(args: argparse.Namespace) -> None:
     from .alpha_regression import analyse_alpha, print_alpha_report
     from .backtest import BacktestConfig, NeuralAlphaBacktest
-    from .regime import RegimeConfig, save_regime_artifact, train_regime_model_from_ipc
+    from research.regime import RegimeConfig, save_regime_artifact, train_regime_model_from_ipc
     from .trainer import TrainerConfig, walk_forward_train
 
     # ── 1. Data ──────────────────────────────────────────────────────────────
