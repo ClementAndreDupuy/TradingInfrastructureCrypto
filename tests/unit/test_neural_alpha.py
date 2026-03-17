@@ -436,7 +436,7 @@ class TestShadowSessionTraining:
             "ask_size_5": 1.0,
         }
 
-        def _fake_fetch() -> dict:
+        def _fake_fetch(symbol: str) -> dict:
             nonlocal tick
             tick = {**tick, "timestamp_ns": tick["timestamp_ns"] + 1}
             return tick
