@@ -18,12 +18,16 @@ from __future__ import annotations
 import argparse
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import polars as pl
 import requests
 
 from .core_bridge import CoreBridge
+
+if TYPE_CHECKING:
+    from .trainer import TrainerConfig
 
 # ── Data fetcher ──────────────────────────────────────────────────────────────
 
@@ -377,7 +381,7 @@ def _fold_slices(T: int, n_folds: int, train_frac: float) -> list[tuple[int, int
 
 
 
-def _evaluate_state_on_holdout(df: pl.DataFrame, state_dict: dict, cfg: "TrainerConfig") -> float:
+def _evaluate_state_on_holdout(df: pl.DataFrame, state_dict: dict, cfg: TrainerConfig) -> float:
     from torch.utils.data import DataLoader
     from .dataset import DatasetConfig, LOBDataset
     from .model import CryptoAlphaNet
