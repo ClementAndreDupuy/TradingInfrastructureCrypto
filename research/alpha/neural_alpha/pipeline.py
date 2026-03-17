@@ -65,6 +65,23 @@ def _filter_rows(
     return pl.DataFrame(rows).sort("timestamp_ns")
 
 
+
+
+def _require_balanced_rows(df: pl.DataFrame, exchanges: list[str], n_ticks: int) -> pl.DataFrame:
+    """Return up to n_ticks rows per exchange; raise if any requested exchange is short."""
+    if df.is_empty():
+        raise RuntimeError("No rows available after filtering.")
+
+    selected: list[pl.DataFrame] = []
+    for ex in exchanges:
+        ex_rows = df.filter(pl.col("exchange") == ex).sort("timestamp_ns")
+        if len(ex_rows) < n_ticks:
+            raise RuntimeError(
+                f"Insufficient rows for {ex}: got {len(ex_rows)}, need {n_ticks}."
+            )
+        selected.append(ex_rows.head(n_ticks))
+
+    return pl.concat(selected).sort("timestamp_ns")
 def _parse_binance_l5(d: dict, symbol: str, exchange_label: str) -> dict:
     bids = d["bids"][:N_LEVELS]
     asks = d["asks"][:N_LEVELS]
@@ -258,27 +275,31 @@ def collect_from_core_bridge(
 
     rows: list[dict] = []
     target_total = n_ticks * len(exchanges)
-    expected = {ex.upper() for ex in exchanges}
+    max_wait_s = max(3.0, interval_ms / 1000.0 * max(target_total * 3, 20))
+    deadline = time.monotonic() + max_wait_s
     interval_s = interval_ms / 1000.0
-    while len(rows) < target_total:
+
+    while len(rows) < target_total and time.monotonic() < deadline:
         batch = bridge.read_new_ticks()
         if batch:
-            batch_df = pl.DataFrame(batch)
-            filtered = _filter_rows(batch_df, exchanges, symbol)
+            filtered = _filter_rows(pl.DataFrame(batch), exchanges, symbol)
             if len(filtered) > 0:
                 rows.extend(filtered.to_dicts())
-        if len(rows) >= target_total:
-            break
-        time.sleep(interval_s)
+        if len(rows) < target_total:
+            time.sleep(interval_s)
     bridge.close()
 
     if not rows:
         return None
-    out = pl.DataFrame(rows).sort("timestamp_ns")
-    available = set(out["exchange"].to_list())
-    if not expected.issubset(available):
+
+    filtered_rows = _filter_rows(pl.DataFrame(rows), exchanges, symbol)
+    if filtered_rows.is_empty():
         return None
-    return out.head(target_total)
+
+    try:
+        return _require_balanced_rows(filtered_rows, exchanges, n_ticks)
+    except RuntimeError:
+        return None
 
 
 def _collect_l5_ticks_rest(n_ticks: int, interval_ms: int, exchanges: list[str], symbol: str = "BTCUSDT") -> pl.DataFrame:
@@ -289,7 +310,6 @@ def _collect_l5_ticks_rest(n_ticks: int, interval_ms: int, exchanges: list[str],
         "KRAKEN": _fetch_kraken_l5,
         "OKX": _fetch_okx_l5,
         "COINBASE": _fetch_coinbase_l5,
-        "SOLANA": _fetch_solana_l5,
     }
 
     print(f"Collecting {n_ticks} L5 snapshots per exchange over REST (interval {interval_ms} ms)…")
@@ -331,27 +351,16 @@ def collect_l5_ticks(
         symbol=symbol,
     )
 
-    if bridge_df is not None and len(bridge_df) >= target_total // 2:
-        if len(bridge_df) < target_total and allow_rest_fallback:
-            bridge_counts = bridge_df.group_by("exchange").len().to_dicts()
-            per_exchange = {row["exchange"]: row["len"] for row in bridge_counts}
-            topup = max(0, n_ticks - min(per_exchange.get(ex, 0) for ex in exchanges))
-            print(f"[WARN] bridge returned {len(bridge_df)} rows (< {target_total}); topping up with REST")
-            rest_df = _collect_l5_ticks_rest(topup, interval_ms, exchanges, symbol=symbol)
-            combined = pl.concat([bridge_df, rest_df]).sort("timestamp_ns")
-            return _filter_rows(combined, exchanges, symbol)
-        if len(bridge_df) < target_total:
-            raise RuntimeError(
-                f"Core bridge returned {len(bridge_df)} rows (< {target_total}) and REST fallback is disabled."
-            )
+    if bridge_df is not None:
         return bridge_df
 
-    if allow_rest_fallback:
-        print("[WARN] core bridge unavailable or insufficient; falling back to REST collection")
-        rest_df = _collect_l5_ticks_rest(n_ticks, interval_ms, exchanges, symbol=symbol)
-        return _filter_rows(rest_df, exchanges, symbol)
+    if not allow_rest_fallback:
+        raise RuntimeError("Core bridge unavailable and REST fallback disabled.")
 
-    raise RuntimeError("Core bridge unavailable and REST fallback disabled.")
+    print("[WARN] core bridge unavailable or insufficient; falling back to REST collection")
+    rest_df = _collect_l5_ticks_rest(n_ticks, interval_ms, exchanges, symbol=symbol)
+    filtered = _filter_rows(rest_df, exchanges, symbol)
+    return _require_balanced_rows(filtered, exchanges, n_ticks)
 
 
 # ── Synthetic data for offline testing ───────────────────────────────────────

@@ -102,7 +102,7 @@ def test_core_bridge_reads_rows_and_drops_overflowed_slots() -> None:
 
 
 @pytest.mark.skipif(pl is None or pipeline is None, reason="polars is not installed")
-def test_collect_l5_ticks_prefers_bridge_then_tops_up(monkeypatch) -> None:
+def test_collect_l5_ticks_falls_back_to_rest_and_keeps_four_exchanges(monkeypatch) -> None:
     assert pl is not None
     bridge_df = pl.DataFrame(
         [
@@ -158,8 +158,8 @@ def test_collect_l5_ticks_prefers_bridge_then_tops_up(monkeypatch) -> None:
         ]
     )
 
-    monkeypatch.setattr(pipeline, "collect_from_core_bridge", lambda n_ticks, interval_ms, exchanges=None, symbol="BTCUSDT": bridge_df)
-    monkeypatch.setattr(pipeline, "_collect_l5_ticks_rest", lambda n_ticks, interval_ms, exchanges, symbol="BTCUSDT": rest_df)
+    monkeypatch.setattr(pipeline, "collect_from_core_bridge", lambda n_ticks, interval_ms, exchanges=None, symbol="BTCUSDT": None)
+    monkeypatch.setattr(pipeline, "_collect_l5_ticks_rest", lambda n_ticks, interval_ms, exchanges, symbol="BTCUSDT": pl.concat([bridge_df, rest_df]))
 
     out = pipeline.collect_l5_ticks(n_ticks=1, interval_ms=1)
     assert len(out) == 4
@@ -177,3 +177,13 @@ def test_filter_rows_normalises_symbol_aliases() -> None:
     out = pipeline._filter_rows(df, ["KRAKEN", "COINBASE"], symbol="BTCUSDT")
     assert len(out) == 2
     assert set(out["exchange"].to_list()) == {"KRAKEN", "COINBASE"}
+
+
+@pytest.mark.skipif(pl is None or pipeline is None, reason="polars is not installed")
+def test_require_balanced_rows_raises_when_exchange_missing() -> None:
+    assert pl is not None
+    df = pl.DataFrame([
+        {"timestamp_ns": 1, "exchange": "BINANCE", "symbol": "BTCUSDT"},
+    ])
+    with pytest.raises(RuntimeError):
+        pipeline._require_balanced_rows(df, ["BINANCE", "KRAKEN"], n_ticks=1)
