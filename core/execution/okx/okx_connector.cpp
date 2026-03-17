@@ -19,7 +19,6 @@ auto order_payload(const Order& order) -> std::string {
            std::to_string(order.quantity) + R"("})";
 }
 
-
 auto parse_okx_order_id(const std::string& body, std::string& venue_order_id) -> bool {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded()) {

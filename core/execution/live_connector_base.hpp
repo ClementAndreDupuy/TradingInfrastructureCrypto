@@ -341,21 +341,19 @@ class LiveConnectorBase : public ExchangeConnector {
     HmacDigest compute_hmac(const EVP_MD* algo, const std::string& payload) const {
         HmacDigest result;
         HMAC(algo, api_secret_.data(), static_cast<int>(api_secret_.size()),
-             reinterpret_cast<const unsigned char*>(payload.data()), payload.size(),
-             result.data, &result.len);
+             reinterpret_cast<const unsigned char*>(payload.data()), payload.size(), result.data,
+             &result.len);
         return result;
     }
 
-    static std::string encode_hex(const HmacDigest& d) {
-        return encode_hex(d.data, d.len);
-    }
+    static std::string encode_hex(const HmacDigest& d) { return encode_hex(d.data, d.len); }
 
     static std::string encode_hex(const unsigned char* data, unsigned int len) {
         static const char hex_chars[] = "0123456789abcdef";
         std::string out;
         out.resize(len * 2);
         for (unsigned int i = 0; i < len; ++i) {
-            out[2 * i]     = hex_chars[(data[i] >> 4) & 0xF];
+            out[2 * i] = hex_chars[(data[i] >> 4) & 0xF];
             out[2 * i + 1] = hex_chars[data[i] & 0xF];
         }
         return out;
@@ -364,8 +362,8 @@ class LiveConnectorBase : public ExchangeConnector {
     static std::string encode_base64(const HmacDigest& d) {
         std::string out;
         out.resize((d.len + 2) / 3 * 4);
-        const int out_len = EVP_EncodeBlock(reinterpret_cast<unsigned char*>(&out[0]),
-                                            d.data, static_cast<int>(d.len));
+        const int out_len = EVP_EncodeBlock(reinterpret_cast<unsigned char*>(&out[0]), d.data,
+                                            static_cast<int>(d.len));
         out.resize(static_cast<size_t>(out_len));
         return out;
     }
