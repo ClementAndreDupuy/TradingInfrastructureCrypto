@@ -13,7 +13,8 @@ ExecStart=/opt/trading-venv/bin/python -m research.neural_alpha.shadow_session \
     --model-path models/neural_alpha_btcusdt_latest.pt \
     --secondary-model-path models/neural_alpha_btcusdt_secondary.pt \
     --log-path logs/neural_alpha_shadow.jsonl \
-    --signal-file /tmp/neural_alpha_signal.bin \
+    --signal-file /ipc/neural_alpha_signal.bin \
+    --lob-feed-path /ipc/trt_lob_feed.bin \
     --symbol BTCUSDT \
     --duration 86400 \
     --interval-ms 500 \
