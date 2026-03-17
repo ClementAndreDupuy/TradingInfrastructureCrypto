@@ -543,7 +543,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
     merged_bt["total_trades"] = sum(m.get("total_trades", 0) for m in all_bt_metrics)
 
     # ── 4. Alpha regression ───────────────────────────────────────────────────
-    alpha_metrics = analyse_alpha(effective_folds, horizon_idx=1)
+    alpha_metrics = analyse_alpha(effective_folds, horizon_idx=2)
 
     # ── 5. Report ─────────────────────────────────────────────────────────────
     print_alpha_report(alpha_metrics, merged_bt)

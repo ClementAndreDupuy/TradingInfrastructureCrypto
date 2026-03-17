@@ -138,13 +138,13 @@ class NeuralAlphaBacktest:
                     fill_prob = self._queue_fill_probability(bid, qty)
                     if self._rng.random() <= fill_prob:
                         fill_px = self._apply_market_impact(bid, qty)
-                        self._open_position(t, fill_px, qty, "LONG", ts, maker_fee_rate)
+                        self._open_position(t, fill_px, qty, "LONG", ts, fee_rate)
                 elif net_short_sig > entry_thresh:
                     qty = min(self.cfg.trade_qty, self.cfg.max_position)
                     fill_prob = self._queue_fill_probability(ask, qty)
                     if self._rng.random() <= fill_prob:
                         fill_px = self._apply_market_impact(ask, -qty)
-                        self._open_position(t, fill_px, -qty, "SHORT", ts, maker_fee_rate)
+                        self._open_position(t, fill_px, -qty, "SHORT", ts, fee_rate)
 
         # Close any open position at end
         if self._position != 0.0 and T > 0:
@@ -315,8 +315,8 @@ def run_backtest_on_fold(
     Convenience wrapper: aligns fold predictions with the test slice of df.
     """
     test_df = df[test_slice_start:test_slice_end]
-    # predictions is (N_windows, 3); use mid-horizon signal (col 1)
-    preds = fold_result["predictions"][:, 1]
+    # predictions is (N_windows, 4); use mid-horizon signal (col 2 = 100-tick)
+    preds = fold_result["predictions"][:, 2]
 
     # Align: each prediction corresponds to the last tick of a window.
     # We replicate each prediction for seq_len ticks (nearest-assignment).
