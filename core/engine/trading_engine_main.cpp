@@ -1,3 +1,4 @@
+#include "../common/logging.hpp"
 #include "../execution/binance/binance_connector.hpp"
 #include "../execution/coinbase/coinbase_connector.hpp"
 #include "../execution/kraken/kraken_connector.hpp"
@@ -22,7 +23,6 @@
 #include <csignal>
 #include <cstring>
 #include <exception>
-#include <iostream>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -47,7 +47,13 @@ auto parse_args(int argc, char** argv) -> CliOptions {
         } else if (arg == "--symbol" && i + 1 < argc) {
             out.symbol = argv[++i];
         } else if (arg == "--loop-interval-ms" && i + 1 < argc) {
-            out.loop_interval_ms = std::stoi(argv[++i]);
+            // Bug fix: std::stoi throws on invalid input; catch and keep the default.
+            try {
+                out.loop_interval_ms = std::stoi(argv[++i]);
+            } catch (...) {
+                LOG_WARN("parse_args: invalid --loop-interval-ms value, using default", "value",
+                         argv[i], "default_ms", out.loop_interval_ms);
+            }
         }
     }
     return out;
@@ -88,16 +94,24 @@ auto make_child_order(const char* symbol, trading::Exchange exchange, trading::S
     return order;
 }
 
+// Bug fix: previously returned healthy=true with hardcoded fallback prices (100.0/100.1)
+// when the book was not yet initialised. This would cause the SOR to route real orders
+// at completely wrong prices. An unready book must be treated as unhealthy so the SOR
+// skips that venue.
 auto make_quote(trading::Exchange exchange, const trading::BookManager& book,
                 bool enabled) -> trading::VenueQuote {
     if (!enabled) {
         return {exchange, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
     }
+    if (!book.is_ready()) {
+        return {exchange, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
+    }
 
-    const bool book_ready = book.is_ready();
-    const double bid = book_ready ? book.best_bid() : 100.0;
-    const double ask = book_ready ? book.best_ask() : 100.1;
+    const double bid = book.best_bid();
+    const double ask = book.best_ask();
 
+    // TODO: source taker fees, latency/risk penalties, and fill-probability from
+    //       per-venue config rather than using hardcoded placeholder values.
     return {
         exchange, bid, ask, 0.40, 5.0, 0.5, 0.2, 0.70, 0.20, 0.4, true,
     };
@@ -113,7 +127,12 @@ auto main(int argc, char** argv) -> int {
 
         RiskRuntimeConfig risk_cfg;
         const std::string risk_path = "config/" + opts.mode + "/risk.yaml";
-        (void)RiskConfigLoader::load(risk_path, risk_cfg);
+        // Bug fix: failure was silently ignored, leaving risk limits at their (potentially
+        // unsafe) defaults. Now we log a warning so operators notice misconfiguration.
+        if (!RiskConfigLoader::load(risk_path, risk_cfg)) {
+            LOG_WARN("Risk config not loaded — using compiled-in defaults", "path",
+                     risk_path.c_str());
+        }
 
         KillSwitch kill_switch(risk_cfg.heartbeat_timeout_ns);
         CircuitBreaker circuit_breaker(risk_cfg.circuit_breaker, kill_switch);
@@ -137,13 +156,14 @@ auto main(int argc, char** argv) -> int {
 
         LobPublisher lob_publisher;
         if (!lob_publisher.open()) {
-            std::cout << "[WARN] LOB publisher unavailable path=/tmp/trt_lob_feed.bin\n";
+            LOG_WARN("LOB publisher unavailable", "path", "/tmp/trt_lob_feed.bin");
         }
 
-        binance_book.set_publisher(lob_publisher.is_open() ? &lob_publisher : nullptr);
-        kraken_book.set_publisher(lob_publisher.is_open() ? &lob_publisher : nullptr);
-        okx_book.set_publisher(lob_publisher.is_open() ? &lob_publisher : nullptr);
-        coinbase_book.set_publisher(lob_publisher.is_open() ? &lob_publisher : nullptr);
+        LobPublisher* pub = lob_publisher.is_open() ? &lob_publisher : nullptr;
+        binance_book.set_publisher(pub);
+        kraken_book.set_publisher(pub);
+        okx_book.set_publisher(pub);
+        coinbase_book.set_publisher(pub);
 
         BinanceFeedHandler binance_feed(opts.symbol);
         KrakenFeedHandler kraken_feed(opts.symbol);
@@ -159,17 +179,19 @@ auto main(int argc, char** argv) -> int {
         coinbase_feed.set_snapshot_callback(coinbase_book.snapshot_handler());
         coinbase_feed.set_delta_callback(coinbase_book.delta_handler());
 
-        if (run_binance) {
-            (void)binance_feed.start();
+        // Bug fix: start() return value was silently discarded. A failed start means
+        // the book will never populate, causing the engine to trade on stale/empty data.
+        if (run_binance && binance_feed.start() != Result::SUCCESS) {
+            LOG_WARN("Binance feed failed to start", "symbol", opts.symbol.c_str());
         }
-        if (run_kraken) {
-            (void)kraken_feed.start();
+        if (run_kraken && kraken_feed.start() != Result::SUCCESS) {
+            LOG_WARN("Kraken feed failed to start", "symbol", opts.symbol.c_str());
         }
-        if (run_okx) {
-            (void)okx_feed.start();
+        if (run_okx && okx_feed.start() != Result::SUCCESS) {
+            LOG_WARN("OKX feed failed to start", "symbol", opts.symbol.c_str());
         }
-        if (run_coinbase) {
-            (void)coinbase_feed.start();
+        if (run_coinbase && coinbase_feed.start() != Result::SUCCESS) {
+            LOG_WARN("Coinbase feed failed to start", "symbol", opts.symbol.c_str());
         }
 
         BinanceConnector binance(
@@ -184,17 +206,19 @@ auto main(int argc, char** argv) -> int {
             opts.mode == "shadow" ? "mock://coinbase" : "https://api.coinbase.com");
 
         ReconciliationService reconciliation;
-        if (run_binance) {
-            (void)reconciliation.register_connector(binance);
+        // Bug fix: register_connector() return value was silently discarded. If registration
+        // fails (e.g. MAX_CONNECTORS exceeded), reconciliation runs silently incomplete.
+        if (run_binance && !reconciliation.register_connector(binance)) {
+            LOG_WARN("Failed to register Binance connector with reconciliation service");
         }
-        if (run_kraken) {
-            (void)reconciliation.register_connector(kraken);
+        if (run_kraken && !reconciliation.register_connector(kraken)) {
+            LOG_WARN("Failed to register Kraken connector with reconciliation service");
         }
-        if (run_okx) {
-            (void)reconciliation.register_connector(okx);
+        if (run_okx && !reconciliation.register_connector(okx)) {
+            LOG_WARN("Failed to register OKX connector with reconciliation service");
         }
-        if (run_coinbase) {
-            (void)reconciliation.register_connector(coinbase);
+        if (run_coinbase && !reconciliation.register_connector(coinbase)) {
+            LOG_WARN("Failed to register Coinbase connector with reconciliation service");
         }
 
         auto connect_if_needed = [](LiveConnectorBase& connector, bool enabled,
@@ -222,8 +246,7 @@ auto main(int argc, char** argv) -> int {
         if (any_reconnected) {
             const ConnectorResult reconcile_res = reconciliation.reconcile_on_reconnect();
             if (reconcile_res != ConnectorResult::OK) {
-                std::cout << "reconcile_on_reconnect failed code="
-                          << static_cast<int>(reconcile_res) << "\n";
+                LOG_WARN("reconcile_on_reconnect failed", "code", static_cast<int>(reconcile_res));
             }
         }
 
@@ -240,8 +263,8 @@ auto main(int argc, char** argv) -> int {
 
         uint64_t next_id = 1;
 
-        std::cout << "trading_engine started mode=" << opts.mode << " venues=" << opts.venues
-                  << " symbol=" << opts.symbol << "\n";
+        LOG_INFO("trading_engine started", "mode", opts.mode.c_str(), "venues", opts.venues.c_str(),
+                 "symbol", opts.symbol.c_str());
 
         while (g_running.load(std::memory_order_acquire)) {
             if (kill_switch.is_active()) {
@@ -249,6 +272,9 @@ auto main(int argc, char** argv) -> int {
             }
 
             kill_switch.heartbeat();
+            // NOTE: check_heartbeat() called from the same thread immediately after
+            // heartbeat() will only catch hangs within a single loop iteration (>= timeout).
+            // For continuous dead-man detection, wire this to a dedicated watchdog thread.
             (void)kill_switch.check_heartbeat();
 
             const AlphaSignal alpha_signal = alpha_reader.read();
@@ -264,6 +290,14 @@ auto main(int argc, char** argv) -> int {
             if (!decision.blocked_by_alpha) {
                 for (size_t i = 0; i < decision.child_count; ++i) {
                     const auto& child = decision.children[i];
+
+                    // Bug fix: check_order_rate() was never called; the rate-limiting
+                    // circuit breaker was silently bypassed on every order submission.
+                    if (circuit_breaker.check_order_rate() != CircuitCheckResult::OK) {
+                        LOG_WARN("circuit-breaker: order rate limit reached, halting submissions");
+                        break;
+                    }
+
                     const Order child_order =
                         make_child_order(opts.symbol.c_str(), child.exchange, Side::BID,
                                          child.quantity, child.limit_price, next_id++);
@@ -271,13 +305,17 @@ auto main(int argc, char** argv) -> int {
                     const double signed_notional = child.quantity * child.limit_price;
                     if (global_risk.commit_order(child.exchange, child_order.symbol,
                                                  signed_notional) != GlobalRiskCheckResult::OK) {
-                        std::cout << "global-risk blocked submit venue="
-                                  << exchange_to_string(child.exchange) << "\n";
+                        LOG_WARN("global-risk blocked submit", "venue",
+                                 exchange_to_string(child.exchange));
                         continue;
                     }
 
-                    if (circuit_breaker.check_drawdown(0.0) != CircuitCheckResult::OK) {
-                        std::cout << "circuit-breaker blocked submit\n";
+                    // TODO: pass real cumulative realized P&L here once fill callbacks
+                    //       are wired into the engine. Until then this check is a no-op
+                    //       but is kept to preserve the call structure.
+                    if (circuit_breaker.check_drawdown(circuit_breaker.realized_pnl()) !=
+                        CircuitCheckResult::OK) {
+                        LOG_WARN("circuit-breaker: drawdown limit reached, halting submissions");
                         break;
                     }
 
@@ -299,9 +337,9 @@ auto main(int argc, char** argv) -> int {
                         break;
                     }
 
-                    std::cout << "child=" << i << " venue=" << exchange_to_string(child.exchange)
-                              << " qty=" << child.quantity << " result=" << static_cast<int>(res)
-                              << "\n";
+                    LOG_INFO("order submitted", "child", static_cast<int>(i), "venue",
+                             exchange_to_string(child.exchange), "qty", child.quantity, "result",
+                             static_cast<int>(res));
                 }
             }
 
@@ -316,8 +354,8 @@ auto main(int argc, char** argv) -> int {
                 if (recovered_connection) {
                     const ConnectorResult reconcile_res = reconciliation.reconcile_on_reconnect();
                     if (reconcile_res != ConnectorResult::OK) {
-                        std::cout << "reconcile_on_reconnect failed code="
-                                  << static_cast<int>(reconcile_res) << "\n";
+                        LOG_WARN("reconcile_on_reconnect failed", "code",
+                                 static_cast<int>(reconcile_res));
                     }
                 }
                 next_reconnect = now + reconnect_interval;
@@ -326,8 +364,7 @@ auto main(int argc, char** argv) -> int {
             if (now >= next_reconciliation) {
                 const ConnectorResult drift_res = reconciliation.run_periodic_drift_check();
                 if (drift_res != ConnectorResult::OK) {
-                    std::cout << "periodic_reconciliation failed code="
-                              << static_cast<int>(drift_res) << "\n";
+                    LOG_WARN("periodic_reconciliation failed", "code", static_cast<int>(drift_res));
                 }
                 next_reconciliation = now + reconciliation_interval;
             }
@@ -335,22 +372,33 @@ auto main(int argc, char** argv) -> int {
             std::this_thread::sleep_for(loop_interval);
         }
 
-        binance.disconnect();
-        kraken.disconnect();
-        okx.disconnect();
-        coinbase.disconnect();
-        binance_feed.stop();
-        kraken_feed.stop();
-        okx_feed.stop();
-        coinbase_feed.stop();
+        // Bug fix: previously all connectors and feeds were unconditionally stopped even
+        // when they were never started (venue disabled). Guard with venue flags to only
+        // clean up what was actually started.
+        if (run_binance) {
+            binance.disconnect();
+            binance_feed.stop();
+        }
+        if (run_kraken) {
+            kraken.disconnect();
+            kraken_feed.stop();
+        }
+        if (run_okx) {
+            okx.disconnect();
+            okx_feed.stop();
+        }
+        if (run_coinbase) {
+            coinbase.disconnect();
+            coinbase_feed.stop();
+        }
 
-        std::cout << "trading_engine shutdown complete\n";
+        LOG_INFO("trading_engine shutdown complete");
 
         return 0;
     } catch (const std::exception& ex) {
-        std::cerr << "trading_engine fatal error: " << ex.what() << "\n";
+        LOG_ERROR("trading_engine fatal error", "what", ex.what());
     } catch (...) {
-        std::cerr << "trading_engine fatal error: unknown exception\n";
+        LOG_ERROR("trading_engine fatal error", "what", "unknown exception");
     }
 
     return 1;
