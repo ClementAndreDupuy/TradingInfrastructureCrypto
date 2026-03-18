@@ -5,6 +5,7 @@ from .regime import (
     infer_regime_probabilities,
     load_regime_artifact,
     save_regime_artifact,
+    train_regime_model_from_df,
     train_regime_model_from_ipc,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "infer_regime_probabilities",
     "load_regime_artifact",
     "save_regime_artifact",
+    "train_regime_model_from_df",
     "train_regime_model_from_ipc",
 ]

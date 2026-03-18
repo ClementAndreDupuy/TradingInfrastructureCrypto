@@ -56,7 +56,7 @@ apply_config_defaults() {
 
     local symbol_from_cfg venues_from_cfg duration_from_cfg interval_from_cfg
     local env_from_cfg signal_file_from_cfg lob_feed_path_from_cfg
-    local model_path_from_cfg secondary_model_from_cfg
+    local model_path_from_cfg secondary_model_from_cfg regime_model_path_from_cfg
     local train_ticks_from_cfg train_epochs_from_cfg report_interval_from_cfg
     local alpha_seq_len_from_cfg alpha_log_path_from_cfg
     local fallback_key_from_cfg fallback_secret_from_cfg
@@ -70,6 +70,7 @@ apply_config_defaults() {
     lob_feed_path_from_cfg="$(read_yaml_value "$CONFIG_FILE" "lob_feed_path")"
     model_path_from_cfg="$(read_yaml_value "$CONFIG_FILE" "model_path")"
     secondary_model_from_cfg="$(read_yaml_value "$CONFIG_FILE" "secondary_model_path")"
+    regime_model_path_from_cfg="$(read_yaml_value "$CONFIG_FILE" "regime_model_path")"
     train_ticks_from_cfg="$(read_yaml_value "$CONFIG_FILE" "train_ticks")"
     train_epochs_from_cfg="$(read_yaml_value "$CONFIG_FILE" "train_epochs")"
     report_interval_from_cfg="$(read_yaml_value "$CONFIG_FILE" "report_interval")"
@@ -87,6 +88,7 @@ apply_config_defaults() {
     [[ -n "$lob_feed_path_from_cfg" ]] && LOB_FEED_PATH="$lob_feed_path_from_cfg"
     [[ -n "$model_path_from_cfg" ]] && MODEL_PATH="$(resolve_config_path "$model_path_from_cfg")"
     [[ -n "$secondary_model_from_cfg" ]] && SECONDARY_MODEL_PATH="$(resolve_config_path "$secondary_model_from_cfg")"
+    [[ -n "$regime_model_path_from_cfg" ]] && REGIME_MODEL_PATH="$(resolve_config_path "$regime_model_path_from_cfg")"
     [[ -n "$train_ticks_from_cfg" ]] && TRAIN_TICKS="$train_ticks_from_cfg"
     [[ -n "$train_epochs_from_cfg" ]] && TRAIN_EPOCHS="$train_epochs_from_cfg"
     [[ -n "$report_interval_from_cfg" ]] && REPORT_INTERVAL="$report_interval_from_cfg"
@@ -115,6 +117,8 @@ Options:
                                 (default: models/neural_alpha_latest.pt)
   --secondary-model-path <PATH> Secondary model checkpoint path
                                 (default: models/neural_alpha_secondary.pt)
+  --regime-model-path <PATH>    Regime model artifact path
+                                (default: models/r2_regime_model.json)
   --train-ticks <N>             Train if model missing (default: 400)
   --train-epochs <N>            Train epochs when bootstrap training (default: 5)
   --report-interval <SEC>       Python shadow summary cadence (default: 60)
@@ -138,6 +142,7 @@ SIGNAL_FILE="/tmp/trt_ipc/neural_alpha_signal.bin"
 LOB_FEED_PATH="/tmp/trt_ipc/trt_lob_feed.bin"
 MODEL_PATH="$REPO_ROOT/models/neural_alpha_latest.pt"
 SECONDARY_MODEL_PATH="$REPO_ROOT/models/neural_alpha_secondary.pt"
+REGIME_MODEL_PATH="$REPO_ROOT/models/r2_regime_model.json"
 MODEL_PATH_SET=0
 SECONDARY_MODEL_PATH_SET=0
 TRAIN_TICKS=400
@@ -173,6 +178,7 @@ while [[ $# -gt 0 ]]; do
         --lob-feed-path) LOB_FEED_PATH="$2"; shift 2 ;;
         --model-path) MODEL_PATH="$2"; MODEL_PATH_SET=1; shift 2 ;;
         --secondary-model-path) SECONDARY_MODEL_PATH="$2"; SECONDARY_MODEL_PATH_SET=1; shift 2 ;;
+        --regime-model-path) REGIME_MODEL_PATH="$2"; shift 2 ;;
         --train-ticks) TRAIN_TICKS="$2"; shift 2 ;;
         --train-epochs) TRAIN_EPOCHS="$2"; shift 2 ;;
         --report-interval) REPORT_INTERVAL="$2"; shift 2 ;;
@@ -190,6 +196,9 @@ if [[ "$MODEL_PATH_SET" -eq 0 && "$MODEL_PATH" == "$REPO_ROOT/models/neural_alph
 fi
 if [[ "$SECONDARY_MODEL_PATH_SET" -eq 0 && "$SECONDARY_MODEL_PATH" == "$REPO_ROOT/models/neural_alpha_secondary.pt" ]]; then
     SECONDARY_MODEL_PATH="$REPO_ROOT/models/neural_alpha_${SYMBOL_TAG}_secondary.pt"
+fi
+if [[ "$REGIME_MODEL_PATH" == "$REPO_ROOT/models/r2_regime_model.json" ]]; then
+    REGIME_MODEL_PATH="$REPO_ROOT/models/r2_regime_model_${SYMBOL_TAG}.json"
 fi
 
 if [[ -f "$ENV_FILE" ]]; then
@@ -384,6 +393,7 @@ if [[ "$SKIP_ALPHA" -eq 0 ]]; then
         --exchanges "$ALPHA_EXCHANGES"
         --model-path "$MODEL_PATH"
         --secondary-model-path "$SECONDARY_MODEL_PATH"
+        --regime-model-path "$REGIME_MODEL_PATH"
         --train-ticks "$TRAIN_TICKS"
         --train-epochs "$TRAIN_EPOCHS"
         --log-path "$ALPHA_LOG_PATH"

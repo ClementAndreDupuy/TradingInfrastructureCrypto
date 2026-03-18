@@ -55,7 +55,14 @@ from .dataset import rolling_normalise
 from .features import compute_lob_tensor, compute_scalar_features
 from .governance import ChampionChallengerRegistry, DriftGuard, EnsembleCanary
 from .model import CryptoAlphaNet
-from research.regime import RegimeSignalPublisher, infer_regime_probabilities, load_regime_artifact
+from research.regime import (
+    RegimeConfig,
+    RegimeSignalPublisher,
+    infer_regime_probabilities,
+    load_regime_artifact,
+    save_regime_artifact,
+    train_regime_model_from_df,
+)
 from .pipeline import (
     _fetch_binance_l5,
     _fetch_coinbase_l5,
@@ -361,6 +368,67 @@ class NeuralAlphaShadowSession:
             f"Val loss: {best['metrics'].get('loss_total', 'n/a'):.4f} "
             f"saved={out_path}"
         )
+
+        secondary_path = (
+            Path(self.cfg.secondary_model_path)
+            if self.cfg.secondary_model_path
+            else _symbol_model_path(self.cfg.symbol, "secondary")
+        )
+        try:
+            self._train_secondary_on_data(df, secondary_path)
+        except Exception as exc:
+            print(f"[WARN] secondary model training failed: {exc}")
+
+        try:
+            self._train_regime_on_data(df)
+        except Exception as exc:
+            print(f"[WARN] regime model training failed: {exc}")
+
+    def _train_secondary_on_data(self, df: pl.DataFrame, out_path: Path) -> None:
+        max_folds = max(1, len(df) // (4 * self.cfg.seq_len))
+        n_folds = min(2, max_folds)
+        tcfg = TrainerConfig(
+            epochs=self.cfg.train_epochs,
+            n_folds=n_folds,
+            seq_len=self.cfg.seq_len,
+            d_spatial=32,
+            d_temporal=64,
+            n_temp_layers=1,
+        )
+        fold_results = walk_forward_train(df, tcfg)
+        if not fold_results:
+            print(
+                f"[WARN] Secondary model training produced no fold results "
+                f"({len(df)} ticks, seq_len={self.cfg.seq_len}). "
+                "Secondary model not updated."
+            )
+            return
+        best = min(fold_results, key=lambda f: f["metrics"].get("loss_total", 1e9))
+        state = best["model_state"]
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_out = out_path.with_suffix(out_path.suffix + ".tmp")
+        torch.save(state, tmp_out)
+        tmp_out.replace(out_path)
+        model = self._build_model(d_spatial=32, d_temporal=64, n_temp_layers=1)
+        model.load_state_dict(state)
+        self._secondary_model = model
+        self._canary = EnsembleCanary(
+            window=self.cfg.canary_window,
+            min_samples=self.cfg.canary_min_samples,
+            ic_margin=self.cfg.canary_ic_margin,
+            icir_floor=self.cfg.canary_icir_floor,
+        )
+        self._prev_primary_signal = None
+        self._prev_ensemble_signal = None
+        print(f"Secondary model trained and saved to {out_path}")
+
+    def _train_regime_on_data(self, df: pl.DataFrame) -> None:
+        regime_path = Path(self.cfg.regime_model_path)
+        artifact, distribution = train_regime_model_from_df(df, RegimeConfig())
+        regime_path.parent.mkdir(parents=True, exist_ok=True)
+        save_regime_artifact(artifact, str(regime_path))
+        self._regime_artifact = artifact
+        print(f"Regime model trained, distribution={distribution}, saved to {regime_path}")
 
     def _evaluate_state_on_holdout(self, state_dict: dict[str, torch.Tensor], holdout_df: pl.DataFrame) -> float:
         dataset = LOBDataset(holdout_df, DatasetConfig(seq_len=self.cfg.seq_len))
@@ -778,32 +846,45 @@ def main() -> None:
 
     if primary_model_path.exists():
         session.load_model(str(primary_model_path))
-        if secondary_model_path.exists():
-            session.load_secondary_model(str(secondary_model_path))
-        session._validate_production_stack()
-    elif cfg.train_ticks > 0:
+    if secondary_model_path.exists():
+        session.load_secondary_model(str(secondary_model_path))
+
+    any_missing = (
+        session._model is None
+        or session._secondary_model is None
+        or session._regime_artifact is None
+    )
+
+    if any_missing and cfg.train_ticks > 0:
         session.train_on_recent(cfg.train_ticks)
-        if session._model is None:
-            print(
-                "WARNING: initial training produced no model (dataset too small). "
-                "Continuous training will bootstrap once enough ticks accumulate. "
-                "Use --no-require-full-model-stack to suppress this warning."
-            )
-            if cfg.require_full_model_stack:
-                raise RuntimeError(
-                    "Research production stack requires a trained model. "
-                    "Collect more ticks before starting, or use "
-                    "--no-require-full-model-stack for non-production debugging."
-                )
-        else:
-            if secondary_model_path.exists():
-                session.load_secondary_model(str(secondary_model_path))
-            session._validate_production_stack()
+
+    still_missing = (
+        session._model is None
+        or session._secondary_model is None
+        or session._regime_artifact is None
+    )
+
+    if not still_missing:
+        session._validate_production_stack()
     else:
+        missing = []
+        if session._model is None:
+            missing.append("primary alpha model")
+        if session._secondary_model is None:
+            missing.append("secondary alpha model")
+        if session._regime_artifact is None:
+            missing.append("regime model")
+        if session._model is None and cfg.require_full_model_stack:
+            raise RuntimeError(
+                "Research production stack requires a trained model. "
+                "Collect more ticks before starting, set --train-ticks, or use "
+                "--no-require-full-model-stack for non-production debugging."
+            )
         print(
-            "WARNING: no model loaded and --train-ticks not set. "
-            "Continuous training will bootstrap once enough ticks accumulate."
+            f"[WARN] Incomplete model stack ({', '.join(missing)} not yet available). "
+            "Continuous training will bootstrap remaining models once enough data accumulates."
         )
+
     session.run()
 
 
