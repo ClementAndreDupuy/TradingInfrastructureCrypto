@@ -23,6 +23,7 @@ Flat array indexed by price tick grid — not `std::map`. Normalized L2 represen
 
 Unit tests → replay tests (recorded feed, compare final state) → fuzz tests → gap injection (verify snapshot recovery).
 
+- Keep comments limited to invariants such as sequence handling, atomic visibility boundaries, and re-centering semantics; delete banner comments and obvious narrations of the control flow.
 ## Reusable Agent Memory (Updated)
 
 - Orderbook edits require **explicit invariants** in code review notes/tests:

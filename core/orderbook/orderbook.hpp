@@ -9,19 +9,6 @@
 
 namespace trading {
 
-// Flat-array order book keyed by price tick grid.
-//
-// Price grid is centered on the best bid at snapshot time:
-//   base_price = best_bid - (max_levels / 2) * tick_size
-//   index      = round((price - base_price) / tick_size)
-//
-// This avoids the modulo-collision bug and gives O(1) updates
-// with full cache locality. Pre-allocates all memory at construction.
-//
-// Sizing guidelines:
-//   BTC/USD : tick_size=1.0,  max_levels=20000  → $20,000 range
-//   ETH/USD : tick_size=0.10, max_levels=20000  → $2,000 range
-//   SOL/USD : tick_size=0.01, max_levels=20000  → $200 range
 class OrderBook {
   public:
     OrderBook(const std::string& symbol, Exchange exchange, double tick_size = 1.0,
@@ -31,7 +18,6 @@ class OrderBook {
           ask_sizes_(max_levels, 0.0), scratch_bid_sizes_(max_levels, 0.0),
           scratch_ask_sizes_(max_levels, 0.0), out_of_range_streak_(0) {}
 
-    // Clears the book and re-centers the price grid around the snapshot's best bid.
     Result apply_snapshot(const Snapshot& snapshot) {
         if (snapshot.bids.empty() || snapshot.asks.empty()) {
             return Result::ERROR_INVALID_PRICE;
@@ -63,7 +49,6 @@ class OrderBook {
             }
         }
 
-        // Center grid: base = best_bid - half_range
         double new_base = best_bid - static_cast<double>(max_levels_ / 2) * tick_size_;
 
         // Reset state — mark uninitialized first so concurrent readers see a clean boundary
@@ -117,7 +102,6 @@ class OrderBook {
             return Result::ERROR_INVALID_SIZE;
         }
 
-        // Skip stale deltas (already reflected in a newer snapshot or earlier delta)
         if (delta.sequence > 0 && delta.sequence <= sequence_.load(std::memory_order_acquire)) {
             return Result::SUCCESS;
         }

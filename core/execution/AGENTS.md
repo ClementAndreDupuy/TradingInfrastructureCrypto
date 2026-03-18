@@ -152,6 +152,11 @@ NeuralAlphaMarketMaker.on_fill()
 
 ---
 
+## Comment Hygiene
+
+- Keep execution comments focused on order-state invariants, venue contracts, and failure handling.
+- Remove banner comments, prose summaries of the control flow, and inline comments that only restate nearby code.
+
 ## Key Files
 
 | File | Purpose |

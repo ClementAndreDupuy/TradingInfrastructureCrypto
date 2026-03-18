@@ -39,6 +39,7 @@ integrity so `SmartOrderRouter` inputs remain consistent across venues.
 - Treating reconnect as a continuation instead of requiring re-sync.
 - Mixing exchange-specific precision rules without normalization.
 
+- Keep comments focused on venue protocol contracts, sequencing rules, and resync triggers; remove decorative section headers and usage examples from implementation files.
 ## Reusable Agent Memory (Updated)
 
 - Feed code should remain exchange-isolated (`<exchange>/`) with normalization only in shared/common paths.

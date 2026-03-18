@@ -1,17 +1,5 @@
 #pragma once
 
-// OrderManager — tracks open orders and net position per symbol.
-//
-// Sits between the strategy and ExchangeConnector:
-//   strategy → OrderManager::submit() → connector.submit_order()
-//   connector.on_fill → SPSC queue → OrderManager::drain_fills() → strategy callback
-//
-// Pre-allocated slot pool — no heap allocation after construction.
-// All operations are O(MAX_ORDERS) worst case; fine for small open-order sets.
-//
-// Threading: receive thread enqueues fills; strategy thread owns all mutations.
-// Call drain_fills() at the start of every strategy iteration.
-
 #include "../common/logging.hpp"
 #include "exchange_connector.hpp"
 

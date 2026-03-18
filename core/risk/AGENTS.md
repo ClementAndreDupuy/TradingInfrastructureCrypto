@@ -31,6 +31,7 @@ Risk limits in `config/{dev,shadow,live}/risk.yaml`. Always tighter in live than
 - No heap allocation after construction
 - Lock-free atomic operations only
 
+- Keep comments only when they explain fail-fast ordering, atomic/concurrency rationale, or guard semantics that are not obvious from the code.
 ## Reusable Agent Memory (Updated)
 
 - Preserve check ordering unless there is a strong latency/correctness reason; ordering encodes fail-fast policy.
