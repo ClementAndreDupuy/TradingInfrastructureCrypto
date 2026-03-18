@@ -24,6 +24,11 @@ import numpy as np
 import polars as pl
 import requests
 
+try:
+    import trading_core as _tc
+except ImportError:
+    _tc = None  # type: ignore[assignment]
+
 from .core_bridge import CoreBridge
 
 if TYPE_CHECKING:
@@ -59,10 +64,14 @@ def _parse_binance_l5(d: dict, symbol: str, exchange_label: str) -> dict:
 
 
 def _binance_symbol(symbol: str) -> str:
+    if _tc is not None:
+        return _tc.SymbolMapper.map_for_exchange(_tc.Exchange.BINANCE, symbol)
     return symbol.replace("-", "").upper()
 
 
 def _okx_symbol(symbol: str) -> str:
+    if _tc is not None:
+        return _tc.SymbolMapper.map_for_exchange(_tc.Exchange.OKX, symbol)
     clean = symbol.replace("-", "").upper()
     if clean.endswith("USDT"):
         return f"{clean[:-4]}-USDT"
@@ -72,6 +81,9 @@ def _okx_symbol(symbol: str) -> str:
 
 
 def _coinbase_symbol(symbol: str) -> str:
+    # Coinbase spot uses USD-denominated pairs, so USDT is mapped to USD.
+    if _tc is not None:
+        return _tc.SymbolMapper.map_for_exchange(_tc.Exchange.COINBASE, symbol).replace("USDT", "USD")
     clean = symbol.replace("-", "").upper()
     if clean.endswith("USDT"):
         return f"{clean[:-4]}-USD"
@@ -82,16 +94,26 @@ def _coinbase_symbol(symbol: str) -> str:
 
 def _symbol_family(symbol: str) -> str:
     """Normalise venue-specific symbols (e.g. XBTUSD / BTC-USD / BTCUSDT) to basequote."""
-    s = symbol.upper().replace("-", "").replace("_", "")
+    s = symbol.upper()
     if s.startswith("PI_"):
         s = s[3:]
-    s = s.replace("XBT", "BTC")
     if s.endswith("PERP"):
         s = s[:-4]
-    return s
+    s = s.replace("XBT", "BTC")
+    if _tc is not None:
+        return _tc.SymbolMapper.map_all(s).binance
+    return s.replace("-", "").replace("_", "").replace("/", "")
 
 
 def _kraken_symbol(symbol: str) -> str:
+    # Kraken Futures REST uses PI_{BASE}{QUOTE} format with XBT for BTC and USD not USDT.
+    if _tc is not None:
+        vs = _tc.SymbolMapper.map_all(symbol)
+        base, _, quote = vs.kraken_rest.partition("/")
+        if base == "BTC":
+            base = "XBT"
+        quote = quote.replace("USDT", "USD")
+        return f"PI_{base}{quote}"
     clean = symbol.replace("-", "").upper()
     if clean.endswith("USDT"):
         base = clean[:-4]

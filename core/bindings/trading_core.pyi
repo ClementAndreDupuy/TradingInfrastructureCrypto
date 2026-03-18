@@ -52,6 +52,52 @@ class KillReason(IntEnum):
     BOOK_CORRUPTED: int
 
 
+# ── SymbolMapper ───────────────────────────────────────────────────────────────
+
+
+class VenueSymbols:
+    """Venue-specific symbol strings produced by SymbolMapper.map_all().
+
+    All fields are read-only strings in the format expected by each exchange.
+    """
+
+    binance: str      # e.g. "BTCUSDT"
+    okx: str          # e.g. "BTC-USDT"
+    coinbase: str     # e.g. "BTC-USDT"
+    kraken_ws: str    # e.g. "BTC/USDT"
+    kraken_rest: str  # e.g. "BTC/USDT"
+
+    def for_exchange(self, exchange: Exchange) -> str:
+        """Return the venue-specific symbol string for the given Exchange."""
+        ...
+
+    def __repr__(self) -> str: ...
+
+
+class SymbolMapper:
+    """Converts a canonical symbol string to venue-specific formats.
+
+    Handles input with separators (``-``, ``/``, ``_``) or no separator
+    (e.g. ``"BTCUSDT"``).  All methods are static; do not instantiate.
+
+    Raises ``ValueError`` when the symbol is empty.
+    """
+
+    @staticmethod
+    def map_all(symbol: str) -> VenueSymbols:
+        """Map a canonical symbol to all venue formats.
+
+        Returns a :class:`VenueSymbols` containing exchange-specific strings.
+        Raises ``ValueError`` on empty input.
+        """
+        ...
+
+    @staticmethod
+    def map_for_exchange(exchange: Exchange, symbol: str) -> str:
+        """Convenience: map a canonical symbol to a single venue's format."""
+        ...
+
+
 # ── Structs ────────────────────────────────────────────────────────────────────
 
 

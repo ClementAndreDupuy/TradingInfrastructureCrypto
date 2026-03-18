@@ -14,6 +14,13 @@ sys.path.insert(0, str(ROOT))
 from research.neural_alpha.core_bridge import CoreBridge
 
 try:
+    import trading_core as tc
+    _HAS_TC = True
+except ImportError:
+    tc = None  # type: ignore[assignment]
+    _HAS_TC = False
+
+try:
     import polars as pl
 except ModuleNotFoundError:  # pragma: no cover - environment-dependent
     pl = None
@@ -205,3 +212,91 @@ def test_symbol_family_normalises_exchange_symbols() -> None:
     assert pipeline._symbol_family("PI_XBTUSD") == "BTCUSD"
     assert pipeline._symbol_family("BTC-USD") == "BTCUSD"
     assert pipeline._symbol_family("BTCUSDT") == "BTCUSDT"
+
+
+# ── Symbol mapper delegation tests ────────────────────────────────────────────
+# These verify that each helper delegates to SymbolMapper (when available) and
+# produces the correct venue-specific format for representative inputs.
+
+_SKIP_NO_PIPELINE = pytest.mark.skipif(
+    pl is None or pipeline is None, reason="polars not installed"
+)
+
+
+@_SKIP_NO_PIPELINE
+def test_binance_symbol_compact() -> None:
+    assert pipeline._binance_symbol("BTCUSDT") == "BTCUSDT"
+
+
+@_SKIP_NO_PIPELINE
+def test_binance_symbol_strips_separator() -> None:
+    assert pipeline._binance_symbol("BTC-USDT") == "BTCUSDT"
+    assert pipeline._binance_symbol("BTC/USDT") == "BTCUSDT"
+
+
+@_SKIP_NO_PIPELINE
+def test_okx_symbol_formats_with_dash() -> None:
+    assert pipeline._okx_symbol("BTCUSDT") == "BTC-USDT"
+    assert pipeline._okx_symbol("BTC/USDT") == "BTC-USDT"
+
+
+@_SKIP_NO_PIPELINE
+def test_okx_symbol_usd_pair() -> None:
+    assert pipeline._okx_symbol("BTCUSD") == "BTC-USD"
+
+
+@_SKIP_NO_PIPELINE
+def test_coinbase_symbol_maps_usdt_to_usd() -> None:
+    # Coinbase spot only has USD-denominated pairs, never USDT.
+    assert pipeline._coinbase_symbol("BTCUSDT") == "BTC-USD"
+    assert pipeline._coinbase_symbol("BTC-USDT") == "BTC-USD"
+
+
+@_SKIP_NO_PIPELINE
+def test_coinbase_symbol_preserves_usd() -> None:
+    assert pipeline._coinbase_symbol("BTCUSD") == "BTC-USD"
+
+
+@_SKIP_NO_PIPELINE
+def test_kraken_symbol_futures_format() -> None:
+    # Kraken Futures REST expects PI_XBTUSD style.
+    assert pipeline._kraken_symbol("BTCUSDT") == "PI_XBTUSD"
+    assert pipeline._kraken_symbol("BTC-USDT") == "PI_XBTUSD"
+
+
+@_SKIP_NO_PIPELINE
+def test_kraken_symbol_non_btc() -> None:
+    assert pipeline._kraken_symbol("ETHUSDT") == "PI_ETHUSD"
+
+
+@pytest.mark.skipif(not _HAS_TC, reason="trading_core extension not built")
+def test_venue_symbols_bindings_round_trip() -> None:
+    """SymbolMapper Python bindings return correct venue strings."""
+    vs = tc.SymbolMapper.map_all("BTCUSDT")
+    assert vs.binance == "BTCUSDT"
+    assert vs.okx == "BTC-USDT"
+    assert vs.coinbase == "BTC-USDT"
+    assert vs.kraken_ws == "BTC/USDT"
+    assert vs.kraken_rest == "BTC/USDT"
+
+
+@pytest.mark.skipif(not _HAS_TC, reason="trading_core extension not built")
+def test_venue_symbols_for_exchange() -> None:
+    vs = tc.SymbolMapper.map_all("BTC-USDT")
+    assert vs.for_exchange(tc.Exchange.BINANCE) == "BTCUSDT"
+    assert vs.for_exchange(tc.Exchange.OKX) == "BTC-USDT"
+    assert vs.for_exchange(tc.Exchange.KRAKEN) == "BTC/USDT"
+
+
+@pytest.mark.skipif(not _HAS_TC, reason="trading_core extension not built")
+def test_map_for_exchange_convenience() -> None:
+    assert tc.SymbolMapper.map_for_exchange(tc.Exchange.BINANCE, "BTC/USDT") == "BTCUSDT"
+    assert tc.SymbolMapper.map_for_exchange(tc.Exchange.OKX, "BTCUSDT") == "BTC-USDT"
+    assert tc.SymbolMapper.map_for_exchange(tc.Exchange.COINBASE, "BTC_USDT") == "BTC-USDT"
+    assert tc.SymbolMapper.map_for_exchange(tc.Exchange.KRAKEN, "BTCUSDT") == "BTC/USDT"
+
+
+@pytest.mark.skipif(not _HAS_TC, reason="trading_core extension not built")
+def test_symbol_mapper_empty_raises() -> None:
+    with pytest.raises(Exception):
+        tc.SymbolMapper.map_all("")
