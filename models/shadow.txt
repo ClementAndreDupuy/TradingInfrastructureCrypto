@@ -334,3 +334,40 @@ Fold 2/2  train=1750 test=250 ticks
   [summary] safe_mode_events=24
 clementandredupuy@Mac ThamesRiverTrading %   [pretrain] epoch 4/5  loss=4.1368
   [pretrain] epoch 5/5  loss=4.1368
+
+clementandredupuy@Mac ThamesRiverTrading %   epoch   5/5  train=0.0852  val=0.0847
+  Fold 2 best val loss: 0.0847
+[MODEL_SELECT] challenger rejected on holdout (incumbent_mse=2.247792e-06, challenger_mse=5.286098e-06)
+[PRIMARY] In-place training done. Val loss: 0.0847 saved=/Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_latest.pt
+[SECONDARY] Starting secondary model training (folds=2, epochs=5, d_spatial=32, d_temporal=64)
+Device: cpu
+
+============================================================
+Fold 1/2  train=750 test=250 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=4.1079
+  [pretrain] epoch 2/5  loss=4.1079
+  [pretrain] epoch 3/5  loss=4.1079
+  [pretrain] epoch 4/5  loss=4.1079
+  [pretrain] epoch 5/5  loss=4.1079
+  epoch   5/5  train=0.2146  val=0.1899
+  Fold 1 best val loss: 0.1899
+
+============================================================
+Fold 2/2  train=1750 test=250 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=4.1368
+  [pretrain] epoch 2/5  loss=4.1368
+  [pretrain] epoch 3/5  loss=4.1368
+  [pretrain] epoch 4/5  loss=4.1368
+  [pretrain] epoch 5/5  loss=4.1368
+  epoch   5/5  train=0.1075  val=0.1058
+  Fold 2 best val loss: 0.1058
+[SECONDARY] Secondary model trained and saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_secondary.pt
+[REGIME] Starting regime model training on 2000 ticks
+[REGIME] Flat training data (5/5 features near-zero variance) — anchoring artifact to calm regime.
+[REGIME] Regime model trained, distribution={'calm': 1.0, 'trending': 0.0, 'illiquid': 0.0, 'shock': 0.0}, saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/r2_regime_model_btcusdt.json
+[CONTINUOUS_TRAIN] completed
+  [shadow] ticks=86  signal_mean=8.95bps  signal_std=238.97bps  IC=0.001
+  [shadow] ticks=86  signal_mean=8.95bps  signal_std=238.97bps  IC=0.001
+Shadow session complete.
