@@ -2,6 +2,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include "../common/symbol_mapper.hpp"
 #include "../common/types.hpp"
 #include "../feeds/binance/binance_feed_handler.hpp"
 #include "../feeds/coinbase/coinbase_feed_handler.hpp"
@@ -154,6 +155,32 @@ PYBIND11_MODULE(trading_core, m) {
         .value("CIRCUIT_BREAKER", KillReason::CIRCUIT_BREAKER)
         .value("HEARTBEAT_MISSED", KillReason::HEARTBEAT_MISSED)
         .value("BOOK_CORRUPTED", KillReason::BOOK_CORRUPTED);
+
+    // ── SymbolMapper ──────────────────────────────────────────────────────────
+
+    py::class_<VenueSymbols>(m, "VenueSymbols",
+        "Venue-specific symbol strings produced by SymbolMapper.map_all().")
+        .def_readonly("binance",     &VenueSymbols::binance)
+        .def_readonly("okx",         &VenueSymbols::okx)
+        .def_readonly("coinbase",    &VenueSymbols::coinbase)
+        .def_readonly("kraken_ws",   &VenueSymbols::kraken_ws)
+        .def_readonly("kraken_rest", &VenueSymbols::kraken_rest)
+        .def("for_exchange", &VenueSymbols::for_exchange, py::arg("exchange"),
+             "Return the venue-specific symbol string for the given Exchange.")
+        .def("__repr__", [](const VenueSymbols& vs) {
+            return "VenueSymbols(binance=" + vs.binance + ", okx=" + vs.okx +
+                   ", coinbase=" + vs.coinbase + ", kraken_ws=" + vs.kraken_ws + ")";
+        });
+
+    py::class_<SymbolMapper>(m, "SymbolMapper",
+        "Converts a canonical symbol (e.g. 'BTCUSDT', 'BTC-USDT', 'BTC/USDT') "
+        "to venue-specific formats. All methods are static.")
+        .def_static("map_all", &SymbolMapper::map_all, py::arg("symbol"),
+                    "Map a canonical symbol to all venue formats. "
+                    "Returns VenueSymbols. Raises ValueError on empty symbol.")
+        .def_static("map_for_exchange", &SymbolMapper::map_for_exchange,
+                    py::arg("exchange"), py::arg("symbol"),
+                    "Convenience: map a canonical symbol to a single venue's format.");
 
     // ── Structs ───────────────────────────────────────────────────────────────
 
