@@ -241,6 +241,37 @@ def _semantic_regime_names(raw_means: np.ndarray) -> list[str]:
     return names
 
 
+def train_regime_model_from_df(df: pl.DataFrame, cfg: RegimeConfig) -> tuple[RegimeArtifact, dict[str, float]]:
+    if cfg.n_regimes not in {3, 4}:
+        raise ValueError("R2 regime model supports exactly 3 or 4 regimes")
+
+    feat = _feature_frame(df)
+
+    x_raw = feat.to_numpy().astype(np.float64)
+    scales = x_raw.std(axis=0)
+    scales = np.where(scales < 1e-8, 1.0, scales)
+    x = x_raw / scales
+
+    labels, initial, transition, means, variances = _fit_hmm(x, cfg)
+    regime_names = _semantic_regime_names(means)
+
+    counts = np.bincount(labels, minlength=cfg.n_regimes)
+    distribution = {regime_names[i]: float(counts[i] / max(len(labels), 1)) for i in range(cfg.n_regimes)}
+
+    artifact = RegimeArtifact(
+        version="r2-regime-hmm-v1",
+        n_regimes=cfg.n_regimes,
+        feature_columns=feat.columns,
+        regime_names=regime_names,
+        initial_probs=initial.tolist(),
+        transition_matrix=transition.tolist(),
+        means=means.tolist(),
+        variances=variances.tolist(),
+        scales=scales.tolist(),
+    )
+    return artifact, distribution
+
+
 def train_regime_model_from_ipc(ipc_dir: str, cfg: RegimeConfig) -> tuple[RegimeArtifact, dict[str, float]]:
     if cfg.n_regimes not in {3, 4}:
         raise ValueError("R2 regime model supports exactly 3 or 4 regimes")

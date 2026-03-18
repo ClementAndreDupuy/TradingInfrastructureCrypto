@@ -8,6 +8,7 @@ signal_file: /tmp/trt_ipc/neural_alpha_signal.bin
 lob_feed_path: /tmp/trt_ipc/trt_lob_feed.bin
 model_path: models/neural_alpha_latest.pt
 secondary_model_path: models/neural_alpha_secondary.pt
+regime_model_path: models/r2_regime_model.json
 train_ticks: 400
 train_epochs: 5
 report_interval: 60
