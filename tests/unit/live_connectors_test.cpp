@@ -131,9 +131,9 @@ void run_connector_flow(Connector& c, Exchange ex, const char* symbol, const cha
 
 TEST(LiveConnectorsTest, BinanceAuthenticatedFlow) {
     BinanceConnector c("k", "s", "https://binance.test");
-    run_connector_flow(c, Exchange::BINANCE, "BTCUSDT", R"({"orderId":"12345"})",
-                       R"({"orderId":"456"})", R"({"status":"NEW","executedQty":0,"avgPrice":0})",
-                       R"({"orderId":"12345","status":"CANCELED"})", R"([])");
+    run_connector_flow(c, Exchange::BINANCE, "BTCUSDT", R"({"orderId":12345})",
+                       R"({"orderId":456})", R"({"status":"NEW","executedQty":0,"avgPrice":0})",
+                       R"({"orderId":12345,"status":"CANCELED"})", R"([])");
 }
 
 TEST(LiveConnectorsTest, KrakenAuthenticatedFlow) {
