@@ -99,6 +99,66 @@ def _load_prod_model_ic() -> float:
     return float(meta.get("ic_mean", -1.0))
 
 
+def _compute_holdout_ic(model_path: Path, holdout_df, cfg: "TrainerConfig") -> float:
+    """
+    Run `model_path` on `holdout_df` and return the IC (Spearman correlation
+    of the mid-horizon return prediction against realised mid-horizon return).
+
+    Evaluating BOTH champion and challenger on the **same** held-out slice
+    eliminates the stale-IC bias that arises when the champion's stored IC was
+    computed on a different day's data distribution.
+
+    Returns -1.0 if the model file is missing or the holdout is too small.
+    """
+    if not model_path.exists():
+        return -1.0
+
+    from research.neural_alpha.dataset import DatasetConfig, LOBDataset
+    from research.neural_alpha.model import CryptoAlphaNet
+    from torch.utils.data import DataLoader
+
+    ds_cfg = DatasetConfig(seq_len=cfg.seq_len)
+    dataset = LOBDataset(holdout_df, ds_cfg)
+    if len(dataset) < 10:
+        return -1.0
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = CryptoAlphaNet(
+        d_spatial=cfg.d_spatial,
+        d_temporal=cfg.d_temporal,
+        seq_len=cfg.seq_len,
+    ).to(device)
+    try:
+        state = torch.load(model_path, map_location=device, weights_only=True)
+        model.load_state_dict(state, strict=True)
+    except Exception as exc:
+        log.warning("Could not load model %s for holdout IC evaluation: %s", model_path, exc)
+        return -1.0
+    model.eval()
+
+    loader = DataLoader(dataset, batch_size=64, shuffle=False)
+    preds_list: list[np.ndarray] = []
+    labels_list: list[np.ndarray] = []
+    with torch.no_grad():
+        for batch in loader:
+            lob = batch["lob"].to(device)
+            scalar = batch["scalar"].to(device)
+            out = model(lob, scalar)
+            # Mid-horizon return: index 2 of the 4-horizon head (100-tick)
+            preds_list.append(out["returns"][:, -1, 2].cpu().numpy())
+            labels_list.append(batch["labels"][:, -1, 2].numpy())
+
+    if not preds_list:
+        return -1.0
+    preds = np.concatenate(preds_list)
+    labels = np.concatenate(labels_list)
+    if preds.std() < 1e-9 or labels.std() < 1e-9:
+        return -1.0
+    from scipy.stats import spearmanr
+    ic, _ = spearmanr(preds, labels)
+    return float(ic) if np.isfinite(ic) else -1.0
+
+
 def _save_model_meta(path: Path, metrics: dict) -> None:
     with open(path.with_suffix(".json"), "w") as f:
         json.dump(metrics, f, indent=2)
@@ -168,6 +228,12 @@ def _write_train_log(date_str: str, metrics: dict) -> None:
         "# HELP neural_alpha_ensemble_promoted Whether the ensemble was promoted (1=yes)",
         "# TYPE neural_alpha_ensemble_promoted gauge",
         f"neural_alpha_ensemble_promoted {1 if metrics.get('ensemble_promoted') else 0}",
+        "# HELP neural_alpha_challenger_holdout_ic Challenger IC on shared OOS holdout",
+        "# TYPE neural_alpha_challenger_holdout_ic gauge",
+        f"neural_alpha_challenger_holdout_ic {metrics.get('challenger_holdout_ic', 0.0):.6f}",
+        "# HELP neural_alpha_champion_holdout_ic Champion IC on the same shared OOS holdout",
+        "# TYPE neural_alpha_champion_holdout_ic gauge",
+        f"neural_alpha_champion_holdout_ic {metrics.get('champion_holdout_ic', 0.0):.6f}",
     ]
     prom_out.write_text("\n".join(lines) + "\n")
 
@@ -221,6 +287,9 @@ def run() -> dict:
         d_temporal=128,
         pretrain=True,
         pretrain_epochs=5,
+        lr_warmup_epochs=3,
+        early_stop_patience=5,
+        log_every_epochs=1,
     )
     log.info("Starting walk-forward training (%d folds)…", cfg.n_folds)
     fold_results = walk_forward_train(df, cfg)
@@ -329,26 +398,52 @@ def run() -> dict:
     registry = ChampionChallengerRegistry(REGISTRY_PATH)
     challenger_id = registry.register_challenger(CANDIDATE_MODEL_PATH, train_metrics)
 
-    # 7. Promote if better than current production model
-    prod_ic = _load_prod_model_ic()
-    promoted = alpha_metrics.ic_mean >= PROMOTE_IC_MIN and alpha_metrics.ic_mean > prod_ic
+    # 7. Promote if better than current production model — compared on the SAME
+    #    held-out slice so champion and challenger are always benchmarked fairly.
+    #    The last fold's test data is used as the shared OOS holdout: it has not
+    #    been seen by the challenger during walk-forward training and it uses the
+    #    same data distribution as today's session.
+    fold_size = len(df) // cfg.n_folds
+    holdout_start = len(df) - fold_size
+    holdout_df = df[holdout_start:]
+
+    challenger_holdout_ic = _compute_holdout_ic(CANDIDATE_MODEL_PATH, holdout_df, cfg)
+    champion_holdout_ic = _compute_holdout_ic(PROD_MODEL_PATH, holdout_df, cfg)
+    log.info(
+        "Holdout IC — challenger=%.4f  champion=%.4f  (same %d-tick slice)",
+        challenger_holdout_ic, champion_holdout_ic, len(holdout_df),
+    )
+
+    # Fall back to the stored cross-fold IC when the holdout is too thin or the
+    # production model file is missing (e.g. very first run).
+    if champion_holdout_ic == -1.0:
+        champion_holdout_ic = _load_prod_model_ic()
+        log.info("Production model not evaluable on holdout; using stored IC %.4f", champion_holdout_ic)
+
+    promoted = challenger_holdout_ic >= PROMOTE_IC_MIN and challenger_holdout_ic > champion_holdout_ic
 
     train_metrics["challenger_id"] = challenger_id
     train_metrics["registry_path"] = str(REGISTRY_PATH)
     train_metrics["promoted"] = promoted
+    train_metrics["challenger_holdout_ic"] = round(challenger_holdout_ic, 6)
+    train_metrics["champion_holdout_ic"] = round(champion_holdout_ic, 6)
     # Save candidate meta BEFORE _promote_candidate() so the .json file exists
     # when promote moves it to latest.json (required for _load_prod_model_ic() on
     # subsequent runs to return the correct IC rather than always -1.0).
     _save_model_meta(CANDIDATE_MODEL_PATH, train_metrics)
 
     if promoted:
-        log.info("Promoting candidate (IC %.4f > prod IC %.4f)", alpha_metrics.ic_mean, prod_ic)
+        log.info(
+            "Promoting candidate (holdout IC %.4f > champion holdout IC %.4f)",
+            challenger_holdout_ic, champion_holdout_ic,
+        )
         _promote_candidate()
         registry.promote(challenger_id, reason="candidate_outperformed_champion")
         _publish_ops_event("model_promoted", {
             "challenger_id": challenger_id,
             "ic_mean": alpha_metrics.ic_mean,
-            "prod_ic": prod_ic,
+            "challenger_holdout_ic": challenger_holdout_ic,
+            "champion_holdout_ic": champion_holdout_ic,
             "ensemble_ic_mean": ensemble_ic_mean,
             "ensemble_icir": ensemble_icir,
             "ensemble_promoted": ensemble_promoted,
@@ -356,16 +451,17 @@ def run() -> dict:
         })
     else:
         reason = (
-            f"IC {alpha_metrics.ic_mean:.4f} < threshold {PROMOTE_IC_MIN}"
-            if alpha_metrics.ic_mean < PROMOTE_IC_MIN
-            else f"IC {alpha_metrics.ic_mean:.4f} <= prod IC {prod_ic:.4f}"
+            f"holdout IC {challenger_holdout_ic:.4f} < threshold {PROMOTE_IC_MIN}"
+            if challenger_holdout_ic < PROMOTE_IC_MIN
+            else f"holdout IC {challenger_holdout_ic:.4f} <= champion holdout IC {champion_holdout_ic:.4f}"
         )
         log.info("Candidate not promoted: %s", reason)
         _publish_ops_event("model_rejected", {
             "challenger_id": challenger_id,
             "reason": reason,
             "ic_mean": alpha_metrics.ic_mean,
-            "prod_ic": prod_ic,
+            "challenger_holdout_ic": challenger_holdout_ic,
+            "champion_holdout_ic": champion_holdout_ic,
             "ensemble_ic_mean": ensemble_ic_mean,
             "date": date_str,
         })
