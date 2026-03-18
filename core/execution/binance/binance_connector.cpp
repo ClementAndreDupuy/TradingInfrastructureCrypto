@@ -6,30 +6,32 @@
 #include "../../common/json.hpp"
 #endif
 
+#include "../../common/symbol_mapper.hpp"
+
 #include <string>
 
 namespace trading {
 namespace {
 
 auto order_payload(const Order& order) -> std::string {
-    return std::string(R"({"symbol":")") + order.symbol + R"(","side":")" +
-           (order.side == Side::BID ? "BUY" : "SELL") + R"(","type":")" +
-           (order.type == OrderType::MARKET ? "MARKET" : "LIMIT") + R"(","quantity":)" +
-           std::to_string(order.quantity) + R"(,"price":)" + std::to_string(order.price) + "}";
+    const std::string symbol = SymbolMapper::map_for_exchange(Exchange::BINANCE, order.symbol);
+    std::string payload = std::string(R"({"symbol":")") + symbol + R"(","side":")" +
+                          (order.side == Side::BID ? "BUY" : "SELL") + R"(","type":")" +
+                          (order.type == OrderType::MARKET ? "MARKET" : "LIMIT") + R"(","quantity":)" +
+                          std::to_string(order.quantity);
+    if (order.type != OrderType::MARKET) {
+        payload += R"(,"price":)" + std::to_string(order.price);
+    }
+    payload += "}";
+    return payload;
 }
 
+// Binance always returns orderId as a uint64; parse it directly.
 auto parse_binance_order_id(const std::string& body, std::string& venue_order_id) -> bool {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded()) {
         return false;
     }
-
-    const auto raw_id = json.value("orderId", std::string(""));
-    if (!raw_id.empty()) {
-        venue_order_id = raw_id;
-        return true;
-    }
-
     const uint64_t numeric_id = json.value("orderId", uint64_t{0});
     if (numeric_id != 0) {
         venue_order_id = std::to_string(numeric_id);
@@ -137,11 +139,13 @@ auto BinanceConnector::query_at_venue(const VenueOrderEntry& entry,
 }
 
 auto BinanceConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResult {
-    const auto resp = http::del(
-        api_url() + "/api/v3/openOrders?symbol=" + std::string((symbol != nullptr) ? symbol : ""),
-        auth_headers(
-            "DELETE",
-            std::string("/api/v3/openOrders?symbol=") + ((symbol != nullptr) ? symbol : ""), ""));
+    const std::string mapped_symbol =
+        (symbol != nullptr && symbol[0] != '\0')
+            ? SymbolMapper::map_for_exchange(Exchange::BINANCE, symbol)
+            : std::string();
+    const std::string path = std::string("/api/v3/openOrders?symbol=") + mapped_symbol;
+    const auto resp =
+        http::del(api_url() + path, auth_headers("DELETE", path, ""));
     if (!resp.ok()) {
         return classify_http_error(resp.status);
     }

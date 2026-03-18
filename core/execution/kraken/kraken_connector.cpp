@@ -6,13 +6,16 @@
 #include "../../common/json.hpp"
 #endif
 
+#include "../../common/symbol_mapper.hpp"
+
 #include <string>
 
 namespace trading {
 namespace {
 
 auto order_payload(const Order& order) -> std::string {
-    return std::string("pair=") + order.symbol +
+    const std::string pair = SymbolMapper::map_for_exchange(Exchange::KRAKEN, order.symbol);
+    return std::string("pair=") + pair +
            "&type=" + (order.side == Side::BID ? "buy" : "sell") +
            "&ordertype=" + (order.type == OrderType::MARKET ? "market" : "limit") +
            "&volume=" + std::to_string(order.quantity);
@@ -130,7 +133,11 @@ auto KrakenConnector::query_at_venue(const VenueOrderEntry& entry,
 }
 
 auto KrakenConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResult {
-    const std::string payload = std::string("pair=") + ((symbol != nullptr) ? symbol : "");
+    const std::string pair =
+        (symbol != nullptr && symbol[0] != '\0')
+            ? SymbolMapper::map_for_exchange(Exchange::KRAKEN, symbol)
+            : std::string();
+    const std::string payload = std::string("pair=") + pair;
     const auto resp = http::post(api_url() + "/0/private/CancelAllOrdersAfter", payload,
                                  auth_headers("POST", "/0/private/CancelAllOrdersAfter", payload));
     if (!resp.ok()) {
