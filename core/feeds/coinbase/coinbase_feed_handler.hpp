@@ -61,6 +61,7 @@ class CoinbaseFeedHandler {
     std::atomic<uint64_t> last_sequence_{0};
     std::atomic<State> state_{State::DISCONNECTED};
     std::atomic<void*> lws_ctx_{nullptr};
+    std::atomic<bool> reconnect_requested_{false};
 
     std::thread ws_thread_;
     std::mutex ws_mutex_;

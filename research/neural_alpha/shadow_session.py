@@ -298,7 +298,12 @@ class NeuralAlphaShadowSession:
         )
         fold_results = walk_forward_train(df, tcfg)
         if not fold_results:
-            raise RuntimeError("Training produced no fold results — dataset too small.")
+            print(
+                "WARNING: Training produced no fold results — dataset too small "
+                f"({len(df)} ticks, seq_len={self.cfg.seq_len}). "
+                "Model not updated; continuous training will retry once more ticks accumulate."
+            )
+            return
 
         best = min(fold_results, key=lambda f: f["metrics"].get("loss_total", 1e9))
         candidate_state = best["model_state"]

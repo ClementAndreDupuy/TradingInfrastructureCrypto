@@ -127,3 +127,11 @@ Use this as a lightweight operating checklist for future agent sessions.
    - Keep hot-path and cold-path boundaries explicit in commits.
    - Update scoped `AGENTS.md` whenever new conventions are introduced.
    - Prefer replay/integration validation whenever touching book/feed/risk paths.
+
+## Known Issues Fixed
+
+### Shadow session (2026-03-18)
+- **`research/neural_alpha/features.py`** — spread normalisation divided by zero when bid == ask. Guard changed to `raw_spread > 0` instead of `mid > 0`.
+- **`research/neural_alpha/shadow_session.py`** — `train_on_recent` raised `RuntimeError` when all walk-forward folds were skipped (dataset smaller than `seq_len`). Now logs a warning and returns; continuous training retries on next tick accumulation.
+- **`core/engine/trading_engine_main.cpp`** — In shadow mode, connectors target `mock://` URLs so `fetch_reconciliation_snapshot` REST calls always fail, immediately quarantining every venue. Reconciliation connect/periodic-drift cycle is now skipped when `mode == "shadow"`.
+- **`core/feeds/coinbase/coinbase_feed_handler.cpp`** — A failed snapshot (`ERROR_BOOK_CORRUPTED`) left the handler in `BUFFERING` state with no re-subscribe, causing `start()` to hang until its 30 s timeout. `trigger_resnapshot` now sets `reconnect_requested_` which forces the WS event loop to close and reconnect.
