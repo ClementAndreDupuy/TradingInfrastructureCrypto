@@ -167,13 +167,13 @@ inline HttpResponse del(const std::string& url, const std::vector<std::string>& 
 
 inline int64_t now_ns() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
-               std::chrono::high_resolution_clock::now().time_since_epoch())
+               std::chrono::system_clock::now().time_since_epoch())
         .count();
 }
 
 inline int64_t now_ms() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::high_resolution_clock::now().time_since_epoch())
+               std::chrono::system_clock::now().time_since_epoch())
         .count();
 }
 

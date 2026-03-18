@@ -133,7 +133,7 @@ class OrderManager {
 
     static int64_t now_ns() noexcept {
         using namespace std::chrono;
-        return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+        return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
     }
 };
 
