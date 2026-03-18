@@ -12,7 +12,7 @@ Last updated: 2026-03-18 — core domain audit.
 
 ### HIGH
 
-- [ ] **H8** `core/execution/order_manager.hpp` — **OrderManager multi-thread data race (live mode)**
+- [x] **H8** `core/execution/order_manager.hpp` — **OrderManager multi-thread data race (live mode)**
   In live mode, `on_fill` is dispatched from the WebSocket/FIX receive thread while
   `submit()` and `active_order_count()` are called from the strategy thread. The shared
   state (`position_`, `realized_pnl_`, `slots_`) is unguarded. In shadow/paper mode all
@@ -22,9 +22,9 @@ Last updated: 2026-03-18 — core domain audit.
   events that the strategy thread drains on each iteration, keeping all mutations
   single-threaded and avoiding mutex latency on the hot path.
   - acceptance criteria:
-    - [ ] Threading contract (which modes are single-threaded, which are multi-threaded) documented on `OrderManager`
-    - [ ] SPSC fill-event queue introduced for live mode, OR `std::mutex` guard added around all fill/slot mutations with a comment explaining the latency trade-off
-    - [ ] Unit or integration test verifying no data race under concurrent `on_fill` + `submit` + `active_order_count` (run with TSAN)
+    - [x] Threading contract (which modes are single-threaded, which are multi-threaded) documented on `OrderManager`
+    - [x] SPSC fill-event queue introduced for live mode, OR `std::mutex` guard added around all fill/slot mutations with a comment explaining the latency trade-off
+    - [x] Unit or integration test verifying no data race under concurrent `on_fill` + `submit` + `active_order_count` (run with TSAN)
 
 ---
 

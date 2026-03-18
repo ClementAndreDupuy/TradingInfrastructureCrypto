@@ -93,6 +93,11 @@ class NeuralAlphaMarketMaker {
     void on_book_update() {
         if (kill_.is_active())
             return;
+        // Drain any fill events enqueued by the receive thread before we read
+        // position or slot state.  In shadow/single-thread mode the queue is
+        // already empty (fills were enqueued synchronously), but drain_fills()
+        // is still correct to call.
+        om_.drain_fills();
         if (!book_.is_ready())
             return;
 

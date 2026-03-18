@@ -224,6 +224,29 @@ set_tests_properties(ConnectorFailureInjectionTest PROPERTIES
     LABELS "unit;execution;chaos"
 )
 
+# OrderManager unit + concurrency tests (run with TSAN for data-race validation)
+add_executable(order_manager_test
+    unit/order_manager_test.cpp
+)
+
+target_link_libraries(order_manager_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(order_manager_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME OrderManagerTest COMMAND order_manager_test)
+set_tests_properties(OrderManagerTest PROPERTIES
+    TIMEOUT 30
+    LABELS "unit;execution;tsan"
+)
+
+
 # Market maker + risk gate unit tests
 add_executable(market_maker_risk_test
     unit/market_maker_risk_test.cpp
