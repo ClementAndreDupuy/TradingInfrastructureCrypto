@@ -87,7 +87,8 @@ def compute_lob_tensor(df: pl.DataFrame) -> np.ndarray:
     best_bid = bp[:, 0]
     best_ask = ap[:, 0]
     mid = (best_bid + best_ask) / 2.0
-    spread = np.where(mid > 0, best_ask - best_bid, 1.0)
+    raw_spread = best_ask - best_bid
+    spread = np.where(raw_spread > 0, raw_spread, 1.0)
 
     # Normalise prices as distance from mid in units of spread
     bid_p_norm = (bp - mid[:, None]) / spread[:, None]  # negative for bids

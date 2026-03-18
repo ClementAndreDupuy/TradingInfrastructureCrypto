@@ -237,11 +237,18 @@ auto main(int argc, char** argv) -> int {
             return res == ConnectorResult::OK;
         };
 
+        // In shadow mode the connectors target mock:// URLs; REST calls for
+        // reconciliation snapshots will always fail.  Skip connect/reconcile to
+        // prevent spurious quarantine of every venue at startup.
+        const bool run_reconciliation = (opts.mode != "shadow");
+
         bool any_reconnected = false;
-        any_reconnected |= connect_if_needed(binance, run_binance, reconciliation);
-        any_reconnected |= connect_if_needed(kraken, run_kraken, reconciliation);
-        any_reconnected |= connect_if_needed(okx, run_okx, reconciliation);
-        any_reconnected |= connect_if_needed(coinbase, run_coinbase, reconciliation);
+        if (run_reconciliation) {
+            any_reconnected |= connect_if_needed(binance, run_binance, reconciliation);
+            any_reconnected |= connect_if_needed(kraken, run_kraken, reconciliation);
+            any_reconnected |= connect_if_needed(okx, run_okx, reconciliation);
+            any_reconnected |= connect_if_needed(coinbase, run_coinbase, reconciliation);
+        }
 
         if (any_reconnected) {
             const ConnectorResult reconcile_res = reconciliation.reconcile_on_reconnect();
@@ -344,7 +351,7 @@ auto main(int argc, char** argv) -> int {
             }
 
             const auto now = std::chrono::steady_clock::now();
-            if (now >= next_reconnect) {
+            if (run_reconciliation && now >= next_reconnect) {
                 bool recovered_connection = false;
                 recovered_connection |= connect_if_needed(binance, run_binance, reconciliation);
                 recovered_connection |= connect_if_needed(kraken, run_kraken, reconciliation);
@@ -361,7 +368,7 @@ auto main(int argc, char** argv) -> int {
                 next_reconnect = now + reconnect_interval;
             }
 
-            if (now >= next_reconciliation) {
+            if (run_reconciliation && now >= next_reconciliation) {
                 const ConnectorResult drift_res = reconciliation.run_periodic_drift_check();
                 if (drift_res != ConnectorResult::OK) {
                     LOG_WARN("periodic_reconciliation failed", "code", static_cast<int>(drift_res));

@@ -245,6 +245,12 @@ void CoinbaseFeedHandler::ws_event_loop() {
         delay_ms = 100; // reset backoff on successful connection
 
         while (running_.load() && !session.closed) {
+            if (reconnect_requested_.exchange(false, std::memory_order_acq_rel)) {
+                // trigger_resnapshot requested a fresh connection; close this
+                // session so the outer loop reconnects and re-subscribes.
+                session.closed = true;
+                break;
+            }
             int64_t now_ns = http::now_ns();
             if (now_ns - session.last_ping_ns >= 20LL * 1'000'000'000LL) {
                 session.send_ping = true;
@@ -411,6 +417,7 @@ auto CoinbaseFeedHandler::process_message(const std::string& message) -> Result 
     if (has_snapshot) {
         Result result = process_snapshot(json, seq);
         if (result != Result::SUCCESS) {
+            trigger_resnapshot("Invalid Coinbase snapshot");
             return result;
         }
 
@@ -495,6 +502,12 @@ void CoinbaseFeedHandler::trigger_resnapshot(const std::string& reason) {
     }
     delta_buffer_.clear();
     state_.store(State::BUFFERING, std::memory_order_release);
+    // Signal the WS event loop to close and reconnect so that a fresh
+    // subscription is sent and a new snapshot is delivered by Coinbase.
+    reconnect_requested_.store(true, std::memory_order_release);
+    if (auto* ctx = static_cast<struct lws_context*>(lws_ctx_.load(std::memory_order_acquire))) {
+        lws_cancel_service(ctx);
+    }
 }
 
 } // namespace trading
