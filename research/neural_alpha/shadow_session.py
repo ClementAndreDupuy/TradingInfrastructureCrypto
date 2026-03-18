@@ -288,9 +288,6 @@ class NeuralAlphaShadowSession:
         if self._model is not None:
             resume_state = {k: v.detach().cpu().clone() for k, v in self._model.state_dict().items()}
 
-        # Each fold's test slice must contain at least seq_len rows.
-        # With train_frac=0.75 the test slice is 25% of fold_size, so we need
-        # fold_size >= 4 * seq_len, i.e. n_folds <= len(df) / (4 * seq_len).
         max_folds = max(1, len(df) // (4 * self.cfg.seq_len))
         n_folds = min(2, max_folds)
         tcfg = TrainerConfig(
