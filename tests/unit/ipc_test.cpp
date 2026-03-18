@@ -86,12 +86,9 @@ TEST(AlphaSignalReader, FailOpenWhenNotOpen) {
 TEST(AlphaSignalReader, ReadSeqlockStableEvenSeq) {
     TempFile tmp;
 
-    // ts_ns is written as a raw value from steady_clock to exercise the seqlock
-    // read path. This test only checks that values are round-tripped correctly;
-    // it does NOT test staleness (which uses system_clock in AlphaSignalReader).
     using namespace std::chrono;
     const int64_t ts_now =
-        duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+        duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 
     // seq = 2 (even → stable)
     write_signal_file(tmp.path, /*seq=*/2, /*signal_bps=*/8.5,
@@ -112,7 +109,7 @@ TEST(AlphaSignalReader, ReadSeqlockOddSeqReturnsNeutral) {
 
     using namespace std::chrono;
     const int64_t ts_now =
-        duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+        duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
 
     // seq = 1 (odd → writer active): reader must fail-open after retries.
     write_signal_file(tmp.path, /*seq=*/1, /*signal_bps=*/8.5,
