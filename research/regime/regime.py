@@ -248,8 +248,15 @@ def train_regime_model_from_df(df: pl.DataFrame, cfg: RegimeConfig) -> tuple[Reg
     feat = _feature_frame(df)
 
     x_raw = feat.to_numpy().astype(np.float64)
-    scales = x_raw.std(axis=0)
-    scales = np.where(scales < 1e-8, 1.0, scales)
+    raw_scales = x_raw.std(axis=0)
+    n_degenerate = int(np.sum(raw_scales < 1e-8))
+    if n_degenerate > len(raw_scales) // 2:
+        raise ValueError(
+            f"[REGIME] Degenerate training data: {n_degenerate}/{len(raw_scales)} features have "
+            f"near-zero variance (stds={raw_scales.tolist()}). "
+            "Regime model not updated — collect more diverse data before retraining."
+        )
+    scales = np.where(raw_scales < 1e-8, 1.0, raw_scales)
     x = x_raw / scales
 
     labels, initial, transition, means, variances = _fit_hmm(x, cfg)
