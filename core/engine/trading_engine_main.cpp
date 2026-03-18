@@ -47,7 +47,6 @@ auto parse_args(int argc, char** argv) -> CliOptions {
         } else if (arg == "--symbol" && i + 1 < argc) {
             out.symbol = argv[++i];
         } else if (arg == "--loop-interval-ms" && i + 1 < argc) {
-            // Bug fix: std::stoi throws on invalid input; catch and keep the default.
             try {
                 out.loop_interval_ms = std::stoi(argv[++i]);
             } catch (...) {
@@ -94,10 +93,6 @@ auto make_child_order(const char* symbol, trading::Exchange exchange, trading::S
     return order;
 }
 
-// Bug fix: previously returned healthy=true with hardcoded fallback prices (100.0/100.1)
-// when the book was not yet initialised. This would cause the SOR to route real orders
-// at completely wrong prices. An unready book must be treated as unhealthy so the SOR
-// skips that venue.
 auto make_quote(trading::Exchange exchange, const trading::BookManager& book,
                 bool enabled) -> trading::VenueQuote {
     if (!enabled) {
@@ -127,8 +122,6 @@ auto main(int argc, char** argv) -> int {
 
         RiskRuntimeConfig risk_cfg;
         const std::string risk_path = "config/" + opts.mode + "/risk.yaml";
-        // Bug fix: failure was silently ignored, leaving risk limits at their (potentially
-        // unsafe) defaults. Now we log a warning so operators notice misconfiguration.
         if (!RiskConfigLoader::load(risk_path, risk_cfg)) {
             LOG_WARN("Risk config not loaded — using compiled-in defaults", "path",
                      risk_path.c_str());
@@ -179,8 +172,6 @@ auto main(int argc, char** argv) -> int {
         coinbase_feed.set_snapshot_callback(coinbase_book.snapshot_handler());
         coinbase_feed.set_delta_callback(coinbase_book.delta_handler());
 
-        // Bug fix: start() return value was silently discarded. A failed start means
-        // the book will never populate, causing the engine to trade on stale/empty data.
         if (run_binance && binance_feed.start() != Result::SUCCESS) {
             LOG_WARN("Binance feed failed to start", "symbol", opts.symbol.c_str());
         }
@@ -206,8 +197,6 @@ auto main(int argc, char** argv) -> int {
             opts.mode == "shadow" ? "mock://coinbase" : "https://api.coinbase.com");
 
         ReconciliationService reconciliation;
-        // Bug fix: register_connector() return value was silently discarded. If registration
-        // fails (e.g. MAX_CONNECTORS exceeded), reconciliation runs silently incomplete.
         if (run_binance && !reconciliation.register_connector(binance)) {
             LOG_WARN("Failed to register Binance connector with reconciliation service");
         }
@@ -237,9 +226,6 @@ auto main(int argc, char** argv) -> int {
             return res == ConnectorResult::OK;
         };
 
-        // In shadow mode the connectors target mock:// URLs; REST calls for
-        // reconciliation snapshots will always fail.  Skip connect/reconcile to
-        // prevent spurious quarantine of every venue at startup.
         const bool run_reconciliation = (opts.mode != "shadow");
 
         bool any_reconnected = false;
@@ -279,9 +265,6 @@ auto main(int argc, char** argv) -> int {
             }
 
             kill_switch.heartbeat();
-            // NOTE: check_heartbeat() called from the same thread immediately after
-            // heartbeat() will only catch hangs within a single loop iteration (>= timeout).
-            // For continuous dead-man detection, wire this to a dedicated watchdog thread.
             (void)kill_switch.check_heartbeat();
 
             const AlphaSignal alpha_signal = alpha_reader.read();
@@ -298,8 +281,6 @@ auto main(int argc, char** argv) -> int {
                 for (size_t i = 0; i < decision.child_count; ++i) {
                     const auto& child = decision.children[i];
 
-                    // Bug fix: check_order_rate() was never called; the rate-limiting
-                    // circuit breaker was silently bypassed on every order submission.
                     if (circuit_breaker.check_order_rate() != CircuitCheckResult::OK) {
                         LOG_WARN("circuit-breaker: order rate limit reached, halting submissions");
                         break;
@@ -317,9 +298,6 @@ auto main(int argc, char** argv) -> int {
                         continue;
                     }
 
-                    // TODO: pass real cumulative realized P&L here once fill callbacks
-                    //       are wired into the engine. Until then this check is a no-op
-                    //       but is kept to preserve the call structure.
                     if (circuit_breaker.check_drawdown(circuit_breaker.realized_pnl()) !=
                         CircuitCheckResult::OK) {
                         LOG_WARN("circuit-breaker: drawdown limit reached, halting submissions");
@@ -379,9 +357,6 @@ auto main(int argc, char** argv) -> int {
             std::this_thread::sleep_for(loop_interval);
         }
 
-        // Bug fix: previously all connectors and feeds were unconditionally stopped even
-        // when they were never started (venue disabled). Guard with venue flags to only
-        // clean up what was actually started.
         if (run_binance) {
             binance.disconnect();
             binance_feed.stop();

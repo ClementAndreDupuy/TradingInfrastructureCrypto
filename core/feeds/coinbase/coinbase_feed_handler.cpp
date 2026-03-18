@@ -242,12 +242,10 @@ void CoinbaseFeedHandler::ws_event_loop() {
         }
 
         LOG_INFO("Coinbase WebSocket established", "symbol", symbol_.c_str());
-        delay_ms = 100; // reset backoff on successful connection
+        delay_ms = 100;
 
         while (running_.load() && !session.closed) {
             if (reconnect_requested_.exchange(false, std::memory_order_acq_rel)) {
-                // trigger_resnapshot requested a fresh connection; close this
-                // session so the outer loop reconnects and re-subscribes.
                 session.closed = true;
                 break;
             }
@@ -502,8 +500,6 @@ void CoinbaseFeedHandler::trigger_resnapshot(const std::string& reason) {
     }
     delta_buffer_.clear();
     state_.store(State::BUFFERING, std::memory_order_release);
-    // Signal the WS event loop to close and reconnect so that a fresh
-    // subscription is sent and a new snapshot is delivered by Coinbase.
     reconnect_requested_.store(true, std::memory_order_release);
     if (auto* ctx = static_cast<struct lws_context*>(lws_ctx_.load(std::memory_order_acquire))) {
         lws_cancel_service(ctx);
