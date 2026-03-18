@@ -71,12 +71,20 @@ class RegimeSignalReader {
             if (seq1 & 1ULL)
                 continue;
 
+            // Acquire fence: all subsequent loads see stores that completed
+            // before the writer incremented seq to even.
+            std::atomic_thread_fence(std::memory_order_acquire);
+
             RegimeSignal s;
             std::memcpy(&s.p_calm, ptr_ + 8, sizeof(double));
             std::memcpy(&s.p_trending, ptr_ + 16, sizeof(double));
             std::memcpy(&s.p_shock, ptr_ + 24, sizeof(double));
             std::memcpy(&s.p_illiquid, ptr_ + 32, sizeof(double));
             std::memcpy(&s.ts_ns, ptr_ + 40, sizeof(int64_t));
+
+            // Acquire fence: data loads above must not be reordered after
+            // the seq2 load.
+            std::atomic_thread_fence(std::memory_order_acquire);
 
             uint64_t seq2 = 0;
             std::memcpy(&seq2, ptr_, sizeof(seq2));

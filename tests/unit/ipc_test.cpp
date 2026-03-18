@@ -86,7 +86,9 @@ TEST(AlphaSignalReader, FailOpenWhenNotOpen) {
 TEST(AlphaSignalReader, ReadSeqlockStableEvenSeq) {
     TempFile tmp;
 
-    // ts_ns set to "now" so signal is fresh.
+    // ts_ns is written as a raw value from steady_clock to exercise the seqlock
+    // read path. This test only checks that values are round-tripped correctly;
+    // it does NOT test staleness (which uses system_clock in AlphaSignalReader).
     using namespace std::chrono;
     const int64_t ts_now =
         duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
