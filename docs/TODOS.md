@@ -12,7 +12,7 @@ Last updated: 2026-03-18 — core domain audit.
 
 ### HIGH
 
-- [x] **H8** `core/execution/order_manager.hpp` — **OrderManager multi-thread data race (live mode)**
+- [x] **H1** `core/execution/order_manager.hpp` — **OrderManager multi-thread data race (live mode)**
   In live mode, `on_fill` is dispatched from the WebSocket/FIX receive thread while
   `submit()` and `active_order_count()` are called from the strategy thread. The shared
   state (`position_`, `realized_pnl_`, `slots_`) is unguarded. In shadow/paper mode all
@@ -30,7 +30,7 @@ Last updated: 2026-03-18 — core domain audit.
 
 ### MEDIUM
 
-- [ ] **M4** `core/risk/global_risk_controls.hpp` — **GlobalRiskControls TOCTOU window in `commit_order`**
+- [ ] **M1** `core/risk/global_risk_controls.hpp` — **GlobalRiskControls TOCTOU window in `commit_order`**
   `commit_order` calls `check_order` to validate limits then separately applies the
   atomic adds. A second concurrent `commit_order` can pass the same `check_order` gate
   before either commit writes back, causing both to succeed and the aggregate exposure to
@@ -49,7 +49,6 @@ Last updated: 2026-03-18 — core domain audit.
 ---
 
 ### LOW
-- _No open low items._
 
 ---
 
