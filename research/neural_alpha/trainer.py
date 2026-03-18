@@ -63,6 +63,22 @@ class TrainerConfig:
     adv_noise_std: float = 0.02
     resume_state_dict: dict[str, torch.Tensor] | None = None
 
+    # LR warmup — linear ramp for first N epochs, then cosine decay.
+    # Prevents the model jumping to a degenerate flat minimum on a cold start.
+    lr_warmup_epochs: int = 3
+
+    # Early stopping — stop a fold when val loss has not improved for N epochs.
+    # 0 = disabled.
+    early_stop_patience: int = 5
+
+    # Logging — print train/val loss every N epochs (1 = every epoch).
+    log_every_epochs: int = 1
+
+    # Per-fold seed offset — each fold_idx offsets the global seed so that the
+    # model explores a different region of the loss landscape.  Set to 0 to keep
+    # current non-seeded behaviour (may still be non-deterministic).
+    fold_seed_offset: int = 1337
+
 
 def _device() -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -220,6 +236,26 @@ def eval_epoch(
 
 # ── Walk-forward driver ───────────────────────────────────────────────────────
 
+def _make_warmup_cosine_scheduler(
+    optimizer: torch.optim.Optimizer,
+    warmup_epochs: int,
+    total_epochs: int,
+) -> torch.optim.lr_scheduler.LambdaLR:
+    """
+    Linear warmup for `warmup_epochs` then cosine annealing to 0.
+
+    A warmup phase prevents the model from jumping to a degenerate flat
+    minimum on the first few gradient steps with a large cold-start LR.
+    """
+    def _lr_lambda(epoch: int) -> float:
+        if warmup_epochs > 0 and epoch < warmup_epochs:
+            return float(epoch + 1) / float(warmup_epochs)
+        progress = (epoch - warmup_epochs) / max(total_epochs - warmup_epochs, 1)
+        return 0.5 * (1.0 + np.cos(np.pi * progress))
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=_lr_lambda)
+
+
 def walk_forward_train(
     df,  # polars DataFrame
     cfg: TrainerConfig | None = None,
@@ -246,6 +282,12 @@ def walk_forward_train(
         print(f"\n{'='*60}")
         print(f"Fold {fold_idx+1}/{len(splits)}  "
               f"train={len(train_df)} test={len(test_df)} ticks")
+
+        # Per-fold seed: each fold explores a different random initialisation so
+        # the ensemble of fold models is more diverse.
+        if cfg.fold_seed_offset > 0:
+            torch.manual_seed(cfg.fold_seed_offset + fold_idx * 17)
+            np.random.seed((cfg.fold_seed_offset + fold_idx * 17) & 0xFFFFFFFF)
 
         train_loader, test_loader, _, _ = build_loaders(
             train_df, test_df, ds_cfg, batch_size=cfg.batch_size
@@ -284,10 +326,15 @@ def walk_forward_train(
         optimizer = torch.optim.AdamW(
             model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay
         )
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.epochs)
+        # Warmup → cosine annealing instead of plain cosine from epoch 0.
+        scheduler = _make_warmup_cosine_scheduler(
+            optimizer, warmup_epochs=cfg.lr_warmup_epochs, total_epochs=cfg.epochs
+        )
 
         best_val_loss = float("inf")
         best_state = None
+        epochs_no_improve = 0
+        log_every = max(1, cfg.log_every_epochs)
 
         for epoch in range(cfg.epochs):
             train_metrics = train_epoch(
@@ -296,7 +343,11 @@ def walk_forward_train(
             )
             scheduler.step()
 
-            if (epoch + 1) % 5 == 0 or epoch == cfg.epochs - 1:
+            should_log = (
+                (epoch + 1) % log_every == 0
+                or epoch == cfg.epochs - 1
+            )
+            if should_log:
                 val_metrics, preds, labels = eval_epoch(model, test_loader, criterion, device)
                 val_loss = val_metrics["loss_total"]
                 print(
@@ -307,6 +358,12 @@ def walk_forward_train(
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                     best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+                    epochs_no_improve = 0
+                else:
+                    epochs_no_improve += log_every
+                    if cfg.early_stop_patience > 0 and epochs_no_improve >= cfg.early_stop_patience:
+                        print(f"  Early stopping at epoch {epoch+1} (no improvement for {epochs_no_improve} epochs)")
+                        break
 
         # Final evaluation with best model
         if best_state is not None:

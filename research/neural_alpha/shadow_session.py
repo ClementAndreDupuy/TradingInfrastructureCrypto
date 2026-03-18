@@ -146,7 +146,7 @@ class ShadowSessionConfig:
     d_spatial: int = 64
     d_temporal: int = 128
     train_ticks: int = 0
-    train_epochs: int = 10
+    train_epochs: int = 15
     symbol: str = "BTCUSDT"
     exchanges: list[str] = field(default_factory=lambda: ["BINANCE", "KRAKEN", "OKX", "COINBASE"])
     signal_file: str = _SIGNAL_FILE
@@ -304,6 +304,10 @@ class NeuralAlphaShadowSession:
             d_spatial=self.cfg.d_spatial,
             d_temporal=self.cfg.d_temporal,
             resume_state_dict=resume_state,
+            # Warmup avoids cold-start collapse; early stop avoids wasted epochs.
+            lr_warmup_epochs=min(3, self.cfg.train_epochs // 4),
+            early_stop_patience=4,
+            log_every_epochs=1,
         )
         print(f"[PRIMARY] Starting primary model training (folds={n_folds}, epochs={self.cfg.train_epochs})")
         fold_results = walk_forward_train(df, tcfg)
@@ -395,6 +399,11 @@ class NeuralAlphaShadowSession:
             d_spatial=32,
             d_temporal=64,
             n_temp_layers=1,
+            # Use a distinct seed offset so secondary explores a different basin.
+            fold_seed_offset=9999,
+            lr_warmup_epochs=min(3, self.cfg.train_epochs // 4),
+            early_stop_patience=4,
+            log_every_epochs=1,
         )
         print(f"[SECONDARY] Starting secondary model training (folds={n_folds}, epochs={self.cfg.train_epochs}, d_spatial=32, d_temporal=64)")
         fold_results = walk_forward_train(df, tcfg)
