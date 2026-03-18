@@ -288,9 +288,14 @@ class NeuralAlphaShadowSession:
         if self._model is not None:
             resume_state = {k: v.detach().cpu().clone() for k, v in self._model.state_dict().items()}
 
+        # Each fold's test slice must contain at least seq_len rows.
+        # With train_frac=0.75 the test slice is 25% of fold_size, so we need
+        # fold_size >= 4 * seq_len, i.e. n_folds <= len(df) / (4 * seq_len).
+        max_folds = max(1, len(df) // (4 * self.cfg.seq_len))
+        n_folds = min(2, max_folds)
         tcfg = TrainerConfig(
             epochs=self.cfg.train_epochs,
-            n_folds=2,
+            n_folds=n_folds,
             seq_len=self.cfg.seq_len,
             d_spatial=self.cfg.d_spatial,
             d_temporal=self.cfg.d_temporal,
@@ -778,15 +783,28 @@ def main() -> None:
         session.load_model(str(primary_model_path))
         if secondary_model_path.exists():
             session.load_secondary_model(str(secondary_model_path))
+        session._validate_production_stack()
     elif cfg.train_ticks > 0:
         session.train_on_recent(cfg.train_ticks)
+        if session._model is None:
+            print(
+                "WARNING: initial training produced no model (dataset too small). "
+                "Continuous training will bootstrap once enough ticks accumulate. "
+                "Use --no-require-full-model-stack to suppress this warning."
+            )
+            if cfg.require_full_model_stack:
+                raise RuntimeError(
+                    "Research production stack requires a trained model. "
+                    "Collect more ticks before starting, or use "
+                    "--no-require-full-model-stack for non-production debugging."
+                )
+        else:
+            session._validate_production_stack()
     else:
         print(
             "WARNING: no model loaded and --train-ticks not set. "
             "Continuous training will bootstrap once enough ticks accumulate."
         )
-
-    session._validate_production_stack()
     session.run()
 
 
