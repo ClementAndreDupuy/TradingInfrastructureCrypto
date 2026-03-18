@@ -56,7 +56,8 @@ All the project todos should be placed in the TODO file below, ranked by priorit
 - **`core/execution/`** — `ExchangeConnector` interface + live connectors (Binance/Kraken/OKX/Coinbase), `OrderManager` (position tracking), `NeuralAlphaMarketMaker` (GTX limit orders, signal skew, stop-limit stop-loss).
 - **`core/ipc/`** — Shared memory bridge: Python publishes neural alpha signal → C++ reads via `AlphaSignalReader`.
 - **`core/shadow/`** — `ShadowConnector` + `ShadowEngine` — paper trading with identical code path to live. Run ≥ 2 weeks before live.
-- **`research/neural_alpha/`** — GNN spatial + Transformer temporal model, walk-forward training, backtest, shadow session.
+- **`research/neural_alpha/`** — Primary GNN+Transformer alpha model + secondary compact ensemble model, walk-forward training, backtest, shadow session.
+- **`research/regime/`** — Regime HMM that publishes `calm` / `trending` / `shock` / `illiquid` probabilities for the live stack.
 
 ## Technology Stack
 
@@ -79,7 +80,8 @@ core/            C++ hot path
   bindings/      pybind11 C++↔Python bridge
 
 research/        Python cold path
-  neural_alpha/  GNN+Transformer model, features, backtest, shadow session
+  neural_alpha/  Primary + secondary alpha models, features, backtest, shadow session
+  regime/        HMM regime model + IPC publisher
   backtest/      Shared backtest utilities (shadow_metrics)
 
 config/          dev / shadow / live runtime + risk configs

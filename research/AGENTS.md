@@ -11,14 +11,15 @@
 
 ## Components
 
-- **alpha/neural_alpha/** — GNN spatial + Transformer temporal model
+- **alpha/neural_alpha/** — Dual-model alpha stack: primary GNN spatial + Transformer temporal model plus a smaller secondary ensemble model
   - `model.py` — `CryptoAlphaNet`: `LOBSpatialEncoder` + `TemporalEncoder` + multi-task heads
   - `features.py` — LOB tensor + 13 scalar features (OFI at lags 1/5/10/20, vol, spread, etc.)
   - `dataset.py` — sliding-window `LOBDataset`, walk-forward splits
   - `trainer.py` — contrastive pre-training + supervised walk-forward training
-  - `pipeline.py` — end-to-end: fetch → train → backtest → alpha report
+  - `pipeline.py` — end-to-end: fetch → train primary + secondary → backtest → alpha report → save both alpha artifacts + regime artifact
   - `backtest.py` — event-driven backtest with realistic fills (bid/ask, taker fee, stop-loss)
-  - `shadow_session.py` — live inference, direction-head gating, publishes signal to `/tmp/neural_alpha_signal.bin`
+  - `shadow_session.py` — live inference, direction-head gating, requires primary + secondary alpha artifacts and regime artifact in production mode, publishes to `/tmp/neural_alpha_signal.bin`
+- **regime/** — HMM regime model training/inference + IPC publication for the live research stack
 - **backtest/** — Shared backtest utilities
 - **notebooks/** — Exploratory only, never production logic
 
@@ -43,3 +44,4 @@ All listed neural-alpha improvement items in this file have now been implemented
 - Maintain Python typing discipline (function signatures + return types) to support automated refactors.
 - Prefer synthetic pipeline runs for quick smoke validation, then live-exchange runs for realism checks.
 - Preserve IPC contract compatibility with `core/ipc/alpha_signal.hpp` when modifying signal publishing fields.
+- Research production mode now assumes **three artifacts** are present: primary alpha model, secondary alpha model, and regime model. Do not silently drop to single-model mode in production-oriented changes.
