@@ -236,7 +236,9 @@ def walk_forward_train(
     device = _device()
     print(f"Device: {device}")
 
-    splits = split_walk_forward(df, n_folds=cfg.n_folds, train_frac=cfg.train_frac)
+    splits = split_walk_forward(
+        df, n_folds=cfg.n_folds, train_frac=cfg.train_frac, min_samples=cfg.seq_len
+    )
     ds_cfg = DatasetConfig(seq_len=cfg.seq_len)
     results = []
 

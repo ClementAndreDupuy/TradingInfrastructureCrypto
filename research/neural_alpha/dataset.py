@@ -108,10 +108,16 @@ def split_walk_forward(
     df: pl.DataFrame,
     n_folds: int = 4,
     train_frac: float = 0.75,
+    min_samples: int = 1,
 ) -> list[tuple[pl.DataFrame, pl.DataFrame]]:
     """
     Walk-forward splits: each fold uses a rolling train window followed by a
     test window. No data leakage — test always comes after train.
+
+    ``min_samples`` is the minimum number of rows required in *both* the train
+    and test slice for the fold to be included.  Pass ``seq_len`` here so that
+    folds whose slices are too short to produce even a single sliding window are
+    filtered out early, before the DataLoader is constructed.
 
     Returns list of (train_df, test_df) tuples.
     """
@@ -124,7 +130,7 @@ def split_walk_forward(
         start_test = int(end_test - fold_size * (1 - train_frac))
         train_df  = df[:start_test]
         test_df   = df[start_test:end_test]
-        if len(train_df) > 0 and len(test_df) > 0:
+        if len(train_df) >= min_samples and len(test_df) >= min_samples:
             splits.append((train_df, test_df))
 
     return splits
