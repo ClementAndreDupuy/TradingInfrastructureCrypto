@@ -97,8 +97,8 @@ void run_state_machine_contract(Connector& c, Exchange ex, const char* symbol,
 
 TEST(ConnectorContractTest, BinanceStateMachineDeterministic) {
     BinanceConnector c("", "", "https://binance.test");
-    run_state_machine_contract(c, Exchange::BINANCE, "BTCUSDT", R"({"orderId":"bn-101"})",
-                               R"({"orderId":"bn-101","status":"CANCELED"})");
+    run_state_machine_contract(c, Exchange::BINANCE, "BTCUSDT", R"({"orderId":101})",
+                               R"({"orderId":101,"status":"CANCELED"})");
 }
 
 TEST(ConnectorContractTest, KrakenStateMachineDeterministic) {

@@ -6,13 +6,16 @@
 #include "../../common/json.hpp"
 #endif
 
+#include "../../common/symbol_mapper.hpp"
+
 #include <string>
 
 namespace trading {
 namespace {
 
 auto order_payload(const Order& order) -> std::string {
-    return std::string(R"({"product_id":")") + order.symbol + R"(","side":")" +
+    const std::string product_id = SymbolMapper::map_for_exchange(Exchange::COINBASE, order.symbol);
+    return std::string(R"({"product_id":")") + product_id + R"(","side":")" +
            (order.side == Side::BID ? "BUY" : "SELL") + R"(","order_type":")" +
            (order.type == OrderType::MARKET ? "MARKET" : "LIMIT") + R"(","size":")" +
            std::to_string(order.quantity) + R"("})";
@@ -234,8 +237,11 @@ auto CoinbaseConnector::query_at_venue(const VenueOrderEntry& entry,
 }
 
 auto CoinbaseConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResult {
-    const std::string payload =
-        std::string(R"({"product_id":")") + ((symbol != nullptr) ? symbol : "") + R"("})";
+    const std::string product_id =
+        (symbol != nullptr && symbol[0] != '\0')
+            ? SymbolMapper::map_for_exchange(Exchange::COINBASE, symbol)
+            : std::string();
+    const std::string payload = std::string(R"({"product_id":")") + product_id + R"("})";
     const auto resp =
         http::post(api_url() + "/api/v3/brokerage/orders/batch_cancel", payload,
                    auth_headers("POST", "/api/v3/brokerage/orders/batch_cancel", payload));

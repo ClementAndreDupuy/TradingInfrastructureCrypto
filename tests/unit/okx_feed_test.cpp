@@ -1,6 +1,7 @@
 #include "core/feeds/okx/okx_feed_handler.hpp"
-#include "core/feeds/common/symbol_mapper.hpp"
+#include "core/common/symbol_mapper.hpp"
 #include <gtest/gtest.h>
+#include <stdexcept>
 
 using namespace trading;
 
@@ -118,6 +119,26 @@ TEST(SymbolMapperTest, PreservesDelimitedInputAcrossExchanges) {
     EXPECT_EQ(symbols.okx, "ETH-USDC");
     EXPECT_EQ(symbols.coinbase, "ETH-USDC");
     EXPECT_EQ(symbols.kraken_ws, "ETH/USDC");
+}
+
+TEST(SymbolMapperTest, ForExchangeReturnsCorrectVenueString) {
+    const VenueSymbols symbols = SymbolMapper::map_all("BTCUSDT");
+    EXPECT_EQ(symbols.for_exchange(Exchange::BINANCE),  "BTCUSDT");
+    EXPECT_EQ(symbols.for_exchange(Exchange::OKX),      "BTC-USDT");
+    EXPECT_EQ(symbols.for_exchange(Exchange::COINBASE), "BTC-USDT");
+    EXPECT_EQ(symbols.for_exchange(Exchange::KRAKEN),   "BTC/USDT");
+}
+
+TEST(SymbolMapperTest, MapForExchangeConvenienceWrapper) {
+    EXPECT_EQ(SymbolMapper::map_for_exchange(Exchange::BINANCE,  "BTC/USDT"), "BTCUSDT");
+    EXPECT_EQ(SymbolMapper::map_for_exchange(Exchange::OKX,      "BTCUSDT"),  "BTC-USDT");
+    EXPECT_EQ(SymbolMapper::map_for_exchange(Exchange::COINBASE, "BTC_USDT"), "BTC-USDT");
+    EXPECT_EQ(SymbolMapper::map_for_exchange(Exchange::KRAKEN,   "BTCUSDT"),  "BTC/USDT");
+}
+
+TEST(SymbolMapperTest, EmptySymbolThrowsInvalidArgument) {
+    EXPECT_THROW(SymbolMapper::map_all(""), std::invalid_argument);
+    EXPECT_THROW(SymbolMapper::map_for_exchange(Exchange::BINANCE, ""), std::invalid_argument);
 }
 TEST_F(OkxFeedHandlerTest, ChecksumMismatchTriggersResnapshot) {
     handler_->set_streaming_state_for_test(100);

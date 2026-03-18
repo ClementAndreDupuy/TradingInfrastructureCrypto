@@ -6,6 +6,8 @@
 #include "../../common/json.hpp"
 #endif
 
+#include "../../common/symbol_mapper.hpp"
+
 #include <cmath>
 #include <string>
 
@@ -13,10 +15,16 @@ namespace trading {
 namespace {
 
 auto order_payload(const Order& order) -> std::string {
-    return std::string(R"({"instId":")") + order.symbol + R"(","side":")" +
-           (order.side == Side::BID ? "buy" : "sell") + R"(","ordType":")" +
-           (order.type == OrderType::MARKET ? "market" : "limit") + R"(","sz":")" +
-           std::to_string(order.quantity) + R"("})";
+    const std::string inst_id = SymbolMapper::map_for_exchange(Exchange::OKX, order.symbol);
+    std::string payload = std::string(R"({"instId":")") + inst_id + R"(","side":")" +
+                          (order.side == Side::BID ? "buy" : "sell") + R"(","ordType":")" +
+                          (order.type == OrderType::MARKET ? "market" : "limit") + R"(","sz":")" +
+                          std::to_string(order.quantity) + "\"";
+    if (order.type != OrderType::MARKET) {
+        payload += R"(,"px":")" + std::to_string(order.price) + "\"";
+    }
+    payload += "}";
+    return payload;
 }
 
 auto parse_okx_order_id(const std::string& body, std::string& venue_order_id) -> bool {
@@ -232,8 +240,11 @@ auto OkxConnector::query_at_venue(const VenueOrderEntry& entry,
 }
 
 auto OkxConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResult {
-    const std::string payload =
-        std::string(R"({"instId":")") + ((symbol != nullptr) ? symbol : "") + R"("})";
+    const std::string inst_id =
+        (symbol != nullptr && symbol[0] != '\0')
+            ? SymbolMapper::map_for_exchange(Exchange::OKX, symbol)
+            : std::string();
+    const std::string payload = std::string(R"({"instId":")") + inst_id + R"("})";
     const auto resp =
         http::post(api_url() + "/api/v5/trade/cancel-batch-orders", payload,
                    auth_headers("POST", "/api/v5/trade/cancel-batch-orders", payload));
