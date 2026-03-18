@@ -1,0 +1,92 @@
+clementandredupuy@Mac ThamesRiverTrading % ./deploy/run_shadow.sh
+[2026-03-18T19:59:20Z] [shadow] [INFO] Starting python shadow session with python3.11 (symbol=BTCUSDT, exchanges=BINANCE,KRAKEN,OKX,COINBASE, signals -> /tmp/trt_ipc/neural_alpha_signal.bin, log=/Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl)
+[2026-03-18T19:59:20Z] [shadow] [INFO] Starting C++ shadow runner symbol=BTCUSDT venues=BINANCE,KRAKEN,OKX,COINBASE duration=900s interval=1000ms
+2026-03-18 19:59:21.111580834 [INFO ] BinanceFeedHandler created with API key symbol=BTCUSDT
+2026-03-18 19:59:21.111586459 [INFO ] KrakenFeedHandler created (public data, no auth required) symbol=BTCUSDT
+2026-03-18 19:59:21.111626042 [INFO ] OkxFeedHandler created symbol=BTCUSDT inst_id=BTC-USDT
+2026-03-18 19:59:21.111627584 [INFO ] CoinbaseFeedHandler created symbol=BTCUSDT
+2026-03-18 19:59:21.111630584 [INFO ] Starting feed handler symbol=BTCUSDT
+[2026/03/18 19:59:21:1119] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+[2026/03/18 19:59:21:1183] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/18 19:59:21:1184] W: ssh pvo "ops" is mandatory
+[2026/03/18 19:59:21:1184] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/18 19:59:21:1184] W: handler_server_protocol_init: requires 'upload-dir' pvo
+Collecting 400 ticks for in-place training...
+2026-03-18 19:59:22.233120709 [INFO ] WebSocket established, fetching snapshot symbol=BTCUSDT
+2026-03-18 19:59:22.233153834 [INFO ] Fetching snapshot symbol=BTCUSDT
+2026-03-18 19:59:22.538496292 [INFO ] Snapshot applied symbol=BTCUSDT sequence=90397718722 base_price=70557.9 bids=1000 asks=1000
+2026-03-18 19:59:22.538528334 [INFO ] Snapshot received symbol=BTCUSDT sequence=90397718722 bids=1000 asks=1000
+2026-03-18 19:59:22.539575417 [INFO ] Applied buffered deltas applied=0 skipped=0
+2026-03-18 19:59:22.539583750 [INFO ] Feed handler started symbol=BTCUSDT
+2026-03-18 19:59:22.539584625 [INFO ] Starting feed handler symbol=BTCUSDT
+[2026/03/18 19:59:22:5396] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+2026-03-18 19:59:22.539687625 [ERROR] Sequence gap expected=90397718723 U=90397718636
+2026-03-18 19:59:22.539688084 [WARN ] Triggering re-snapshot reason=Sequence gap
+[2026/03/18 19:59:22:5400] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/18 19:59:22:5400] W: ssh pvo "ops" is mandatory
+[2026/03/18 19:59:22:5400] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/18 19:59:22:5400] W: handler_server_protocol_init: requires 'upload-dir' pvo
+2026-03-18 19:59:23.641276542 [INFO ] WebSocket established, fetching Kraken snapshot symbol=BTCUSDT
+2026-03-18 19:59:23.641280375 [INFO ] Fetching Kraken snapshot symbol=BTCUSDT
+2026-03-18 19:59:23.721832375 [WARN ] Snapshot levels out of grid range symbol=BTCUSDT skipped=715
+2026-03-18 19:59:23.721835875 [INFO ] Snapshot applied symbol=BTCUSDT sequence=0 base_price=70552.6 bids=500 asks=500
+2026-03-18 19:59:23.721864125 [INFO ] Kraken snapshot received symbol=BTCUSDT bids=500 asks=500
+2026-03-18 19:59:23.723069667 [INFO ] Applied buffered deltas applied=0 skipped=0
+2026-03-18 19:59:23.723078625 [INFO ] Feed handler started symbol=BTCUSDT
+2026-03-18 19:59:23.723079209 [INFO ] Starting OKX feed handler symbol=BTCUSDT
+[2026/03/18 19:59:23:7231] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+[2026/03/18 19:59:23:7235] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/18 19:59:23:7235] W: ssh pvo "ops" is mandatory
+[2026/03/18 19:59:23:7235] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/18 19:59:23:7235] W: handler_server_protocol_init: requires 'upload-dir' pvo
+2026-03-18 19:59:24.467170417 [INFO ] OKX WebSocket established symbol=BTCUSDT
+2026-03-18 19:59:24.966349667 [INFO ] Snapshot applied symbol=BTCUSDT sequence=73837232960 base_price=70545.6 bids=400 asks=400
+2026-03-18 19:59:24.966378500 [INFO ] Applied OKX buffered deltas applied=0 skipped=0
+2026-03-18 19:59:24.966381084 [INFO ] OKX WS snapshot applied symbol=BTCUSDT seq=73837232960
+2026-03-18 19:59:24.966386834 [INFO ] OKX feed handler started symbol=BTCUSDT
+2026-03-18 19:59:24.966387750 [INFO ] Starting Coinbase feed handler symbol=BTCUSDT
+[2026/03/18 19:59:24:9664] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+[2026/03/18 19:59:24:9669] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/18 19:59:24:9669] W: ssh pvo "ops" is mandatory
+[2026/03/18 19:59:24:9669] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/18 19:59:24:9669] W: handler_server_protocol_init: requires 'upload-dir' pvo
+2026-03-18 19:59:25.375487709 [INFO ] Coinbase WebSocket established symbol=BTCUSDT
+Device: cpu
+
+============================================================
+Fold 1/2  train=150 test=50 ticks
+/Users/clementandredupuy/Desktop/ThamesRiverTrading/research/neural_alpha/features.py:93: RuntimeWarning: divide by zero encountered in divide
+  bid_p_norm = (bp - mid[:, None]) / spread[:, None]  # negative for bids
+/Users/clementandredupuy/Desktop/ThamesRiverTrading/research/neural_alpha/features.py:93: RuntimeWarning: invalid value encountered in divide
+  bid_p_norm = (bp - mid[:, None]) / spread[:, None]  # negative for bids
+/Users/clementandredupuy/Desktop/ThamesRiverTrading/research/neural_alpha/features.py:94: RuntimeWarning: divide by zero encountered in divide
+  ask_p_norm = (ap - mid[:, None]) / spread[:, None]  # positive for asks
+/Users/clementandredupuy/Desktop/ThamesRiverTrading/research/neural_alpha/features.py:94: RuntimeWarning: invalid value encountered in divide
+  ask_p_norm = (ap - mid[:, None]) / spread[:, None]  # positive for asks
+  Skipping fold — not enough data for windows.
+
+============================================================
+Fold 2/2  train=350 test=50 ticks
+  Skipping fold — not enough data for windows.
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/clementandredupuy/Desktop/ThamesRiverTrading/research/neural_alpha/shadow_session.py", line 789, in <module>
+    main()
+  File "/Users/clementandredupuy/Desktop/ThamesRiverTrading/research/neural_alpha/shadow_session.py", line 777, in main
+    session.train_on_recent(cfg.train_ticks)
+  File "/Users/clementandredupuy/Desktop/ThamesRiverTrading/research/neural_alpha/shadow_session.py", line 301, in train_on_recent
+    raise RuntimeError("Training produced no fold results — dataset too small.")
+RuntimeError: Training produced no fold results — dataset too small.
+2026-03-18 19:59:54.972019084 [WARN ] Coinbase feed failed to start symbol=BTCUSDT
+2026-03-18 19:59:54.975258209 [ERROR] reconciliation quarantine exchange=BINANCE reason=snapshot fetch failed action=1
+2026-03-18 19:59:54.975258500 [WARN ] reconcile_on_reconnect failed code=255
+2026-03-18 19:59:54.975285250 [INFO ] trading_engine started mode=shadow venues=BINANCE,KRAKEN,OKX,COINBASE symbol=BTCUSDT
+2026-03-18 20:00:25.076820750 [ERROR] reconciliation quarantine exchange=KRAKEN reason=periodic snapshot fetch failed action=1
+2026-03-18 20:00:25.076821292 [WARN ] periodic_reconciliation failed code=255
+2026-03-18 20:00:55.174040084 [ERROR] reconciliation quarantine exchange=OKX reason=periodic snapshot fetch failed action=1
+2026-03-18 20:00:55.174041125 [WARN ] periodic_reconciliation failed code=255
+2026-03-18 20:01:02.433259417 [WARN ] Triggering re-snapshot reason=Buffer overflow
+2026-03-18 20:01:25.245735709 [ERROR] reconciliation quarantine exchange=COINBASE reason=periodic snapshot fetch failed action=1
+2026-03-18 20:01:25.245736334 [WARN ] periodic_reconciliation failed code=255
+2026-03-18 20:02:42.531592750 [WARN ] Triggering re-snapshot reason=Buffer overflow
