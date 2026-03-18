@@ -21,6 +21,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace trading {
@@ -62,11 +63,16 @@ class OkxFeedHandler {
                                   const std::vector<PriceLevel>& asks) {
         bids_.clear();
         asks_.clear();
-        for (const auto& level : bids)
-            bids_[level.price] = std::to_string(level.size);
-        for (const auto& level : asks)
-            asks_[level.price] = std::to_string(level.size);
+        for (const auto& level : bids) {
+            bids_[level.price] = {std::to_string(level.price), std::to_string(level.size)};
+        }
+        for (const auto& level : asks) {
+            asks_[level.price] = {std::to_string(level.price), std::to_string(level.size)};
+        }
     }
+
+    // Exposes the internal CRC32 algorithm for test checksum construction.
+    static uint32_t crc32_for_test(const std::string& data);
 
   private:
     enum class State { DISCONNECTED, BUFFERING, STREAMING };
@@ -78,6 +84,7 @@ class OkxFeedHandler {
     std::string ws_url_;
 
     std::atomic<bool> running_{false};
+    std::atomic<bool> force_reconnect_{false};
     std::atomic<uint64_t> last_sequence_{0};
     std::atomic<State> state_{State::DISCONNECTED};
     std::atomic<void*> lws_ctx_{nullptr};
@@ -94,7 +101,9 @@ class OkxFeedHandler {
     ErrorCallback error_callback_;
 
     void ws_event_loop();
-    Result fetch_snapshot();
+    // Handles action:"snapshot" WS push — initialises the book, replays any buffered
+    // updates that arrived before the snapshot, then transitions to STREAMING.
+    Result process_ws_snapshot(const nlohmann::json& json);
     Result process_delta(const nlohmann::json& j, uint64_t seq);
     Result apply_buffered_deltas();
     bool validate_delta_sequence(uint64_t seq, uint64_t prev_seq) const;
@@ -102,8 +111,10 @@ class OkxFeedHandler {
     void apply_local_book_levels(const nlohmann::json& data);
     void trigger_resnapshot(const std::string& reason);
 
-    std::map<double, std::string, std::greater<double>> bids_;
-    std::map<double, std::string> asks_;
+    // Key: price as double (for ordering/lookup).
+    // Value: {price_str, size_str} — original wire strings used verbatim in CRC32.
+    std::map<double, std::pair<std::string, std::string>, std::greater<double>> bids_;
+    std::map<double, std::pair<std::string, std::string>> asks_;
 };
 
 } // namespace trading
