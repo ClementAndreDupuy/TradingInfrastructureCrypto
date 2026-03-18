@@ -395,6 +395,16 @@ def _evaluate_state_on_holdout(df: pl.DataFrame, state_dict: dict, cfg: TrainerC
     return sqerr / max(n, 1)
 
 
+def _atomic_torch_save(state_dict: dict, output_path: Path) -> None:
+    import torch
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    torch.save(state_dict, tmp_path)
+    tmp_path.replace(output_path)
+
+
+
 def _blend_fold_results(
     primary_folds: list[dict],
     secondary_folds: list[dict],
@@ -474,7 +484,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
     secondary_fold_results: list[dict] | None = None
     effective_folds = fold_results
-    if args.ensemble_secondary:
+    if args.enable_secondary_model:
         print("Training secondary ensemble model (d_spatial=32, d_temporal=64, n_temp_layers=1)…")
         secondary_cfg = TrainerConfig(
             epochs=args.epochs,
@@ -572,8 +582,9 @@ def run_pipeline(args: argparse.Namespace) -> None:
                         f"challenger_mse={challenger_oos_mse:.6e})"
                     )
 
-        torch.save(selected_state, args.save_model)
-        print(f"Best model saved → {args.save_model}")
+        primary_path = Path(args.save_model)
+        _atomic_torch_save(selected_state, primary_path)
+        print(f"Best primary model saved → {primary_path}")
         if challenger_oos_mse is not None:
             print(
                 "[MODEL_SELECT] holdout mid-return MSE "
@@ -581,7 +592,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 f"selected={'incumbent' if selected_state is not challenger_state else 'challenger'}"
             )
 
-        if args.ensemble_secondary and secondary_fold_results:
+        if args.enable_secondary_model and secondary_fold_results:
             secondary_cfg = TrainerConfig(
                 epochs=args.epochs,
                 n_folds=args.folds,
@@ -598,11 +609,11 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 secondary_fold_results,
                 key=lambda f: f["metrics"].get("loss_total", 1e9),
             )
-            secondary_path = Path(args.save_model).with_name(
-                f"{Path(args.save_model).stem}_secondary{Path(args.save_model).suffix}"
+            secondary_path = primary_path.with_name(
+                f"{primary_path.stem}_secondary{primary_path.suffix}"
             )
             secondary_state = best_secondary["model_state"]
-            torch.save(secondary_state, secondary_path)
+            _atomic_torch_save(secondary_state, secondary_path)
             secondary_mse = None
             holdout_start = int(len(df) * 0.8)
             holdout_df = df[holdout_start:]
@@ -655,10 +666,11 @@ def main() -> None:
     ap.add_argument("--entry-bps",       type=float, default=5.0,   dest="entry_bps")
     ap.add_argument("--fee-bps",         type=float, default=5.0,   dest="fee_bps")
     ap.add_argument(
-        "--ensemble-secondary",
-        action="store_true",
-        dest="ensemble_secondary",
-        help="Train a smaller secondary model and average fold predictions with primary model.",
+        "--enable-secondary-model",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        dest="enable_secondary_model",
+        help="Train and save a smaller secondary alpha model alongside the primary model (enabled by default).",
     )
 
     args = ap.parse_args()

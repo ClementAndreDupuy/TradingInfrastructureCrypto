@@ -84,6 +84,10 @@ _DATA_OFFSET = 8
 _REGIME_SIGNAL_FILE = "/tmp/trt_ipc/regime_signal.bin"
 
 
+def _ensure_parent_dir(path: str | Path) -> None:
+    Path(path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+
+
 def _symbol_model_path(symbol: str, variant: str = "latest") -> Path:
     symbol_tag = symbol.lower()
     return Path(f"models/neural_alpha_{symbol_tag}_{variant}.pt")
@@ -94,6 +98,7 @@ class _SignalPublisher:
 
     def __init__(self, path: str = _SIGNAL_FILE) -> None:
         self._path = path
+        _ensure_parent_dir(path)
         self._f = open(path, "w+b")
         self._f.write(b"\x00" * _SIGNAL_SIZE)
         self._f.flush()
@@ -153,6 +158,7 @@ class ShadowSessionConfig:
     canary_window: int = 200            # rolling window for canary IC calculation
     canary_min_samples: int = 60        # minimum samples before canary can fire
     ops_events_log: str = "logs/ops_events.jsonl"
+    require_full_model_stack: bool = True
 
 
 class NeuralAlphaShadowSession:
@@ -169,8 +175,10 @@ class NeuralAlphaShadowSession:
         # ring buffer: at least 500 ticks for rolling normalisation
         self._ring: list[dict] = []
         self._max_ring = max(500, cfg.seq_len * 2)
+        _ensure_parent_dir(cfg.log_path)
         self._log_fp = open(cfg.log_path, "a")
         self._publisher = _SignalPublisher(cfg.signal_file)
+        _ensure_parent_dir(cfg.regime_signal_file)
         self._regime_publisher = RegimeSignalPublisher(cfg.regime_signal_file)
         self._regime_artifact = None
         if Path(cfg.regime_model_path).exists():
@@ -230,6 +238,20 @@ class NeuralAlphaShadowSession:
         self._prev_primary_signal = None
         self._prev_ensemble_signal = None
         print(f"Secondary model loaded from {path}")
+
+    def _validate_production_stack(self) -> None:
+        missing: list[str] = []
+        if self._model is None:
+            missing.append("primary alpha model")
+        if self._secondary_model is None:
+            missing.append("secondary alpha model")
+        if self._regime_artifact is None:
+            missing.append("regime model")
+        if missing and self.cfg.require_full_model_stack:
+            raise RuntimeError(
+                "Research production stack requires " + ", ".join(missing) + ". "
+                "Provide the saved artifacts or start with --no-require-full-model-stack only for non-production debugging."
+            )
 
     def _unload_secondary_model(self, reason: str) -> None:
         """Disable the secondary model after a canary failure and enter safe mode."""
@@ -689,6 +711,13 @@ def main() -> None:
     ap.add_argument("--canary-min-samples", type=int, default=60, dest="canary_min_samples")
     ap.add_argument("--ops-events-log", type=str, default="logs/ops_events.jsonl",
                     dest="ops_events_log")
+    ap.add_argument(
+        "--require-full-model-stack",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        dest="require_full_model_stack",
+        help="Require primary + secondary alpha models and regime artifact before entering production shadow mode.",
+    )
     args = ap.parse_args()
 
     cfg = ShadowSessionConfig(
@@ -722,6 +751,7 @@ def main() -> None:
         canary_window=args.canary_window,
         canary_min_samples=args.canary_min_samples,
         ops_events_log=args.ops_events_log,
+        require_full_model_stack=args.require_full_model_stack,
     )
 
     session = NeuralAlphaShadowSession(cfg)
@@ -751,6 +781,7 @@ def main() -> None:
             "Continuous training will bootstrap once enough ticks accumulate."
         )
 
+    session._validate_production_stack()
     session.run()
 
 
