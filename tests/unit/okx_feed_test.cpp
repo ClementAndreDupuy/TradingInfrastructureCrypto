@@ -1,5 +1,5 @@
-#include "core/feeds/okx/okx_feed_handler.hpp"
 #include "core/common/symbol_mapper.hpp"
+#include "core/feeds/okx/okx_feed_handler.hpp"
 #include <gtest/gtest.h>
 #include <stdexcept>
 
@@ -78,7 +78,6 @@ TEST_F(OkxFeedHandlerTest, BuffersBookDeltasBeforeStreaming) {
     EXPECT_TRUE(last_error_.empty());
 }
 
-
 TEST_F(OkxFeedHandlerTest, IgnoresMessagesForOtherInstrument) {
     handler_->set_streaming_state_for_test(100);
     handler_->seed_book_state_for_test({PriceLevel{50000.0, 1.0}}, {PriceLevel{50001.0, 1.0}});
@@ -125,17 +124,17 @@ TEST(SymbolMapperTest, PreservesDelimitedInputAcrossExchanges) {
 
 TEST(SymbolMapperTest, ForExchangeReturnsCorrectVenueString) {
     const VenueSymbols symbols = SymbolMapper::map_all("BTCUSDT");
-    EXPECT_EQ(symbols.for_exchange(Exchange::BINANCE),  "BTCUSDT");
-    EXPECT_EQ(symbols.for_exchange(Exchange::OKX),      "BTC-USDT");
+    EXPECT_EQ(symbols.for_exchange(Exchange::BINANCE), "BTCUSDT");
+    EXPECT_EQ(symbols.for_exchange(Exchange::OKX), "BTC-USDT");
     EXPECT_EQ(symbols.for_exchange(Exchange::COINBASE), "BTC-USDT");
-    EXPECT_EQ(symbols.for_exchange(Exchange::KRAKEN),   "BTC/USDT");
+    EXPECT_EQ(symbols.for_exchange(Exchange::KRAKEN), "BTC/USDT");
 }
 
 TEST(SymbolMapperTest, MapForExchangeConvenienceWrapper) {
-    EXPECT_EQ(SymbolMapper::map_for_exchange(Exchange::BINANCE,  "BTC/USDT"), "BTCUSDT");
-    EXPECT_EQ(SymbolMapper::map_for_exchange(Exchange::OKX,      "BTCUSDT"),  "BTC-USDT");
+    EXPECT_EQ(SymbolMapper::map_for_exchange(Exchange::BINANCE, "BTC/USDT"), "BTCUSDT");
+    EXPECT_EQ(SymbolMapper::map_for_exchange(Exchange::OKX, "BTCUSDT"), "BTC-USDT");
     EXPECT_EQ(SymbolMapper::map_for_exchange(Exchange::COINBASE, "BTC_USDT"), "BTC-USDT");
-    EXPECT_EQ(SymbolMapper::map_for_exchange(Exchange::KRAKEN,   "BTCUSDT"),  "BTC/USDT");
+    EXPECT_EQ(SymbolMapper::map_for_exchange(Exchange::KRAKEN, "BTCUSDT"), "BTC/USDT");
 }
 
 TEST(SymbolMapperTest, EmptySymbolThrowsInvalidArgument) {
@@ -156,11 +155,10 @@ TEST_F(OkxFeedHandlerTest, ChecksumMismatchTriggersResnapshot) {
 // action:"snapshot" WS push initialises the book, fires the snapshot callback,
 // and allows subsequent incremental updates to be processed normally.
 TEST_F(OkxFeedHandlerTest, WsSnapshotInitializesBook) {
-    std::string snap_msg =
-        R"({"action":"snapshot","arg":{"channel":"books","instId":"BTC-USDT"},)"
-        R"("data":[{"bids":[["50000","1.0","0","1"],["49999","2.0","0","1"]],)"
-        R"("asks":[["50001","1.5","0","1"],["50002","0.5","0","1"]],)"
-        R"("ts":"1000","seqId":200}]})";
+    std::string snap_msg = R"({"action":"snapshot","arg":{"channel":"books","instId":"BTC-USDT"},)"
+                           R"("data":[{"bids":[["50000","1.0","0","1"],["49999","2.0","0","1"]],)"
+                           R"("asks":[["50001","1.5","0","1"],["50002","0.5","0","1"]],)"
+                           R"("ts":"1000","seqId":200}]})";
 
     EXPECT_EQ(handler_->process_message(snap_msg), Result::SUCCESS);
     EXPECT_EQ(handler_->get_sequence(), 200u);
@@ -180,10 +178,9 @@ TEST_F(OkxFeedHandlerTest, DeltaProcessedAfterWsSnapshot) {
         R"("ts":"1000","seqId":100}]})";
     ASSERT_EQ(handler_->process_message(snap_msg), Result::SUCCESS);
 
-    std::string update_msg =
-        R"({"action":"update","arg":{"channel":"books","instId":"BTC-USDT"},)"
-        R"("data":[{"seqId":"101","prevSeqId":"100",)"
-        R"("bids":[["50000","2.0","0","1"]],"asks":[],"ts":"1001"}]})";
+    std::string update_msg = R"({"action":"update","arg":{"channel":"books","instId":"BTC-USDT"},)"
+                             R"("data":[{"seqId":"101","prevSeqId":"100",)"
+                             R"("bids":[["50000","2.0","0","1"]],"asks":[],"ts":"1001"}]})";
 
     EXPECT_EQ(handler_->process_message(update_msg), Result::SUCCESS);
     EXPECT_EQ(handler_->get_sequence(), 101u);
@@ -197,10 +194,9 @@ TEST_F(OkxFeedHandlerTest, DeltaProcessedAfterWsSnapshot) {
 // WS snapshot is received; the handler ends up in STREAMING with the correct seq.
 TEST_F(OkxFeedHandlerTest, BufferedUpdateAppliedAfterWsSnapshot) {
     // Send a delta before the snapshot (handler buffers it in DISCONNECTED state).
-    std::string update_msg =
-        R"({"action":"update","arg":{"channel":"books","instId":"BTC-USDT"},)"
-        R"("data":[{"seqId":"101","prevSeqId":"100",)"
-        R"("bids":[["50000","3.0","0","1"]],"asks":[],"ts":"999"}]})";
+    std::string update_msg = R"({"action":"update","arg":{"channel":"books","instId":"BTC-USDT"},)"
+                             R"("data":[{"seqId":"101","prevSeqId":"100",)"
+                             R"("bids":[["50000","3.0","0","1"]],"asks":[],"ts":"999"}]})";
     EXPECT_EQ(handler_->process_message(update_msg), Result::SUCCESS);
     EXPECT_TRUE(deltas_.empty()); // still buffered
 

@@ -104,10 +104,9 @@ static struct lws_protocols k_okx_protocols[] = {
 
 OkxFeedHandler::OkxFeedHandler(const std::string& symbol, const std::string& api_url,
                                const std::string& ws_url)
-    : symbol_(symbol), venue_symbols_(SymbolMapper::map_all(symbol)),
-      inst_id_(venue_symbols_.okx), api_url_(api_url), ws_url_(ws_url) {
-    LOG_INFO("OkxFeedHandler created", "symbol", symbol_.c_str(), "inst_id",
-             inst_id_.c_str());
+    : symbol_(symbol), venue_symbols_(SymbolMapper::map_all(symbol)), inst_id_(venue_symbols_.okx),
+      api_url_(api_url), ws_url_(ws_url) {
+    LOG_INFO("OkxFeedHandler created", "symbol", symbol_.c_str(), "inst_id", inst_id_.c_str());
 }
 
 OkxFeedHandler::~OkxFeedHandler() { stop(); }
@@ -257,9 +256,6 @@ void OkxFeedHandler::ws_event_loop() {
 
         LOG_INFO("OKX WebSocket established", "symbol", symbol_.c_str());
 
-        // Reset book state. The exchange will push an action:"snapshot" message
-        // as the first WS frame after subscription; process_ws_snapshot handles
-        // book init and transitions state to STREAMING.
         state_.store(State::BUFFERING, std::memory_order_release);
         delta_buffer_.clear();
         bids_.clear();
@@ -296,9 +292,6 @@ void OkxFeedHandler::ws_event_loop() {
     ws_cv_.notify_all();
 }
 
-// Handles the action:"snapshot" WS push that OKX sends immediately after subscription.
-// Initialises the local book from wire strings, replays any updates that arrived before
-// the snapshot (normally none, but guarded for robustness), then enters STREAMING.
 auto OkxFeedHandler::process_ws_snapshot(const nlohmann::json& json) -> Result {
     auto data_it = json.find("data");
     if (data_it == json.end() || !data_it->is_array() || data_it->empty()) {
@@ -431,15 +424,12 @@ auto OkxFeedHandler::process_message(const std::string& message) -> Result {
         return Result::SUCCESS;
     }
 
-    // Route based on action field: "snapshot" initialises the book; anything else
-    // (typically "update", or absent for legacy frames) is an incremental delta.
     auto action_it = json.find("action");
     if (action_it != json.end() && action_it->is_string() &&
         action_it->get<std::string>() == "snapshot") {
         return process_ws_snapshot(json);
     }
 
-    // --- incremental update path ---
     auto data_it = json.find("data");
     if (data_it == json.end() || !data_it->is_array() || data_it->empty()) {
         return Result::SUCCESS;
@@ -573,9 +563,6 @@ auto OkxFeedHandler::validate_checksum(const nlohmann::json& data) const -> bool
         remote_checksum = checksum_it->get<int64_t>();
     }
 
-    // Build test copies of the current book and apply the incoming delta to them.
-    // The OKX checksum covers the top-25 interleaved bid/ask levels after the update,
-    // using the exact wire strings (price and size) as received from the exchange.
     auto test_bids = bids_;
     auto test_asks = asks_;
 
@@ -667,8 +654,6 @@ void OkxFeedHandler::trigger_resnapshot(const std::string& reason) {
     }
     delta_buffer_.clear();
     state_.store(State::BUFFERING, std::memory_order_release);
-    // Signal the streaming loop to exit and reconnect so that OKX will push
-    // a fresh action:"snapshot" frame on the new subscription.
     force_reconnect_.store(true, std::memory_order_release);
     if (auto* ctx = static_cast<struct lws_context*>(lws_ctx_.load(std::memory_order_acquire))) {
         lws_cancel_service(ctx);
