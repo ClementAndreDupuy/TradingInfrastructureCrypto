@@ -220,6 +220,60 @@ def _fit_hmm(x: np.ndarray, cfg: RegimeConfig) -> tuple[np.ndarray, np.ndarray, 
     return labels, initial, transition, means, variances
 
 
+def _calm_anchored_fallback(
+    feat: pl.DataFrame,
+    cfg: RegimeConfig,
+    raw_scales: np.ndarray,
+) -> tuple["RegimeArtifact", dict[str, float]]:
+    """
+    When training data is flat/degenerate, the market is calm by definition.
+    Build a valid HMM artifact anchored to calm rather than raising an error.
+
+    All states share the observed means (only calm data was seen so we cannot
+    learn regime separations). Calm gets near-certain initial and transition
+    probability, so live inference will output high p_calm for flat data and
+    allow probability to flow to other states as real variation appears.
+    """
+    n = cfg.n_regimes
+    x_raw = feat.to_numpy().astype(np.float64)
+    obs_mean = x_raw.mean(axis=0)
+    obs_var = np.maximum(x_raw.var(axis=0), cfg.covariance_floor)
+    scales = np.where(raw_scales < 1e-8, 1.0, raw_scales)
+
+    all_names = ["calm", "trending", "illiquid", "shock"]
+    regime_names = all_names[:n]
+    calm_idx = 0
+
+    means = np.tile(obs_mean, (n, 1))
+    variances = np.tile(obs_var, (n, 1))
+
+    # Near-certain start in calm; tiny mass on other states for numeric stability
+    initial = np.full(n, 1e-6)
+    initial[calm_idx] = 1.0 - (n - 1) * 1e-6
+    initial /= initial.sum()
+
+    # Strong self-transition so the model stays in whatever state it entered
+    transition = np.full((n, n), 0.1 / max(n - 1, 1))
+    np.fill_diagonal(transition, 0.9)
+    transition /= transition.sum(axis=1, keepdims=True)
+
+    distribution: dict[str, float] = {name: 0.0 for name in regime_names}
+    distribution["calm"] = 1.0
+
+    artifact = RegimeArtifact(
+        version="r2-regime-hmm-v1",
+        n_regimes=n,
+        feature_columns=feat.columns,
+        regime_names=regime_names,
+        initial_probs=initial.tolist(),
+        transition_matrix=transition.tolist(),
+        means=means.tolist(),
+        variances=variances.tolist(),
+        scales=scales.tolist(),
+    )
+    return artifact, distribution
+
+
 def _semantic_regime_names(raw_means: np.ndarray) -> list[str]:
     n = raw_means.shape[0]
     names = [f"regime_{i}" for i in range(n)]
@@ -248,8 +302,19 @@ def train_regime_model_from_df(df: pl.DataFrame, cfg: RegimeConfig) -> tuple[Reg
     feat = _feature_frame(df)
 
     x_raw = feat.to_numpy().astype(np.float64)
-    scales = x_raw.std(axis=0)
-    scales = np.where(scales < 1e-8, 1.0, scales)
+    raw_scales = x_raw.std(axis=0)
+    n_degenerate = int(np.sum(raw_scales < 1e-8))
+    if n_degenerate > len(raw_scales) // 2:
+        # Flat data with no variation is calm by definition — anchor to calm
+        # rather than failing. The artifact will infer high p_calm for flat
+        # live data and allow probability to flow to other states as real
+        # variation appears, at which point a proper HMM retrain will take over.
+        print(
+            f"[REGIME] Flat training data ({n_degenerate}/{len(raw_scales)} features "
+            f"near-zero variance) — anchoring artifact to calm regime."
+        )
+        return _calm_anchored_fallback(feat, cfg, raw_scales)
+    scales = np.where(raw_scales < 1e-8, 1.0, raw_scales)
     x = x_raw / scales
 
     labels, initial, transition, means, variances = _fit_hmm(x, cfg)

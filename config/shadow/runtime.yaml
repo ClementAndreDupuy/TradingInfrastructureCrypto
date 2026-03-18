@@ -15,5 +15,7 @@ report_interval: 60
 alpha_exchanges: BINANCE,KRAKEN,OKX,COINBASE
 alpha_seq_len: 64
 alpha_log_path: logs/neural_alpha_shadow.jsonl
+continuous_train_every_ticks: 10000
+continuous_train_window_ticks: 2000
 shadow_fallback_api_key: local-shadow-key
 shadow_fallback_api_secret: local-shadow-secret

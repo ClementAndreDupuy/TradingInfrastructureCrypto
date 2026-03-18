@@ -305,6 +305,7 @@ class NeuralAlphaShadowSession:
             d_temporal=self.cfg.d_temporal,
             resume_state_dict=resume_state,
         )
+        print(f"[PRIMARY] Starting primary model training (folds={n_folds}, epochs={self.cfg.train_epochs})")
         fold_results = walk_forward_train(df, tcfg)
         if not fold_results:
             print(
@@ -364,7 +365,7 @@ class NeuralAlphaShadowSession:
         out_meta.write_text(json.dumps(meta, indent=2))
 
         print(
-            "In-place training done. "
+            f"[PRIMARY] In-place training done. "
             f"Val loss: {best['metrics'].get('loss_total', 'n/a'):.4f} "
             f"saved={out_path}"
         )
@@ -395,10 +396,11 @@ class NeuralAlphaShadowSession:
             d_temporal=64,
             n_temp_layers=1,
         )
+        print(f"[SECONDARY] Starting secondary model training (folds={n_folds}, epochs={self.cfg.train_epochs}, d_spatial=32, d_temporal=64)")
         fold_results = walk_forward_train(df, tcfg)
         if not fold_results:
             print(
-                f"[WARN] Secondary model training produced no fold results "
+                f"[SECONDARY][WARN] Secondary model training produced no fold results "
                 f"({len(df)} ticks, seq_len={self.cfg.seq_len}). "
                 "Secondary model not updated."
             )
@@ -420,15 +422,16 @@ class NeuralAlphaShadowSession:
         )
         self._prev_primary_signal = None
         self._prev_ensemble_signal = None
-        print(f"Secondary model trained and saved to {out_path}")
+        print(f"[SECONDARY] Secondary model trained and saved to {out_path}")
 
     def _train_regime_on_data(self, df: pl.DataFrame) -> None:
         regime_path = Path(self.cfg.regime_model_path)
+        print(f"[REGIME] Starting regime model training on {len(df)} ticks")
         artifact, distribution = train_regime_model_from_df(df, RegimeConfig())
         regime_path.parent.mkdir(parents=True, exist_ok=True)
         save_regime_artifact(artifact, str(regime_path))
         self._regime_artifact = artifact
-        print(f"Regime model trained, distribution={distribution}, saved to {regime_path}")
+        print(f"[REGIME] Regime model trained, distribution={distribution}, saved to {regime_path}")
 
     def _evaluate_state_on_holdout(self, state_dict: dict[str, torch.Tensor], holdout_df: pl.DataFrame) -> float:
         dataset = LOBDataset(holdout_df, DatasetConfig(seq_len=self.cfg.seq_len))
