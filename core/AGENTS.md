@@ -35,3 +35,4 @@
   2. `tests/integration/` (feed→book→risk path)
   3. `tests/replay/` for sequence/regression confidence
 - If a change could impact latency, add or run `tests/perf/` checks before merging.
+- Keep comments in `core/` sparse and high-signal: remove banner comments, usage walkthroughs, and line-by-line restatements of obvious code; keep only invariants, concurrency/memory-ordering notes, protocol contracts, and non-obvious safety rationale.

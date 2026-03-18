@@ -1,21 +1,5 @@
 #pragma once
 
-// CircuitBreaker — pre-trade and in-flight risk guards.
-//
-// All checks are lock-free (atomic operations only).
-// No heap allocation after construction.
-// Designed to be evaluated in < 500 ns on x86-64.
-//
-// Checks provided:
-//   check_order_rate()          — per-second and per-minute order rate limits
-//   check_message_rate()        — feed message rate guard (detects bursts)
-//   check_drawdown()            — daily loss limit; arms kill switch if breached
-//   check_book_age()            — stale book detector (uses BookManager::age_ms)
-//   check_price_deviation()     — flash crash guard (price vs reference EMA)
-//   record_leg_result()         — consecutive loss circuit breaker
-//
-// Config values are sourced from config/dev/risk.yaml (arb_risk section).
-
 #include "../common/logging.hpp"
 #include "../feeds/common/book_manager.hpp"
 #include "kill_switch.hpp"
@@ -38,7 +22,6 @@ struct CircuitBreakerConfig {
     // Stale book
     int64_t max_book_age_ms = 500;
 
-    // Flash crash guard
     double max_price_deviation_bps = 300.0; // vs EMA reference price
     double price_ema_alpha = 0.01;          // EMA smoothing (per tick)
 
@@ -65,16 +48,9 @@ class CircuitBreaker {
           order_count_min_(0), min_window_start_ns_(0), msg_count_sec_(0), msg_window_start_ns_(0),
           realized_pnl_(0.0), ref_price_(0.0), consec_losses_(0) {}
 
-    // ── Rate limiting ─────────────────────────────────────────────────────────
-    //
-    // Returns OK if the order is within rate limits.
-    // Call this BEFORE submitting each order.
-    // Thread-safe via lock-free CAS on window start.
-
     CircuitCheckResult check_order_rate() noexcept {
         int64_t now = now_ns();
 
-        // Per-second window
         int64_t sec_start = sec_window_start_ns_.load(std::memory_order_acquire);
         if (now - sec_start >= 1'000'000'000LL) {
             // Try to reset the window. If another thread beats us, it's fine — they reset it.
@@ -90,7 +66,6 @@ class CircuitBreaker {
             return CircuitCheckResult::RATE_LIMIT_SEC;
         }
 
-        // Per-minute window
         int64_t min_start = min_window_start_ns_.load(std::memory_order_acquire);
         if (now - min_start >= 60'000'000'000LL) {
             if (min_window_start_ns_.compare_exchange_strong(min_start, now,
@@ -107,11 +82,6 @@ class CircuitBreaker {
 
         return CircuitCheckResult::OK;
     }
-
-    // ── Feed message rate guard ───────────────────────────────────────────────
-    //
-    // Call from the feed handler on every received message.
-    // Detects abnormal message bursts (exchange feed replay, ghost data).
 
     CircuitCheckResult check_message_rate() noexcept {
         int64_t now = now_ns();
@@ -131,11 +101,6 @@ class CircuitBreaker {
         return CircuitCheckResult::OK;
     }
 
-    // ── Drawdown check ────────────────────────────────────────────────────────
-    //
-    // Pass the current cumulative realized P&L (negative = loss).
-    // Arms the kill switch if the daily loss limit is breached.
-
     CircuitCheckResult check_drawdown(double realized_pnl) noexcept {
         realized_pnl_.store(realized_pnl, std::memory_order_release);
         if (realized_pnl <= cfg_.max_drawdown_usd) {
@@ -146,11 +111,6 @@ class CircuitBreaker {
         }
         return CircuitCheckResult::OK;
     }
-
-    // ── Stale book detector ───────────────────────────────────────────────────
-    //
-    // Returns STALE_BOOK if the book has not been updated within max_book_age_ms.
-    // Triggers BOOK_CORRUPTED kill switch reason.
 
     CircuitCheckResult check_book_age(const BookManager& book) noexcept {
         int64_t age = book.age_ms();
@@ -163,12 +123,6 @@ class CircuitBreaker {
         return CircuitCheckResult::OK;
     }
 
-    // ── Flash crash guard ─────────────────────────────────────────────────────
-    //
-    // Updates the reference price EMA and rejects if price deviates beyond
-    // max_price_deviation_bps from the EMA.
-    // Call with the current mid price on each book update.
-
     CircuitCheckResult check_price_deviation(double price) noexcept {
         if (price <= 0.0)
             return CircuitCheckResult::OK;
@@ -178,7 +132,6 @@ class CircuitBreaker {
         // is a slightly stale EMA on concurrent threads, which is fine.
         double ref = ref_price_.load(std::memory_order_relaxed);
         if (ref == 0.0) {
-            // Initialise on first call
             ref_price_.store(price, std::memory_order_release);
             return CircuitCheckResult::OK;
         }
@@ -196,11 +149,6 @@ class CircuitBreaker {
         }
         return CircuitCheckResult::OK;
     }
-
-    // ── Consecutive-loss circuit breaker ──────────────────────────────────────
-    //
-    // Record the P&L outcome of a completed arbitrage leg.
-    // Arms kill switch after N consecutive losses each exceeding per_leg_loss_usd.
 
     CircuitCheckResult record_leg_result(double leg_pnl) noexcept {
         if (leg_pnl <= cfg_.per_leg_loss_usd) {
@@ -226,8 +174,6 @@ class CircuitBreaker {
         }
         return CircuitCheckResult::OK;
     }
-
-    // ── Accessors ─────────────────────────────────────────────────────────────
 
     static const char* result_to_string(CircuitCheckResult r) noexcept {
         switch (r) {
@@ -258,7 +204,6 @@ class CircuitBreaker {
         return consec_losses_.load(std::memory_order_acquire);
     }
 
-    // Reset daily counters (call at start of each trading day).
     void reset_daily() noexcept {
         realized_pnl_.store(0.0, std::memory_order_release);
         consec_losses_.store(0, std::memory_order_release);
@@ -269,7 +214,6 @@ class CircuitBreaker {
     CircuitBreakerConfig cfg_;
     KillSwitch& kill_switch_;
 
-    // Rate limit state
     std::atomic<int32_t> order_count_sec_;
     std::atomic<int64_t> sec_window_start_ns_;
     std::atomic<int32_t> order_count_min_;
@@ -277,13 +221,10 @@ class CircuitBreaker {
     std::atomic<int32_t> msg_count_sec_;
     std::atomic<int64_t> msg_window_start_ns_;
 
-    // Drawdown / loss tracking
     std::atomic<double> realized_pnl_;
 
-    // Flash crash guard
     std::atomic<double> ref_price_;
 
-    // Consecutive losses
     std::atomic<int32_t> consec_losses_;
 
     static int64_t now_ns() noexcept {

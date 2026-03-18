@@ -10,15 +10,6 @@
 
 namespace trading {
 
-// Connects any feed handler's callbacks to an OrderBook.
-//
-// Usage:
-//   BookManager mgr("BTCUSDT", Exchange::BINANCE, /*tick=*/1.0, /*levels=*/20000);
-//   handler.set_snapshot_callback(mgr.snapshot_handler());
-//   handler.set_delta_callback(mgr.delta_handler());
-//   handler.start();
-//   // book is now live
-//   std::cout << mgr.best_bid() << " / " << mgr.best_ask();
 class BookManager {
   public:
     BookManager(const std::string& symbol, Exchange exchange, double tick_size = 1.0,
@@ -31,7 +22,6 @@ class BookManager {
 
     void set_publisher(LobPublisher* publisher) noexcept { publisher_ = publisher; }
 
-    // Returns a lambda suitable for set_snapshot_callback().
     std::function<void(const Snapshot&)> snapshot_handler() {
         return [this](const Snapshot& s) {
             auto result = book_.apply_snapshot(s);
@@ -47,7 +37,6 @@ class BookManager {
         };
     }
 
-    // Returns a lambda suitable for set_delta_callback().
     std::function<void(const Delta&)> delta_handler() {
         return [this](const Delta& d) {
             auto result = book_.apply_delta(d);
@@ -69,8 +58,6 @@ class BookManager {
     double spread() const { return book_.get_spread(); }
     bool is_ready() const { return book_.is_initialized(); }
 
-    // Milliseconds since the last successful snapshot or delta.
-    // Returns INT64_MAX if the book has never been updated.
     int64_t age_ms() const noexcept {
         int64_t ts = last_update_steady_ns_.load(std::memory_order_acquire);
         if (ts == 0)
