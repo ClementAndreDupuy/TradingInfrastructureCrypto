@@ -40,24 +40,29 @@ struct TscCalibration {
     double ns_per_cycle; // nanoseconds per TSC cycle
 
     static TscCalibration calibrate() noexcept {
-        // Sample wall clock + TSC twice, ~50ms apart, to measure frequency.
+        // Sample wall-clock time twice while measuring elapsed time with a
+        // monotonic clock. system_clock answers "what time is it?"; steady_clock
+        // answers "how much time elapsed?".
         TscCalibration c;
-        using Clock = std::chrono::steady_clock;
+        using WallClock = std::chrono::system_clock;
+        using SteadyClock = std::chrono::steady_clock;
 
-        auto t0_wall = Clock::now();
+        auto t0_wall = WallClock::now();
+        auto t0_steady = SteadyClock::now();
         uint64_t t0_tsc = TRADING_RDTSC();
 
         // Spin-wait ~50 ms to get a stable frequency sample.
         while (
-            std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t0_wall).count() <
+            std::chrono::duration_cast<std::chrono::milliseconds>(SteadyClock::now() - t0_steady)
+                .count() <
             50) {
         }
 
         uint64_t t1_tsc = TRADING_RDTSC();
-        auto t1_wall = Clock::now();
+        auto t1_steady = SteadyClock::now();
 
         int64_t elapsed_ns =
-            std::chrono::duration_cast<std::chrono::nanoseconds>(t1_wall - t0_wall).count();
+            std::chrono::duration_cast<std::chrono::nanoseconds>(t1_steady - t0_steady).count();
         uint64_t elapsed_tsc = t1_tsc - t0_tsc;
 
         c.tsc_base = t0_tsc;
