@@ -497,3 +497,89 @@ class TestShadowSessionTraining:
 
         session._log_fp.close()
         session._publisher.close()
+
+    def test_main_loads_secondary_model_after_train_on_recent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """After train_on_recent, main() must attempt to load the secondary model
+        before calling _validate_production_stack, mirroring the primary-model-exists branch."""
+        import sys
+        from research.neural_alpha.shadow_session import main, _symbol_model_path
+        from research.neural_alpha.model import CryptoAlphaNet
+
+        primary_path = tmp_path / "neural_alpha_btcusdt_latest.pt"
+        secondary_path = tmp_path / "neural_alpha_btcusdt_secondary.pt"
+        log_path = tmp_path / "shadow.jsonl"
+        signal_path = tmp_path / "alpha_signal.bin"
+
+        # Save a small secondary model so the file exists for loading.
+        secondary_model = CryptoAlphaNet(d_spatial=32, d_temporal=64, n_temp_layers=1, seq_len=8)
+        torch.save(secondary_model.state_dict(), secondary_path)
+
+        monkeypatch.setattr(
+            sys, "argv",
+            [
+                "shadow_session",
+                "--train-ticks", "4",
+                "--train-epochs", "1",
+                "--seq-len", "8",
+                "--d-spatial", "16",
+                "--d-temporal", "32",
+                "--model-path", str(primary_path),
+                "--secondary-model-path", str(secondary_path),
+                "--log-path", str(log_path),
+                "--signal-file", str(signal_path),
+                "--no-require-full-model-stack",
+                "--duration", "0",
+            ],
+        )
+
+        tick_base = {
+            "timestamp_ns": 1,
+            "exchange": "BINANCE",
+            "best_bid": 100.0, "best_ask": 100.1,
+            "bid_price_1": 100.0, "ask_price_1": 100.1,
+            "bid_size_1": 1.0,   "ask_size_1": 1.0,
+            "bid_price_2": 99.9, "ask_price_2": 100.2,
+            "bid_size_2": 1.0,   "ask_size_2": 1.0,
+            "bid_price_3": 99.8, "ask_price_3": 100.3,
+            "bid_size_3": 1.0,   "ask_size_3": 1.0,
+            "bid_price_4": 99.7, "ask_price_4": 100.4,
+            "bid_size_4": 1.0,   "ask_size_4": 1.0,
+            "bid_price_5": 99.6, "ask_price_5": 100.5,
+            "bid_size_5": 1.0,   "ask_size_5": 1.0,
+        }
+        counter = {"t": 0}
+
+        def _fake_fetch(symbol: str) -> dict:
+            counter["t"] += 1
+            return {**tick_base, "timestamp_ns": counter["t"]}
+
+        def _fake_walk_forward_train(df: pl.DataFrame, cfg_local: object) -> list[dict]:
+            model = CryptoAlphaNet(d_spatial=16, d_temporal=32, seq_len=8)
+            return [{"metrics": {"loss_total": 0.5}, "model_state": model.state_dict()}]
+
+        loaded_secondary: list[bool] = []
+
+        def _fake_load_secondary(self_session, path: str) -> None:
+            loaded_secondary.append(True)
+            # Build the small secondary model just like the real method.
+            m = CryptoAlphaNet(d_spatial=32, d_temporal=64, n_temp_layers=1, seq_len=8)
+            state = torch.load(path, map_location="cpu", weights_only=True)
+            m.load_state_dict(state)
+            self_session._secondary_model = m
+
+        monkeypatch.setattr("research.neural_alpha.shadow_session._fetch_binance_l5", _fake_fetch)
+        monkeypatch.setattr("research.neural_alpha.shadow_session.walk_forward_train", _fake_walk_forward_train)
+        monkeypatch.setattr(
+            "research.neural_alpha.shadow_session.NeuralAlphaShadowSession.load_secondary_model",
+            _fake_load_secondary,
+        )
+        monkeypatch.setattr(
+            "research.neural_alpha.shadow_session.NeuralAlphaShadowSession.run",
+            lambda self_session: None,
+        )
+
+        main()
+
+        assert loaded_secondary, "load_secondary_model was not called after train_on_recent"

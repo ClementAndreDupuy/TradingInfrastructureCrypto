@@ -796,6 +796,8 @@ def main() -> None:
                     "--no-require-full-model-stack for non-production debugging."
                 )
         else:
+            if secondary_model_path.exists():
+                session.load_secondary_model(str(secondary_model_path))
             session._validate_production_stack()
     else:
         print(
