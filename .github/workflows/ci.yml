@@ -155,3 +155,6 @@ jobs:
 
       - name: Run execution/risk deterministic suites
         run: cd build-sanitizer && ctest --output-on-failure -R "ConnectorContractTest|LiveConnectorsTest|IdempotencyRecoveryTest|ReconciliationServiceTest|MarketMakerRiskTest|GlobalRiskControlsTest"
+
+      - name: Run OrderManager concurrency test (data-race validation)
+        run: cd build-sanitizer && ctest --output-on-failure -R OrderManagerTest

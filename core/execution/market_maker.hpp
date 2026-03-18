@@ -93,6 +93,7 @@ class NeuralAlphaMarketMaker {
     void on_book_update() {
         if (kill_.is_active())
             return;
+        om_.drain_fills();
         if (!book_.is_ready())
             return;
 

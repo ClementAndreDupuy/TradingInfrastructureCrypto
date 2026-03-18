@@ -4,10 +4,13 @@
 //
 // Sits between the strategy and ExchangeConnector:
 //   strategy → OrderManager::submit() → connector.submit_order()
-//   connector.on_fill → OrderManager::handle_fill() → strategy callback
+//   connector.on_fill → SPSC queue → OrderManager::drain_fills() → strategy callback
 //
 // Pre-allocated slot pool — no heap allocation after construction.
 // All operations are O(MAX_ORDERS) worst case; fine for small open-order sets.
+//
+// Threading: receive thread enqueues fills; strategy thread owns all mutations.
+// Call drain_fills() at the start of every strategy iteration.
 
 #include "../common/logging.hpp"
 #include "exchange_connector.hpp"
@@ -20,6 +23,39 @@
 
 namespace trading {
 
+template <typename T, size_t N>
+class SpscQueue {
+    static_assert((N & (N - 1)) == 0, "N must be a power of two");
+    static_assert(N >= 2, "N must be at least 2");
+
+  public:
+    bool push(const T& item) noexcept {
+        const size_t w    = write_.load(std::memory_order_relaxed);
+        const size_t next = (w + 1) & mask_;
+        if (next == read_.load(std::memory_order_acquire))
+            return false;
+        buf_[w] = item;
+        write_.store(next, std::memory_order_release);
+        return true;
+    }
+
+    bool pop(T& item) noexcept {
+        const size_t r = read_.load(std::memory_order_relaxed);
+        if (r == write_.load(std::memory_order_acquire))
+            return false;
+        item = buf_[r];
+        read_.store((r + 1) & mask_, std::memory_order_release);
+        return true;
+    }
+
+  private:
+    static constexpr size_t mask_ = N - 1;
+
+    alignas(64) std::atomic<size_t> write_{0};
+    alignas(64) std::atomic<size_t> read_{0};
+    std::array<T, N> buf_{};
+};
+
 struct ManagedOrder {
     Order order;
     OrderState state = OrderState::PENDING;
@@ -31,14 +67,18 @@ struct ManagedOrder {
 class OrderManager {
   public:
     static constexpr size_t MAX_ORDERS = 64;
+    static constexpr size_t FILL_QUEUE_DEPTH = 128;
 
     using FillCallback = std::function<void(const ManagedOrder&, const FillUpdate&)>;
 
     explicit OrderManager(ExchangeConnector& connector) : connector_(connector), next_id_(1) {
-        connector_.on_fill = [this](const FillUpdate& u) { handle_fill(u); };
+        connector_.on_fill = [this](const FillUpdate& u) {
+            if (!fill_queue_.push(u))
+                LOG_ERROR("OrderManager: fill queue full — fill dropped", "client_id",
+                          u.client_order_id);
+        };
     }
 
-    // Submit an order. Returns the client_order_id on success, 0 on failure.
     uint64_t submit(Order order) {
         ManagedOrder* slot = find_free_slot();
         if (!slot) {
@@ -68,33 +108,12 @@ class OrderManager {
 
     ConnectorResult cancel_all(const char* symbol) { return connector_.cancel_all(symbol); }
 
-    // Process fill/cancel/reject from connector.
-    void handle_fill(const FillUpdate& u) {
-        ManagedOrder* mo = find_order(u.client_order_id);
-        if (!mo)
-            return;
-
-        mo->filled_qty = u.cumulative_filled_qty;
-        mo->avg_fill_price = u.avg_fill_price;
-        mo->state = u.new_state;
-
-        if (u.new_state == OrderState::FILLED || u.new_state == OrderState::CANCELED ||
-            u.new_state == OrderState::REJECTED) {
-
-            // Update net position on fills
-            if (u.new_state == OrderState::FILLED && u.fill_qty > 0.0) {
-                double sign = (mo->order.side == Side::BID) ? 1.0 : -1.0;
-                position_ += sign * u.fill_qty;
-                realized_pnl_ -= sign * u.fill_price * u.fill_qty; // cost basis
-            }
-
-            if (on_fill)
-                on_fill(*mo, u);
-            mo->active = false;
-        }
+    void drain_fills() {
+        FillUpdate u;
+        while (fill_queue_.pop(u))
+            apply_fill(u);
     }
 
-    // Position query (positive = long, negative = short)
     double position() const noexcept { return position_; }
     double realized_pnl() const noexcept { return realized_pnl_; }
 
@@ -106,7 +125,6 @@ class OrderManager {
         return n;
     }
 
-    // Strategy callback for fills
     FillCallback on_fill;
 
   private:
@@ -115,6 +133,32 @@ class OrderManager {
     std::array<ManagedOrder, MAX_ORDERS> slots_{};
     double position_ = 0.0;
     double realized_pnl_ = 0.0;
+
+    SpscQueue<FillUpdate, FILL_QUEUE_DEPTH> fill_queue_;
+
+    void apply_fill(const FillUpdate& u) {
+        ManagedOrder* mo = find_order(u.client_order_id);
+        if (!mo)
+            return;
+
+        mo->filled_qty = u.cumulative_filled_qty;
+        mo->avg_fill_price = u.avg_fill_price;
+        mo->state = u.new_state;
+
+        if (u.new_state == OrderState::FILLED || u.new_state == OrderState::CANCELED ||
+            u.new_state == OrderState::REJECTED) {
+
+            if (u.new_state == OrderState::FILLED && u.fill_qty > 0.0) {
+                double sign = (mo->order.side == Side::BID) ? 1.0 : -1.0;
+                position_ += sign * u.fill_qty;
+                realized_pnl_ -= sign * u.fill_price * u.fill_qty;
+            }
+
+            if (on_fill)
+                on_fill(*mo, u);
+            mo->active = false;
+        }
+    }
 
     ManagedOrder* find_free_slot() {
         for (auto& s : slots_)

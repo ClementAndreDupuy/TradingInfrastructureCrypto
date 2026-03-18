@@ -12,27 +12,19 @@ Position tracking is centralized in `OrderManager`. Token selling occurs through
 
 - `position_` (double) holds the net position: positive = long, negative = short
 - Orders are stored in a **pre-allocated pool of 64 `ManagedOrder` slots** (no heap allocation at runtime)
-- Every fill updates position via `handle_fill()`:
-  ```cpp
-  double sign = (side == Side::BID) ? 1.0 : -1.0;
-  position_ += sign * fill_qty;
-  realized_pnl_ -= sign * fill_price * fill_qty;  // cost basis
-  ```
+- Fill events travel through a lock-free `SpscQueue<FillUpdate, 128>`; position mutations happen only on the strategy thread
 
-#### ManagedOrder structure
-```cpp
-struct ManagedOrder {
-    Order order;
-    OrderState state;        // PENDING, OPEN, PARTIALLY_FILLED, FILLED, CANCELED, REJECTED
-    double filled_qty;       // Cumulative filled quantity
-    double avg_fill_price;   // Average execution price
-    bool active;             // Whether slot is in use
-};
-```
+#### Threading contract
+| Thread | Allowed calls |
+|---|---|
+| Receive (WebSocket/FIX) | `connector_.on_fill` enqueues into SPSC queue only |
+| Strategy | `submit()`, `cancel()`, `drain_fills()`, `active_order_count()`, `position()`, `realized_pnl()` |
+
+`drain_fills()` **must** be called at the start of every strategy iteration (before `submit()`). Safe in shadow/single-thread mode — the queue is simply drained inline.
 
 #### Order lifecycle
-1. **Submit** — `OrderManager::submit(Order)` allocates a free slot, assigns a unique `client_order_id`, calls `connector_.submit_order()`
-2. **Fill** — `handle_fill(FillUpdate)` updates qty/price, adjusts `position_` and `realized_pnl_`, triggers `on_fill()` callback
+1. **Submit** — allocates a free slot, assigns `client_order_id`, calls `connector_.submit_order()`
+2. **Fill** — receive thread enqueues `FillUpdate`; `drain_fills()` → `apply_fill()` updates qty/price, `position_`, `realized_pnl_`, fires `on_fill` callback
 3. **Cancel** — `cancel(client_id)` delegates to the connector
 
 ### NeuralAlphaMarketMaker (`market_maker.hpp`)
@@ -144,7 +136,9 @@ SmartOrderRouter → ExchangeConnector.submit_order()
     ↓
 FillUpdate received
     ↓
-OrderManager.handle_fill()
+FillUpdate enqueued into SpscQueue (receive thread)
+    ↓
+OrderManager.drain_fills() → apply_fill() (strategy thread)
     ├→ position_ -= fill_qty        (ASK reduces position)
     ├→ realized_pnl_ updated
     ├→ filled_qty, avg_fill_price updated
