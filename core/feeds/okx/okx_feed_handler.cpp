@@ -1,5 +1,6 @@
 #include "okx_feed_handler.hpp"
 #include "../../common/rest_client.hpp"
+#include "../common/tick_size.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -111,7 +112,6 @@ OkxFeedHandler::OkxFeedHandler(const std::string& symbol, const std::string& api
 
 OkxFeedHandler::~OkxFeedHandler() { stop(); }
 
-// ─── Symbol info ─────────────────────────────────────────────────────────────
 auto OkxFeedHandler::fetch_tick_size() -> Result {
     const std::string url =
         api_url_ + "/api/v5/public/instruments?instType=SPOT&instId=" + inst_id_;
@@ -121,12 +121,8 @@ auto OkxFeedHandler::fetch_tick_size() -> Result {
         return Result::ERROR_CONNECTION_LOST;
     }
     auto json = nlohmann::json::parse(resp.body, nullptr, false);
-    if (json.is_discarded()) {
-        LOG_WARN("fetch_tick_size JSON parse failed", "symbol", symbol_.c_str());
-        return Result::ERROR_BOOK_CORRUPTED;
-    }
-    if (json.value("code", "") != "0") {
-        LOG_WARN("fetch_tick_size: OKX API error", "symbol", symbol_.c_str());
+    if (json.is_discarded() || json.value("code", "") != "0") {
+        LOG_WARN("fetch_tick_size: bad response", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
     auto data_it = json.find("data");
@@ -134,14 +130,14 @@ auto OkxFeedHandler::fetch_tick_size() -> Result {
         LOG_WARN("fetch_tick_size: no data", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
-    try {
-        tick_size_ = std::stod((*data_it)[0].value("tickSz", "0"));
-        LOG_INFO("Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
-        return Result::SUCCESS;
-    } catch (...) {
-        LOG_WARN("fetch_tick_size: tickSz parse failed", "symbol", symbol_.c_str());
+    std::string ts = (*data_it)[0].value("tickSz", "");
+    if (ts.empty()) {
+        LOG_WARN("fetch_tick_size: tickSz missing", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
+    tick_size_ = tick_from_string(ts);
+    LOG_INFO("Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
+    return Result::SUCCESS;
 }
 
 auto OkxFeedHandler::start() -> Result {

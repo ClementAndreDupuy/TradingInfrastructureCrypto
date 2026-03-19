@@ -1,9 +1,23 @@
+#include "core/feeds/common/tick_size.hpp"
 #include "core/orderbook/orderbook.hpp"
 #include <cmath>
 #include <cstdint>
 #include <gtest/gtest.h>
 
 using namespace trading;
+
+TEST(TickFromString, PowersOfTen) {
+    EXPECT_DOUBLE_EQ(tick_from_string("0.01000000"), std::pow(10.0, -2));
+    EXPECT_DOUBLE_EQ(tick_from_string("0.001"),      std::pow(10.0, -3));
+    EXPECT_DOUBLE_EQ(tick_from_string("0.10000000"), std::pow(10.0, -1));
+    EXPECT_DOUBLE_EQ(tick_from_string("1.00000000"), 1.0);
+    EXPECT_DOUBLE_EQ(tick_from_string("0.1"),        std::pow(10.0, -1));
+}
+
+TEST(TickFromString, NonPowerFallsBackToStod) {
+    EXPECT_DOUBLE_EQ(tick_from_string("0.25"), 0.25);
+    EXPECT_DOUBLE_EQ(tick_from_string("5"),    5.0);
+}
 
 // Build a synthetic snapshot centered around a given best bid.
 static Snapshot make_snapshot(double best_bid, double best_ask, int n_levels = 5, double tick = 1.0,

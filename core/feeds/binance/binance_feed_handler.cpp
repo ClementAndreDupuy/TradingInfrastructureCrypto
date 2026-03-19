@@ -1,5 +1,6 @@
 #include "binance_feed_handler.hpp"
 #include "../../common/rest_client.hpp"
+#include "../common/tick_size.hpp"
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -132,7 +133,6 @@ auto BinanceFeedHandler::get_api_secret_from_env() -> std::string {
 
 BinanceFeedHandler::~BinanceFeedHandler() { stop(); }
 
-// ─── Symbol info ─────────────────────────────────────────────────────────────
 auto BinanceFeedHandler::fetch_tick_size() -> Result {
     const std::string url =
         api_url_ + "/api/v3/exchangeInfo?symbol=" + venue_symbols_.binance;
@@ -153,11 +153,11 @@ auto BinanceFeedHandler::fetch_tick_size() -> Result {
     }
     for (const auto& f : (*sym_it)[0].value("filters", nlohmann::json::array())) {
         if (f.value("filterType", "") == "PRICE_FILTER") {
-            try {
-                tick_size_ = std::stod(f.value("tickSize", "0"));
-                LOG_INFO("Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
-                return Result::SUCCESS;
-            } catch (...) {}
+            std::string ts = f.value("tickSize", "");
+            if (ts.empty()) break;
+            tick_size_ = tick_from_string(ts);
+            LOG_INFO("Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
+            return Result::SUCCESS;
         }
     }
     LOG_WARN("fetch_tick_size: PRICE_FILTER not found", "symbol", symbol_.c_str());

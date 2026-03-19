@@ -1,5 +1,6 @@
 #include "coinbase_feed_handler.hpp"
 #include "../../common/rest_client.hpp"
+#include "../common/tick_size.hpp"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -98,7 +99,6 @@ CoinbaseFeedHandler::CoinbaseFeedHandler(const std::string& symbol, const std::s
 
 CoinbaseFeedHandler::~CoinbaseFeedHandler() { stop(); }
 
-// ─── Symbol info ─────────────────────────────────────────────────────────────
 auto CoinbaseFeedHandler::fetch_tick_size() -> Result {
     const std::string url = api_url_ + "/products/" + venue_symbols_.coinbase;
     auto resp = http::get(url);
@@ -111,14 +111,14 @@ auto CoinbaseFeedHandler::fetch_tick_size() -> Result {
         LOG_WARN("fetch_tick_size JSON parse failed", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
-    try {
-        tick_size_ = std::stod(json.value("quote_increment", "0"));
-        LOG_INFO("Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
-        return Result::SUCCESS;
-    } catch (...) {
-        LOG_WARN("fetch_tick_size: quote_increment parse failed", "symbol", symbol_.c_str());
+    std::string ts = json.value("quote_increment", "");
+    if (ts.empty()) {
+        LOG_WARN("fetch_tick_size: quote_increment missing", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
+    tick_size_ = tick_from_string(ts);
+    LOG_INFO("Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
+    return Result::SUCCESS;
 }
 
 auto CoinbaseFeedHandler::start() -> Result {

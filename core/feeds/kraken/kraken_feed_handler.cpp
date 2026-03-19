@@ -108,7 +108,6 @@ auto KrakenFeedHandler::get_api_secret_from_env() -> std::string {
 
 KrakenFeedHandler::~KrakenFeedHandler() { stop(); }
 
-// ─── Symbol info ─────────────────────────────────────────────────────────────
 auto KrakenFeedHandler::fetch_tick_size() -> Result {
     const std::string url =
         api_url_ + "/0/public/AssetPairs?pair=" + venue_symbols_.kraken_rest;
