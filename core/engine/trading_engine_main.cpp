@@ -163,10 +163,12 @@ auto main(int argc, char** argv) -> int {
             LOG_WARN("Coinbase feed failed to start", "symbol", opts.symbol.c_str());
         }
 
-        // Derive grid dimensions from the tick_size each feed fetched from its exchange.
-        // We cover a fixed price range; the number of levels follows automatically.
-        constexpr double k_grid_price_range_usd = 4000.0;
-        constexpr double k_fallback_tick_size    = 1.0;
+        // Derive grid precision from the tick_size each feed fetched from its exchange.
+        // Level count is fixed: exchanges publish at most ~500 levels; 20 000 gives ample
+        // headroom for deltas arriving away from mid while keeping memory bounded
+        // (~640 KB per BookManager across the four internal arrays).
+        constexpr size_t k_grid_levels       = 20'000;
+        constexpr double k_fallback_tick_size = 1.0;
         auto effective_tick = [](double ts) { return ts > 0.0 ? ts : k_fallback_tick_size; };
 
         const double binance_tick  = effective_tick(binance_feed.tick_size());
@@ -175,20 +177,16 @@ auto main(int argc, char** argv) -> int {
         const double coinbase_tick = effective_tick(coinbase_feed.tick_size());
 
         LOG_INFO("Grid configuration",
-                 "price_range_usd", k_grid_price_range_usd,
-                 "binance_tick", binance_tick,
-                 "kraken_tick", kraken_tick,
-                 "okx_tick", okx_tick,
-                 "coinbase_tick", coinbase_tick);
+                 "levels", k_grid_levels,
+                 "binance_tick", binance_tick,  "binance_range_usd", k_grid_levels * binance_tick,
+                 "kraken_tick",  kraken_tick,   "kraken_range_usd",  k_grid_levels * kraken_tick,
+                 "okx_tick",     okx_tick,      "okx_range_usd",     k_grid_levels * okx_tick,
+                 "coinbase_tick", coinbase_tick, "coinbase_range_usd", k_grid_levels * coinbase_tick);
 
-        BookManager binance_book(opts.symbol, Exchange::BINANCE, binance_tick,
-                                 static_cast<size_t>(k_grid_price_range_usd / binance_tick));
-        BookManager kraken_book(opts.symbol, Exchange::KRAKEN, kraken_tick,
-                                static_cast<size_t>(k_grid_price_range_usd / kraken_tick));
-        BookManager okx_book(opts.symbol, Exchange::OKX, okx_tick,
-                             static_cast<size_t>(k_grid_price_range_usd / okx_tick));
-        BookManager coinbase_book(opts.symbol, Exchange::COINBASE, coinbase_tick,
-                                  static_cast<size_t>(k_grid_price_range_usd / coinbase_tick));
+        BookManager binance_book(opts.symbol, Exchange::BINANCE, binance_tick, k_grid_levels);
+        BookManager kraken_book(opts.symbol, Exchange::KRAKEN,   kraken_tick,  k_grid_levels);
+        BookManager okx_book(opts.symbol,    Exchange::OKX,      okx_tick,     k_grid_levels);
+        BookManager coinbase_book(opts.symbol, Exchange::COINBASE, coinbase_tick, k_grid_levels);
 
         LobPublisher lob_publisher;
         if (!lob_publisher.open()) {
