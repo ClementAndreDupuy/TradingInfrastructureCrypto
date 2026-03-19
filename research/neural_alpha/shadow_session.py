@@ -592,23 +592,35 @@ class NeuralAlphaShadowSession:
 
     def _fetch_tick(self) -> list[dict]:
         bridge_ticks = self._bridge.read_new_ticks()
-        if bridge_ticks:
-            return bridge_ticks
 
-        ticks: list[dict] = []
         _fetchers = {
             "BINANCE": _fetch_binance_l5,
             "KRAKEN": _fetch_kraken_l5,
             "OKX": _fetch_okx_l5,
             "COINBASE": _fetch_coinbase_l5,
         }
+
+        bridge_exchanges = {t.get("exchange", "").upper() for t in bridge_ticks}
+        missing = [ex for ex in self.cfg.exchanges if ex.upper() not in bridge_exchanges]
+
+        rest_ticks: list[dict] = []
+        for ex in missing:
+            fetcher = _fetchers.get(ex)
+            if fetcher:
+                row = fetcher(self.cfg.symbol)
+                if row:
+                    rest_ticks.append(row)
+
+        if bridge_ticks or rest_ticks:
+            return bridge_ticks + rest_ticks
+
         for ex in self.cfg.exchanges:
             fetcher = _fetchers.get(ex)
             if fetcher:
                 row = fetcher(self.cfg.symbol)
                 if row:
-                    ticks.append(row)
-        return ticks
+                    rest_ticks.append(row)
+        return rest_ticks
 
     # ── Ops event publishing ──────────────────────────────────────────────────
 
