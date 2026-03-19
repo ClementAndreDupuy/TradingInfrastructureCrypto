@@ -132,7 +132,7 @@ add_library(execution
         execution/kraken/kraken_connector.cpp
         execution/okx/okx_connector.cpp
         execution/coinbase/coinbase_connector.cpp
-    execution/smart_order_router.cpp
+    execution/router/smart_order_router.cpp
 )
 
 target_link_libraries(execution

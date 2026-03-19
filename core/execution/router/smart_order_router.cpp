@@ -10,12 +10,10 @@ constexpr double k_missing_best_price = 1e17;
 constexpr double k_min_remaining_qty = 1e-12;
 constexpr double k_min_fill_probability = 0.05;
 
-// Regime thresholds
 constexpr double k_high_toxicity_threshold = 2.0;
 constexpr double k_low_fill_threshold = 0.45;
 constexpr double k_high_fill_threshold = 0.75;
 
-// Regime weights: {fill_weight_bps, queue_weight_bps, toxicity_weight}
 constexpr double k_high_toxicity_fill_weight = 7.0;
 constexpr double k_high_toxicity_queue_weight = 1.1;
 constexpr double k_high_toxicity_tox_weight = 3.2;
@@ -98,7 +96,7 @@ void append_child_order(RoutingDecision& out, Side side, const VenueQuote& winne
     used[best_idx] = true;
 }
 
-} // namespace
+}
 
 auto SmartOrderRouter::effective_price_bps(const VenueQuote& venue_quote,
                                            Side side) noexcept -> double {
@@ -217,4 +215,4 @@ auto SmartOrderRouter::route_with_alpha(Side side, double base_quantity,
     return route(side, base_quantity * scale, venues);
 }
 
-} // namespace trading
+}

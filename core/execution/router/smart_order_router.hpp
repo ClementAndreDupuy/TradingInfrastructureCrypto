@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../common/types.hpp"
-#include "../ipc/alpha_signal.hpp"
+#include "../../common/types.hpp"
+#include "../../ipc/alpha_signal.hpp"
 
 #include <array>
 #include <cstddef>
@@ -65,4 +65,4 @@ class SmartOrderRouter {
                                   const RoutingRegime& regime) noexcept;
 };
 
-} // namespace trading
+}

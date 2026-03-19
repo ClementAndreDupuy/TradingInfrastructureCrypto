@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../common/logging.hpp"
-#include "../common/rest_client.hpp"
+#include "../../common/logging.hpp"
+#include "../../common/rest_client.hpp"
 #include "exchange_connector.hpp"
 #include "idempotency_journal.hpp"
 #include "reconciliation_types.hpp"
@@ -593,4 +593,4 @@ class LiveConnectorBase : public ExchangeConnector {
     IdempotencyJournal journal_;
 };
 
-} // namespace trading
+}

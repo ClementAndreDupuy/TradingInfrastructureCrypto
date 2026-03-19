@@ -51,7 +51,7 @@ auto okx_order_type(const Order& order) -> const char* {
     }
 }
 
-auto order_payload(const Order& order) -> std::string {
+auto build_order_payload(const Order& order) -> std::string {
     if (order.type == OrderType::STOP_LIMIT) {
         return {};
     }
@@ -69,7 +69,7 @@ auto order_payload(const Order& order) -> std::string {
     return payload;
 }
 
-auto parse_okx_order_id(const std::string& body, std::string& venue_order_id) -> bool {
+auto parse_order_id(const std::string& body, std::string& venue_order_id) -> bool {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded()) {
         return false;
@@ -82,7 +82,7 @@ auto parse_okx_order_id(const std::string& body, std::string& venue_order_id) ->
     return !venue_order_id.empty();
 }
 
-auto parse_okx_status(const std::string& raw) -> OrderState {
+auto parse_order_status(const std::string& raw) -> OrderState {
     if (raw == "live") {
         return OrderState::OPEN;
     }
@@ -98,7 +98,7 @@ auto parse_okx_status(const std::string& raw) -> OrderState {
     return OrderState::REJECTED;
 }
 
-auto parse_okx_query(const std::string& body, FillUpdate& status) -> bool {
+auto parse_query_status(const std::string& body, FillUpdate& status) -> bool {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded()) {
         return false;
@@ -112,12 +112,12 @@ auto parse_okx_query(const std::string& body, FillUpdate& status) -> bool {
     status.fill_qty = status.cumulative_filled_qty;
     status.avg_fill_price = first.value("avgPx", 0.0);
     status.fill_price = status.avg_fill_price;
-    status.new_state = parse_okx_status(first.value("state", std::string("")));
+    status.new_state = parse_order_status(first.value("state", std::string("")));
     status.local_ts_ns = http::now_ns();
     return true;
 }
 
-auto parse_okx_cancel_ack(const std::string& body) -> bool {
+auto parse_cancel_result(const std::string& body) -> bool {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded()) {
         return false;
@@ -129,7 +129,7 @@ auto parse_okx_cancel_ack(const std::string& body) -> bool {
     return data[0].value("sCode", std::string("")) == "0";
 }
 
-auto append_okx_open_orders(const std::string& body,
+auto append_open_orders(const std::string& body,
                             ReconciliationSnapshot& snapshot) -> ConnectorResult {
     const auto order_json = nlohmann::json::parse(body, nullptr, false);
     const auto& orders = order_json["data"];
@@ -146,7 +146,7 @@ auto append_okx_open_orders(const std::string& body,
         order.quantity = item.value("sz", 0.0);
         order.filled_quantity = item.value("accFillSz", 0.0);
         order.price = item.value("px", 0.0);
-        order.state = parse_okx_status(item.value("state", std::string("")));
+        order.state = parse_order_status(item.value("state", std::string("")));
         if (!snapshot.open_orders.push(order)) {
             return ConnectorResult::ERROR_UNKNOWN;
         }
@@ -155,7 +155,7 @@ auto append_okx_open_orders(const std::string& body,
     return ConnectorResult::OK;
 }
 
-auto append_okx_balances(const std::string& body,
+auto append_balances(const std::string& body,
                          ReconciliationSnapshot& snapshot) -> ConnectorResult {
     const auto account_json = nlohmann::json::parse(body, nullptr, false);
     const auto& details = account_json["data"][0]["details"];
@@ -176,7 +176,7 @@ auto append_okx_balances(const std::string& body,
     return ConnectorResult::OK;
 }
 
-auto append_okx_positions(const std::string& body,
+auto append_positions(const std::string& body,
                           ReconciliationSnapshot& snapshot) -> ConnectorResult {
     const auto pos_json = nlohmann::json::parse(body, nullptr, false);
     const auto& positions = pos_json["data"];
@@ -197,7 +197,7 @@ auto append_okx_positions(const std::string& body,
     return ConnectorResult::OK;
 }
 
-auto append_okx_fills(const std::string& body,
+auto append_fills(const std::string& body,
                       ReconciliationSnapshot& snapshot) -> ConnectorResult {
     const auto fills_json = nlohmann::json::parse(body, nullptr, false);
     const auto& fills = fills_json["data"];
@@ -228,11 +228,11 @@ auto append_okx_fills(const std::string& body,
     return ConnectorResult::OK;
 }
 
-} // namespace
+}
 
 auto OkxConnector::submit_to_venue(const Order& order, const std::string& idempotency_key,
                                    std::string& venue_order_id) -> ConnectorResult {
-    const std::string payload = order_payload(order);
+    const std::string payload = build_order_payload(order);
     if (payload.empty()) {
         return ConnectorResult::ERROR_INVALID_ORDER;
     }
@@ -242,7 +242,7 @@ auto OkxConnector::submit_to_venue(const Order& order, const std::string& idempo
         return classify_http_error(resp.status);
     }
 
-    if (!parse_okx_order_id(resp.body, venue_order_id)) {
+    if (!parse_order_id(resp.body, venue_order_id)) {
         return ConnectorResult::ERROR_UNKNOWN;
     }
     return ConnectorResult::OK;
@@ -258,7 +258,7 @@ auto OkxConnector::cancel_at_venue(const VenueOrderEntry& entry) -> ConnectorRes
     if (!resp.ok()) {
         return classify_http_error(resp.status);
     }
-    return parse_okx_cancel_ack(resp.body) ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
+    return parse_cancel_result(resp.body) ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
 }
 
 auto OkxConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& replacement,
@@ -278,7 +278,7 @@ auto OkxConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& r
     if (!resp.ok()) {
         return classify_http_error(resp.status);
     }
-    return parse_okx_order_id(resp.body, new_venue_order_id) ? ConnectorResult::OK
+    return parse_order_id(resp.body, new_venue_order_id) ? ConnectorResult::OK
                                                              : ConnectorResult::ERROR_UNKNOWN;
 }
 
@@ -292,7 +292,7 @@ auto OkxConnector::query_at_venue(const VenueOrderEntry& entry,
     if (!resp.ok()) {
         return classify_http_error(resp.status);
     }
-    return parse_okx_query(resp.body, status) ? ConnectorResult::OK
+    return parse_query_status(resp.body, status) ? ConnectorResult::OK
                                               : ConnectorResult::ERROR_UNKNOWN;
 }
 
@@ -301,7 +301,7 @@ auto OkxConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResult {
     return ConnectorResult::ERROR_INVALID_ORDER;
 }
 
-} // namespace trading
+}
 
 namespace trading {
 
@@ -315,7 +315,7 @@ auto OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapsho
         return classify_http_error(open_orders.status);
     }
 
-    ConnectorResult result = append_okx_open_orders(open_orders.body, snapshot);
+    ConnectorResult result = append_open_orders(open_orders.body, snapshot);
     if (result != ConnectorResult::OK) {
         return result;
     }
@@ -325,7 +325,7 @@ auto OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapsho
     if (!account.ok()) {
         return classify_http_error(account.status);
     }
-    result = append_okx_balances(account.body, snapshot);
+    result = append_balances(account.body, snapshot);
     if (result != ConnectorResult::OK) {
         return result;
     }
@@ -335,7 +335,7 @@ auto OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapsho
     if (!pos_resp.ok()) {
         return classify_http_error(pos_resp.status);
     }
-    result = append_okx_positions(pos_resp.body, snapshot);
+    result = append_positions(pos_resp.body, snapshot);
     if (result != ConnectorResult::OK) {
         return result;
     }
@@ -348,7 +348,7 @@ auto OkxConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snapsho
     if (!fills_resp.ok()) {
         return classify_http_error(fills_resp.status);
     }
-    return append_okx_fills(fills_resp.body, snapshot);
+    return append_fills(fills_resp.body, snapshot);
 }
 
-} // namespace trading
+}
