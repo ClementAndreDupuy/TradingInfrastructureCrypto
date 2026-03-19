@@ -60,12 +60,6 @@ auto parse_args(int argc, char** argv) -> CliOptions {
 
 std::atomic<bool> g_running{true};
 
-auto grid_max_levels(const std::string& symbol) -> size_t {
-    if (symbol == "BTCUSDT" || symbol == "XBTUSD" || symbol == "BTC-USD" || symbol == "BTC-USDT") {
-        return 40000;
-    }
-    return 20000;
-}
 
 auto has_venue(const std::string& csv, const std::string& needle) -> bool {
     std::stringstream csv_stream(csv);
@@ -149,39 +143,12 @@ auto main(int argc, char** argv) -> int {
         const bool run_okx = has_venue(opts.venues, "OKX");
         const bool run_coinbase = has_venue(opts.venues, "COINBASE");
 
-        const size_t max_levels = grid_max_levels(opts.symbol);
-        LOG_INFO("Grid configuration", "symbol", opts.symbol.c_str(), "max_levels", max_levels,
-                 "tick_size", 0.1, "grid_range_usd", max_levels * 0.1);
-
-        BookManager binance_book(opts.symbol, Exchange::BINANCE, 0.1, max_levels);
-        BookManager kraken_book(opts.symbol, Exchange::KRAKEN, 0.1, max_levels);
-        BookManager okx_book(opts.symbol, Exchange::OKX, 0.1, max_levels);
-        BookManager coinbase_book(opts.symbol, Exchange::COINBASE, 0.1, max_levels);
-
-        LobPublisher lob_publisher;
-        if (!lob_publisher.open()) {
-            LOG_WARN("LOB publisher unavailable", "path", LobPublisher::k_default_path);
-        }
-
-        LobPublisher* pub = lob_publisher.is_open() ? &lob_publisher : nullptr;
-        binance_book.set_publisher(pub);
-        kraken_book.set_publisher(pub);
-        okx_book.set_publisher(pub);
-        coinbase_book.set_publisher(pub);
-
+        // Construct feed handlers first so start() can fetch tick_size from the exchange
+        // REST endpoint before we build the order-book grids.
         BinanceFeedHandler binance_feed(opts.symbol);
         KrakenFeedHandler kraken_feed(opts.symbol);
         OkxFeedHandler okx_feed(opts.symbol);
         CoinbaseFeedHandler coinbase_feed(opts.symbol);
-
-        binance_feed.set_snapshot_callback(binance_book.snapshot_handler());
-        binance_feed.set_delta_callback(binance_book.delta_handler());
-        kraken_feed.set_snapshot_callback(kraken_book.snapshot_handler());
-        kraken_feed.set_delta_callback(kraken_book.delta_handler());
-        okx_feed.set_snapshot_callback(okx_book.snapshot_handler());
-        okx_feed.set_delta_callback(okx_book.delta_handler());
-        coinbase_feed.set_snapshot_callback(coinbase_book.snapshot_handler());
-        coinbase_feed.set_delta_callback(coinbase_book.delta_handler());
 
         if (run_binance && binance_feed.start() != Result::SUCCESS) {
             LOG_WARN("Binance feed failed to start", "symbol", opts.symbol.c_str());
@@ -195,6 +162,53 @@ auto main(int argc, char** argv) -> int {
         if (run_coinbase && coinbase_feed.start() != Result::SUCCESS) {
             LOG_WARN("Coinbase feed failed to start", "symbol", opts.symbol.c_str());
         }
+
+        // Derive grid dimensions from the tick_size each feed fetched from its exchange.
+        // We cover a fixed price range; the number of levels follows automatically.
+        constexpr double k_grid_price_range_usd = 4000.0;
+        constexpr double k_fallback_tick_size    = 1.0;
+        auto effective_tick = [](double ts) { return ts > 0.0 ? ts : k_fallback_tick_size; };
+
+        const double binance_tick  = effective_tick(binance_feed.tick_size());
+        const double kraken_tick   = effective_tick(kraken_feed.tick_size());
+        const double okx_tick      = effective_tick(okx_feed.tick_size());
+        const double coinbase_tick = effective_tick(coinbase_feed.tick_size());
+
+        LOG_INFO("Grid configuration",
+                 "price_range_usd", k_grid_price_range_usd,
+                 "binance_tick", binance_tick,
+                 "kraken_tick", kraken_tick,
+                 "okx_tick", okx_tick,
+                 "coinbase_tick", coinbase_tick);
+
+        BookManager binance_book(opts.symbol, Exchange::BINANCE, binance_tick,
+                                 static_cast<size_t>(k_grid_price_range_usd / binance_tick));
+        BookManager kraken_book(opts.symbol, Exchange::KRAKEN, kraken_tick,
+                                static_cast<size_t>(k_grid_price_range_usd / kraken_tick));
+        BookManager okx_book(opts.symbol, Exchange::OKX, okx_tick,
+                             static_cast<size_t>(k_grid_price_range_usd / okx_tick));
+        BookManager coinbase_book(opts.symbol, Exchange::COINBASE, coinbase_tick,
+                                  static_cast<size_t>(k_grid_price_range_usd / coinbase_tick));
+
+        LobPublisher lob_publisher;
+        if (!lob_publisher.open()) {
+            LOG_WARN("LOB publisher unavailable", "path", LobPublisher::k_default_path);
+        }
+
+        LobPublisher* pub = lob_publisher.is_open() ? &lob_publisher : nullptr;
+        binance_book.set_publisher(pub);
+        kraken_book.set_publisher(pub);
+        okx_book.set_publisher(pub);
+        coinbase_book.set_publisher(pub);
+
+        binance_feed.set_snapshot_callback(binance_book.snapshot_handler());
+        binance_feed.set_delta_callback(binance_book.delta_handler());
+        kraken_feed.set_snapshot_callback(kraken_book.snapshot_handler());
+        kraken_feed.set_delta_callback(kraken_book.delta_handler());
+        okx_feed.set_snapshot_callback(okx_book.snapshot_handler());
+        okx_feed.set_delta_callback(okx_book.delta_handler());
+        coinbase_feed.set_snapshot_callback(coinbase_book.snapshot_handler());
+        coinbase_feed.set_delta_callback(coinbase_book.delta_handler());
 
         BinanceConnector binance(
             http::env_var("BINANCE_API_KEY"), http::env_var("BINANCE_API_SECRET"),
