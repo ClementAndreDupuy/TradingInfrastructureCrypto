@@ -26,14 +26,18 @@ TEST(FeedDisconnectChaosTest, BinanceGapThenRecoveryMessageSucceeds) {
 
 TEST(FeedDisconnectChaosTest, KrakenGapThenRecoveryMessageSucceeds) {
     KrakenFeedHandler h("XBTUSD");
-    // Stay offline: deterministic gap/recovery validation without network I/O.
+    const uint32_t snap_checksum =
+        KrakenFeedHandler::crc32_for_test("500011000000050000100000000");
+    const std::string snapshot =
+        std::string(R"({"channel":"book","type":"snapshot","data":[{"symbol":"BTC/USD","bids":[{"price":"50000.0","qty":"1.00000000"}],"asks":[{"price":"50001.0","qty":"1.00000000"}],"checksum":)") +
+        std::to_string(snap_checksum) + R"(,"timestamp":"2024-01-01T00:00:00Z"}]})";
+    ASSERT_EQ(h.process_message(snapshot), Result::SUCCESS);
 
-    const std::string gap =
-        R"({"channel":"book","type":"update","seq":100,"data":[{"symbol":"XBTUSD","bids":[],"asks":[],"checksum":0}]})";
-    EXPECT_EQ(h.process_message(gap), Result::ERROR_SEQUENCE_GAP);
-
+    const uint32_t update_checksum =
+        KrakenFeedHandler::crc32_for_test("500005150000000500011000000050000100000000");
     const std::string recover =
-        R"({"channel":"book","type":"update","seq":1,"data":[{"symbol":"XBTUSD","bids":[{"price":50000.0,"qty":1.0}],"asks":[],"checksum":0}]})";
+        std::string(R"({"channel":"book","type":"update","data":[{"symbol":"BTC/USD","bids":[],"asks":[{"price":"50000.5","qty":"1.50000000"}],"checksum":)") +
+        std::to_string(update_checksum) + R"(,"timestamp":"2024-01-01T00:00:01Z"}]})";
     EXPECT_EQ(h.process_message(recover), Result::SUCCESS);
 }
 

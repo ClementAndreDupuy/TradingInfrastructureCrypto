@@ -17,31 +17,22 @@
 #include <condition_variable>
 #include <deque>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace trading {
 
-// Kraken WebSocket v2 feed handler.
-//
-// Snapshot:  REST GET /0/public/Depth?pair={symbol}&count=500
-//            Price levels are 3-element arrays: ["price","vol",timestamp]
-//            No sequence number in REST response; last_seq_ starts at 0.
-//
-// Deltas:    WebSocket v2 (wss://ws.kraken.com/v2), channel "book"
-//            Message format: {"channel":"book","type":"update","seq":N,"data":[...]}
-//            Price levels: {"price":X,"qty":Y}
-//            Sequence: strictly +1 per message (simpler than Binance's window rule)
 class KrakenFeedHandler {
   public:
     using SnapshotCallback = std::function<void(const Snapshot&)>;
     using DeltaCallback = std::function<void(const Delta&)>;
     using ErrorCallback = std::function<void(const std::string&)>;
 
-    explicit KrakenFeedHandler(const std::string& symbol, const std::string& api_key = "",
-                               const std::string& api_secret = "",
+    explicit KrakenFeedHandler(const std::string& symbol,
                                const std::string& api_url = "https://api.kraken.com",
                                const std::string& ws_url = "wss://ws.kraken.com/v2");
 
@@ -49,9 +40,6 @@ class KrakenFeedHandler {
 
     KrakenFeedHandler(const KrakenFeedHandler&) = delete;
     KrakenFeedHandler& operator=(const KrakenFeedHandler&) = delete;
-
-    static std::string get_api_key_from_env();
-    static std::string get_api_secret_from_env();
 
     void set_snapshot_callback(SnapshotCallback cb) { snapshot_callback_ = std::move(cb); }
     void set_delta_callback(DeltaCallback cb) { delta_callback_ = std::move(cb); }
@@ -66,13 +54,32 @@ class KrakenFeedHandler {
 
     Result process_message(const std::string& message);
 
+    void set_streaming_state_for_test(uint64_t last_sequence) {
+        last_seq_.store(last_sequence, std::memory_order_release);
+        state_.store(State::STREAMING, std::memory_order_release);
+    }
+
+    void seed_book_state_for_test(const std::vector<PriceLevel>& bids,
+                                  const std::vector<PriceLevel>& asks) {
+        bids_.clear();
+        asks_.clear();
+        for (const auto& level : bids) {
+            bids_[level.price] = {std::to_string(level.price), std::to_string(level.size)};
+        }
+        for (const auto& level : asks) {
+            asks_[level.price] = {std::to_string(level.price), std::to_string(level.size)};
+        }
+    }
+
+    size_t bid_depth_for_test() const { return bids_.size(); }
+    size_t ask_depth_for_test() const { return asks_.size(); }
+    static uint32_t crc32_for_test(const std::string& data);
+
   private:
     Result fetch_tick_size();
-    enum class State { DISCONNECTED, BUFFERING, SYNCHRONIZED, STREAMING };
+    enum class State { DISCONNECTED, BUFFERING, STREAMING };
 
     std::string symbol_;
-    std::string api_key_;
-    std::string api_secret_;
     std::string api_url_;
     std::string ws_url_;
     VenueSymbols venue_symbols_;
@@ -96,12 +103,23 @@ class KrakenFeedHandler {
     ErrorCallback error_callback_;
 
     void ws_event_loop();
-    Result fetch_snapshot();
-    Result process_delta(const nlohmann::json& j, uint64_t seq);
+    Result process_snapshot(const std::string& message, const nlohmann::json& json);
+    Result process_delta(const std::string& message, const nlohmann::json& j, uint64_t seq);
     Result apply_buffered_deltas();
-    // Kraken: seq must equal last_seq + 1 exactly (no window).
-    bool validate_delta_sequence(uint64_t seq);
+    bool validate_checksum(const nlohmann::json& data) const;
+    void apply_local_book_levels(const nlohmann::json& data, const std::string& message);
+    void truncate_book();
+    static int64_t parse_rfc3339_timestamp_ns(const std::string& timestamp);
+    static std::string json_number_to_wire_string(const nlohmann::json& value);
+    static std::string normalize_checksum_field(const nlohmann::json& value);
+    static std::string normalize_checksum_field(const std::string& value);
+    static std::vector<std::pair<std::string, std::string>>
+    extract_levels_from_message(const std::string& message, const std::string& side);
     void trigger_resnapshot(const std::string& reason);
+
+    uint32_t subscribed_depth_{500};
+    std::map<double, std::pair<std::string, std::string>, std::greater<double>> bids_;
+    std::map<double, std::pair<std::string, std::string>> asks_;
 };
 
 } // namespace trading
