@@ -241,6 +241,48 @@ TEST(LiveConnectorsTest, BinanceRejectsUnsupportedStopLimitOrders) {
     EXPECT_EQ(c.submit_order(o), ConnectorResult::ERROR_INVALID_ORDER);
 }
 
+
+TEST(LiveConnectorsTest, BinanceRejectsReplaceAcrossSymbols) {
+    BinanceConnector c("k", "s", "https://binance.test");
+    int submit_calls = 0;
+    ScopedMockTransport transport([&](const char* method, const std::string& url,
+                                      const std::string&, const std::vector<std::string>&) {
+        if (std::strcmp(method, "POST") == 0 && contains(url, "/api/v3/order?")) {
+            ++submit_calls;
+            return http::HttpResponse{200, R"({"orderId":42})"};
+        }
+        ADD_FAILURE() << "unexpected HTTP call";
+        return http::HttpResponse{500, ""};
+    });
+
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    Order order = make_order(Exchange::BINANCE, 42, "BTCUSDT");
+    ASSERT_EQ(c.submit_order(order), ConnectorResult::OK);
+
+    Order replacement = order;
+    replacement.client_order_id = 43;
+    std::strncpy(replacement.symbol, "ETHUSDT", sizeof(replacement.symbol) - 1);
+    replacement.symbol[sizeof(replacement.symbol) - 1] = '\0';
+    EXPECT_EQ(c.replace_order(42, replacement), ConnectorResult::ERROR_INVALID_ORDER);
+    EXPECT_EQ(submit_calls, 1);
+}
+
+TEST(LiveConnectorsTest, BinanceMapsInsufficientFundsResponses) {
+    BinanceConnector c("k", "s", "https://binance.test");
+    ScopedMockTransport transport([](const char* method, const std::string& url,
+                                     const std::string&, const std::vector<std::string>&) {
+        if (std::strcmp(method, "POST") == 0 && contains(url, "/api/v3/order?")) {
+            return http::HttpResponse{400,
+                                      R"({"code":-2010,"msg":"Account has insufficient balance for requested action."})"};
+        }
+        return http::HttpResponse{404, ""};
+    });
+
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    EXPECT_EQ(c.submit_order(make_order(Exchange::BINANCE, 88, "BTCUSDT")),
+              ConnectorResult::ERROR_INSUFFICIENT_FUNDS);
+}
+
 TEST(LiveConnectorsTest, BinanceAuthenticatedFlow) {
     BinanceConnector c("k", "s", "https://binance.test");
     run_connector_flow(c, Exchange::BINANCE, "BTCUSDT", R"({"orderId":12345})",

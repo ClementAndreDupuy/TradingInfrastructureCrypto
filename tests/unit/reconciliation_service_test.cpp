@@ -127,10 +127,12 @@ http::HttpResponse binance_snapshot_response(const char* method, const std::stri
         return {200, R"({"orderId":101})"};
     if (std::strcmp(method, "GET") != 0)
         return {404, ""};
-    if (contains(url, "openOrders"))
+    if (contains(url, "openOrders")) {
+        EXPECT_FALSE(contains(url, "symbol="));
         return {
             200,
-            R"([{"orderId":"bn-1","symbol":"BTCUSDT","side":"BUY","origQty":1.0,"executedQty":0.2,"price":100.0,"status":"NEW"}])"};
+            R"([{"orderId":"bn-1","symbol":"BTCUSDT","clientOrderId":"TRT-101-BINANCE","side":"BUY","origQty":1.0,"executedQty":0.2,"price":100.0,"status":"NEW"}])"};
+    }
     if (contains(url, "/account"))
         return {200, R"({"balances":[{"asset":"BTC","free":1.0,"locked":0.1}]})"};
     if (contains(url, "myTrades"))
@@ -238,6 +240,35 @@ TEST(ReconciliationServiceTest, FetchSnapshotForAllConnectors) {
     EXPECT_EQ(snapshot.balances.size, 1U);
     EXPECT_EQ(snapshot.positions.size, 1U);
     EXPECT_EQ(snapshot.fills.size, 1U);
+}
+
+
+TEST(ReconciliationServiceTest, BinanceReconciliationDerivesTradeSymbolsFromExchangeOrders) {
+    ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
+                                     const std::vector<std::string>&) {
+        if (std::strcmp(method, "GET") == 0 && contains(url, "/account"))
+            return http::HttpResponse{200, R"({"balances":[{"asset":"USDT","free":1000.0,"locked":0.0}]})"};
+        if (std::strcmp(method, "GET") == 0 && contains(url, "openOrders")) {
+            EXPECT_FALSE(contains(url, "symbol="));
+            return http::HttpResponse{200,
+                                      R"([{"orderId":"bn-eth-1","symbol":"ETHUSDT","clientOrderId":"TRT-222-BINANCE","side":"BUY","origQty":2.0,"executedQty":0.5,"price":2500.0,"status":"NEW"}])"};
+        }
+        if (std::strcmp(method, "GET") == 0 && contains(url, "myTrades")) {
+            EXPECT_TRUE(contains(url, "symbol=ETHUSDT"));
+            return http::HttpResponse{200,
+                                      R"([{"id":7001,"orderId":222,"symbol":"ETHUSDT","isBuyer":true,"qty":0.5,"price":2500.0,"commission":0.1,"commissionAsset":"USDT","time":1700000000000}])"};
+        }
+        return http::HttpResponse{404, ""};
+    });
+
+    TestableBinanceConnector binance("k", "s", "https://binance.test");
+    ReconciliationSnapshot snapshot;
+    ASSERT_EQ(binance.fetch_reconciliation_snapshot(snapshot), ConnectorResult::OK);
+    ASSERT_EQ(snapshot.open_orders.size, 1U);
+    EXPECT_STREQ(snapshot.open_orders.items[0].symbol, "ETHUSDT");
+    EXPECT_EQ(snapshot.open_orders.items[0].client_order_id, 222U);
+    ASSERT_EQ(snapshot.fills.size, 1U);
+    EXPECT_STREQ(snapshot.fills.items[0].symbol, "ETHUSDT");
 }
 
 TEST(ReconciliationServiceTest, QuarantinesVenueOnDriftMismatch) {
