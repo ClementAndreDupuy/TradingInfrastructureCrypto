@@ -90,12 +90,21 @@ def _ensure_dirs() -> None:
 
 
 def _load_prod_model_ic() -> float:
-    """Read the IC of the current production model from its metadata file."""
+    """Read the OOS holdout IC of the current production model from its metadata file.
+
+    Prefers ``challenger_holdout_ic`` (the same-sample OOS IC used at promotion
+    time) so that the fallback comparison stays on the same basis as the live
+    holdout evaluation.  Falls back to ``ic_mean`` (in-sample cross-fold IC) only
+    for models saved before the holdout IC was recorded (old metadata format).
+    """
     meta_path = PROD_MODEL_PATH.with_suffix(".json")
     if not meta_path.exists():
         return -1.0
     with open(meta_path) as f:
         meta = json.load(f)
+    oos_ic = meta.get("challenger_holdout_ic")
+    if oos_ic is not None:
+        return float(oos_ic)
     return float(meta.get("ic_mean", -1.0))
 
 
@@ -256,7 +265,29 @@ def run() -> dict:
         log.info("Loading cached ticks from %s", cached)
         df = pl.read_parquet(cached)
     else:
-        df = collect_l5_ticks(TRAIN_TICKS, TRAIN_INTERVAL_MS, exchanges=["BINANCE", "KRAKEN", "OKX", "COINBASE"], symbol=TRAIN_SYMBOL)
+        _all_exchanges = ["BINANCE", "KRAKEN", "OKX", "COINBASE"]
+        _core_exchanges = ["BINANCE", "KRAKEN", "OKX"]
+        try:
+            df = collect_l5_ticks(TRAIN_TICKS, TRAIN_INTERVAL_MS, exchanges=_all_exchanges, symbol=TRAIN_SYMBOL)
+        except RuntimeError as _exc:
+            # Coinbase is a best-effort feed.  If it is unavailable (API outage,
+            # credential issue, or product-not-found) we degrade gracefully and
+            # train on the three remaining venues so that daily retraining keeps
+            # running.  A coinbase_data_unavailable ops event is emitted so the
+            # outage is observable in the ops event log and Prometheus.
+            if "COINBASE" in str(_exc):
+                log.warning(
+                    "Coinbase data unavailable — falling back to %s: %s",
+                    _core_exchanges, _exc,
+                )
+                _publish_ops_event("coinbase_data_unavailable", {
+                    "date": date_str,
+                    "reason": str(_exc),
+                    "fallback_exchanges": _core_exchanges,
+                })
+                df = collect_l5_ticks(TRAIN_TICKS, TRAIN_INTERVAL_MS, exchanges=_core_exchanges, symbol=TRAIN_SYMBOL)
+            else:
+                raise
         df.write_parquet(cached)
         log.info("Tick data cached → %s  rows=%d", cached, len(df))
 
@@ -396,6 +427,26 @@ def run() -> dict:
     }
 
     registry = ChampionChallengerRegistry(REGISTRY_PATH)
+
+    # Bootstrap: if the registry has no champion yet but a production model already
+    # exists on disk (e.g. saved manually via pipeline.py), register and promote it
+    # so that subsequent runs have a proper baseline to compare against and the
+    # shadow session can load a rollback champion instead of entering safe-mode.
+    if registry.current_champion() is None and PROD_MODEL_PATH.exists():
+        baseline_ic = champion_holdout_ic if champion_holdout_ic != -1.0 else _load_prod_model_ic()
+        bootstrap_meta = {"ic_mean": baseline_ic, "challenger_holdout_ic": baseline_ic, "bootstrapped": True}
+        bootstrap_id = registry.register_challenger(PROD_MODEL_PATH, bootstrap_meta)
+        registry.promote(bootstrap_id, reason="bootstrap_existing_model")
+        log.info(
+            "Bootstrapped existing model as champion in registry (holdout IC=%.4f): %s",
+            baseline_ic, PROD_MODEL_PATH,
+        )
+        _publish_ops_event("model_bootstrapped", {
+            "model_path": str(PROD_MODEL_PATH),
+            "holdout_ic": baseline_ic,
+            "date": date_str,
+        })
+
     challenger_id = registry.register_challenger(CANDIDATE_MODEL_PATH, train_metrics)
 
     # 7. Promote if better than current production model — compared on the SAME

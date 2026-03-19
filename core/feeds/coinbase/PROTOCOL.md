@@ -2,12 +2,21 @@
 
 This connector standardizes on Coinbase Advanced Trade market-data WebSocket subscriptions using `level2` for subscribe requests and `l2_data` for received book messages.
 
+## Endpoints
+
+| Purpose | URL |
+|---|---|
+| WebSocket | `wss://advanced-trade-ws.coinbase.com` |
+| Tick-size REST (public) | `https://api.coinbase.com/api/v3/brokerage/market/products/{product_id}` |
+
+The legacy Exchange API (`api.exchange.coinbase.com`) only supports USD-denominated spot pairs and must **not** be used here: the Advanced Trade WebSocket uses USDT pairs (e.g. `SOL-USDT`) that do not exist on the Exchange API, causing `400` responses.
+
 ## Subscription contract
 
 - The handler sends one `subscribe` request for `heartbeats` and one for `level2`, matching Coinbase's current one-channel-per-message contract.
-- If `COINBASE_API_KEY` / `COINBASE_API_SECRET` or the existing `LIVE_` / `SHADOW_` variants are present, each subscribe payload includes a freshly generated ES256 JWT using Coinbase's ES256 JWT flow.
+- If `COINBASE_API_KEY` / `COINBASE_API_SECRET` or the existing `LIVE_` / `SHADOW_` variants are present, each subscribe payload includes a freshly generated ES256 JWT using Coinbase's ES256 JWT flow. **A fresh JWT must be generated per message** as each token expires after 120 s.
 - The heartbeat subscribe is sent without `product_ids`; the `level2` subscribe carries the mapped product id.
-- Coinbase currently documents unauthenticated access for market-data channels such as `level2`, so the handler falls back to the documented unauthenticated subscribe flow if credentials are absent or JWT generation is unavailable.
+- Unauthenticated access is permitted for `level2` market data but authenticated connections are more reliable per Coinbase documentation.
 
 ## Why `l2_data`
 
