@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <exception>
 #include <libwebsockets.h>
@@ -121,6 +122,21 @@ auto CoinbaseFeedHandler::fetch_tick_size() -> Result {
     return Result::SUCCESS;
 }
 
+void CoinbaseFeedHandler::emit_ops_event() {
+    const int64_t ts_ns = http::now_ns();
+    char json_buf[256];
+    std::snprintf(json_buf, sizeof(json_buf),
+                  "{\"event\":\"coinbase_feed_failed\",\"timestamp_ns\":%lld,\"symbol\":\"%s\"}\n",
+                  static_cast<long long>(ts_ns), symbol_.c_str());
+    std::fprintf(stdout, "[OPS_EVENT] coinbase_feed_failed: {\"symbol\":\"%s\"}\n",
+                 symbol_.c_str());
+    std::fflush(stdout);
+    if (FILE* f = std::fopen("logs/ops_events.jsonl", "a")) {
+        std::fputs(json_buf, f);
+        std::fclose(f);
+    }
+}
+
 auto CoinbaseFeedHandler::start() -> Result {
     if (running_.load(std::memory_order_acquire)) {
         return Result::SUCCESS;
@@ -128,20 +144,37 @@ auto CoinbaseFeedHandler::start() -> Result {
 
     LOG_INFO("Starting Coinbase feed handler", "symbol", symbol_.c_str());
     fetch_tick_size();
-    running_.store(true, std::memory_order_release);
-    state_.store(State::BUFFERING, std::memory_order_release);
-    last_sequence_.store(0, std::memory_order_release);
-    delta_buffer_.clear();
 
-    ws_thread_ = std::thread([this]() -> void { ws_event_loop(); });
+    static constexpr int k_max_attempts = 3;
+    static constexpr int k_backoff_ms[k_max_attempts] = {2000, 4000, 8000};
 
-    std::unique_lock<std::mutex> lock(ws_mutex_);
-    bool ready = ws_cv_.wait_for(lock, std::chrono::seconds(30), [this]() -> bool {
-        return state_.load(std::memory_order_acquire) == State::STREAMING ||
-               !running_.load(std::memory_order_acquire);
-    });
+    for (int attempt = 1; attempt <= k_max_attempts; ++attempt) {
+        running_.store(true, std::memory_order_release);
+        state_.store(State::BUFFERING, std::memory_order_release);
+        last_sequence_.store(0, std::memory_order_release);
+        delta_buffer_.clear();
+        reconnect_requested_.store(false, std::memory_order_release);
 
-    if (!ready || !running_.load(std::memory_order_acquire)) {
+        ws_thread_ = std::thread([this]() -> void { ws_event_loop(); });
+
+        std::unique_lock<std::mutex> lock(ws_mutex_);
+        bool ready = ws_cv_.wait_for(lock, std::chrono::seconds(15), [this]() -> bool {
+            return state_.load(std::memory_order_acquire) == State::STREAMING ||
+                   !running_.load(std::memory_order_acquire);
+        });
+        lock.unlock();
+
+        const bool streaming = state_.load(std::memory_order_acquire) == State::STREAMING;
+        if (ready && streaming) {
+            LOG_INFO("Coinbase feed handler started", "symbol", symbol_.c_str());
+            return Result::SUCCESS;
+        }
+
+        const char* sub_reason =
+            !ready ? "timeout waiting for snapshot" : "connection error before snapshot";
+        LOG_ERROR("Coinbase feed start failed", "symbol", symbol_.c_str(), "attempt", attempt,
+                  "reason", sub_reason);
+
         running_.store(false, std::memory_order_release);
         if (auto* ctx =
                 static_cast<struct lws_context*>(lws_ctx_.load(std::memory_order_acquire))) {
@@ -151,11 +184,17 @@ auto CoinbaseFeedHandler::start() -> Result {
         if (ws_thread_.joinable()) {
             ws_thread_.join();
         }
-        return Result::ERROR_CONNECTION_LOST;
+
+        if (attempt < k_max_attempts) {
+            LOG_INFO("Retrying Coinbase feed start", "symbol", symbol_.c_str(), "backoff_ms",
+                     k_backoff_ms[attempt - 1]);
+            std::this_thread::sleep_for(std::chrono::milliseconds(k_backoff_ms[attempt - 1]));
+        }
     }
 
-    LOG_INFO("Coinbase feed handler started", "symbol", symbol_.c_str());
-    return Result::SUCCESS;
+    LOG_ERROR("Coinbase feed permanently failed after all retries", "symbol", symbol_.c_str());
+    emit_ops_event();
+    return Result::ERROR_CONNECTION_LOST;
 }
 
 void CoinbaseFeedHandler::stop() {
@@ -216,7 +255,7 @@ void CoinbaseFeedHandler::ws_event_loop() {
         nlohmann::json sub = {
             {"type", "subscribe"},
             {"product_ids", nlohmann::json::array({venue_symbols_.coinbase})},
-            {"channel", "l2_data"},
+            {"channel", "level2"},
         };
         session.subscribe_msg = sub.dump();
 
@@ -521,7 +560,7 @@ auto CoinbaseFeedHandler::validate_delta_sequence(uint64_t seq) const -> bool {
 }
 
 void CoinbaseFeedHandler::trigger_resnapshot(const std::string& reason) {
-    LOG_WARN("Triggering Coinbase re-sync", "reason", reason.c_str());
+    LOG_ERROR("Triggering Coinbase re-sync", "reason", reason.c_str());
     if (error_callback_) {
         error_callback_("Re-sync: " + reason);
     }
