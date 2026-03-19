@@ -393,13 +393,9 @@ class NeuralAlphaShadowSession:
     def _train_secondary_on_data(self, df: pl.DataFrame, out_path: Path) -> None:
         max_folds = max(1, len(df) // (4 * self.cfg.seq_len))
         n_folds = min(2, max_folds)
-        # Secondary must be genuinely different from primary to add ensemble value.
-        # We achieve this through three axes of diversity:
-        #   1. Architecture: smaller (d_spatial=32, d_temporal=64, n_temp_layers=1)
-        #   2. Objective: emphasise *direction* and *risk* over raw return prediction
-        #      (primary: w_return=1.0, w_direction=0.5, w_risk=0.3)
-        #      (secondary: w_return=0.2, w_direction=1.0, w_risk=0.7)
-        #   3. Regularisation: higher dropout + higher learning rate → different basin
+        # Different objective from primary (direction+risk focus) so ensemble
+        # predictions are genuinely decorrelated: primary=return predictor,
+        # secondary=direction+adverse-selection classifier.
         tcfg = TrainerConfig(
             epochs=self.cfg.train_epochs,
             n_folds=n_folds,
@@ -407,12 +403,11 @@ class NeuralAlphaShadowSession:
             d_spatial=32,
             d_temporal=64,
             n_temp_layers=1,
-            dropout=0.25,          # stronger regularisation vs primary (0.1)
-            lr=7e-4,               # different learning dynamics vs primary (3e-4)
-            w_return=0.2,          # de-emphasise raw return regression
-            w_direction=1.0,       # emphasise direction classification
-            w_risk=0.7,            # emphasise adverse-selection estimation
-            # Distinct seed so secondary explores a different loss-landscape basin.
+            dropout=0.25,
+            lr=7e-4,
+            w_return=0.2,
+            w_direction=1.0,
+            w_risk=0.7,
             fold_seed_offset=9999,
             lr_warmup_epochs=min(3, self.cfg.train_epochs // 4),
             early_stop_patience=4,
@@ -603,9 +598,8 @@ class NeuralAlphaShadowSession:
             return bridge_ticks
 
         ticks: list[dict] = []
-        # Kraken data must come from the C++ core bridge (WebSocket feed handler),
-        # not from the Kraken Futures REST API which is unreliable (frequent 503s)
-        # and uses a different instrument namespace (PI_XBTUSD).
+        # Kraken data comes from the C++ core bridge only — REST uses the futures
+        # endpoint (PI_XBTUSD) which is unreliable and wrong for spot/perp sessions.
         _fetchers = {
             "BINANCE": _fetch_binance_l5,
             "OKX": _fetch_okx_l5,
@@ -668,10 +662,8 @@ class NeuralAlphaShadowSession:
         if ticks_since_train < self.cfg.continuous_train_every_ticks:
             return
 
-        # Wall-clock gate: even if enough ticks have accumulated, don't retrain
-        # until at least continuous_train_min_interval_s seconds have elapsed.
-        # This prevents back-to-back retrains that dominate the session (training
-        # blocks the Python loop while the C++ engine piles up ticks quickly).
+        # Wall-clock gate: the C++ engine piles up ticks faster than 1/s, so tick
+        # count alone would cause back-to-back retrains that dominate the session.
         now = time.time()
         elapsed = now - self._last_continuous_train_time
         min_s = self.cfg.continuous_train_min_interval_s
