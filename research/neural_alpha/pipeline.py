@@ -34,8 +34,6 @@ from .core_bridge import CoreBridge
 if TYPE_CHECKING:
     from .trainer import TrainerConfig
 
-# ── Data fetcher ──────────────────────────────────────────────────────────────
-
 BINANCE_DEPTH_URL = "https://fapi.binance.com/fapi/v1/depth"
 KRAKEN_DEPTH_URL = "https://api.kraken.com/0/public/Depth"
 OKX_DEPTH_URL = "https://www.okx.com/api/v5/market/books"
@@ -340,8 +338,6 @@ def collect_l5_ticks(
     raise RuntimeError("Core bridge unavailable and REST fallback disabled.")
 
 
-# ── Walk-forward test slice tracking ─────────────────────────────────────────
-
 def _fold_slices(T: int, n_folds: int, train_frac: float) -> list[tuple[int, int]]:
     """Return (start, end) index of each test slice."""
     fold_size = T // n_folds
@@ -353,15 +349,13 @@ def _fold_slices(T: int, n_folds: int, train_frac: float) -> list[tuple[int, int
     return slices
 
 
-# ── Main pipeline ─────────────────────────────────────────────────────────────
-
-
 
 def _evaluate_state_on_holdout(df: pl.DataFrame, state_dict: dict, cfg: TrainerConfig) -> float:
+    import torch
     from torch.utils.data import DataLoader
+
     from .dataset import DatasetConfig, LOBDataset
     from .model import CryptoAlphaNet
-    import torch
 
     dataset = LOBDataset(df, DatasetConfig(seq_len=cfg.seq_len))
     if len(dataset) == 0:
@@ -438,12 +432,12 @@ def _blend_fold_results(
     return blended
 
 def run_pipeline(args: argparse.Namespace) -> None:
+    from research.regime import RegimeConfig, save_regime_artifact, train_regime_model_from_ipc
+
     from .alpha_regression import analyse_alpha, print_alpha_report
     from .backtest import BacktestConfig, NeuralAlphaBacktest
-    from research.regime import RegimeConfig, save_regime_artifact, train_regime_model_from_ipc
     from .trainer import TrainerConfig, walk_forward_train
 
-    # ── 1. Data ──────────────────────────────────────────────────────────────
     if args.data_path and Path(args.data_path).exists():
         print(f"Loading data from {args.data_path}")
         df = pl.read_parquet(args.data_path)
@@ -464,7 +458,6 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
     print(f"Dataset: {len(df)} ticks  columns={df.columns[:8]}…\n")
 
-    # ── 2. Train (walk-forward) ───────────────────────────────────────────────
     trainer_cfg = TrainerConfig(
         epochs=args.epochs,
         n_folds=args.folds,
@@ -505,7 +498,6 @@ def run_pipeline(args: argparse.Namespace) -> None:
         effective_folds = _blend_fold_results(fold_results, secondary_fold_results)
         print("Secondary model blended with primary predictions (50/50).")
 
-    # ── 3. Backtest ───────────────────────────────────────────────────────────
     bt_cfg = BacktestConfig(
         entry_threshold_bps=args.entry_bps,
         taker_fee_bps=args.fee_bps,
@@ -537,13 +529,10 @@ def run_pipeline(args: argparse.Namespace) -> None:
         merged_bt[k] = float(np.mean(vals)) if vals else 0.0
     merged_bt["total_trades"] = sum(m.get("total_trades", 0) for m in all_bt_metrics)
 
-    # ── 4. Alpha regression ───────────────────────────────────────────────────
     alpha_metrics = analyse_alpha(effective_folds, horizon_idx=2)
 
-    # ── 5. Report ─────────────────────────────────────────────────────────────
     print_alpha_report(alpha_metrics, merged_bt)
 
-    # ── 6. Train and save R2 regime model from IPC data ─────────────────────
     try:
         regime_cfg = RegimeConfig(n_regimes=args.regimes)
         regime_artifact, regime_dist = train_regime_model_from_ipc(args.ipc_dir, regime_cfg)
@@ -556,7 +545,6 @@ def run_pipeline(args: argparse.Namespace) -> None:
     except Exception as exc:
         print(f"[WARN] R2 regime training skipped: {exc}")
 
-    # ── 7. Save model (holdout-based incumbent vs challenger selection) ───────
     if args.save_model:
         import torch
 

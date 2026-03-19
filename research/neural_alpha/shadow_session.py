@@ -50,11 +50,6 @@ import polars as pl
 import torch
 from torch.utils.data import DataLoader
 
-from .dataset import DatasetConfig, LOBDataset
-from .dataset import rolling_normalise
-from .features import compute_lob_tensor, compute_scalar_features
-from .governance import ChampionChallengerRegistry, DriftGuard, EnsembleCanary
-from .model import CryptoAlphaNet
 from research.regime import (
     RegimeConfig,
     RegimeSignalPublisher,
@@ -63,6 +58,12 @@ from research.regime import (
     save_regime_artifact,
     train_regime_model_from_df,
 )
+
+from .core_bridge import RING_PATH, CoreBridge
+from .dataset import DatasetConfig, LOBDataset, rolling_normalise
+from .features import compute_lob_tensor, compute_scalar_features
+from .governance import ChampionChallengerRegistry, DriftGuard, EnsembleCanary
+from .model import CryptoAlphaNet
 from .pipeline import (
     _fetch_binance_l5,
     _fetch_coinbase_l5,
@@ -70,22 +71,13 @@ from .pipeline import (
     _fetch_okx_l5,
     collect_from_core_bridge,
 )
-from .core_bridge import CoreBridge, RING_PATH
 from .trainer import TrainerConfig, walk_forward_train
 
-# Shared memory file layout (32 bytes, seqlock-protected):
-#   offset  0: uint64  seq        — seqlock counter (even=stable, odd=write in progress)
-#   offset  8: float64 signal_bps — mid-horizon return prediction (bps)
-#   offset 16: float64 risk_score — adverse-selection probability [0, 1]
-#   offset 24: int64   ts_ns      — nanosecond timestamp of last update
-#
-# Write protocol: increment seq to odd → write fields → increment seq to even.
-# The C++ AlphaSignalReader spins until seq is even and stable across the read.
 _SIGNAL_FILE = "/tmp/trt_ipc/neural_alpha_signal.bin"
-_SIGNAL_SIZE = 32  # uint64 + float64 + float64 + int64
-_SEQ_FMT = "=Q"    # native-endian uint64 (seqlock counter)
+_SIGNAL_SIZE = 32
+_SEQ_FMT = "=Q"
 _SEQ_OFFSET = 0
-_DATA_FMT = "=ddq" # native-endian: float64 signal_bps, float64 risk_score, int64 ts_ns
+_DATA_FMT = "=ddq"
 _DATA_OFFSET = 8
 
 _REGIME_SIGNAL_FILE = "/tmp/trt_ipc/regime_signal.bin"
@@ -113,11 +105,6 @@ class _SignalPublisher:
 
     def publish(self, signal_bps: float, risk_score: float) -> None:
         ts_ns = time.time_ns()
-        # Seqlock write protocol (single writer assumed):
-        #   1. read current seq (always even when no write is in flight)
-        #   2. write seq+1 (odd)  → signals write-in-progress to C++ readers
-        #   3. write data fields
-        #   4. write seq+2 (even) → signals write-complete; readers can now consume
         seq: int = struct.unpack_from(_SEQ_FMT, self._mm, _SEQ_OFFSET)[0]
         struct.pack_into(_SEQ_FMT, self._mm, _SEQ_OFFSET, seq + 1)
         struct.pack_into(_DATA_FMT, self._mm, _DATA_OFFSET, signal_bps, risk_score, ts_ns)
@@ -160,11 +147,11 @@ class ShadowSessionConfig:
     safe_mode_ticks: int = 120
     continuous_train_every_ticks: int = 1000
     continuous_train_window_ticks: int = 2000
-    continuous_train_min_interval_s: int = 1200  # never retrain more often than this (wall clock)
-    canary_ic_margin: float = 0.02      # ensemble must not lag primary IC by more than this
-    canary_icir_floor: float = 0.0      # ensemble ICIR must stay above this
-    canary_window: int = 200            # rolling window for canary IC calculation
-    canary_min_samples: int = 60        # minimum samples before canary can fire
+    continuous_train_min_interval_s: int = 1200
+    canary_ic_margin: float = 0.02
+    canary_icir_floor: float = 0.0
+    canary_window: int = 200
+    canary_min_samples: int = 60
     ops_events_log: str = "logs/ops_events.jsonl"
     require_full_model_stack: bool = True
 
@@ -180,7 +167,6 @@ class NeuralAlphaShadowSession:
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._model: CryptoAlphaNet | None = None
         self._secondary_model: CryptoAlphaNet | None = None
-        # ring buffer: at least 500 ticks for rolling normalisation
         self._ring: list[dict] = []
         self._max_ring = max(500, cfg.seq_len * 2)
         _ensure_parent_dir(cfg.log_path)
@@ -214,7 +200,6 @@ class NeuralAlphaShadowSession:
         self._prev_primary_signal: float | None = None
         self._prev_ensemble_signal: float | None = None
 
-    # ── Model loading / training ──────────────────────────────────────────────
 
     def _build_model(self, d_spatial: int = 64, d_temporal: int = 128,
                      n_temp_layers: int = 3) -> CryptoAlphaNet:
@@ -233,7 +218,6 @@ class NeuralAlphaShadowSession:
         print(f"Model loaded from {path}")
 
     def load_secondary_model(self, path: str) -> None:
-        # Secondary model uses smaller architecture
         model = self._build_model(d_spatial=32, d_temporal=64, n_temp_layers=1)
         state = torch.load(path, map_location=self._device, weights_only=True)
         model.load_state_dict(state)
@@ -476,7 +460,6 @@ class NeuralAlphaShadowSession:
 
         return sqerr / max(n, 1)
 
-    # ── Inference + publish ───────────────────────────────────────────────────
 
     def _infer(self) -> dict | None:
         if self._model is None or len(self._ring) < self.cfg.seq_len:
@@ -588,7 +571,6 @@ class NeuralAlphaShadowSession:
         else:
             print("[SAFE_MODE] no rollback champion available; publishing neutral signal only")
 
-    # ── Data collection ───────────────────────────────────────────────────────
 
     def _fetch_tick(self) -> list[dict]:
         bridge_ticks = self._bridge.read_new_ticks()
@@ -622,7 +604,6 @@ class NeuralAlphaShadowSession:
                     rest_ticks.append(row)
         return rest_ticks
 
-    # ── Ops event publishing ──────────────────────────────────────────────────
 
     def _emit_ops_event(self, event_type: str, details: dict) -> None:
         event = {"event": event_type, "timestamp_ns": time.time_ns(), **details}
@@ -635,13 +616,11 @@ class NeuralAlphaShadowSession:
             pass
         print(f"[OPS_EVENT] {event_type}: {details}")
 
-    # ── Logging ───────────────────────────────────────────────────────────────
 
     def _log(self, signal_info: dict) -> None:
         self._log_fp.write(json.dumps(signal_info) + "\n")
         self._log_fp.flush()
 
-    # ── Summary ───────────────────────────────────────────────────────────────
 
     def _print_summary(self) -> None:
         n = len(self._signals)
@@ -690,7 +669,6 @@ class NeuralAlphaShadowSession:
         except Exception as exc:
             print(f"[CONTINUOUS_TRAIN] failed: {exc}")
 
-    # ── Main loop ─────────────────────────────────────────────────────────────
 
     def run(self) -> None:
         self._running = True
