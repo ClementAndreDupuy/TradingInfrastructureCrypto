@@ -394,9 +394,6 @@ class NeuralAlphaShadowSession:
     def _train_secondary_on_data(self, df: pl.DataFrame, out_path: Path) -> None:
         max_folds = max(1, len(df) // (4 * self.cfg.seq_len))
         n_folds = min(2, max_folds)
-        # Different objective from primary (direction+risk focus) so ensemble
-        # predictions are genuinely decorrelated: primary=return predictor,
-        # secondary=direction+adverse-selection classifier.
         tcfg = TrainerConfig(
             epochs=self.cfg.train_epochs,
             n_folds=n_folds,
@@ -662,8 +659,6 @@ class NeuralAlphaShadowSession:
         if ticks_since_train < self.cfg.continuous_train_every_ticks:
             return
 
-        # Wall-clock gate: the C++ engine piles up ticks faster than 1/s, so tick
-        # count alone would cause back-to-back retrains that dominate the session.
         now = time.time()
         elapsed = now - self._last_continuous_train_time
         min_s = self.cfg.continuous_train_min_interval_s

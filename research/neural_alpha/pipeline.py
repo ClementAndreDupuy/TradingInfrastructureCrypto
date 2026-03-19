@@ -106,7 +106,6 @@ def _symbol_family(symbol: str) -> str:
 
 
 def _kraken_symbol(symbol: str) -> str:
-    # Kraken spot REST uses XBTUSD / SOLUSD format (XBT for BTC, USD not USDT).
     if _tc is not None:
         vs = _tc.SymbolMapper.map_all(symbol)
         base, _, quote = vs.kraken_rest.partition("/")
@@ -149,8 +148,6 @@ def _fetch_kraken_l5(symbol: str = "BTCUSDT") -> dict | None:
         )
         r.raise_for_status()
         d = r.json()
-        # Spot response: {"result": {"XXBTZUSD": {"bids": [[px, sz, ts], ...], ...}}}
-        # The inner key may differ from the requested pair name; take the first value.
         book = next(iter(d["result"].values()))
         bids = [[float(e[0]), float(e[1])] for e in book["bids"][:N_LEVELS]]
         asks = [[float(e[0]), float(e[1])] for e in book["asks"][:N_LEVELS]]

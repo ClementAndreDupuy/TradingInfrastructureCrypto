@@ -117,8 +117,6 @@ def pretrain_spatial(
     _first_batch = next(iter(loader), None)
     if _first_batch is not None:
         _lob = _first_batch["lob"].float()
-        # std across the T time-steps inside each window; if near-zero the market
-        # is flat and positive pairs are indistinguishable from negatives.
         if float(_lob.std(dim=1).mean()) < 1e-4:
             print(f"  [pretrain] skipped — LOB near-constant across time (temporal std={float(_lob.std(dim=1).mean()):.2e})")
             return
@@ -127,10 +125,8 @@ def pretrain_spatial(
         total_loss = 0.0
         n_batches = 0
         for batch in loader:
-            lob = batch["lob"].to(device)  # (B, T, L, 4)
+            lob = batch["lob"].to(device)
 
-            # Z-score per (level, feature) across (B, T) so tight BTC spreads don't
-            # collapse all embeddings.  Keeps level structure; amplifies small moves.
             lob_mean = lob.mean(dim=(0, 1), keepdim=True)
             lob_std = lob.std(dim=(0, 1), keepdim=True).clamp(min=1e-6)
             lob = (lob - lob_mean) / lob_std
@@ -138,17 +134,14 @@ def pretrain_spatial(
             view1 = _augment_lob(lob, noise_std)
             view2 = _augment_lob(lob, noise_std)
 
-            # Encode both views, pool over time
-            z1 = model.spatial_enc(view1).mean(dim=1)  # (B, d_spatial)
+            z1 = model.spatial_enc(view1).mean(dim=1)
             z2 = model.spatial_enc(view2).mean(dim=1)
 
-            # NT-Xent loss (SimCLR)
             z1 = F.normalize(z1, dim=-1)
             z2 = F.normalize(z2, dim=-1)
             B = z1.shape[0]
-            z = torch.cat([z1, z2], dim=0)           # (2B, d)
-            sim = torch.mm(z, z.T) / temperature      # (2B, 2B)
-            # Mask self-similarity
+            z = torch.cat([z1, z2], dim=0)
+            sim = torch.mm(z, z.T) / temperature
             mask = torch.eye(2 * B, device=device).bool()
             sim.masked_fill_(mask, float("-inf"))
             labels = torch.cat([

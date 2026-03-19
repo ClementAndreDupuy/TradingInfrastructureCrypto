@@ -81,9 +81,6 @@ class CoreBridge:
             exchange_id = unpacked[0]
             symbol_raw = unpacked[1]
             timestamp_ns = unpacked[2]
-            # unpacked[3] is the C++ grid-base price (lowest slot in the flat-array
-            # orderbook, e.g. -410.5 for SOL when tick_size=$1 and mid~$90).
-            # It is NOT the market mid price; do not use it as a price fallback.
             price_size_values = unpacked[4:24]
 
             bids_p = price_size_values[0:5]
@@ -94,7 +91,6 @@ class CoreBridge:
             best_bid = float(bids_p[0])
             best_ask = float(asks_p[0])
 
-            # Skip uninitialised or grid-base-contaminated slots.
             if best_bid <= 0.0 or best_ask <= 0.0 or best_ask <= best_bid:
                 continue
 
