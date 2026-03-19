@@ -1,9 +1,11 @@
 #include "coinbase_feed_handler.hpp"
 #include "../../common/rest_client.hpp"
+#include "../common/tick_size.hpp"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstring>
+#include <exception>
 #include <libwebsockets.h>
 
 namespace trading {
@@ -88,12 +90,36 @@ static struct lws_protocols k_coinbase_protocols[] = {
     {nullptr, nullptr, 0, 0, 0, nullptr, 0},
 };
 
-CoinbaseFeedHandler::CoinbaseFeedHandler(const std::string& symbol, const std::string& ws_url)
-    : symbol_(symbol), ws_url_(ws_url), venue_symbols_(SymbolMapper::map_all(symbol)) {
+CoinbaseFeedHandler::CoinbaseFeedHandler(const std::string& symbol, const std::string& ws_url,
+                                         const std::string& api_url)
+    : symbol_(symbol), ws_url_(ws_url), api_url_(api_url),
+      venue_symbols_(SymbolMapper::map_all(symbol)) {
     LOG_INFO("CoinbaseFeedHandler created", "symbol", symbol_.c_str());
 }
 
 CoinbaseFeedHandler::~CoinbaseFeedHandler() { stop(); }
+
+auto CoinbaseFeedHandler::fetch_tick_size() -> Result {
+    const std::string url = api_url_ + "/products/" + venue_symbols_.coinbase;
+    auto resp = http::get(url);
+    if (!resp.ok() || resp.body.empty()) {
+        LOG_WARN("fetch_tick_size failed", "symbol", symbol_.c_str(), "status", resp.status);
+        return Result::ERROR_CONNECTION_LOST;
+    }
+    auto json = nlohmann::json::parse(resp.body, nullptr, false);
+    if (json.is_discarded()) {
+        LOG_WARN("fetch_tick_size JSON parse failed", "symbol", symbol_.c_str());
+        return Result::ERROR_BOOK_CORRUPTED;
+    }
+    std::string ts = json.value("quote_increment", "");
+    if (ts.empty()) {
+        LOG_WARN("fetch_tick_size: quote_increment missing", "symbol", symbol_.c_str());
+        return Result::ERROR_BOOK_CORRUPTED;
+    }
+    tick_size_ = tick_from_string(ts);
+    LOG_INFO("Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
+    return Result::SUCCESS;
+}
 
 auto CoinbaseFeedHandler::start() -> Result {
     if (running_.load(std::memory_order_acquire)) {
@@ -101,6 +127,7 @@ auto CoinbaseFeedHandler::start() -> Result {
     }
 
     LOG_INFO("Starting Coinbase feed handler", "symbol", symbol_.c_str());
+    fetch_tick_size();
     running_.store(true, std::memory_order_release);
     state_.store(State::BUFFERING, std::memory_order_release);
     last_sequence_.store(0, std::memory_order_release);

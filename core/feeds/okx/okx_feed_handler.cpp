@@ -1,5 +1,6 @@
 #include "okx_feed_handler.hpp"
 #include "../../common/rest_client.hpp"
+#include "../common/tick_size.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -111,12 +112,41 @@ OkxFeedHandler::OkxFeedHandler(const std::string& symbol, const std::string& api
 
 OkxFeedHandler::~OkxFeedHandler() { stop(); }
 
+auto OkxFeedHandler::fetch_tick_size() -> Result {
+    const std::string url =
+        api_url_ + "/api/v5/public/instruments?instType=SPOT&instId=" + inst_id_;
+    auto resp = http::get(url);
+    if (!resp.ok() || resp.body.empty()) {
+        LOG_WARN("fetch_tick_size failed", "symbol", symbol_.c_str(), "status", resp.status);
+        return Result::ERROR_CONNECTION_LOST;
+    }
+    auto json = nlohmann::json::parse(resp.body, nullptr, false);
+    if (json.is_discarded() || json.value("code", "") != "0") {
+        LOG_WARN("fetch_tick_size: bad response", "symbol", symbol_.c_str());
+        return Result::ERROR_BOOK_CORRUPTED;
+    }
+    auto data_it = json.find("data");
+    if (data_it == json.end() || !data_it->is_array() || data_it->empty()) {
+        LOG_WARN("fetch_tick_size: no data", "symbol", symbol_.c_str());
+        return Result::ERROR_BOOK_CORRUPTED;
+    }
+    std::string ts = (*data_it)[0].value("tickSz", "");
+    if (ts.empty()) {
+        LOG_WARN("fetch_tick_size: tickSz missing", "symbol", symbol_.c_str());
+        return Result::ERROR_BOOK_CORRUPTED;
+    }
+    tick_size_ = tick_from_string(ts);
+    LOG_INFO("Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
+    return Result::SUCCESS;
+}
+
 auto OkxFeedHandler::start() -> Result {
     if (running_.load(std::memory_order_acquire)) {
         return Result::SUCCESS;
     }
 
     LOG_INFO("Starting OKX feed handler", "symbol", symbol_.c_str());
+    fetch_tick_size();
     running_.store(true, std::memory_order_release);
     state_.store(State::BUFFERING, std::memory_order_release);
 

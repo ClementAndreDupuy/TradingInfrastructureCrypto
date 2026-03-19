@@ -31,7 +31,8 @@ class CoinbaseFeedHandler {
 
     explicit CoinbaseFeedHandler(
         const std::string& symbol,
-        const std::string& ws_url = "wss://advanced-trade-ws.coinbase.com");
+        const std::string& ws_url = "wss://advanced-trade-ws.coinbase.com",
+        const std::string& api_url = "https://api.exchange.coinbase.com");
 
     ~CoinbaseFeedHandler();
 
@@ -47,14 +48,18 @@ class CoinbaseFeedHandler {
 
     bool is_running() const { return running_.load(std::memory_order_acquire); }
     uint64_t get_sequence() const { return last_sequence_.load(std::memory_order_acquire); }
+    double tick_size() const noexcept { return tick_size_; }
 
     Result process_message(const std::string& message);
 
   private:
+    Result fetch_tick_size();
     enum class State { DISCONNECTED, BUFFERING, STREAMING };
 
     std::string symbol_;
     std::string ws_url_;
+    std::string api_url_;
+    double tick_size_{0.0};
     VenueSymbols venue_symbols_;
 
     std::atomic<bool> running_{false};

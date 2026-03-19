@@ -36,6 +36,12 @@ TEST_F(BinanceFeedHandlerTest, HandlerCreation) {
     EXPECT_NE(handler_, nullptr);
     EXPECT_FALSE(handler_->is_running());
     EXPECT_EQ(handler_->get_sequence(), 0);
+    EXPECT_EQ(handler_->tick_size(), 0.0);
+}
+
+TEST_F(BinanceFeedHandlerTest, TickSizePositiveAfterStart) {
+    ASSERT_EQ(handler_->start(), Result::SUCCESS);
+    EXPECT_GT(handler_->tick_size(), 0.0);
 }
 
 TEST_F(BinanceFeedHandlerTest, HandlerCreationWithApiKey) {

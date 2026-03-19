@@ -51,6 +51,13 @@ class OrderBook {
 
         double new_base = best_bid - static_cast<double>(max_levels_ / 2) * tick_size_;
 
+        if (new_base <= 0.0) {
+            LOG_ERROR("Snapshot rejected: base_price would be non-positive", "symbol",
+                      symbol_.c_str(), "base_price", new_base, "best_bid", best_bid, "tick_size",
+                      tick_size_, "max_levels", max_levels_);
+            return Result::ERROR_INVALID_PRICE;
+        }
+
         // Reset state — mark uninitialized first so concurrent readers see a clean boundary
         // (either fully old book or fully new book, never a half-cleared one).
         // base_price_ and initialized_ are then updated together before repopulating,
@@ -294,7 +301,7 @@ class OrderBook {
             return false;
         double base = base_price_.load(std::memory_order_acquire);
         double relative = (price - base) / tick_size_;
-        int64_t idx = static_cast<int64_t>(relative + 0.5); // round to nearest tick
+        int64_t idx = static_cast<int64_t>(std::llround(relative));
         if (idx < 0 || static_cast<size_t>(idx) >= max_levels_)
             return false;
         out_idx = static_cast<size_t>(idx);

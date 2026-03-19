@@ -119,7 +119,11 @@ static py::class_<Handler> bind_feed_handler(py::module_& m, const char* class_n
             py::gil_scoped_release release;
             h.stop();
             return false;
-        });
+        })
+        .def_property_readonly("tick_size", &Handler::tick_size,
+            "Price tick size fetched from the exchange symbol-info endpoint during start(). "
+            "Returns 0.0 if the call has not yet been made or failed. "
+            "Pass this value as tick_size when constructing the OrderBook.");
 }
 
 PYBIND11_MODULE(trading_core, m) {
@@ -339,6 +343,8 @@ PYBIND11_MODULE(trading_core, m) {
     bind_feed_handler<CoinbaseFeedHandler>(
         m, "CoinbaseFeedHandler",
         "Coinbase Advanced Trade order book feed handler using the WebSocket channel.")
-        .def(py::init<const std::string&, const std::string&>(), py::arg("symbol"),
-             py::arg("ws_url") = "wss://advanced-trade-ws.coinbase.com");
+        .def(py::init<const std::string&, const std::string&, const std::string&>(),
+             py::arg("symbol"),
+             py::arg("ws_url") = "wss://advanced-trade-ws.coinbase.com",
+             py::arg("api_url") = "https://api.exchange.coinbase.com");
 }

@@ -2,6 +2,7 @@
 #include "../../common/rest_client.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <exception>
 #include <libwebsockets.h>
@@ -107,6 +108,40 @@ auto KrakenFeedHandler::get_api_secret_from_env() -> std::string {
 
 KrakenFeedHandler::~KrakenFeedHandler() { stop(); }
 
+auto KrakenFeedHandler::fetch_tick_size() -> Result {
+    const std::string url =
+        api_url_ + "/0/public/AssetPairs?pair=" + venue_symbols_.kraken_rest;
+    auto resp = http::get(url);
+    if (resp.body.empty()) {
+        LOG_WARN("fetch_tick_size failed", "symbol", symbol_.c_str(), "status", resp.status);
+        return Result::ERROR_CONNECTION_LOST;
+    }
+    auto json = nlohmann::json::parse(resp.body, nullptr, false);
+    if (json.is_discarded()) {
+        LOG_WARN("fetch_tick_size JSON parse failed", "symbol", symbol_.c_str());
+        return Result::ERROR_BOOK_CORRUPTED;
+    }
+    auto err_it = json.find("error");
+    if (err_it != json.end() && err_it->is_array() && !err_it->empty()) {
+        LOG_WARN("fetch_tick_size: Kraken API error", "symbol", symbol_.c_str());
+        return Result::ERROR_BOOK_CORRUPTED;
+    }
+    auto res_it = json.find("result");
+    if (res_it == json.end() || !res_it->is_object() || res_it->empty()) {
+        LOG_WARN("fetch_tick_size: no result", "symbol", symbol_.c_str());
+        return Result::ERROR_BOOK_CORRUPTED;
+    }
+    const auto& pair_data = res_it->begin().value();
+    auto dec_it = pair_data.find("pair_decimals");
+    if (dec_it == pair_data.end() || !dec_it->is_number_integer()) {
+        LOG_WARN("fetch_tick_size: pair_decimals missing", "symbol", symbol_.c_str());
+        return Result::ERROR_BOOK_CORRUPTED;
+    }
+    tick_size_ = std::pow(10.0, -dec_it->get<int>());
+    LOG_INFO("Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
+    return Result::SUCCESS;
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 auto KrakenFeedHandler::start() -> Result {
     if (running_.load(std::memory_order_acquire)) {
@@ -114,6 +149,7 @@ auto KrakenFeedHandler::start() -> Result {
     }
 
     LOG_INFO("Starting feed handler", "symbol", symbol_.c_str());
+    fetch_tick_size();
     running_.store(true, std::memory_order_release);
     state_.store(State::BUFFERING, std::memory_order_release);
 

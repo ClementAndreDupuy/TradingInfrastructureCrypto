@@ -349,6 +349,16 @@ class _FeedHandlerBase:
         """Most recently processed sequence number.  Atomic read."""
         ...
 
+    @property
+    def tick_size(self) -> float:
+        """Price tick size fetched from the exchange symbol-info endpoint during start().
+
+        Returns 0.0 before start() is called or if the REST call failed.
+        Pass this value as tick_size when constructing the OrderBook so the grid
+        precision matches the exchange exactly.
+        """
+        ...
+
     def process_message(self, message: str) -> Result:
         """TESTING ONLY — inject a raw WebSocket JSON message directly.
 
@@ -414,4 +424,5 @@ class CoinbaseFeedHandler(_FeedHandlerBase):
         self,
         symbol: str,
         ws_url: str = "wss://advanced-trade-ws.coinbase.com",
+        api_url: str = "https://api.exchange.coinbase.com",
     ) -> None: ...

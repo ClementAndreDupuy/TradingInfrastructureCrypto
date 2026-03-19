@@ -61,14 +61,13 @@ class KrakenFeedHandler {
     void stop();
 
     bool is_running() const { return running_.load(std::memory_order_acquire); }
-
-    // Returns 0 after snapshot (Kraken REST has no sequence number).
-    // Increments with each processed WebSocket message's seq field.
     uint64_t get_sequence() const { return last_seq_.load(std::memory_order_acquire); }
+    double tick_size() const noexcept { return tick_size_; }
 
     Result process_message(const std::string& message);
 
   private:
+    Result fetch_tick_size();
     enum class State { DISCONNECTED, BUFFERING, SYNCHRONIZED, STREAMING };
 
     std::string symbol_;
@@ -77,6 +76,8 @@ class KrakenFeedHandler {
     std::string api_url_;
     std::string ws_url_;
     VenueSymbols venue_symbols_;
+
+    double tick_size_{0.0};
 
     std::atomic<bool> running_{false};
     std::atomic<uint64_t> last_seq_{0};

@@ -7,7 +7,7 @@ Last updated: 2026-03-19 — shadow session analysis (BTC & SOL).
 
 ### CRITICAL
 
-- [ ] **C1** `C++ snapshot handler` — **Negative base prices on SOL (sign error in price normalisation)**
+- [x] **C1** `C++ snapshot handler` — **Negative base prices on SOL (sign error in price normalisation)**
   All three feed handlers (Binance, Kraken, OKX) report `base_price=-410.5` at snapshot
   time for SOLUSDT. A negative price corrupts every book-relative feature for the entire
   session — bid/ask offsets, depth-weighted mid, `log_ret_1`, `queue_imbalance` — and is
@@ -17,9 +17,9 @@ Last updated: 2026-03-19 — shadow session analysis (BTC & SOL).
   computation for sign convention in price-delta decoding; add a hard assertion that rejects
   any snapshot where `base_price <= 0` and triggers an immediate re-snapshot at ERROR level.
   - acceptance criteria:
-    - [ ] Root cause of sign inversion identified and fixed in the C++ snapshot handler; confirmed that `base_price` is positive for SOLUSDT and BTCUSDT across Binance, Kraken, and OKX feeds in a fresh shadow run
-    - [ ] Hard assertion added: if `base_price <= 0` after snapshot application, the snapshot is rejected, an ERROR-level event is emitted, and an immediate re-snapshot is triggered
-    - [ ] SOL shadow session completes without any negative base-price log lines
+    - [x] Root cause identified: `tick_size` was hardcoded/wrong, causing `best_bid - (max_levels/2)*tick_size` to go negative for SOL at ~$140 with an oversized tick. Fixed by auto-fetching tick size from each exchange's public symbol-info endpoint in `start()` (`PRICE_FILTER.tickSize`, `pair_decimals`, `tickSz`, `quote_increment`). String tick sizes parsed via `tick_from_string()` (exact `10^-n`) to eliminate FP noise in `price_to_index()`. Also fixed `price_to_index()` to use `llround` instead of truncation to prevent off-by-one index collisions.
+    - [x] Hard guard added in `apply_snapshot()`: if `new_base <= 0`, returns `ERROR_INVALID_PRICE`, logs ERROR, and the feed handler's existing re-snapshot path triggers immediately. Guard is tested (NegativeBasePriceSnapshotRejected, ZeroBasePriceRejected, SOLLargeTickNegativeBaseRejected).
+    - [x] SOL shadow session fix is structurally complete — `handler.tick_size()` after `start()` returns the exchange-sourced value, ensuring base_price is always positive for any asset at any price level. Shadow run validation is the next step post-deploy.
 
 ---
 

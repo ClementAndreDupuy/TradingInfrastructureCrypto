@@ -50,6 +50,7 @@ class OkxFeedHandler {
 
     bool is_running() const { return running_.load(std::memory_order_acquire); }
     uint64_t get_sequence() const { return last_sequence_.load(std::memory_order_acquire); }
+    double tick_size() const noexcept { return tick_size_; }
 
     Result process_message(const std::string& message);
 
@@ -82,6 +83,7 @@ class OkxFeedHandler {
     std::string inst_id_;
     std::string api_url_;
     std::string ws_url_;
+    double tick_size_{0.0};
 
     std::atomic<bool> running_{false};
     std::atomic<bool> force_reconnect_{false};
@@ -99,6 +101,8 @@ class OkxFeedHandler {
     SnapshotCallback snapshot_callback_;
     DeltaCallback delta_callback_;
     ErrorCallback error_callback_;
+
+    Result fetch_tick_size();
 
     void ws_event_loop();
     // Handles action:"snapshot" WS push — initialises the book, replays any buffered

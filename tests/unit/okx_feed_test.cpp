@@ -37,6 +37,7 @@ TEST_F(OkxFeedHandlerTest, HandlerCreation) {
     EXPECT_NE(handler_, nullptr);
     EXPECT_FALSE(handler_->is_running());
     EXPECT_EQ(handler_->get_sequence(), 0u);
+    EXPECT_EQ(handler_->tick_size(), 0.0);
 }
 
 TEST_F(OkxFeedHandlerTest, IgnoresNonBookMessages) {
