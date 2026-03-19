@@ -1,66 +1,77 @@
 clementandredupuy@Mac ThamesRiverTrading % ./deploy/run_shadow.sh
-[2026-03-18T21:51:02Z] [shadow] [INFO] Starting python shadow session with python3.11 (symbol=BTCUSDT, exchanges=BINANCE,KRAKEN,OKX,COINBASE, signals -> /tmp/trt_ipc/neural_alpha_signal.bin, log=/Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl)
-[2026-03-18T21:51:02Z] [shadow] [INFO] Starting C++ shadow runner symbol=BTCUSDT venues=BINANCE,KRAKEN,OKX,COINBASE duration=900s interval=1000ms
-2026-03-18 21:51:02.290198792 [INFO ] BinanceFeedHandler created with API key symbol=BTCUSDT
-2026-03-18 21:51:02.290206542 [INFO ] KrakenFeedHandler created (public data, no auth required) symbol=BTCUSDT
-2026-03-18 21:51:02.290337250 [INFO ] OkxFeedHandler created symbol=BTCUSDT inst_id=BTC-USDT
-2026-03-18 21:51:02.290339584 [INFO ] CoinbaseFeedHandler created symbol=BTCUSDT
-2026-03-18 21:51:02.290342167 [INFO ] Starting feed handler symbol=BTCUSDT
-[2026/03/18 21:51:02:2907] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
-[2026/03/18 21:51:02:2966] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
-[2026/03/18 21:51:02:2967] W: ssh pvo "ops" is mandatory
-[2026/03/18 21:51:02:2967] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
-[2026/03/18 21:51:02:2967] W: handler_server_protocol_init: requires 'upload-dir' pvo
+[2026-03-19T08:03:39Z] [shadow] [INFO] Starting python shadow session with python3.11 (symbol=BTCUSDT, exchanges=BINANCE,KRAKEN,OKX,COINBASE, signals -> /tmp/trt_ipc/neural_alpha_signal.bin, log=/Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl)
+[2026-03-19T08:03:39Z] [shadow] [INFO] Starting C++ shadow runner symbol=BTCUSDT venues=BINANCE,KRAKEN,OKX,COINBASE duration=900s interval=1000ms
+2026-03-19 08:03:40.012170833 [INFO ] BinanceFeedHandler created with API key symbol=BTCUSDT
+2026-03-19 08:03:40.012178416 [INFO ] KrakenFeedHandler created (public data, no auth required) symbol=BTCUSDT
+2026-03-19 08:03:40.012345624 [INFO ] OkxFeedHandler created symbol=BTCUSDT inst_id=BTC-USDT
+2026-03-19 08:03:40.012348249 [INFO ] CoinbaseFeedHandler created symbol=BTCUSDT
+2026-03-19 08:03:40.012350833 [INFO ] Starting feed handler symbol=BTCUSDT
+[2026/03/19 08:03:40:0124] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+[2026/03/19 08:03:40:0173] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/19 08:03:40:0173] W: ssh pvo "ops" is mandatory
+[2026/03/19 08:03:40:0173] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/19 08:03:40:0173] W: handler_server_protocol_init: requires 'upload-dir' pvo
+2026-03-19 08:03:40.783688654 [INFO ] WebSocket established, fetching snapshot symbol=BTCUSDT
+2026-03-19 08:03:40.783865822 [INFO ] Fetching snapshot symbol=BTCUSDT
 Regime model loaded from /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/r2_regime_model_btcusdt.json
 Model loaded from /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_latest.pt
 Secondary model loaded from /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_secondary.pt
 Shadow session started — duration=900s  interval=1000ms  symbol=BTCUSDT  exchanges=BINANCE,KRAKEN,OKX,COINBASE  signal_file=/tmp/trt_ipc/neural_alpha_signal.bin regime_signal_file=/tmp/trt_ipc/regime_signal.bin
-2026-03-18 21:51:03.269235989 [INFO ] WebSocket established, fetching snapshot symbol=BTCUSDT
-2026-03-18 21:51:03.270048282 [INFO ] Fetching snapshot symbol=BTCUSDT
-2026-03-18 21:51:03.576984205 [INFO ] Snapshot applied symbol=BTCUSDT sequence=90402465809 base_price=70828.6 bids=1000 asks=1000
-2026-03-18 21:51:03.577018497 [INFO ] Snapshot received symbol=BTCUSDT sequence=90402465809 bids=1000 asks=1000
-[2026/03/18 21:51:03:5780] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
-2026-03-18 21:51:03.578053165 [INFO ] Applied buffered deltas applied=0 skipped=0
-2026-03-18 21:51:03.578058331 [INFO ] Feed handler started symbol=BTCUSDT
-2026-03-18 21:51:03.578059040 [INFO ] Starting feed handler symbol=BTCUSDT
-2026-03-18 21:51:03.578111623 [ERROR] Sequence gap expected=90402465810 U=90402465788
-2026-03-18 21:51:03.578111956 [WARN ] Triggering re-snapshot reason=Sequence gap
-[2026/03/18 21:51:03:5784] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
-[2026/03/18 21:51:03:5784] W: ssh pvo "ops" is mandatory
-[2026/03/18 21:51:03:5784] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
-[2026/03/18 21:51:03:5784] W: handler_server_protocol_init: requires 'upload-dir' pvo
-2026-03-18 21:51:04.688191473 [INFO ] WebSocket established, fetching Kraken snapshot symbol=BTCUSDT
-2026-03-18 21:51:04.688196056 [INFO ] Fetching Kraken snapshot symbol=BTCUSDT
-2026-03-18 21:51:04.777915423 [WARN ] Snapshot levels out of grid range symbol=BTCUSDT skipped=786
-2026-03-18 21:51:04.777919673 [INFO ] Snapshot applied symbol=BTCUSDT sequence=0 base_price=70822 bids=500 asks=500
-2026-03-18 21:51:04.777955798 [INFO ] Kraken snapshot received symbol=BTCUSDT bids=500 asks=500
-2026-03-18 21:51:04.779132549 [INFO ] Applied buffered deltas applied=0 skipped=0
-2026-03-18 21:51:04.779138007 [INFO ] Feed handler started symbol=BTCUSDT
-2026-03-18 21:51:04.779138799 [INFO ] Starting OKX feed handler symbol=BTCUSDT
-[2026/03/18 21:51:04:7791] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
-[2026/03/18 21:51:04:7795] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
-[2026/03/18 21:51:04:7795] W: ssh pvo "ops" is mandatory
-[2026/03/18 21:51:04:7795] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
-[2026/03/18 21:51:04:7795] W: handler_server_protocol_init: requires 'upload-dir' pvo
-2026-03-18 21:51:05.474820259 [INFO ] OKX WebSocket established symbol=BTCUSDT
-2026-03-18 21:51:05.976318096 [INFO ] Snapshot applied symbol=BTCUSDT sequence=73841326165 base_price=70826.3 bids=400 asks=400
-[2026/03/18 21:51:05:9763] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
-2026-03-18 21:51:05.976349096 [INFO ] Applied OKX buffered deltas applied=0 skipped=0
-2026-03-18 21:51:05.976351930 [INFO ] OKX WS snapshot applied symbol=BTCUSDT seq=73841326165
-2026-03-18 21:51:05.976358055 [INFO ] OKX feed handler started symbol=BTCUSDT
-2026-03-18 21:51:05.976358846 [INFO ] Starting Coinbase feed handler symbol=BTCUSDT
-[2026/03/18 21:51:05:9767] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
-[2026/03/18 21:51:05:9767] W: ssh pvo "ops" is mandatory
-[2026/03/18 21:51:05:9767] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
-[2026/03/18 21:51:05:9767] W: handler_server_protocol_init: requires 'upload-dir' pvo
-2026-03-18 21:51:06.368182592 [INFO ] Coinbase WebSocket established symbol=BTCUSDT
-2026-03-18 21:51:35.981720425 [WARN ] Coinbase feed failed to start symbol=BTCUSDT
-2026-03-18 21:51:35.983481677 [INFO ] trading_engine started mode=shadow venues=BINANCE,KRAKEN,OKX,COINBASE symbol=BTCUSDT
-  [shadow] ticks=58  signal_mean=50.02bps  signal_std=275.24bps  IC=-0.014
-[SAFE_MODE] no rollback champion available; publishing neutral signal only
-[OPS_EVENT] ensemble_canary_rollback: {'reason': 'ic_degradation ensemble_ic=-0.0248 primary_ic=-0.0183 margin=0.02'}
-[CONTINUOUS_TRAIN] starting incremental retrain at tick=10105 window=2000
+2026-03-19 08:03:41.111089698 [INFO ] Snapshot applied symbol=BTCUSDT sequence=90427176200 base_price=69690.7 bids=1000 asks=1000
+2026-03-19 08:03:41.111121115 [INFO ] Snapshot received symbol=BTCUSDT sequence=90427176200 bids=1000 asks=1000
+2026-03-19 08:03:41.112259450 [INFO ] Applied buffered deltas applied=0 skipped=0
+2026-03-19 08:03:41.112267950 [INFO ] Feed handler started symbol=BTCUSDT
+2026-03-19 08:03:41.112268742 [INFO ] Starting feed handler symbol=BTCUSDT
+[2026/03/19 08:03:41:1122] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+2026-03-19 08:03:41.112375867 [ERROR] Sequence gap expected=90427176201 U=90427175915
+2026-03-19 08:03:41.112376284 [WARN ] Triggering re-snapshot reason=Sequence gap
+[2026/03/19 08:03:41:1127] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/19 08:03:41:1127] W: ssh pvo "ops" is mandatory
+[2026/03/19 08:03:41:1127] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/19 08:03:41:1127] W: handler_server_protocol_init: requires 'upload-dir' pvo
+  [WARN] Kraken L5 fetch: 503 Server Error: Service Unavailable for url: https://futures.kraken.com/derivatives/api/v3/orderbook?symbol=PI_XBTUSD
+2026-03-19 08:03:42.206862601 [INFO ] WebSocket established, fetching Kraken snapshot symbol=BTCUSDT
+2026-03-19 08:03:42.206868309 [INFO ] Fetching Kraken snapshot symbol=BTCUSDT
+2026-03-19 08:03:42.293682911 [WARN ] Snapshot levels out of grid range symbol=BTCUSDT skipped=968
+2026-03-19 08:03:42.293684786 [INFO ] Snapshot applied symbol=BTCUSDT sequence=0 base_price=69731.9 bids=500 asks=500
+2026-03-19 08:03:42.293721911 [INFO ] Kraken snapshot received symbol=BTCUSDT bids=500 asks=500
+2026-03-19 08:03:42.295267747 [INFO ] Applied buffered deltas applied=0 skipped=0
+2026-03-19 08:03:42.295278873 [INFO ] Feed handler started symbol=BTCUSDT
+2026-03-19 08:03:42.295279748 [INFO ] Starting OKX feed handler symbol=BTCUSDT
+[2026/03/19 08:03:42:2953] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+[2026/03/19 08:03:42:2957] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/19 08:03:42:2957] W: ssh pvo "ops" is mandatory
+[2026/03/19 08:03:42:2958] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/19 08:03:42:2958] W: handler_server_protocol_init: requires 'upload-dir' pvo
+2026-03-19 08:03:42.991623986 [INFO ] OKX WebSocket established symbol=BTCUSDT
+2026-03-19 08:03:43.465996482 [INFO ] Snapshot applied symbol=BTCUSDT sequence=73862477614 base_price=69703.5 bids=400 asks=400
+2026-03-19 08:03:43.466025149 [INFO ] Applied OKX buffered deltas applied=0 skipped=0
+2026-03-19 08:03:43.466027982 [INFO ] OKX WS snapshot applied symbol=BTCUSDT seq=73862477614
+2026-03-19 08:03:43.466033649 [INFO ] OKX feed handler started symbol=BTCUSDT
+2026-03-19 08:03:43.466034441 [INFO ] Starting Coinbase feed handler symbol=BTCUSDT
+[2026/03/19 08:03:43:4660] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+[2026/03/19 08:03:43:4665] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/19 08:03:43:4665] W: ssh pvo "ops" is mandatory
+[2026/03/19 08:03:43:4665] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/19 08:03:43:4665] W: handler_server_protocol_init: requires 'upload-dir' pvo
+2026-03-19 08:03:43.883305925 [INFO ] Coinbase WebSocket established symbol=BTCUSDT
+2026-03-19 08:04:13.466971992 [WARN ] Coinbase feed failed to start symbol=BTCUSDT
+2026-03-19 08:04:13.469778205 [INFO ] trading_engine started mode=shadow venues=BINANCE,KRAKEN,OKX,COINBASE symbol=BTCUSDT
+[CONTINUOUS_TRAIN] starting incremental retrain at tick=10367 window=2000
 Collecting 2000 ticks for in-place training...
+2026-03-19 08:04:19.442168744 [WARN ] Kraken WebSocket disconnected, reconnecting symbol=BTCUSDT delay_ms=100
+2026-03-19 08:04:19.442169536 [WARN ] Triggering re-snapshot reason=WebSocket disconnected
+[2026/03/19 08:04:19:5466] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+[2026/03/19 08:04:19:5470] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/19 08:04:19:5471] W: ssh pvo "ops" is mandatory
+[2026/03/19 08:04:19:5471] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/19 08:04:19:5471] W: handler_server_protocol_init: requires 'upload-dir' pvo
+2026-03-19 08:04:19.619750539 [INFO ] WebSocket established, fetching Kraken snapshot symbol=BTCUSDT
+2026-03-19 08:04:19.619754247 [INFO ] Fetching Kraken snapshot symbol=BTCUSDT
+2026-03-19 08:04:19.664419071 [WARN ] Snapshot levels out of grid range symbol=BTCUSDT skipped=961
+2026-03-19 08:04:19.664420196 [INFO ] Snapshot applied symbol=BTCUSDT sequence=0 base_price=69731.9 bids=500 asks=500
+2026-03-19 08:04:19.664451446 [INFO ] Kraken snapshot received symbol=BTCUSDT bids=500 asks=500
+2026-03-19 08:04:19.665671448 [INFO ] Applied buffered deltas applied=0 skipped=0
 [PRIMARY] Starting primary model training (folds=2, epochs=5)
 Device: cpu
 
@@ -69,25 +80,35 @@ Fold 1/2  train=750 test=250 ticks
   Pre-training spatial encoder (5 epochs)…
   [pretrain] epoch 1/5  loss=4.1079
   [pretrain] epoch 2/5  loss=4.1079
-2026-03-18 21:52:43.394231886 [WARN ] Triggering re-snapshot reason=Buffer overflow
   [pretrain] epoch 3/5  loss=4.1079
   [pretrain] epoch 4/5  loss=4.1079
   [pretrain] epoch 5/5  loss=4.1079
-  epoch   5/5  train=0.0848  val=0.0846
-  Fold 1 best val loss: 0.0846
+  epoch   1/5  train=0.0894  val=0.0849
+  epoch   2/5  train=0.0883  val=0.0850
+  epoch   3/5  train=0.0879  val=0.0850
+  epoch   4/5  train=0.0878  val=0.0850
+  epoch   5/5  train=0.0875  val=0.0850
+  Early stopping at epoch 5 (no improvement for 4 epochs)
+  Fold 1 best val loss: 0.0849
 
 ============================================================
 Fold 2/2  train=1750 test=250 ticks
   Pre-training spatial encoder (5 epochs)…
-  [pretrain] epoch 1/5  loss=4.1368
-  [pretrain] epoch 2/5  loss=4.1363
-  [pretrain] epoch 3/5  loss=4.0457
-  [pretrain] epoch 4/5  loss=4.0070
-  [pretrain] epoch 5/5  loss=4.0011
-2026-03-18 21:54:23.494167803 [WARN ] Triggering re-snapshot reason=Buffer overflow
-  epoch   5/5  train=0.0849  val=0.5758
-  Fold 2 best val loss: 0.5758
-[PRIMARY] In-place training done. Val loss: 0.0846 saved=/Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_latest.pt
+  [pretrain] epoch 1/5  loss=3.8803
+2026-03-19 08:05:21.046868008 [WARN ] Triggering re-snapshot reason=Buffer overflow
+  [pretrain] epoch 2/5  loss=3.4588
+  [pretrain] epoch 3/5  loss=3.4488
+  [pretrain] epoch 4/5  loss=3.4461
+  [pretrain] epoch 5/5  loss=3.4460
+  epoch   1/5  train=0.1711  val=0.0921
+  epoch   2/5  train=0.1444  val=0.0934
+  epoch   3/5  train=0.1393  val=0.0929
+  epoch   4/5  train=0.1356  val=0.0923
+  epoch   5/5  train=0.1336  val=0.0921
+  Early stopping at epoch 5 (no improvement for 4 epochs)
+  Fold 2 best val loss: 0.0921
+[MODEL_SELECT] challenger rejected on holdout (incumbent_mse=6.175509e-05, challenger_mse=1.573386e-04)
+[PRIMARY] In-place training done. Val loss: 0.0849 saved=/Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_latest.pt
 [SECONDARY] Starting secondary model training (folds=2, epochs=5, d_spatial=32, d_temporal=64)
 Device: cpu
 
@@ -95,89 +116,38 @@ Device: cpu
 Fold 1/2  train=750 test=250 ticks
   Pre-training spatial encoder (5 epochs)…
   [pretrain] epoch 1/5  loss=4.1078
-  [pretrain] epoch 2/5  loss=4.1078
+  [pretrain] epoch 2/5  loss=4.1079
   [pretrain] epoch 3/5  loss=4.1079
   [pretrain] epoch 4/5  loss=4.1079
   [pretrain] epoch 5/5  loss=4.1077
-  epoch   5/5  train=0.1907  val=0.2036
-  Fold 1 best val loss: 0.2036
+  epoch   1/5  train=0.7073  val=0.6860
+  epoch   2/5  train=0.5058  val=0.4918
+  epoch   3/5  train=0.2866  val=0.2767
+  epoch   4/5  train=0.1675  val=0.1923
+  epoch   5/5  train=0.1390  val=0.1772
+  Fold 1 best val loss: 0.1772
 
 ============================================================
 Fold 2/2  train=1750 test=250 ticks
   Pre-training spatial encoder (5 epochs)…
-  [pretrain] epoch 1/5  loss=4.1360
-  [pretrain] epoch 2/5  loss=4.1097
-  [pretrain] epoch 3/5  loss=4.0476
-  [pretrain] epoch 4/5  loss=4.0316
-  [pretrain] epoch 5/5  loss=4.0311
-  epoch   5/5  train=0.0920  val=0.5309
-  Fold 2 best val loss: 0.5309
+  [pretrain] epoch 1/5  loss=3.9240
+  [pretrain] epoch 2/5  loss=3.4680
+  [pretrain] epoch 3/5  loss=3.4556
+  [pretrain] epoch 4/5  loss=3.4476
+2026-03-19 08:07:01.147124299 [WARN ] Triggering re-snapshot reason=Buffer overflow
+  [pretrain] epoch 5/5  loss=3.4460
+  epoch   1/5  train=0.4754  val=0.5082
+  epoch   2/5  train=0.2268  val=0.3216
+  epoch   3/5  train=0.1821  val=0.2623
+  epoch   4/5  train=0.1685  val=0.2366
+  epoch   5/5  train=0.1643  val=0.2318
+  Fold 2 best val loss: 0.2318
 [SECONDARY] Secondary model trained and saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_secondary.pt
 [REGIME] Starting regime model training on 2000 ticks
-[REGIME] Flat training data (5/5 features near-zero variance) — anchoring artifact to calm regime.
-[REGIME] Regime model trained, distribution={'calm': 1.0, 'trending': 0.0, 'illiquid': 0.0, 'shock': 0.0}, saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/r2_regime_model_btcusdt.json
+[REGIME] Regime model trained, distribution={'calm': 0.5695, 'shock': 0.01, 'illiquid': 0.0105, 'trending': 0.41}, saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/r2_regime_model_btcusdt.json
 [CONTINUOUS_TRAIN] completed
-  [shadow] ticks=82  signal_mean=11.22bps  signal_std=244.27bps  IC=-0.032
-[CONTINUOUS_TRAIN] starting incremental retrain at tick=20105 window=2000
-Collecting 2000 ticks for in-place training...
-[PRIMARY] Starting primary model training (folds=2, epochs=5)
-Device: cpu
-
-============================================================
-Fold 1/2  train=750 test=250 ticks
-  Pre-training spatial encoder (5 epochs)…
-  [pretrain] epoch 1/5  loss=4.1079
-  [pretrain] epoch 2/5  loss=4.1079
-  [pretrain] epoch 3/5  loss=4.1078
-  [pretrain] epoch 4/5  loss=4.1074
-  [pretrain] epoch 5/5  loss=4.0951
-2026-03-18 21:56:03.593778969 [WARN ] Triggering re-snapshot reason=Buffer overflow
-  epoch   5/5  train=0.0848  val=0.0848
-  Fold 1 best val loss: 0.0848
-
-============================================================
-Fold 2/2  train=1750 test=250 ticks
-  Pre-training spatial encoder (5 epochs)…
-  [pretrain] epoch 1/5  loss=4.1353
-  [pretrain] epoch 2/5  loss=3.5926
-  [pretrain] epoch 3/5  loss=3.3396
-  [pretrain] epoch 4/5  loss=3.2853
-  [pretrain] epoch 5/5  loss=3.2550
-2026-03-18 21:57:43.694420304 [WARN ] Triggering re-snapshot reason=Buffer overflow
-  epoch   5/5  train=0.0850  val=0.0848
-  Fold 2 best val loss: 0.0848
-[MODEL_SELECT] challenger rejected on holdout (incumbent_mse=1.069272e-05, challenger_mse=1.405010e-05)
-[PRIMARY] In-place training done. Val loss: 0.0848 saved=/Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_latest.pt
-[SECONDARY] Starting secondary model training (folds=2, epochs=5, d_spatial=32, d_temporal=64)
-Device: cpu
-
-============================================================
-Fold 1/2  train=750 test=250 ticks
-  Pre-training spatial encoder (5 epochs)…
-  [pretrain] epoch 1/5  loss=4.1078
-  [pretrain] epoch 2/5  loss=4.1076
-  [pretrain] epoch 3/5  loss=4.1055
-  [pretrain] epoch 4/5  loss=3.9974
-  [pretrain] epoch 5/5  loss=3.7239
-  epoch   5/5  train=0.1565  val=0.2126
-  Fold 1 best val loss: 0.2126
-
-============================================================
-Fold 2/2  train=1750 test=250 ticks
-  Pre-training spatial encoder (5 epochs)…
-  [pretrain] epoch 1/5  loss=4.1353
-  [pretrain] epoch 2/5  loss=3.5850
-  [pretrain] epoch 3/5  loss=3.3810
-  [pretrain] epoch 4/5  loss=3.3320
-  [pretrain] epoch 5/5  loss=3.3279
-  epoch   5/5  train=0.0940  val=0.0900
-  Fold 2 best val loss: 0.0900
-[SECONDARY] Secondary model trained and saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_secondary.pt
-[REGIME] Starting regime model training on 2000 ticks
-[REGIME] Regime model trained, distribution={'shock': 0.1235, 'calm': 0.8765, 'trending': 0.0, 'illiquid': 0.0}, saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/r2_regime_model_btcusdt.json
-[CONTINUOUS_TRAIN] completed
-  [shadow] ticks=83  signal_mean=9.64bps  signal_std=243.22bps  IC=-0.022
-[CONTINUOUS_TRAIN] starting incremental retrain at tick=30105 window=2000
+  [shadow] ticks=36  signal_mean=-218.25bps  signal_std=358.62bps  IC=0.172
+[CONTINUOUS_TRAIN] starting incremental retrain at tick=20367 window=2000
 Collecting 2000 ticks for in-place training...
 [PRIMARY] Starting primary model training (folds=2, epochs=5)
 Device: cpu
@@ -190,155 +160,30 @@ Fold 1/2  train=750 test=250 ticks
   [pretrain] epoch 3/5  loss=4.1079
   [pretrain] epoch 4/5  loss=4.1079
   [pretrain] epoch 5/5  loss=4.1079
+  epoch   1/5  train=0.0849  val=0.0847
+  epoch   2/5  train=0.0848  val=0.0846
+  epoch   3/5  train=0.0848  val=0.0846
+  epoch   4/5  train=0.0848  val=0.0846
   epoch   5/5  train=0.0848  val=0.0846
   Fold 1 best val loss: 0.0846
 
 ============================================================
 Fold 2/2  train=1750 test=250 ticks
   Pre-training spatial encoder (5 epochs)…
-2026-03-18 21:59:23.793621179 [WARN ] Triggering re-snapshot reason=Buffer overflow
   [pretrain] epoch 1/5  loss=4.1368
   [pretrain] epoch 2/5  loss=4.1368
   [pretrain] epoch 3/5  loss=4.1368
+2026-03-19 08:08:41.247261507 [WARN ] Triggering re-snapshot reason=Buffer overflow
   [pretrain] epoch 4/5  loss=4.1368
   [pretrain] epoch 5/5  loss=4.1368
-  epoch   5/5  train=0.0848  val=0.0846
-  Fold 2 best val loss: 0.0846
-[MODEL_SELECT] challenger rejected on holdout (incumbent_mse=4.003227e-06, challenger_mse=1.760160e-05)
-[PRIMARY] In-place training done. Val loss: 0.0846 saved=/Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_latest.pt
-[SECONDARY] Starting secondary model training (folds=2, epochs=5, d_spatial=32, d_temporal=64)
-Device: cpu
-
-============================================================
-Fold 1/2  train=750 test=250 ticks
-  Pre-training spatial encoder (5 epochs)…
-  [pretrain] epoch 1/5  loss=4.1079
-  [pretrain] epoch 2/5  loss=4.1079
-  [pretrain] epoch 3/5  loss=4.1079
-  [pretrain] epoch 4/5  loss=4.1079
-  [pretrain] epoch 5/5  loss=4.1079
-2026-03-18 22:01:03.893261221 [WARN ] Triggering re-snapshot reason=Buffer overflow
-  epoch   5/5  train=0.1602  val=0.1368
-  Fold 1 best val loss: 0.1368
-
-============================================================
-Fold 2/2  train=1750 test=250 ticks
-  Pre-training spatial encoder (5 epochs)…
-  [pretrain] epoch 1/5  loss=4.1368
-  [pretrain] epoch 2/5  loss=4.1368
-  [pretrain] epoch 3/5  loss=4.1368
-  [pretrain] epoch 4/5  loss=4.1368
-  [pretrain] epoch 5/5  loss=4.1368
-  epoch   5/5  train=0.1028  val=0.0896
-  Fold 2 best val loss: 0.0896
-[SECONDARY] Secondary model trained and saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_secondary.pt
-[REGIME] Starting regime model training on 2000 ticks
-[REGIME] Flat training data (3/5 features near-zero variance) — anchoring artifact to calm regime.
-[REGIME] Regime model trained, distribution={'calm': 1.0, 'trending': 0.0, 'illiquid': 0.0, 'shock': 0.0}, saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/r2_regime_model_btcusdt.json
-[CONTINUOUS_TRAIN] completed
-  [shadow] ticks=84  signal_mean=9.38bps  signal_std=241.78bps  IC=-0.037
-[CONTINUOUS_TRAIN] starting incremental retrain at tick=40105 window=2000
-Collecting 2000 ticks for in-place training...
-[PRIMARY] Starting primary model training (folds=2, epochs=5)
-Device: cpu
-
-============================================================
-Fold 1/2  train=750 test=250 ticks
-  Pre-training spatial encoder (5 epochs)…
-  [pretrain] epoch 1/5  loss=4.1079
-  [pretrain] epoch 2/5  loss=4.1079
-  [pretrain] epoch 3/5  loss=4.1079
-  [pretrain] epoch 4/5  loss=4.1079
-  [pretrain] epoch 5/5  loss=4.1079
-  epoch   5/5  train=0.0847  val=0.0846
-  Fold 1 best val loss: 0.0846
-
-============================================================
-Fold 2/2  train=1750 test=250 ticks
-  Pre-training spatial encoder (5 epochs)…
-  [pretrain] epoch 1/5  loss=4.1368
-  [pretrain] epoch 2/5  loss=4.1368
-2026-03-18 22:02:43.992683013 [WARN ] Triggering re-snapshot reason=Buffer overflow
-  [pretrain] epoch 3/5  loss=4.1368
-  [pretrain] epoch 4/5  loss=4.1368
-  [pretrain] epoch 5/5  loss=4.1368
-  epoch   5/5  train=0.0847  val=0.0846
-  Fold 2 best val loss: 0.0846
-[MODEL_SELECT] challenger rejected on holdout (incumbent_mse=1.115552e-06, challenger_mse=1.000070e-05)
-[PRIMARY] In-place training done. Val loss: 0.0846 saved=/Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_latest.pt
-[SECONDARY] Starting secondary model training (folds=2, epochs=5, d_spatial=32, d_temporal=64)
-Device: cpu
-
-============================================================
-Fold 1/2  train=750 test=250 ticks
-  Pre-training spatial encoder (5 epochs)…
-  [pretrain] epoch 1/5  loss=4.1079
-  [pretrain] epoch 2/5  loss=4.1079
-  [pretrain] epoch 3/5  loss=4.1079
-  [pretrain] epoch 4/5  loss=4.1079
-  [pretrain] epoch 5/5  loss=4.1079
-  epoch   5/5  train=0.1307  val=0.1433
-  Fold 1 best val loss: 0.1433
-
-============================================================
-Fold 2/2  train=1750 test=250 ticks
-  Pre-training spatial encoder (5 epochs)…
-  [pretrain] epoch 1/5  loss=4.1368
-  [pretrain] epoch 2/5  loss=4.1368
-  [pretrain] epoch 3/5  loss=4.1368
-  [pretrain] epoch 4/5  loss=4.1368
-2026-03-18 22:04:24.096503183 [WARN ] Triggering re-snapshot reason=Buffer overflow
-  [pretrain] epoch 5/5  loss=4.1368
-  epoch   5/5  train=0.0936  val=0.0912
-  Fold 2 best val loss: 0.0912
-[SECONDARY] Secondary model trained and saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_secondary.pt
-[REGIME] Starting regime model training on 2000 ticks
-[REGIME] Flat training data (5/5 features near-zero variance) — anchoring artifact to calm regime.
-[REGIME] Regime model trained, distribution={'calm': 1.0, 'trending': 0.0, 'illiquid': 0.0, 'shock': 0.0}, saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/r2_regime_model_btcusdt.json
-[CONTINUOUS_TRAIN] completed
-  [shadow] ticks=85  signal_mean=9.12bps  signal_std=240.37bps  IC=-0.005
-[CONTINUOUS_TRAIN] starting incremental retrain at tick=50105 window=2000
-Collecting 2000 ticks for in-place training...
-[PRIMARY] Starting primary model training (folds=2, epochs=5)
-Device: cpu
-
-============================================================
-Fold 1/2  train=750 test=250 ticks
-  Pre-training spatial encoder (5 epochs)…
-  [pretrain] epoch 1/5  loss=4.1079
-  [pretrain] epoch 2/5  loss=4.1079
-  [pretrain] epoch 3/5  loss=4.1079
-  [pretrain] epoch 4/5  loss=4.1079
-  [pretrain] epoch 5/5  loss=4.1079
-  epoch   5/5  train=0.0851  val=0.0847
-  Fold 1 best val loss: 0.0847
-
-============================================================
-Fold 2/2  train=1750 test=250 ticks
-  Pre-training spatial encoder (5 epochs)…
-  [pretrain] epoch 1/5  loss=4.1368
-  [pretrain] epoch 2/5  loss=4.1368
-  [pretrain] epoch 3/5  loss=4.1368
-2026-03-18 22:06:02.865819691 [INFO ] Stopping feed handler symbol=BTCUSDT
-2026-03-18 22:06:02.867177651 [INFO ] Stopping feed handler symbol=BTCUSDT
-2026-03-18 22:06:02.868539652 [INFO ] Stopping OKX feed handler symbol=BTCUSDT
-2026-03-18 22:06:02.870703279 [INFO ] trading_engine shutdown complete
-[2026-03-18T22:06:02Z] [shadow] [INFO] Completed shadow run window
-[2026-03-18T22:06:02Z] [shadow] [INFO] Final shadow session statistics from /Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl
-  [summary] signal_count=88
-  [summary] signal_mean_bps=7.993
-  [summary] signal_std_bps=236.329
-  [summary] max_abs_signal_bps=1450.648
-  [summary] observed_return_count=87
-  [summary] realised_ic=-0.0135
-  [summary] safe_mode_events=24
-clementandredupuy@Mac ThamesRiverTrading %   [pretrain] epoch 4/5  loss=4.1368
-  [pretrain] epoch 5/5  loss=4.1368
-
-clementandredupuy@Mac ThamesRiverTrading %   epoch   5/5  train=0.0852  val=0.0847
+  epoch   1/5  train=0.1494  val=0.0847
+  epoch   2/5  train=0.0854  val=0.0847
+  epoch   3/5  train=0.0852  val=0.0847
+  epoch   4/5  train=0.0852  val=0.0847
+  epoch   5/5  train=0.0852  val=0.0847
   Fold 2 best val loss: 0.0847
-[MODEL_SELECT] challenger rejected on holdout (incumbent_mse=2.247792e-06, challenger_mse=5.286098e-06)
-[PRIMARY] In-place training done. Val loss: 0.0847 saved=/Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_latest.pt
+[MODEL_SELECT] challenger rejected on holdout (incumbent_mse=2.843587e-06, challenger_mse=8.044947e-06)
+[PRIMARY] In-place training done. Val loss: 0.0846 saved=/Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_latest.pt
 [SECONDARY] Starting secondary model training (folds=2, epochs=5, d_spatial=32, d_temporal=64)
 Device: cpu
 
@@ -350,8 +195,12 @@ Fold 1/2  train=750 test=250 ticks
   [pretrain] epoch 3/5  loss=4.1079
   [pretrain] epoch 4/5  loss=4.1079
   [pretrain] epoch 5/5  loss=4.1079
-  epoch   5/5  train=0.2146  val=0.1899
-  Fold 1 best val loss: 0.1899
+  epoch   1/5  train=0.7201  val=0.6223
+  epoch   2/5  train=0.5160  val=0.3804
+  epoch   3/5  train=0.2875  val=0.1898
+  epoch   4/5  train=0.1723  val=0.1385
+  epoch   5/5  train=0.1454  val=0.1301
+  Fold 1 best val loss: 0.1301
 
 ============================================================
 Fold 2/2  train=1750 test=250 ticks
@@ -361,13 +210,193 @@ Fold 2/2  train=1750 test=250 ticks
   [pretrain] epoch 3/5  loss=4.1368
   [pretrain] epoch 4/5  loss=4.1368
   [pretrain] epoch 5/5  loss=4.1368
-  epoch   5/5  train=0.1075  val=0.1058
-  Fold 2 best val loss: 0.1058
+  epoch   1/5  train=0.4750  val=0.2319
+  epoch   2/5  train=0.1554  val=0.1419
+  epoch   3/5  train=0.1074  val=0.1122
+  epoch   4/5  train=0.0964  val=0.1027
+  epoch   5/5  train=0.0937  val=0.1005
+  Fold 2 best val loss: 0.1005
 [SECONDARY] Secondary model trained and saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_secondary.pt
 [REGIME] Starting regime model training on 2000 ticks
 [REGIME] Flat training data (5/5 features near-zero variance) — anchoring artifact to calm regime.
 [REGIME] Regime model trained, distribution={'calm': 1.0, 'trending': 0.0, 'illiquid': 0.0, 'shock': 0.0}, saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/r2_regime_model_btcusdt.json
 [CONTINUOUS_TRAIN] completed
-  [shadow] ticks=86  signal_mean=8.95bps  signal_std=238.97bps  IC=0.001
-  [shadow] ticks=86  signal_mean=8.95bps  signal_std=238.97bps  IC=0.001
+  [shadow] ticks=37  signal_mean=-214.07bps  signal_std=354.62bps  IC=-0.001
+[CONTINUOUS_TRAIN] starting incremental retrain at tick=30367 window=2000
+Collecting 2000 ticks for in-place training...
+[PRIMARY] Starting primary model training (folds=2, epochs=5)
+Device: cpu
+
+============================================================
+Fold 1/2  train=750 test=250 ticks
+  Pre-training spatial encoder (5 epochs)…
+2026-03-19 08:10:21.347181464 [WARN ] Triggering re-snapshot reason=Buffer overflow
+  [pretrain] epoch 1/5  loss=4.1079
+  [pretrain] epoch 2/5  loss=4.1079
+  [pretrain] epoch 3/5  loss=4.1079
+  [pretrain] epoch 4/5  loss=4.1079
+  [pretrain] epoch 5/5  loss=4.1079
+  epoch   1/5  train=0.0849  val=0.0847
+  epoch   2/5  train=0.0848  val=0.0846
+  epoch   3/5  train=0.0848  val=0.0846
+  epoch   4/5  train=0.0848  val=0.0846
+  epoch   5/5  train=0.0847  val=0.0846
+  Fold 1 best val loss: 0.0846
+
+============================================================
+Fold 2/2  train=1750 test=250 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=4.1368
+  [pretrain] epoch 2/5  loss=4.1368
+  [pretrain] epoch 3/5  loss=4.1368
+  [pretrain] epoch 4/5  loss=4.1368
+  [pretrain] epoch 5/5  loss=4.1368
+2026-03-19 08:12:01.447231004 [WARN ] Triggering re-snapshot reason=Buffer overflow
+  epoch   1/5  train=0.0848  val=0.0847
+  epoch   2/5  train=0.0847  val=0.0846
+  epoch   3/5  train=0.0847  val=0.0846
+  epoch   4/5  train=0.0847  val=0.0847
+  epoch   5/5  train=0.0847  val=0.0847
+  Fold 2 best val loss: 0.0846
+[MODEL_SELECT] challenger rejected on holdout (incumbent_mse=6.777502e-06, challenger_mse=8.594423e-06)
+[PRIMARY] In-place training done. Val loss: 0.0846 saved=/Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_latest.pt
+[SECONDARY] Starting secondary model training (folds=2, epochs=5, d_spatial=32, d_temporal=64)
+Device: cpu
+
+============================================================
+Fold 1/2  train=750 test=250 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=4.1079
+  [pretrain] epoch 2/5  loss=4.1079
+  [pretrain] epoch 3/5  loss=4.1079
+  [pretrain] epoch 4/5  loss=4.1079
+  [pretrain] epoch 5/5  loss=4.1079
+  epoch   1/5  train=0.7280  val=0.6632
+  epoch   2/5  train=0.5410  val=0.4468
+  epoch   3/5  train=0.3089  val=0.2556
+  epoch   4/5  train=0.1805  val=0.2012
+  epoch   5/5  train=0.1506  val=0.1924
+  Fold 1 best val loss: 0.1924
+
+============================================================
+Fold 2/2  train=1750 test=250 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=4.1368
+  [pretrain] epoch 2/5  loss=4.1368
+  [pretrain] epoch 3/5  loss=4.1368
+  [pretrain] epoch 4/5  loss=4.1368
+  [pretrain] epoch 5/5  loss=4.1368
+  epoch   1/5  train=0.4333  val=0.2627
+  epoch   2/5  train=0.1424  val=0.1663
+  epoch   3/5  train=0.1075  val=0.1341
+  epoch   4/5  train=0.0982  val=0.1197
+  epoch   5/5  train=0.0954  val=0.1160
+  Fold 2 best val loss: 0.1160
+[SECONDARY] Secondary model trained and saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_secondary.pt
+[REGIME] Starting regime model training on 2000 ticks
+[REGIME] Flat training data (5/5 features near-zero variance) — anchoring artifact to calm regime.
+[REGIME] Regime model trained, distribution={'calm': 1.0, 'trending': 0.0, 'illiquid': 0.0, 'shock': 0.0}, saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/r2_regime_model_btcusdt.json
+[CONTINUOUS_TRAIN] completed
+  [shadow] ticks=38  signal_mean=-208.70bps  signal_std=351.45bps  IC=0.005
+[CONTINUOUS_TRAIN] starting incremental retrain at tick=40367 window=2000
+Collecting 2000 ticks for in-place training...
+[PRIMARY] Starting primary model training (folds=2, epochs=5)
+Device: cpu
+
+============================================================
+Fold 1/2  train=750 test=250 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=4.1079
+  [pretrain] epoch 2/5  loss=4.1079
+  [pretrain] epoch 3/5  loss=4.1079
+2026-03-19 08:13:41.550900176 [WARN ] Triggering re-snapshot reason=Buffer overflow
+  [pretrain] epoch 4/5  loss=4.1079
+  [pretrain] epoch 5/5  loss=4.1079
+  epoch   1/5  train=0.0849  val=0.0847
+  epoch   2/5  train=0.0848  val=0.0846
+  epoch   3/5  train=0.0848  val=0.0847
+  epoch   4/5  train=0.0847  val=0.0847
+  epoch   5/5  train=0.0847  val=0.0846
+  Fold 1 best val loss: 0.0846
+
+============================================================
+Fold 2/2  train=1750 test=250 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=4.1368
+  [pretrain] epoch 2/5  loss=4.1368
+  [pretrain] epoch 3/5  loss=4.1368
+  [pretrain] epoch 4/5  loss=4.1368
+  [pretrain] epoch 5/5  loss=4.1368
+  epoch   1/5  train=0.0886  val=0.0847
+  epoch   2/5  train=0.0849  val=0.0846
+^C[2026-03-19T08:15:17Z] [shadow] [INFO] Final shadow session statistics from /Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl
+  [summary] signal_count=130
+  [summary] signal_mean_bps=-31.181
+  [summary] signal_std_bps=353.890
+  [summary] max_abs_signal_bps=1602.931
+  [summary] observed_return_count=129
+  [summary] realised_ic=-0.0216
+  [summary] safe_mode_events=25
+[2026-03-19T08:15:17Z] [shadow] [ERROR] trading_engine exited with status 130
+
+Interrupt received — stopping session...
+[2026-03-19T08:15:17Z] [shadow] [INFO] Final shadow session statistics from /Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl
+  [summary] signal_count=130
+  [summary] signal_mean_bps=-31.181
+  [summary] signal_std_bps=353.890
+  [summary] max_abs_signal_bps=1602.931
+  [summary] observed_return_count=129
+  [summary] realised_ic=-0.0216
+  [summary] safe_mode_events=25
+clementandredupuy@Mac ThamesRiverTrading % 2026-03-19 08:15:18.818210390 [INFO ] Stopping feed handler symbol=BTCUSDT
+2026-03-19 08:15:18.819237933 [INFO ] Stopping feed handler symbol=BTCUSDT
+[2026/03/19 08:15:18:5962] E: ZERO RANDOM FD
+2026-03-19 08:15:18.820078102 [INFO ] Stopping OKX feed handler symbol=BTCUSDT
+2026-03-19 08:15:18.821748063 [INFO ] trading_engine shutdown complete
+  epoch   3/5  train=0.0848  val=0.0846
+
+clementandredupuy@Mac ThamesRiverTrading %   epoch   4/5  train=0.0848  val=0.0847
+  epoch   5/5  train=0.0848  val=0.0847
+  Fold 2 best val loss: 0.0846
+[MODEL_SELECT] challenger rejected on holdout (incumbent_mse=2.452077e-06, challenger_mse=1.855599e-05)
+[PRIMARY] In-place training done. Val loss: 0.0846 saved=/Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_latest.pt
+[SECONDARY] Starting secondary model training (folds=2, epochs=5, d_spatial=32, d_temporal=64)
+Device: cpu
+
+============================================================
+Fold 1/2  train=750 test=250 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=4.1079
+  [pretrain] epoch 2/5  loss=4.1079
+  [pretrain] epoch 3/5  loss=4.1079
+  [pretrain] epoch 4/5  loss=4.1079
+  [pretrain] epoch 5/5  loss=4.1079
+  epoch   1/5  train=0.7294  val=0.6466
+  epoch   2/5  train=0.5507  val=0.4224
+  epoch   3/5  train=0.3131  val=0.2011
+  epoch   4/5  train=0.1675  val=0.1325
+  epoch   5/5  train=0.1320  val=0.1226
+  Fold 1 best val loss: 0.1226
+
+============================================================
+Fold 2/2  train=1750 test=250 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=4.1368
+  [pretrain] epoch 2/5  loss=4.1368
+  [pretrain] epoch 3/5  loss=4.1368
+  [pretrain] epoch 4/5  loss=4.1368
+  [pretrain] epoch 5/5  loss=4.1368
+  epoch   1/5  train=0.4505  val=0.1735
+  epoch   2/5  train=0.1450  val=0.1046
+  epoch   3/5  train=0.1059  val=0.0918
+  epoch   4/5  train=0.0965  val=0.0889
+  epoch   5/5  train=0.0939  val=0.0884
+  Fold 2 best val loss: 0.0884
+[SECONDARY] Secondary model trained and saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_secondary.pt
+[REGIME] Starting regime model training on 2000 ticks
+[REGIME] Flat training data (5/5 features near-zero variance) — anchoring artifact to calm regime.
+[REGIME] Regime model trained, distribution={'calm': 1.0, 'trending': 0.0, 'illiquid': 0.0, 'shock': 0.0}, saved to /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/r2_regime_model_btcusdt.json
+[CONTINUOUS_TRAIN] completed
+  [shadow] ticks=39  signal_mean=-203.70bps  signal_std=348.28bps  IC=0.071
+  [shadow] ticks=39  signal_mean=-203.70bps  signal_std=348.28bps  IC=0.071
 Shadow session complete.
