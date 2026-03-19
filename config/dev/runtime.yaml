@@ -1,6 +1,0 @@
-# Runtime defaults for local/development runs.
-# This file is not consumed by deploy scripts yet, but keeps environment defaults aligned.
-symbol: BTCUSDT
-venues: BINANCE,KRAKEN,OKX,COINBASE
-interval_ms: 1000
-env_file: config/dev/trading.env

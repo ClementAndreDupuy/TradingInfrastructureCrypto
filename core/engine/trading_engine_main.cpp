@@ -143,8 +143,6 @@ auto main(int argc, char** argv) -> int {
         const bool run_okx = has_venue(opts.venues, "OKX");
         const bool run_coinbase = has_venue(opts.venues, "COINBASE");
 
-        // Construct feed handlers first so start() can fetch tick_size from the exchange
-        // REST endpoint before we build the order-book grids.
         BinanceFeedHandler binance_feed(opts.symbol);
         KrakenFeedHandler kraken_feed(opts.symbol);
         OkxFeedHandler okx_feed(opts.symbol);
@@ -163,12 +161,6 @@ auto main(int argc, char** argv) -> int {
             LOG_WARN("Coinbase feed failed to start", "symbol", opts.symbol.c_str());
         }
 
-        // Derive grid precision from the tick_size each feed fetched from its exchange.
-        // Level count is scaled per exchange so that every grid covers the same USD range
-        // (~$2 000), regardless of tick size.  Exchanges with a finer tick (e.g. 0.01) get
-        // more levels; coarser ticks (e.g. 0.1) get fewer.  This prevents Binance/Coinbase
-        // grids from recentering 10× more often than Kraken/OKX grids.
-        // Memory: worst case 200 000 levels × 8 B × 4 arrays = ~6.4 MB per BookManager.
         constexpr double k_target_range_usd  = 2'000.0;
         constexpr double k_fallback_tick_size = 1.0;
         auto effective_tick   = [](double ts) { return ts > 0.0 ? ts : k_fallback_tick_size; };

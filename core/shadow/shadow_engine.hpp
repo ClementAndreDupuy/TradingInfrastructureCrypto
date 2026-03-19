@@ -438,38 +438,57 @@ class ShadowConnector : public ExchangeConnector {
 
 class ShadowEngine {
   public:
-    ShadowEngine(BookManager& binance_book, BookManager& kraken_book, const ShadowConfig& cfg = {})
-        : binance_shadow_(Exchange::BINANCE, cfg, binance_book),
-          kraken_shadow_(Exchange::KRAKEN, cfg, kraken_book), binance_book_(binance_book),
-          kraken_book_(kraken_book) {}
+    hadowEngine(BookManager& binance_book, BookManager& kraken_book,
+                 BookManager& okx_book, BookManager& coinbase_book,
+                 const ShadowConfig& cfg = {})
+        : binance_shadow_(Exchange::BINANCE,  cfg, binance_book),
+          kraken_shadow_(Exchange::KRAKEN,    cfg, kraken_book),
+          okx_shadow_(Exchange::OKX,          cfg, okx_book),
+          coinbase_shadow_(Exchange::COINBASE, cfg, coinbase_book),
+          binance_book_(binance_book), kraken_book_(kraken_book),
+          okx_book_(okx_book), coinbase_book_(coinbase_book) {}
 
-    ShadowConnector& binance_connector() { return binance_shadow_; }
-    ShadowConnector& kraken_connector() { return kraken_shadow_; }
+    ShadowConnector& binance_connector()  { return binance_shadow_; }
+    ShadowConnector& kraken_connector()   { return kraken_shadow_; }
+    ShadowConnector& okx_connector()      { return okx_shadow_; }
+    ShadowConnector& coinbase_connector() { return coinbase_shadow_; }
 
     void check_fills() {
         binance_shadow_.check_fills();
         kraken_shadow_.check_fills();
+        okx_shadow_.check_fills();
+        coinbase_shadow_.check_fills();
     }
 
     double net_pnl() const noexcept {
-        return binance_shadow_.total_pnl() + kraken_shadow_.total_pnl();
+        return binance_shadow_.total_pnl() + kraken_shadow_.total_pnl()
+            + okx_shadow_.total_pnl()     + coinbase_shadow_.total_pnl();
     }
 
     uint64_t total_fills() const noexcept {
-        return binance_shadow_.total_fills() + kraken_shadow_.total_fills();
+        return binance_shadow_.total_fills() + kraken_shadow_.total_fills()
+            + okx_shadow_.total_fills()     + coinbase_shadow_.total_fills();
     }
 
     void print_summary() const {
-        LOG_INFO("Shadow session summary", "net_pnl", net_pnl(), "total_fills", total_fills(),
-                 "bin_active", binance_shadow_.active_orders(), "kra_active",
-                 kraken_shadow_.active_orders());
+        LOG_INFO("Shadow session summary",
+                 "net_pnl",     net_pnl(),
+                 "total_fills", total_fills(),
+                 "bin_active",  binance_shadow_.active_orders(),
+                 "kra_active",  kraken_shadow_.active_orders(),
+                 "okx_active",  okx_shadow_.active_orders(),
+                 "cb_active",   coinbase_shadow_.active_orders());
     }
 
   private:
     ShadowConnector binance_shadow_;
     ShadowConnector kraken_shadow_;
+    ShadowConnector okx_shadow_;
+    ShadowConnector coinbase_shadow_;
     BookManager& binance_book_;
     BookManager& kraken_book_;
+    BookManager& okx_book_;
+    BookManager& coinbase_book_;
 };
 
 } // namespace trading

@@ -108,7 +108,7 @@ KrakenFeedHandler::KrakenFeedHandler(const std::string& symbol, const std::strin
                                      const std::string& ws_url)
     : symbol_(symbol), api_url_(api_url), ws_url_(ws_url),
       venue_symbols_(SymbolMapper::map_all(symbol)) {
-    LOG_INFO("KrakenFeedHandler created", "symbol", symbol_.c_str());
+    LOG_INFO("[Kraken] FeedHandler created", "symbol", symbol_.c_str());
 }
 
 KrakenFeedHandler::~KrakenFeedHandler() { stop(); }
@@ -117,22 +117,22 @@ auto KrakenFeedHandler::fetch_tick_size() -> Result {
     const std::string url = api_url_ + "/0/public/AssetPairs?pair=" + venue_symbols_.kraken_rest;
     auto resp = http::get(url);
     if (resp.body.empty()) {
-        LOG_WARN("fetch_tick_size failed", "symbol", symbol_.c_str(), "status", resp.status);
+        LOG_WARN("[Kraken] fetch_tick_size failed", "symbol", symbol_.c_str(), "status", resp.status);
         return Result::ERROR_CONNECTION_LOST;
     }
     auto json = nlohmann::json::parse(resp.body, nullptr, false);
     if (json.is_discarded()) {
-        LOG_WARN("fetch_tick_size JSON parse failed", "symbol", symbol_.c_str());
+        LOG_WARN("[Kraken] fetch_tick_size JSON parse failed", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
     auto err_it = json.find("error");
     if (err_it != json.end() && err_it->is_array() && !err_it->empty()) {
-        LOG_WARN("fetch_tick_size: Kraken API error", "symbol", symbol_.c_str());
+        LOG_WARN("[Kraken] fetch_tick_size: API error", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
     auto res_it = json.find("result");
     if (res_it == json.end() || !res_it->is_object() || res_it->empty()) {
-        LOG_WARN("fetch_tick_size: no result", "symbol", symbol_.c_str());
+        LOG_WARN("[Kraken] fetch_tick_size: no result", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
     const auto& pair_data = res_it->begin().value();
@@ -141,18 +141,18 @@ auto KrakenFeedHandler::fetch_tick_size() -> Result {
         std::string ts = ts_it->get<std::string>();
         if (!ts.empty()) {
             tick_size_ = tick_from_string(ts);
-            LOG_INFO("Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
+            LOG_INFO("[Kraken] Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
             return Result::SUCCESS;
         }
     }
     auto dec_it = pair_data.find("pair_decimals");
     if (dec_it == pair_data.end() || !dec_it->is_number_integer()) {
-        LOG_WARN("fetch_tick_size: tick_size and pair_decimals both missing", "symbol",
+        LOG_WARN("[Kraken] fetch_tick_size: tick_size and pair_decimals both missing", "symbol",
                  symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
     tick_size_ = std::pow(10.0, -dec_it->get<int>());
-    LOG_INFO("Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
+    LOG_INFO("[Kraken] Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
     return Result::SUCCESS;
 }
 
@@ -161,7 +161,7 @@ auto KrakenFeedHandler::start() -> Result {
         return Result::SUCCESS;
     }
 
-    LOG_INFO("Starting feed handler", "symbol", symbol_.c_str());
+    LOG_INFO("[Kraken] Starting feed handler", "symbol", symbol_.c_str());
     fetch_tick_size();
     running_.store(true, std::memory_order_release);
     state_.store(State::BUFFERING, std::memory_order_release);
@@ -191,7 +191,7 @@ auto KrakenFeedHandler::start() -> Result {
         return Result::ERROR_CONNECTION_LOST;
     }
 
-    LOG_INFO("Feed handler started", "symbol", symbol_.c_str());
+    LOG_INFO("[Kraken] Feed handler started", "symbol", symbol_.c_str());
     return Result::SUCCESS;
 }
 
@@ -200,7 +200,7 @@ void KrakenFeedHandler::stop() {
         return;
     }
 
-    LOG_INFO("Stopping feed handler", "symbol", symbol_.c_str());
+    LOG_INFO("[Kraken] Stopping feed handler", "symbol", symbol_.c_str());
     running_.store(false, std::memory_order_release);
     state_.store(State::DISCONNECTED, std::memory_order_release);
 
@@ -258,7 +258,7 @@ void KrakenFeedHandler::ws_event_loop() {
 
         auto* ctx = lws_create_context(&ctx_info);
         if (ctx == nullptr) {
-            LOG_ERROR("lws_create_context failed", "symbol", symbol_.c_str());
+            LOG_ERROR("[Kraken] lws_create_context failed", "symbol", symbol_.c_str());
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
             continue;
@@ -276,7 +276,7 @@ void KrakenFeedHandler::ws_event_loop() {
         connect_info.ssl_connection = LCCSCF_USE_SSL;
 
         if (lws_client_connect_via_info(&connect_info) == nullptr) {
-            LOG_ERROR("WebSocket connect failed", "symbol", symbol_.c_str());
+            LOG_ERROR("[Kraken] WebSocket connect failed", "symbol", symbol_.c_str());
             lws_context_destroy(ctx);
             lws_ctx_.store(nullptr, std::memory_order_release);
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
@@ -298,7 +298,7 @@ void KrakenFeedHandler::ws_event_loop() {
             continue;
         }
 
-        LOG_INFO("WebSocket established, waiting for Kraken snapshot", "symbol", symbol_.c_str());
+        LOG_INFO("[Kraken] WebSocket established, waiting for snapshot", "symbol", symbol_.c_str());
         state_.store(State::BUFFERING, std::memory_order_release);
         delta_buffer_.clear();
         last_sequence_.store(0, std::memory_order_release);
@@ -323,7 +323,7 @@ void KrakenFeedHandler::ws_event_loop() {
         lws_ctx_.store(nullptr, std::memory_order_release);
 
         if (running_.load()) {
-            LOG_WARN("Kraken WebSocket disconnected, reconnecting", "symbol", symbol_.c_str(),
+            LOG_WARN("[Kraken] WebSocket disconnected, reconnecting", "symbol", symbol_.c_str(),
                      "delay_ms", delay_ms);
             trigger_resnapshot("WebSocket disconnected");
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
@@ -447,7 +447,7 @@ auto KrakenFeedHandler::process_delta(const std::string& message, const nlohmann
     truncate_book();
 
     if (!validate_checksum(book)) {
-        LOG_ERROR("Kraken checksum mismatch", "symbol", symbol_.c_str());
+        LOG_ERROR("[Kraken] checksum mismatch", "symbol", symbol_.c_str());
         trigger_resnapshot("Checksum mismatch");
         return Result::ERROR_BOOK_CORRUPTED;
     }
@@ -696,7 +696,7 @@ KrakenFeedHandler::extract_levels_from_message(const std::string& message, const
 }
 
 void KrakenFeedHandler::trigger_resnapshot(const std::string& reason) {
-    LOG_WARN("Triggering re-snapshot", "reason", reason.c_str());
+    LOG_WARN("[Kraken] Triggering re-snapshot", "reason", reason.c_str());
     if (error_callback_) {
         error_callback_("Re-snapshot: " + reason);
     }

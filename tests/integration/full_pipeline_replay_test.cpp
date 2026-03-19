@@ -136,12 +136,24 @@ class RecordedFeedHandler {
 TEST(FullPipelineReplayTest, FeedBookMakerShadowEndToEndWithReplayData) {
     const auto events = load_events("tests/data/replay/binance_btcusdt_replay.csv");
 
-    BookManager binance_book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
-    BookManager kraken_book("BTCUSDT", Exchange::KRAKEN, 1.0, 20000);
+    constexpr double k_target_range_usd = 2'000.0;
+    constexpr double k_binance_tick  = 0.01;
+    constexpr double k_kraken_tick   = 0.1;
+    constexpr double k_okx_tick      = 0.1;
+    constexpr double k_coinbase_tick = 0.01;
+
+    BookManager binance_book("BTCUSDT", Exchange::BINANCE,  k_binance_tick,
+                             static_cast<size_t>(k_target_range_usd / k_binance_tick));
+    BookManager kraken_book("XBTUSD",  Exchange::KRAKEN,   k_kraken_tick,
+                            static_cast<size_t>(k_target_range_usd / k_kraken_tick));
+    BookManager okx_book("BTC-USDT",   Exchange::OKX,      k_okx_tick,
+                         static_cast<size_t>(k_target_range_usd / k_okx_tick));
+    BookManager coinbase_book("BTC-USD", Exchange::COINBASE, k_coinbase_tick,
+                              static_cast<size_t>(k_target_range_usd / k_coinbase_tick));
 
     ShadowConfig cfg;
     std::snprintf(cfg.log_path, sizeof(cfg.log_path), "/tmp/shadow_pipeline_replay.jsonl");
-    ShadowEngine shadow_engine(binance_book, kraken_book, cfg);
+    ShadowEngine shadow_engine(binance_book, kraken_book, okx_book, coinbase_book, cfg);
 
     OrderManager order_manager(shadow_engine.binance_connector());
     KillSwitch kill_switch;

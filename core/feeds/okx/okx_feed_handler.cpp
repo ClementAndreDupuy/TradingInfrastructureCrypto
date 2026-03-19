@@ -106,7 +106,7 @@ OkxFeedHandler::OkxFeedHandler(const std::string& symbol, const std::string& api
                                const std::string& ws_url)
     : symbol_(symbol), venue_symbols_(SymbolMapper::map_all(symbol)), instrument_id_(venue_symbols_.okx),
       api_url_(api_url), ws_url_(ws_url) {
-    LOG_INFO("OkxFeedHandler created", "symbol", symbol_.c_str(), "inst_id", instrument_id_.c_str());
+    LOG_INFO("[OKX] FeedHandler created", "symbol", symbol_.c_str(), "inst_id", instrument_id_.c_str());
 }
 
 OkxFeedHandler::~OkxFeedHandler() { stop(); }
@@ -116,26 +116,26 @@ auto OkxFeedHandler::fetch_tick_size() -> Result {
         api_url_ + "/api/v5/public/instruments?instType=SPOT&instId=" + instrument_id_;
     auto resp = http::get(url);
     if (!resp.ok() || resp.body.empty()) {
-        LOG_WARN("fetch_tick_size failed", "symbol", symbol_.c_str(), "status", resp.status);
+        LOG_WARN("[OKX] fetch_tick_size failed", "symbol", symbol_.c_str(), "status", resp.status);
         return Result::ERROR_CONNECTION_LOST;
     }
     auto json = nlohmann::json::parse(resp.body, nullptr, false);
     if (json.is_discarded() || json.value("code", std::string("")) != "0") {
-        LOG_WARN("fetch_tick_size: bad response", "symbol", symbol_.c_str());
+        LOG_WARN("[OKX] fetch_tick_size: bad response", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
     auto data_it = json.find("data");
     if (data_it == json.end() || !data_it->is_array() || data_it->empty()) {
-        LOG_WARN("fetch_tick_size: no data", "symbol", symbol_.c_str());
+        LOG_WARN("[OKX] fetch_tick_size: no data", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
     std::string ts = (*data_it)[0].value("tickSz", std::string(""));
     if (ts.empty()) {
-        LOG_WARN("fetch_tick_size: tickSz missing", "symbol", symbol_.c_str());
+        LOG_WARN("[OKX] fetch_tick_size: tickSz missing", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
     tick_size_ = tick_from_string(ts);
-    LOG_INFO("Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
+    LOG_INFO("[OKX] Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
     return Result::SUCCESS;
 }
 
@@ -144,7 +144,7 @@ auto OkxFeedHandler::start() -> Result {
         return Result::SUCCESS;
     }
 
-    LOG_INFO("Starting OKX feed handler", "symbol", symbol_.c_str());
+    LOG_INFO("[OKX] Starting feed handler", "symbol", symbol_.c_str());
     fetch_tick_size();
     running_.store(true, std::memory_order_release);
     state_.store(State::BUFFERING, std::memory_order_release);
@@ -170,7 +170,7 @@ auto OkxFeedHandler::start() -> Result {
         return Result::ERROR_CONNECTION_LOST;
     }
 
-    LOG_INFO("OKX feed handler started", "symbol", symbol_.c_str());
+    LOG_INFO("[OKX] feed handler started", "symbol", symbol_.c_str());
     return Result::SUCCESS;
 }
 
@@ -179,7 +179,7 @@ void OkxFeedHandler::stop() {
         return;
     }
 
-    LOG_INFO("Stopping OKX feed handler", "symbol", symbol_.c_str());
+    LOG_INFO("[OKX] Stopping feed handler", "symbol", symbol_.c_str());
     running_.store(false, std::memory_order_release);
     state_.store(State::DISCONNECTED, std::memory_order_release);
 
@@ -243,7 +243,7 @@ void OkxFeedHandler::ws_event_loop() {
 
         auto* ctx = lws_create_context(&ctx_info);
         if (ctx == nullptr) {
-            LOG_ERROR("lws_create_context failed", "symbol", symbol_.c_str());
+            LOG_ERROR("[OKX] lws_create_context failed", "symbol", symbol_.c_str());
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
             continue;
@@ -261,7 +261,7 @@ void OkxFeedHandler::ws_event_loop() {
         connect_info.ssl_connection = LCCSCF_USE_SSL;
 
         if (lws_client_connect_via_info(&connect_info) == nullptr) {
-            LOG_ERROR("OKX WebSocket connect failed", "symbol", symbol_.c_str());
+            LOG_ERROR("[OKX] WebSocket connect failed", "symbol", symbol_.c_str());
             lws_context_destroy(ctx);
             lws_ctx_.store(nullptr, std::memory_order_release);
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
@@ -283,7 +283,7 @@ void OkxFeedHandler::ws_event_loop() {
             continue;
         }
 
-        LOG_INFO("OKX WebSocket established", "symbol", symbol_.c_str());
+        LOG_INFO("[OKX] WebSocket established", "symbol", symbol_.c_str());
 
         state_.store(State::BUFFERING, std::memory_order_release);
         delta_buffer_.clear();
@@ -311,7 +311,7 @@ void OkxFeedHandler::ws_event_loop() {
         lws_ctx_.store(nullptr, std::memory_order_release);
 
         if (running_.load(std::memory_order_acquire)) {
-            LOG_WARN("OKX stream disconnected, reconnecting", "symbol", symbol_.c_str(),
+            LOG_WARN("[OKX] stream disconnected, reconnecting", "symbol", symbol_.c_str(),
                      "backoff_ms", delay_ms);
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
@@ -354,7 +354,7 @@ auto OkxFeedHandler::process_snapshot(const nlohmann::json& json) -> Result {
                 out.push_back(
                     {std::stod(lvl[0].get<std::string>()), std::stod(lvl[1].get<std::string>())});
             } catch (const std::exception& ex) {
-                LOG_WARN("OKX WS snapshot level parse failed", "symbol", sym, "error", ex.what());
+                LOG_WARN("[OKX] WS snapshot level parse failed", "symbol", sym, "error", ex.what());
             }
         }
         return out;
@@ -369,7 +369,7 @@ auto OkxFeedHandler::process_snapshot(const nlohmann::json& json) -> Result {
     snap.asks = parse_levels(book.value("asks", nlohmann::json::array()));
 
     if (snap.bids.empty() || snap.asks.empty()) {
-        LOG_ERROR("OKX WS snapshot has empty book", "symbol", symbol_.c_str());
+        LOG_ERROR("[OKX] OKX WS snapshot has empty book", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
 
@@ -390,7 +390,7 @@ auto OkxFeedHandler::process_snapshot(const nlohmann::json& json) -> Result {
     state_.store(State::STREAMING, std::memory_order_release);
     ws_cv_.notify_all();
 
-    LOG_INFO("OKX WS snapshot applied", "symbol", symbol_.c_str(), "seq", seq);
+    LOG_INFO("[OKX] WS snapshot applied", "symbol", symbol_.c_str(), "seq", seq);
     return Result::SUCCESS;
 }
 
@@ -567,7 +567,7 @@ auto OkxFeedHandler::apply_buffered_deltas() -> Result {
     }
 
     delta_buffer_.clear();
-    LOG_INFO("Applied OKX buffered deltas", "applied", applied, "skipped", skipped);
+    LOG_INFO("[OKX] Applied buffered deltas", "applied", applied, "skipped", skipped);
     return Result::SUCCESS;
 }
 
@@ -642,7 +642,7 @@ auto OkxFeedHandler::validate_checksum(const nlohmann::json& data) const -> bool
     const int64_t local_signed = static_cast<int32_t>(local);
 
     if (local_signed != remote_checksum) {
-        LOG_ERROR("OKX checksum mismatch", "symbol", symbol_.c_str(), "local", local_signed,
+        LOG_ERROR("[OKX] checksum mismatch", "symbol", symbol_.c_str(), "local", local_signed,
                   "remote", remote_checksum);
         return false;
     }
@@ -676,7 +676,7 @@ void OkxFeedHandler::apply_local_book_levels(const nlohmann::json& data) {
 }
 
 void OkxFeedHandler::trigger_resnapshot(const std::string& reason) {
-    LOG_WARN("Triggering OKX re-snapshot", "reason", reason.c_str());
+    LOG_WARN("[OKX] Triggering re-snapshot", "reason", reason.c_str());
     if (error_callback_) {
         error_callback_("Re-snapshot: " + reason);
     }

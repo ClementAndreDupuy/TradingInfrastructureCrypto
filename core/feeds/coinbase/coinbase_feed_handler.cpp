@@ -229,7 +229,7 @@ CoinbaseFeedHandler::CoinbaseFeedHandler(const std::string& symbol, const std::s
                                          const std::string& api_url)
     : symbol_(symbol), ws_url_(ws_url), api_url_(api_url),
       venue_symbols_(SymbolMapper::map_all(symbol)) {
-    LOG_INFO("CoinbaseFeedHandler created", "symbol", symbol_.c_str());
+    LOG_INFO("[Coinbase] FeedHandler created", "symbol", symbol_.c_str());
 }
 
 CoinbaseFeedHandler::~CoinbaseFeedHandler() { stop(); }
@@ -334,7 +334,7 @@ auto CoinbaseFeedHandler::build_subscription_messages() -> std::vector<std::stri
             if (!jwt.empty()) {
                 sub["jwt"] = jwt;
             } else {
-                LOG_WARN("Coinbase JWT generation failed, sending unauthenticated subscribe",
+                LOG_WARN("[Coinbase] JWT generation failed, sending unauthenticated subscribe",
                          "symbol", symbol_.c_str(), "channel", channel);
             }
         }
@@ -350,21 +350,21 @@ auto CoinbaseFeedHandler::fetch_tick_size() -> Result {
     const std::string url = api_url_ + "/api/v3/brokerage/market/products/" + venue_symbols_.coinbase;
     auto resp = http::get(url);
     if (!resp.ok() || resp.body.empty()) {
-        LOG_WARN("fetch_tick_size failed", "symbol", symbol_.c_str(), "status", resp.status);
+        LOG_WARN("[Coinbase] fetch_tick_size failed", "symbol", symbol_.c_str(), "status", resp.status);
         return Result::ERROR_CONNECTION_LOST;
     }
     auto json = nlohmann::json::parse(resp.body, nullptr, false);
     if (json.is_discarded()) {
-        LOG_WARN("fetch_tick_size JSON parse failed", "symbol", symbol_.c_str());
+        LOG_WARN("[Coinbase] fetch_tick_size JSON parse failed", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
     std::string ts = json.value("quote_increment", std::string(""));
     if (ts.empty()) {
-        LOG_WARN("fetch_tick_size: quote_increment missing", "symbol", symbol_.c_str());
+        LOG_WARN("[Coinbase] fetch_tick_size: quote_increment missing", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
     tick_size_ = tick_from_string(ts);
-    LOG_INFO("Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
+    LOG_INFO("[Coinbase] Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
     return Result::SUCCESS;
 }
 
@@ -388,7 +388,7 @@ auto CoinbaseFeedHandler::start() -> Result {
         return Result::SUCCESS;
     }
 
-    LOG_INFO("Starting Coinbase feed handler", "symbol", symbol_.c_str());
+    LOG_INFO("[Coinbase] Starting feed handler", "symbol", symbol_.c_str());
     fetch_tick_size();
 
     static constexpr int k_max_attempts = 3;
@@ -417,12 +417,12 @@ auto CoinbaseFeedHandler::start() -> Result {
 
         const bool streaming = state_.load(std::memory_order_acquire) == State::STREAMING;
         if (ready && streaming) {
-            LOG_INFO("Coinbase feed handler started", "symbol", symbol_.c_str());
+            LOG_INFO("[Coinbase] feed handler started", "symbol", symbol_.c_str());
             return Result::SUCCESS;
         }
 
         const std::string sub_reason = last_start_failure_reason_;
-        LOG_ERROR("Coinbase feed start failed", "symbol", symbol_.c_str(), "attempt", attempt,
+        LOG_ERROR("[Coinbase] feed start failed", "symbol", symbol_.c_str(), "attempt", attempt,
                   "reason", sub_reason.c_str());
 
         running_.store(false, std::memory_order_release);
@@ -436,13 +436,13 @@ auto CoinbaseFeedHandler::start() -> Result {
         }
 
         if (attempt < k_max_attempts) {
-            LOG_INFO("Retrying Coinbase feed start", "symbol", symbol_.c_str(), "backoff_ms",
+            LOG_INFO("[Coinbase] Retrying feed start", "symbol", symbol_.c_str(), "backoff_ms",
                      k_backoff_ms[attempt - 1]);
             std::this_thread::sleep_for(std::chrono::milliseconds(k_backoff_ms[attempt - 1]));
         }
     }
 
-    LOG_ERROR("Coinbase feed permanently failed after all retries", "symbol", symbol_.c_str());
+    LOG_ERROR("[Coinbase] feed permanently failed after all retries", "symbol", symbol_.c_str());
     emit_ops_event();
     return Result::ERROR_CONNECTION_LOST;
 }
@@ -452,7 +452,7 @@ void CoinbaseFeedHandler::stop() {
         return;
     }
 
-    LOG_INFO("Stopping Coinbase feed handler", "symbol", symbol_.c_str());
+    LOG_INFO("[Coinbase] Stopping feed handler", "symbol", symbol_.c_str());
     running_.store(false, std::memory_order_release);
     state_.store(State::DISCONNECTED, std::memory_order_release);
 
@@ -513,7 +513,7 @@ void CoinbaseFeedHandler::ws_event_loop() {
         auto* ctx = lws_create_context(&ctx_info);
         if (ctx == nullptr) {
             last_start_failure_reason_ = "websocket context creation failed";
-            LOG_ERROR("lws_create_context failed", "symbol", symbol_.c_str());
+            LOG_ERROR("[Coinbase] lws_create_context failed", "symbol", symbol_.c_str());
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
             continue;
@@ -532,7 +532,7 @@ void CoinbaseFeedHandler::ws_event_loop() {
 
         if (lws_client_connect_via_info(&connect_info) == nullptr) {
             last_start_failure_reason_ = "websocket connect failed";
-            LOG_ERROR("Coinbase WebSocket connect failed", "symbol", symbol_.c_str());
+            LOG_ERROR("[Coinbase] WebSocket connect failed", "symbol", symbol_.c_str());
             lws_context_destroy(ctx);
             lws_ctx_.store(nullptr, std::memory_order_release);
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
@@ -554,7 +554,7 @@ void CoinbaseFeedHandler::ws_event_loop() {
             continue;
         }
 
-        LOG_INFO("Coinbase WebSocket established", "symbol", symbol_.c_str());
+        LOG_INFO("[Coinbase] WebSocket established", "symbol", symbol_.c_str());
         delay_ms = 100;
 
         while (running_.load() && !session.closed) {
@@ -583,7 +583,7 @@ void CoinbaseFeedHandler::ws_event_loop() {
         state_.store(State::BUFFERING, std::memory_order_release);
 
         if (running_.load(std::memory_order_acquire)) {
-            LOG_WARN("Coinbase stream disconnected, reconnecting", "symbol", symbol_.c_str(),
+            LOG_WARN("[Coinbase] stream disconnected, reconnecting", "symbol", symbol_.c_str(),
                      "backoff_ms", delay_ms);
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
@@ -632,7 +632,7 @@ auto CoinbaseFeedHandler::process_snapshot(const nlohmann::json& json, uint64_t 
                     snap.asks.push_back(level);
                 }
             } catch (const std::exception& ex) {
-                LOG_WARN("Coinbase snapshot level parse failed", "symbol", symbol_.c_str(), "error",
+                LOG_WARN("[Coinbase] snapshot level parse failed", "symbol", symbol_.c_str(), "error",
                          ex.what());
             }
         }
@@ -688,7 +688,7 @@ auto CoinbaseFeedHandler::process_delta(const nlohmann::json& json, uint64_t seq
                     delta_callback_(delta);
                 }
             } catch (const std::exception& ex) {
-                LOG_WARN("Coinbase delta level parse failed", "symbol", symbol_.c_str(), "sequence",
+                LOG_WARN("[Coinbase] delta level parse failed", "symbol", symbol_.c_str(), "sequence",
                          seq, "error", ex.what());
             }
         }
@@ -870,7 +870,7 @@ auto CoinbaseFeedHandler::apply_buffered_deltas() -> Result {
     }
 
     delta_buffer_.clear();
-    LOG_INFO("Applied Coinbase buffered deltas", "applied", applied, "skipped", skipped);
+    LOG_INFO("[Coinbase] Applied Coinbase buffered deltas", "applied", applied, "skipped", skipped);
     return Result::SUCCESS;
 }
 
@@ -880,7 +880,7 @@ auto CoinbaseFeedHandler::validate_delta_sequence(uint64_t seq) const -> bool {
 }
 
 void CoinbaseFeedHandler::trigger_resnapshot(const std::string& reason) {
-    LOG_ERROR("Triggering Coinbase re-sync", "reason", reason.c_str());
+    LOG_ERROR("[Coinbase] Triggering re-sync", "reason", reason.c_str());
     if (error_callback_) {
         error_callback_("Re-sync: " + reason);
     }
