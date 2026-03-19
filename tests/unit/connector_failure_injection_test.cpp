@@ -100,7 +100,7 @@ void run_submit_classification_suite(Connector& c, Exchange exchange, const char
         const Order order = make_order(exchange, ++id, symbol);
         EXPECT_EQ(c.submit_order(order), tc.expected);
         EXPECT_EQ(attempts, tc.expected_attempts);
-        EXPECT_EQ(c.order_map().get(order.client_order_id), nullptr);
+        EXPECT_EQ(c.venue_order_map().get(order.client_order_id), nullptr);
     }
 }
 
@@ -136,7 +136,7 @@ void run_operation_state_invariant_suite(Connector& c, Exchange exchange, const 
 
         EXPECT_EQ(c.cancel_order(current_id), ConnectorResult::ERROR_REST_FAILURE);
         EXPECT_EQ(attempts, 3);
-        EXPECT_NE(c.order_map().get(current_id), nullptr);
+        EXPECT_NE(c.venue_order_map().get(current_id), nullptr);
     }
 
     {
@@ -153,8 +153,8 @@ void run_operation_state_invariant_suite(Connector& c, Exchange exchange, const 
         Order replacement = make_order(exchange, ++id, symbol);
         EXPECT_EQ(c.replace_order(current_id, replacement), ConnectorResult::AUTH_FAILED);
         EXPECT_EQ(attempts, 1);
-        EXPECT_NE(c.order_map().get(current_id), nullptr);
-        EXPECT_EQ(c.order_map().get(replacement.client_order_id), nullptr);
+        EXPECT_NE(c.venue_order_map().get(current_id), nullptr);
+        EXPECT_EQ(c.venue_order_map().get(replacement.client_order_id), nullptr);
     }
 
     {

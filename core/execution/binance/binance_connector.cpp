@@ -415,7 +415,7 @@ auto BinanceConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sna
         return classify_order_response(open_order_response);
 
     std::set<std::string> symbols;
-    order_map().for_each_active([&](const VenueOrderEntry& entry) {
+    venue_order_map().for_each_active([&](const VenueOrderEntry& entry) {
         if (entry.symbol[0] != '\0')
             symbols.insert(SymbolMapper::map_for_exchange(Exchange::BINANCE, entry.symbol));
     });

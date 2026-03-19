@@ -82,8 +82,8 @@ class LiveConnectorBase : public ExchangeConnector {
             journal_.begin(JournalOperation::SUBMIT, order.client_order_id);
         if (recovery.already_acked()) {
             if (recovery.venue_order_id[0] != '\0' && recovery.venue_order_id[0] != '-') {
-                if (!order_map_.upsert(order.client_order_id, recovery.venue_order_id, exchange_,
-                                       order.symbol)) {
+                if (!venue_order_map_.upsert(order.client_order_id, recovery.venue_order_id,
+                                             exchange_, order.symbol)) {
                     LOG_ERROR("Venue order map full", "exchange", exchange_to_string(exchange_));
                     return ConnectorResult::ERROR_UNKNOWN;
                 }
@@ -100,8 +100,8 @@ class LiveConnectorBase : public ExchangeConnector {
 
         if (result == ConnectorResult::OK) {
             journal_.ack(JournalOperation::SUBMIT, order.client_order_id, venue_order_id.c_str());
-            if (!order_map_.upsert(order.client_order_id, venue_order_id.c_str(), exchange_,
-                                   order.symbol)) {
+            if (!venue_order_map_.upsert(order.client_order_id, venue_order_id.c_str(), exchange_,
+                                         order.symbol)) {
                 LOG_ERROR("Venue order map full", "exchange", exchange_to_string(exchange_));
                 return ConnectorResult::ERROR_UNKNOWN;
             }
@@ -124,7 +124,7 @@ class LiveConnectorBase : public ExchangeConnector {
         if (!decision.should_send_to_venue())
             return ConnectorResult::ERROR_UNKNOWN;
 
-        const VenueOrderEntry* mapped = order_map_.get(client_order_id);
+        const VenueOrderEntry* mapped = venue_order_map_.get(client_order_id);
         if (!mapped) {
             journal_.fail(JournalOperation::CANCEL, client_order_id);
             return ConnectorResult::ERROR_INVALID_ORDER;
@@ -134,7 +134,7 @@ class LiveConnectorBase : public ExchangeConnector {
 
         if (result == ConnectorResult::OK) {
             journal_.ack(JournalOperation::CANCEL, client_order_id, mapped->venue_order_id);
-            order_map_.erase(client_order_id);
+            venue_order_map_.erase(client_order_id);
         } else {
             journal_.fail(JournalOperation::CANCEL, client_order_id);
         }
@@ -148,7 +148,7 @@ class LiveConnectorBase : public ExchangeConnector {
             cancel_state.state == JournalState::ACKED)
             return ConnectorResult::ERROR_INVALID_ORDER;
 
-        const VenueOrderEntry* mapped = order_map_.get(client_order_id);
+        const VenueOrderEntry* mapped = venue_order_map_.get(client_order_id);
         if (!mapped)
             return ConnectorResult::ERROR_INVALID_ORDER;
 
@@ -156,9 +156,9 @@ class LiveConnectorBase : public ExchangeConnector {
             journal_.begin(JournalOperation::REPLACE, client_order_id, replacement.client_order_id);
         if (decision.already_acked()) {
             if (decision.venue_order_id[0] != '\0' && decision.venue_order_id[0] != '-') {
-                order_map_.erase(client_order_id);
-                if (!order_map_.upsert(replacement.client_order_id, decision.venue_order_id,
-                                       exchange_, replacement.symbol)) {
+                venue_order_map_.erase(client_order_id);
+                if (!venue_order_map_.upsert(replacement.client_order_id, decision.venue_order_id,
+                                             exchange_, replacement.symbol)) {
                     LOG_ERROR("Venue order map full", "exchange", exchange_to_string(exchange_));
                     return ConnectorResult::ERROR_UNKNOWN;
                 }
@@ -178,9 +178,9 @@ class LiveConnectorBase : public ExchangeConnector {
 
         journal_.ack(JournalOperation::REPLACE, client_order_id, new_venue_order_id.c_str(),
                      replacement.client_order_id);
-        order_map_.erase(client_order_id);
-        if (!order_map_.upsert(replacement.client_order_id, new_venue_order_id.c_str(), exchange_,
-                               replacement.symbol)) {
+        venue_order_map_.erase(client_order_id);
+        if (!venue_order_map_.upsert(replacement.client_order_id, new_venue_order_id.c_str(),
+                                     exchange_, replacement.symbol)) {
             LOG_ERROR("Venue order map full", "exchange", exchange_to_string(exchange_));
             return ConnectorResult::ERROR_UNKNOWN;
         }
@@ -188,7 +188,7 @@ class LiveConnectorBase : public ExchangeConnector {
     }
 
     ConnectorResult query_order(uint64_t client_order_id, FillUpdate& status) override {
-        const VenueOrderEntry* mapped = order_map_.get(client_order_id);
+        const VenueOrderEntry* mapped = venue_order_map_.get(client_order_id);
         if (!mapped)
             return ConnectorResult::ERROR_INVALID_ORDER;
 
@@ -199,7 +199,7 @@ class LiveConnectorBase : public ExchangeConnector {
 
     ConnectorResult reconcile() override {
         journal_.recover();
-        order_map_.clear();
+        venue_order_map_.clear();
         return ConnectorResult::OK;
     }
 
@@ -213,7 +213,7 @@ class LiveConnectorBase : public ExchangeConnector {
         return ConnectorResult::ERROR_UNKNOWN;
     }
 
-    const VenueOrderMap& order_map() const noexcept { return order_map_; }
+    const VenueOrderMap& venue_order_map() const noexcept { return venue_order_map_; }
 
   protected:
     virtual ConnectorResult submit_to_venue(const Order& order, const std::string& idempotency_key,
@@ -589,7 +589,7 @@ class LiveConnectorBase : public ExchangeConnector {
     std::string api_url_;
     RetryPolicy retry_policy_;
     std::atomic<bool> connected_{false};
-    VenueOrderMap order_map_{};
+    VenueOrderMap venue_order_map_{};
     IdempotencyJournal journal_;
 };
 
