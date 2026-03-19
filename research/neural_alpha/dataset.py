@@ -13,18 +13,13 @@ import polars as pl
 import torch
 from torch.utils.data import Dataset
 
-from .features import (
-    compute_labels,
-    compute_lob_tensor,
-    compute_scalar_features,
-    normalise_scalar,
-)
+from .features import compute_labels, compute_lob_tensor, compute_scalar_features
 
 
 @dataclass
 class DatasetConfig:
-    seq_len: int = 64        # number of ticks in each window
-    stride:  int = 1         # step between windows (1 = maximum overlap)
+    seq_len: int = 64
+    stride: int = 1
     horizons: tuple = (1, 10, 100, 500)
 
 
@@ -39,8 +34,6 @@ def rolling_normalise(x: np.ndarray, window: int = 500) -> np.ndarray:
     if T == 0:
         return x.astype(np.float32)
 
-    # Prefix sums with leading zero row so window sums are valid for any
-    # series length (including T < window).
     cum = np.vstack([np.zeros((1, D), dtype=np.float64), np.cumsum(x, axis=0)])
     cum2 = np.vstack([np.zeros((1, D), dtype=np.float64), np.cumsum(x ** 2, axis=0)])
 
@@ -75,13 +68,10 @@ class LOBDataset(Dataset):
     ) -> None:
         self.cfg = cfg or DatasetConfig()
 
-        self.lob_arr    = compute_lob_tensor(df)                          # (T, N_LEVELS, 4)
-        raw_scalar      = compute_scalar_features(df)                     # (T, D_SCALAR)
-        self.labels_arr = compute_labels(df, self.cfg.horizons)           # (T, 6)
-
-        # Rolling z-score normalisation (no future leakage)
+        self.lob_arr = compute_lob_tensor(df)
+        raw_scalar = compute_scalar_features(df)
+        self.labels_arr = compute_labels(df, self.cfg.horizons)
         self.scalar_arr = rolling_normalise(raw_scalar)
-        # Keep these as None — rolling norm does not use global stats
         self.scalar_mean: np.ndarray | None = None
         self.scalar_std:  np.ndarray | None = None
 
@@ -100,7 +90,7 @@ class LOBDataset(Dataset):
             "lob":    torch.from_numpy(self.lob_arr[start:end]),
             "scalar": torch.from_numpy(self.scalar_arr[start:end]),
             "labels": torch.from_numpy(self.labels_arr[start:end]),
-            "mask":   torch.zeros(self.cfg.seq_len, dtype=torch.bool),  # no padding
+            "mask": torch.zeros(self.cfg.seq_len, dtype=torch.bool),
         }
 
 

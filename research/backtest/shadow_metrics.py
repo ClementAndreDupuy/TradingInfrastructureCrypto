@@ -24,8 +24,6 @@ from pathlib import Path
 import numpy as np
 
 
-# ── Loaders ───────────────────────────────────────────────────────────────────
-
 def load_jsonl(path: str) -> list[dict]:
     rows: list[dict] = []
     p = Path(path)
@@ -41,8 +39,6 @@ def load_jsonl(path: str) -> list[dict]:
                     pass
     return rows
 
-
-# ── Decision log analysis ─────────────────────────────────────────────────────
 
 def analyse_decisions(rows: list[dict]) -> dict:
     fills    = [r for r in rows if r.get("event") == "FILL"]
@@ -65,7 +61,6 @@ def analyse_decisions(rows: list[dict]) -> dict:
 
     net_pnl = pnl_series[-1] if pnl_series else 0.0
 
-    # Per-exchange breakdown
     exchanges: dict[str, dict] = {}
     for r in fills:
         ex = r.get("exchange", "UNKNOWN")
@@ -80,7 +75,6 @@ def analyse_decisions(rows: list[dict]) -> dict:
 
     fill_qty = sum(r.get("qty", 0.0) for r in fills)
 
-    # Max drawdown from cumulative P&L series
     max_dd = 0.0
     peak   = 0.0
     for pnl in pnl_series:
@@ -103,8 +97,6 @@ def analyse_decisions(rows: list[dict]) -> dict:
         "exchanges":     exchanges,
     }
 
-
-# ── Signal log analysis ───────────────────────────────────────────────────────
 
 def analyse_signals(rows: list[dict]) -> dict:
     if not rows:
@@ -158,8 +150,6 @@ def analyse_signals(rows: list[dict]) -> dict:
     }
 
 
-# ── Comparison: shadow fill rate vs backtest target ───────────────────────────
-
 def fill_rate_check(shadow_fill_rate: float, backtest_fill_rate: float,
                     tolerance: float = 0.10) -> dict:
     diff = abs(shadow_fill_rate - backtest_fill_rate)
@@ -173,8 +163,6 @@ def fill_rate_check(shadow_fill_rate: float, backtest_fill_rate: float,
         "verdict":            "PASS" if ok else "FAIL",
     }
 
-
-# ── Report ────────────────────────────────────────────────────────────────────
 
 def print_report(dec: dict, sig: dict, out_path: str | None = None) -> None:
     lines = [
@@ -235,8 +223,6 @@ def print_report(dec: dict, sig: dict, out_path: str | None = None) -> None:
         print(f"Report saved → {out_path}")
 
 
-# ── Prometheus export ─────────────────────────────────────────────────────────
-
 def write_prometheus(dec: dict, sig: dict, path: str) -> None:
     lines = [
         "# HELP shadow_fill_rate Fraction of shadow orders that filled",
@@ -269,8 +255,6 @@ def write_prometheus(dec: dict, sig: dict, path: str) -> None:
     Path(path).write_text("\n".join(lines) + "\n")
     print(f"Prometheus metrics → {path}")
 
-
-# ── Entry point ───────────────────────────────────────────────────────────────
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Shadow session metrics rollup")

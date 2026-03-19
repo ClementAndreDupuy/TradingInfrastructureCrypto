@@ -21,6 +21,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .features import D_SCALAR, N_LEVELS
+
 warnings.filterwarnings(
     "ignore",
     message=r"enable_nested_tensor is True, but self\.use_nested_tensor is False.*norm_first was True",
@@ -33,10 +35,6 @@ warnings.filterwarnings(
     module=r"torch\.nn\.modules\.transformer",
 )
 
-from .features import N_LEVELS, D_SCALAR
-
-
-# ── LOB Spatial Encoder ───────────────────────────────────────────────────────
 
 class LOBSpatialEncoder(nn.Module):
     """
