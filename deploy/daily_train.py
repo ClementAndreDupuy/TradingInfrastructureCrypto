@@ -265,29 +265,7 @@ def run() -> dict:
         log.info("Loading cached ticks from %s", cached)
         df = pl.read_parquet(cached)
     else:
-        _all_exchanges = ["BINANCE", "KRAKEN", "OKX", "COINBASE"]
-        _core_exchanges = ["BINANCE", "KRAKEN", "OKX"]
-        try:
-            df = collect_l5_ticks(TRAIN_TICKS, TRAIN_INTERVAL_MS, exchanges=_all_exchanges, symbol=TRAIN_SYMBOL)
-        except RuntimeError as _exc:
-            # Coinbase is a best-effort feed.  If it is unavailable (API outage,
-            # credential issue, or product-not-found) we degrade gracefully and
-            # train on the three remaining venues so that daily retraining keeps
-            # running.  A coinbase_data_unavailable ops event is emitted so the
-            # outage is observable in the ops event log and Prometheus.
-            if "COINBASE" in str(_exc):
-                log.warning(
-                    "Coinbase data unavailable — falling back to %s: %s",
-                    _core_exchanges, _exc,
-                )
-                _publish_ops_event("coinbase_data_unavailable", {
-                    "date": date_str,
-                    "reason": str(_exc),
-                    "fallback_exchanges": _core_exchanges,
-                })
-                df = collect_l5_ticks(TRAIN_TICKS, TRAIN_INTERVAL_MS, exchanges=_core_exchanges, symbol=TRAIN_SYMBOL)
-            else:
-                raise
+        df = collect_l5_ticks(TRAIN_TICKS, TRAIN_INTERVAL_MS, exchanges=["BINANCE", "KRAKEN", "OKX", "COINBASE"], symbol=TRAIN_SYMBOL)
         df.write_parquet(cached)
         log.info("Tick data cached → %s  rows=%d", cached, len(df))
 
