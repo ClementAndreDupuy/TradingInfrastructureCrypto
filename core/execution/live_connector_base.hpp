@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <string>
 #include <thread>
 #include <utility>
@@ -278,6 +279,38 @@ class LiveConnectorBase : public ExchangeConnector {
         return headers;
     }
 
+    std::string next_kraken_nonce() const {
+        uint64_t candidate = static_cast<uint64_t>(http::now_ms());
+        uint64_t observed = kraken_nonce_.load(std::memory_order_relaxed);
+        while (true) {
+            if (candidate <= observed) {
+                if (observed == std::numeric_limits<uint64_t>::max()) {
+                    candidate = observed;
+                } else {
+                    candidate = observed + 1;
+                }
+            }
+            if (kraken_nonce_.compare_exchange_weak(observed, candidate, std::memory_order_acq_rel,
+                                                    std::memory_order_relaxed)) {
+                return std::to_string(candidate);
+            }
+        }
+    }
+
+    std::vector<std::string> kraken_auth_headers(const std::string& request_path,
+                                                 const std::string& payload,
+                                                 const std::string& idempotency_key = "") const {
+        std::vector<std::string> headers = {
+            "Content-Type: application/x-www-form-urlencoded; charset=utf-8",
+            "API-Key: " + api_key_,
+            "API-Sign: " + kraken_api_sign(request_path, payload),
+        };
+        if (!idempotency_key.empty()) {
+            headers.push_back("X-IDEMPOTENCY-KEY: " + idempotency_key);
+        }
+        return headers;
+    }
+
     const std::string& api_url() const noexcept { return api_url_; }
 
   private:
@@ -332,18 +365,39 @@ class LiveConnectorBase : public ExchangeConnector {
 #endif
     }
 
+    std::string kraken_api_sign(const std::string& request_path, const std::string& payload) const {
+#if TRT_HAS_OPENSSL
+        const std::string nonce = extract_kraken_nonce(payload);
+        const std::string digest = sha256_bytes(nonce + payload);
+        std::string message;
+        message.reserve(request_path.size() + digest.size());
+        message.append(request_path);
+        message.append(digest);
+        return hmac_sha512_base64(message, decode_base64(api_secret_));
+#else
+        (void)request_path;
+        (void)payload;
+        return std::string();
+#endif
+    }
+
 #if TRT_HAS_OPENSSL
     struct HmacDigest {
         unsigned char data[EVP_MAX_MD_SIZE] = {};
         unsigned int len = 0;
     };
 
-    HmacDigest compute_hmac(const EVP_MD* algo, const std::string& payload) const {
+    HmacDigest compute_hmac(const EVP_MD* algo, const std::string& payload,
+                            const std::string& key) const {
         HmacDigest result;
-        HMAC(algo, api_secret_.data(), static_cast<int>(api_secret_.size()),
+        HMAC(algo, key.data(), static_cast<int>(key.size()),
              reinterpret_cast<const unsigned char*>(payload.data()), payload.size(), result.data,
              &result.len);
         return result;
+    }
+
+    HmacDigest compute_hmac(const EVP_MD* algo, const std::string& payload) const {
+        return compute_hmac(algo, payload, api_secret_);
     }
 
     static std::string encode_hex(const HmacDigest& d) { return encode_hex(d.data, d.len); }
@@ -367,6 +421,46 @@ class LiveConnectorBase : public ExchangeConnector {
         out.resize(static_cast<size_t>(out_len));
         return out;
     }
+
+    static std::string decode_base64(const std::string& encoded) {
+        std::string out;
+        out.resize((encoded.size() / 4) * 3 + 3);
+        const int out_len =
+            EVP_DecodeBlock(reinterpret_cast<unsigned char*>(&out[0]),
+                            reinterpret_cast<const unsigned char*>(encoded.data()),
+                            static_cast<int>(encoded.size()));
+        if (out_len <= 0) {
+            return std::string();
+        }
+        size_t trim = 0;
+        while (trim < encoded.size() && encoded[encoded.size() - 1 - trim] == '=') {
+            ++trim;
+        }
+        out.resize(static_cast<size_t>(out_len) - trim);
+        return out;
+    }
+
+    std::string sha256_bytes(const std::string& payload) const {
+        unsigned char digest[SHA256_DIGEST_LENGTH] = {};
+        SHA256(reinterpret_cast<const unsigned char*>(payload.data()), payload.size(), digest);
+        return std::string(reinterpret_cast<const char*>(digest), SHA256_DIGEST_LENGTH);
+    }
+
+    std::string hmac_sha512_base64(const std::string& payload, const std::string& key) const {
+        return encode_base64(compute_hmac(EVP_sha512(), payload, key));
+    }
+
+    static std::string extract_kraken_nonce(const std::string& payload) {
+        constexpr char token[] = "nonce=";
+        const size_t start = payload.find(token);
+        if (start == std::string::npos) {
+            return std::string();
+        }
+        const size_t value_start = start + sizeof(token) - 1;
+        const size_t value_end = payload.find('&', value_start);
+        return payload.substr(value_start, value_end == std::string::npos ? std::string::npos
+                                                                          : value_end - value_start);
+    }
 #endif
 
     Exchange exchange_;
@@ -375,6 +469,7 @@ class LiveConnectorBase : public ExchangeConnector {
     std::string api_url_;
     RetryPolicy retry_policy_;
     std::atomic<bool> connected_{false};
+    mutable std::atomic<uint64_t> kraken_nonce_{0};
     VenueOrderMap order_map_{};
     IdempotencyJournal journal_;
 };
