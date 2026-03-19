@@ -24,6 +24,14 @@ bool contains(const std::string& s, const char* token) {
     return s.find(token) != std::string::npos;
 }
 
+const std::string* find_header(const std::vector<std::string>& headers, const char* prefix) {
+    for (const auto& header : headers) {
+        if (header.rfind(prefix, 0) == 0)
+            return &header;
+    }
+    return nullptr;
+}
+
 Order make_order(Exchange ex, uint64_t id, const char* symbol) {
     Order o;
     o.client_order_id = id;
@@ -128,6 +136,110 @@ void run_connector_flow(Connector& c, Exchange ex, const char* symbol, const cha
 }
 
 } // namespace
+
+
+TEST(LiveConnectorsTest, BinanceUsesSignedQueryContract) {
+    BinanceConnector c("k", "s", "https://binance.test");
+    int submit_calls = 0;
+    int query_calls = 0;
+    int cancel_calls = 0;
+    int replace_calls = 0;
+    int cancel_all_calls = 0;
+
+    ScopedMockTransport transport([&](const char* method, const std::string& url,
+                                      const std::string& body,
+                                      const std::vector<std::string>& headers) {
+        if (contains(url, "/api/v3/order/cancelReplace")) {
+            ++replace_calls;
+            EXPECT_EQ(std::strcmp(method, "POST"), 0);
+            EXPECT_TRUE(body.empty());
+            EXPECT_NE(find_header(headers, "X-MBX-APIKEY: "), nullptr);
+            EXPECT_EQ(find_header(headers, "X-MBX-SIGNATURE: "), nullptr);
+            EXPECT_TRUE(contains(url, "symbol=BTCUSDT"));
+            EXPECT_TRUE(contains(url, "cancelOrderId=42"));
+            EXPECT_TRUE(contains(url, "cancelReplaceMode=STOP_ON_FAILURE"));
+            EXPECT_TRUE(contains(url, "newClientOrderId=TRT-43-BINANCE"));
+            EXPECT_TRUE(contains(url, "price=101"));
+            EXPECT_TRUE(contains(url, "timeInForce=IOC"));
+            EXPECT_TRUE(contains(url, "timestamp="));
+            EXPECT_TRUE(contains(url, "signature="));
+            return http::HttpResponse{200,
+                                      R"({"cancelResult":"SUCCESS","newOrderResponse":{"orderId":43}})"};
+        }
+        if (std::strcmp(method, "POST") == 0 && contains(url, "/api/v3/order?")) {
+            ++submit_calls;
+            EXPECT_TRUE(body.empty());
+            EXPECT_NE(find_header(headers, "X-MBX-APIKEY: "), nullptr);
+            EXPECT_EQ(find_header(headers, "X-MBX-SIGNATURE: "), nullptr);
+            EXPECT_TRUE(contains(url, "symbol=BTCUSDT"));
+            EXPECT_TRUE(contains(url, "side=BUY"));
+            EXPECT_TRUE(contains(url, "type=LIMIT"));
+            EXPECT_TRUE(contains(url, "timeInForce=IOC"));
+            EXPECT_TRUE(contains(url, "newClientOrderId=TRT-42-BINANCE"));
+            EXPECT_TRUE(contains(url, "timestamp="));
+            EXPECT_TRUE(contains(url, "signature="));
+            return http::HttpResponse{200, R"({"orderId":42})"};
+        }
+        if (std::strcmp(method, "GET") == 0 && contains(url, "/api/v3/order?")) {
+            ++query_calls;
+            EXPECT_TRUE(contains(url, "symbol=BTCUSDT"));
+            EXPECT_TRUE(contains(url, "orderId=42"));
+            EXPECT_TRUE(contains(url, "signature="));
+            return http::HttpResponse{200,
+                                      R"({"status":"PARTIALLY_FILLED","executedQty":"0.1","cummulativeQuoteQty":"10.1"})"};
+        }
+        if (std::strcmp(method, "DELETE") == 0 && contains(url, "/api/v3/order?")) {
+            ++cancel_calls;
+            EXPECT_TRUE(contains(url, "symbol=BTCUSDT"));
+            EXPECT_TRUE(contains(url, "orderId=43"));
+            EXPECT_TRUE(contains(url, "signature="));
+            return http::HttpResponse{200, R"({"orderId":43,"status":"CANCELED"})"};
+        }
+        if (std::strcmp(method, "DELETE") == 0 && contains(url, "/api/v3/openOrders?")) {
+            ++cancel_all_calls;
+            EXPECT_TRUE(contains(url, "symbol=BTCUSDT"));
+            EXPECT_TRUE(contains(url, "signature="));
+            return http::HttpResponse{200, R"([])"};
+        }
+        return http::HttpResponse{404, ""};
+    });
+
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    Order o = make_order(Exchange::BINANCE, 42, "BTCUSDT");
+    ASSERT_EQ(c.submit_order(o), ConnectorResult::OK);
+
+    FillUpdate query{};
+    ASSERT_EQ(c.query_order(42, query), ConnectorResult::OK);
+    EXPECT_EQ(query.new_state, OrderState::PARTIALLY_FILLED);
+    EXPECT_DOUBLE_EQ(query.avg_fill_price, 101.0);
+
+    Order replacement = o;
+    replacement.client_order_id = 43;
+    replacement.price = 101.0;
+    ASSERT_EQ(c.replace_order(42, replacement), ConnectorResult::OK);
+    ASSERT_EQ(c.cancel_order(43), ConnectorResult::OK);
+    ASSERT_EQ(c.cancel_all("BTCUSDT"), ConnectorResult::OK);
+
+    EXPECT_EQ(submit_calls, 1);
+    EXPECT_EQ(query_calls, 1);
+    EXPECT_EQ(replace_calls, 1);
+    EXPECT_EQ(cancel_calls, 1);
+    EXPECT_EQ(cancel_all_calls, 1);
+}
+
+TEST(LiveConnectorsTest, BinanceRejectsUnsupportedStopLimitOrders) {
+    BinanceConnector c("k", "s", "https://binance.test");
+    ScopedMockTransport transport([](const char*, const std::string&, const std::string&, const std::vector<std::string>&) {
+        ADD_FAILURE() << "unexpected HTTP call";
+        return http::HttpResponse{500, ""};
+    });
+
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    Order o = make_order(Exchange::BINANCE, 77, "BTCUSDT");
+    o.type = OrderType::STOP_LIMIT;
+    o.stop_price = 99.0;
+    EXPECT_EQ(c.submit_order(o), ConnectorResult::ERROR_INVALID_ORDER);
+}
 
 TEST(LiveConnectorsTest, BinanceAuthenticatedFlow) {
     BinanceConnector c("k", "s", "https://binance.test");

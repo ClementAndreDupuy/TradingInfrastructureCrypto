@@ -102,7 +102,29 @@ bool contains(const std::string& s, const char* token) {
     return s.find(token) != std::string::npos;
 }
 
+Order make_binance_order(uint64_t client_order_id, const char* symbol) {
+    Order order{};
+    order.client_order_id = client_order_id;
+    order.exchange = Exchange::BINANCE;
+    order.side = Side::BID;
+    order.type = OrderType::LIMIT;
+    order.tif = TimeInForce::IOC;
+    order.price = 100.0;
+    order.quantity = 1.0;
+    std::strncpy(order.symbol, symbol, sizeof(order.symbol) - 1);
+    order.symbol[sizeof(order.symbol) - 1] = '\0';
+    return order;
+}
+
+void seed_binance_symbol(BinanceConnector& connector, uint64_t client_order_id = 101,
+                         const char* symbol = "BTCUSDT") {
+    ASSERT_EQ(connector.connect(), ConnectorResult::OK);
+    ASSERT_EQ(connector.submit_order(make_binance_order(client_order_id, symbol)), ConnectorResult::OK);
+}
+
 http::HttpResponse binance_snapshot_response(const char* method, const std::string& url) {
+    if (std::strcmp(method, "POST") == 0 && contains(url, "/api/v3/order?"))
+        return {200, R"({"orderId":101})"};
     if (std::strcmp(method, "GET") != 0)
         return {404, ""};
     if (contains(url, "openOrders"))
@@ -189,6 +211,7 @@ TEST(ReconciliationServiceTest, FetchSnapshotForAllConnectors) {
     });
 
     TestableBinanceConnector binance("k", "s", "https://binance.test");
+    seed_binance_symbol(binance);
     TestableKrakenConnector kraken("k", "s", "https://kraken.test");
     TestableOkxConnector okx("k", "s", "https://okx.test");
     TestableCoinbaseConnector coinbase("k", "s", "https://coinbase.test");
@@ -220,6 +243,8 @@ TEST(ReconciliationServiceTest, FetchSnapshotForAllConnectors) {
 TEST(ReconciliationServiceTest, QuarantinesVenueOnDriftMismatch) {
     ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
                                      const std::vector<std::string>&) {
+        if (std::strcmp(method, "POST") == 0 && contains(url, "/api/v3/order?"))
+            return http::HttpResponse{200, R"({"orderId":101})"};
         if (std::strcmp(method, "GET") != 0)
             return http::HttpResponse{404, ""};
         if (contains(url, "openOrders"))
@@ -233,6 +258,7 @@ TEST(ReconciliationServiceTest, QuarantinesVenueOnDriftMismatch) {
     });
 
     BinanceConnector binance("k", "s", "https://binance.test");
+    seed_binance_symbol(binance);
     ReconciliationService service;
     ASSERT_TRUE(service.register_connector(binance));
 
@@ -256,6 +282,7 @@ TEST(ReconciliationServiceTest, UsesCanonicalSnapshotForReconnectAndPeriodicLoop
     });
 
     BinanceConnector binance("k", "s", "https://binance.test");
+    seed_binance_symbol(binance);
     ReconciliationService service;
     ASSERT_TRUE(service.register_connector(binance));
 
@@ -308,6 +335,7 @@ TEST(ReconciliationServiceTest, DetectsExplicitMismatchClasses) {
     });
 
     BinanceConnector binance("k", "s", "https://binance.test");
+    seed_binance_symbol(binance);
     ReconciliationService service;
     ASSERT_TRUE(service.register_connector(binance));
 
@@ -357,6 +385,7 @@ TEST(ReconciliationServiceTest, CanonicalSnapshotFetcherIsUsedOnEachCycle) {
     });
 
     BinanceConnector binance("k", "s", "https://binance.test");
+    seed_binance_symbol(binance);
     ReconciliationService service;
     ASSERT_TRUE(service.register_connector(binance));
 
@@ -457,6 +486,7 @@ TEST(ReconciliationServiceTest, PeriodicDriftCheckSuccess) {
     });
 
     BinanceConnector binance("k", "s", "https://binance.test");
+    seed_binance_symbol(binance);
     ReconciliationService service;
     ASSERT_TRUE(service.register_connector(binance));
 
@@ -591,6 +621,8 @@ TEST(ReconciliationServiceTest, SnapshotFetchFailsWhenFillIngestionFails) {
     ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
                                      const std::vector<std::string>&) {
         if (contains(url, "binance.test")) {
+            if (std::strcmp(method, "POST") == 0 && contains(url, "/api/v3/order?"))
+                return http::HttpResponse{200, R"({"orderId":101})"};
             if (std::strcmp(method, "GET") != 0)
                 return http::HttpResponse{404, ""};
             if (contains(url, "openOrders")) {
@@ -609,6 +641,7 @@ TEST(ReconciliationServiceTest, SnapshotFetchFailsWhenFillIngestionFails) {
     });
 
     BinanceConnector binance("k", "s", "https://binance.test");
+    seed_binance_symbol(binance);
     ReconciliationService service;
     ASSERT_TRUE(service.register_connector(binance));
 
@@ -620,6 +653,8 @@ TEST(ReconciliationServiceTest, SnapshotAllowsMissingFillEndpoint) {
     ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
                                      const std::vector<std::string>&) {
         if (contains(url, "binance.test")) {
+            if (std::strcmp(method, "POST") == 0 && contains(url, "/api/v3/order?"))
+                return http::HttpResponse{200, R"({"orderId":101})"};
             if (std::strcmp(method, "GET") != 0)
                 return http::HttpResponse{404, ""};
             if (contains(url, "openOrders")) {
@@ -638,6 +673,7 @@ TEST(ReconciliationServiceTest, SnapshotAllowsMissingFillEndpoint) {
     });
 
     BinanceConnector binance("k", "s", "https://binance.test");
+    seed_binance_symbol(binance);
     ReconciliationService service;
     ASSERT_TRUE(service.register_connector(binance));
 
@@ -648,6 +684,8 @@ TEST(ReconciliationServiceTest, SnapshotAllowsMissingFillEndpoint) {
 TEST(ReconciliationServiceTest, StagedRemediationEscalatesOrderDriftToRiskHalt) {
     ScopedMockTransport transport([](const char* method, const std::string& url, const std::string&,
                                      const std::vector<std::string>&) {
+        if (std::strcmp(method, "POST") == 0 && contains(url, "/api/v3/order?"))
+            return http::HttpResponse{200, R"({"orderId":101})"};
         if (std::strcmp(method, "GET") != 0)
             return http::HttpResponse{404, ""};
         if (contains(url, "openOrders"))

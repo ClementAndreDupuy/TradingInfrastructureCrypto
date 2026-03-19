@@ -64,6 +64,13 @@ class VenueOrderMap {
             entry = {};
     }
 
+    template <typename Fn> void for_each_active(Fn&& fn) const noexcept {
+        for (const auto& entry : entries_) {
+            if (entry.active)
+                fn(entry);
+        }
+    }
+
   private:
     std::array<VenueOrderEntry, MAX_ENTRIES> entries_{};
 

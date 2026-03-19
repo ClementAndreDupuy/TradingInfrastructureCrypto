@@ -9,13 +9,13 @@ This file isolates the execution-layer live-trading blockers from the main rolli
 
 ## Critical execution remediation items
 
-- [ ] **C2** `core/execution/binance/binance_connector.cpp` + `core/execution/live_connector_base.hpp` — **Binance live order-entry contract is out of spec with current Spot docs**
+- [x] **C2** `core/execution/binance/binance_connector.cpp` + `core/execution/live_connector_base.hpp` — **Binance live order-entry contract is out of spec with current Spot docs**
   The connector currently uses a header-based auth/signature model, omits documented required fields like `timeInForce` for limit orders, queries/cancels without `symbol`, uses a non-documented replace path, and requests `myTrades` without the required `symbol`. Treat the Binance execution connector as non-deployable until it is rebuilt against the current Spot API contract.
   - acceptance criteria:
-    - [ ] Signed REST calls follow the current Binance Spot request-security contract (`timestamp`/`signature` and any required signed params in the documented location)
-    - [ ] `submit_order` sends the documented mandatory fields for each order type, including `timeInForce` for limit orders and venue-compatible client-order identifiers
-    - [ ] `cancel_order`, `query_order`, and trade-history reconciliation include the documented symbol-scoped parameters and pass fixture coverage against official examples
-    - [ ] `replace_order` is reworked onto Binance's currently documented modify flow (`cancelReplace` and/or `amend/keepPriority`) with explicit unsupported-path handling where semantics differ
+    - [x] Signed REST calls follow the current Binance Spot request-security contract (`timestamp`/`signature` and any required signed params in the documented location)
+    - [x] `submit_order` sends the documented mandatory fields for each order type, including `timeInForce` for limit orders and venue-compatible client-order identifiers
+    - [x] `cancel_order`, `query_order`, and trade-history reconciliation include the documented symbol-scoped parameters and pass fixture coverage against official examples
+    - [x] `replace_order` is reworked onto Binance's currently documented modify flow (`cancelReplace` and/or `amend/keepPriority`) with explicit unsupported-path handling where semantics differ
 
 - [ ] **C3** `core/execution/kraken/kraken_connector.cpp` + `core/execution/live_connector_base.hpp` — **Kraken live connector violates current Spot REST order semantics**
   The connector omits the limit price on limit orders, maps `cancel_all()` onto `CancelAllOrdersAfter` instead of the ordinary cancel-all surface, and relies on a shared auth path that does not model Kraken's signed POST contract precisely enough. Treat Kraken live execution as unsafe until it is reworked against the current docs.
