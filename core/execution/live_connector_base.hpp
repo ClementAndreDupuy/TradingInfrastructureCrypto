@@ -208,6 +208,16 @@ class LiveConnectorBase : public ExchangeConnector {
                                              std::string& new_venue_order_id) = 0;
     virtual ConnectorResult query_at_venue(const VenueOrderEntry& entry, FillUpdate& status) = 0;
     virtual ConnectorResult cancel_all_at_venue(const char* symbol) = 0;
+    const std::string& api_url() const noexcept { return api_url_; }
+
+    std::vector<std::string> binance_api_headers() const {
+        return {"X-MBX-APIKEY: " + api_key_};
+    }
+
+    std::string hmac_sha256_hex_for_payload(const std::string& payload) const {
+        return hmac_sha256_hex(payload);
+    }
+
     virtual bool is_retryable(ConnectorResult code) const noexcept {
         return code == ConnectorResult::ERROR_RATE_LIMIT ||
                code == ConnectorResult::ERROR_REST_FAILURE ||
@@ -277,8 +287,6 @@ class LiveConnectorBase : public ExchangeConnector {
         }
         return headers;
     }
-
-    const std::string& api_url() const noexcept { return api_url_; }
 
   private:
     template <typename Fn> ConnectorResult with_retries(Fn&& fn) {
