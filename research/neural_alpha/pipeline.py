@@ -37,9 +37,6 @@ if TYPE_CHECKING:
 BINANCE_DEPTH_URL = "https://fapi.binance.com/fapi/v1/depth"
 KRAKEN_DEPTH_URL = "https://api.kraken.com/0/public/Depth"
 OKX_DEPTH_URL = "https://www.okx.com/api/v5/market/books"
-# Advanced Trade public market endpoint – returns {"pricebook": {"bids": [...], "asks": [...]}}.
-# The legacy Exchange API (api.exchange.coinbase.com) only supports USD pairs and must not be
-# used here since the Advanced Trade WebSocket uses USDT-denominated pairs (e.g. SOL-USDT).
 COINBASE_DEPTH_URL = "https://api.coinbase.com/api/v3/brokerage/market/product_book"
 N_LEVELS = 5
 
@@ -82,9 +79,6 @@ def _okx_symbol(symbol: str) -> str:
 
 
 def _coinbase_symbol(symbol: str) -> str:
-    # Coinbase Advanced Trade supports USDT-denominated pairs natively (e.g. SOL-USDT).
-    # Do NOT map USDT → USD: that would target the legacy Exchange API spot pairs, which
-    # are a different product set from what the Advanced Trade WebSocket feeds.
     if _tc is not None:
         return _tc.SymbolMapper.map_for_exchange(_tc.Exchange.COINBASE, symbol)
     clean = symbol.replace("-", "").upper()
@@ -207,8 +201,6 @@ def _fetch_okx_l5(symbol: str = "BTCUSDT") -> dict | None:
 
 
 def _fetch_coinbase_l5(symbol: str = "BTCUSDT") -> dict | None:
-    # Advanced Trade market endpoint: GET /api/v3/brokerage/market/product_book
-    # Response: {"pricebook": {"product_id": "...", "bids": [{"price":"..","size":".."}], "asks": [...]}}
     try:
         product_id = _coinbase_symbol(symbol)
         r = requests.get(

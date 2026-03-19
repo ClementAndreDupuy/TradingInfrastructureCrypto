@@ -90,13 +90,7 @@ def _ensure_dirs() -> None:
 
 
 def _load_prod_model_ic() -> float:
-    """Read the OOS holdout IC of the current production model from its metadata file.
-
-    Prefers ``challenger_holdout_ic`` (the same-sample OOS IC used at promotion
-    time) so that the fallback comparison stays on the same basis as the live
-    holdout evaluation.  Falls back to ``ic_mean`` (in-sample cross-fold IC) only
-    for models saved before the holdout IC was recorded (old metadata format).
-    """
+    """Read the IC of the current production model from its metadata file."""
     meta_path = PROD_MODEL_PATH.with_suffix(".json")
     if not meta_path.exists():
         return -1.0
@@ -406,10 +400,6 @@ def run() -> dict:
 
     registry = ChampionChallengerRegistry(REGISTRY_PATH)
 
-    # Bootstrap: if the registry has no champion yet but a production model already
-    # exists on disk (e.g. saved manually via pipeline.py), register and promote it
-    # so that subsequent runs have a proper baseline to compare against and the
-    # shadow session can load a rollback champion instead of entering safe-mode.
     if registry.current_champion() is None and PROD_MODEL_PATH.exists():
         baseline_ic = champion_holdout_ic if champion_holdout_ic != -1.0 else _load_prod_model_ic()
         bootstrap_meta = {"ic_mean": baseline_ic, "challenger_holdout_ic": baseline_ic, "bootstrapped": True}

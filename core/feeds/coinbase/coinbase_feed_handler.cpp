@@ -347,7 +347,6 @@ auto CoinbaseFeedHandler::build_subscription_messages() -> std::vector<std::stri
 }
 
 auto CoinbaseFeedHandler::fetch_tick_size() -> Result {
-    // Advanced Trade public market endpoint – no authentication required.
     const std::string url = api_url_ + "/api/v3/brokerage/market/products/" + venue_symbols_.coinbase;
     auto resp = http::get(url);
     if (!resp.ok() || resp.body.empty()) {
