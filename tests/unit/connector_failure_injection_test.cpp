@@ -192,7 +192,7 @@ TEST(ConnectorFailureInjectionTest, KrakenDeterministicFailures) {
 }
 
 TEST(ConnectorFailureInjectionTest, OkxDeterministicFailures) {
-    OkxConnector c("k", "s", "https://okx.test");
+    OkxConnector c("k", "s", "pass", "https://okx.test");
     ASSERT_EQ(c.connect(), ConnectorResult::OK);
     run_submit_classification_suite(c, Exchange::OKX, "BTC-USDT-SWAP");
     run_operation_state_invariant_suite(c, Exchange::OKX, "BTC-USDT-SWAP",

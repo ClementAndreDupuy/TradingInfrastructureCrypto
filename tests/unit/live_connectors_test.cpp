@@ -26,6 +26,12 @@ class TestableKrakenConnector : public KrakenConnector {
     using KrakenConnector::kraken_private_headers;
 };
 
+class TestableOkxConnector : public OkxConnector {
+  public:
+    using OkxConnector::OkxConnector;
+    using OkxConnector::auth_headers_with_timestamp;
+};
+
 bool contains(const std::string& s, const char* token) {
     return s.find(token) != std::string::npos;
 }
@@ -386,12 +392,111 @@ TEST(LiveConnectorsTest, KrakenUsesDocumentedFormAuthAndOrderSemantics) {
     EXPECT_EQ(cancel_all_calls, 1);
 }
 
-TEST(LiveConnectorsTest, OkxAuthenticatedFlow) {
-    OkxConnector c("k", "s", "https://okx.test");
-    run_connector_flow(c, Exchange::OKX, "BTC-USDT-SWAP", R"({"data":[{"ordId":"42"}]})",
-                       R"({"data":[{"ordId":"43"}]})",
-                       R"({"data":[{"state":"live","accFillSz":0,"avgPx":0}]})",
-                       R"({"data":[{"sCode":"0"}]})", R"({"data":[{"sCode":"0"}]})");
+TEST(LiveConnectorsTest, OkxUsesDocumentedAuthHeadersAndRequestShapes) {
+    TestableOkxConnector c("api-key", "api-secret", "passphrase", "https://okx.test");
+    const std::string payload =
+        R"({"instId":"BTC-USDT-SWAP","tdMode":"cross","clOrdId":"TRT-42-OKX","side":"buy","ordType":"ioc","sz":"0.1","px":"100"})";
+    const auto headers = c.auth_headers_with_timestamp("POST", "/api/v5/trade/order", payload,
+                                                       1700000000123LL, "TRT-42-OKX");
+    ASSERT_NE(find_header(headers, "OK-ACCESS-KEY: "), nullptr);
+    ASSERT_NE(find_header(headers, "OK-ACCESS-PASSPHRASE: "), nullptr);
+    ASSERT_NE(find_header(headers, "OK-ACCESS-TIMESTAMP: "), nullptr);
+    ASSERT_NE(find_header(headers, "OK-ACCESS-SIGN: "), nullptr);
+    EXPECT_EQ(*find_header(headers, "OK-ACCESS-KEY: "), "OK-ACCESS-KEY: api-key");
+    EXPECT_EQ(*find_header(headers, "OK-ACCESS-PASSPHRASE: "),
+              "OK-ACCESS-PASSPHRASE: passphrase");
+    EXPECT_EQ(*find_header(headers, "OK-ACCESS-TIMESTAMP: "),
+              "OK-ACCESS-TIMESTAMP: 1700000000.123000");
+    EXPECT_EQ(*find_header(headers, "OK-ACCESS-SIGN: "),
+              "OK-ACCESS-SIGN: zuaFqrQF7qBRkGMYGbRa83nGaxpHMeNOTQpmxjjeIAg=");
+
+    int submit_calls = 0;
+    int query_calls = 0;
+    int amend_calls = 0;
+    int cancel_calls = 0;
+    int cancel_all_calls = 0;
+    ScopedMockTransport transport([&](const char* method, const std::string& url,
+                                      const std::string& body,
+                                      const std::vector<std::string>& request_headers) {
+        if (std::strcmp(method, "POST") == 0 && contains(url, "/api/v5/trade/order") &&
+            !contains(url, "amend-order") && !contains(url, "cancel-order")) {
+            ++submit_calls;
+            EXPECT_TRUE(contains(body, R"("instId":"BTC-USDT-SWAP")"));
+            EXPECT_TRUE(contains(body, R"("tdMode":"cross")"));
+            EXPECT_TRUE(contains(body, R"("clOrdId":"TRT-42-OKX")"));
+            EXPECT_TRUE(contains(body, R"("ordType":"ioc")"));
+            EXPECT_NE(find_header(request_headers, "OK-ACCESS-PASSPHRASE: "), nullptr);
+            return http::HttpResponse{200, R"({"data":[{"ordId":"42"}]})"};
+        }
+        if (std::strcmp(method, "GET") == 0 && contains(url, "/api/v5/trade/order?")) {
+            ++query_calls;
+            EXPECT_TRUE(contains(url, "instId=BTC-USDT-SWAP"));
+            EXPECT_TRUE(contains(url, "ordId=42"));
+            EXPECT_TRUE(contains(url, "clOrdId=TRT-42-OKX"));
+            return http::HttpResponse{200, R"({"data":[{"accFillSz":0.1,"avgPx":100.5,"state":"partially_filled"}]})"};
+        }
+        if (std::strcmp(method, "POST") == 0 && contains(url, "amend-order")) {
+            ++amend_calls;
+            EXPECT_TRUE(contains(body, R"("instId":"BTC-USDT-SWAP")"));
+            EXPECT_TRUE(contains(body, R"("ordId":"42")"));
+            EXPECT_TRUE(contains(body, R"("clOrdId":"TRT-42-OKX")"));
+            EXPECT_TRUE(contains(body, R"("reqId":"TRT-43-OKX")"));
+            EXPECT_TRUE(contains(body, R"("newPx":"101")"));
+            EXPECT_TRUE(contains(body, R"("newSz":"0.1")"));
+            return http::HttpResponse{200, R"({"data":[{"ordId":"43"}]})"};
+        }
+        if (std::strcmp(method, "POST") == 0 && contains(url, "cancel-order")) {
+            ++cancel_calls;
+            EXPECT_TRUE(contains(body, R"("instId":"BTC-USDT-SWAP")"));
+            EXPECT_TRUE(contains(body, R"("ordId":"43")"));
+            EXPECT_TRUE(contains(body, R"("clOrdId":"TRT-43-OKX")"));
+            return http::HttpResponse{200, R"({"data":[{"sCode":"0"}]})"};
+        }
+        ++cancel_all_calls;
+        return http::HttpResponse{500, ""};
+    });
+
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    Order o = make_order(Exchange::OKX, 42, "BTC-USDT-SWAP");
+    ASSERT_EQ(c.submit_order(o), ConnectorResult::OK);
+
+    FillUpdate query{};
+    ASSERT_EQ(c.query_order(42, query), ConnectorResult::OK);
+    EXPECT_EQ(query.new_state, OrderState::PARTIALLY_FILLED);
+    EXPECT_DOUBLE_EQ(query.avg_fill_price, 100.5);
+
+    Order replacement = o;
+    replacement.client_order_id = 43;
+    replacement.price = 101.0;
+    ASSERT_EQ(c.replace_order(42, replacement), ConnectorResult::OK);
+    ASSERT_EQ(c.cancel_order(43), ConnectorResult::OK);
+    EXPECT_EQ(c.cancel_all("BTC-USDT-SWAP"), ConnectorResult::ERROR_INVALID_ORDER);
+
+    EXPECT_EQ(submit_calls, 1);
+    EXPECT_EQ(query_calls, 1);
+    EXPECT_EQ(amend_calls, 1);
+    EXPECT_EQ(cancel_calls, 1);
+    EXPECT_EQ(cancel_all_calls, 0);
+}
+
+TEST(LiveConnectorsTest, OkxRequiresPassphraseAtConnect) {
+    OkxConnector c("k", "s", "", "https://okx.test");
+    EXPECT_EQ(c.connect(), ConnectorResult::AUTH_FAILED);
+}
+
+TEST(LiveConnectorsTest, OkxRejectsUnsupportedStopLimitOrders) {
+    OkxConnector c("k", "s", "pass", "https://okx.test");
+    ScopedMockTransport transport([](const char*, const std::string&, const std::string&,
+                                     const std::vector<std::string>&) {
+        ADD_FAILURE() << "unexpected HTTP call";
+        return http::HttpResponse{500, ""};
+    });
+
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    Order o = make_order(Exchange::OKX, 91, "BTC-USDT-SWAP");
+    o.type = OrderType::STOP_LIMIT;
+    o.stop_price = 99.0;
+    EXPECT_EQ(c.submit_order(o), ConnectorResult::ERROR_INVALID_ORDER);
 }
 
 TEST(LiveConnectorsTest, CoinbaseAuthenticatedFlow) {

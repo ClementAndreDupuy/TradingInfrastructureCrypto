@@ -44,9 +44,11 @@ struct RetryPolicy {
 class LiveConnectorBase : public ExchangeConnector {
   public:
     LiveConnectorBase(Exchange exchange, std::string api_key, std::string api_secret,
-                      std::string api_url, RetryPolicy retry_policy = {})
+                      std::string api_url, RetryPolicy retry_policy = {},
+                      std::string api_passphrase = {})
         : exchange_(exchange), api_key_(std::move(api_key)), api_secret_(std::move(api_secret)),
-          api_url_(std::move(api_url)), retry_policy_(retry_policy),
+          api_passphrase_(std::move(api_passphrase)), api_url_(std::move(api_url)),
+          retry_policy_(retry_policy),
           journal_(std::string("/tmp/trt_idempotency_") + exchange_to_string(exchange_) + ".log") {}
 
     Exchange exchange_id() const override { return exchange_; }
@@ -59,6 +61,12 @@ class LiveConnectorBase : public ExchangeConnector {
         connected_.store(false, std::memory_order_release);
         return ConnectorResult::AUTH_FAILED;
 #endif
+        if (exchange_ == Exchange::OKX && api_passphrase_.empty()) {
+            LOG_ERROR("Missing venue credential", "exchange", exchange_to_string(exchange_),
+                      "field", "passphrase");
+            connected_.store(false, std::memory_order_release);
+            return ConnectorResult::AUTH_FAILED;
+        }
         connected_.store(true, std::memory_order_release);
         return ConnectorResult::OK;
     }
@@ -247,7 +255,15 @@ class LiveConnectorBase : public ExchangeConnector {
     std::vector<std::string> auth_headers(const char* method, const std::string& request_path,
                                           const std::string& payload,
                                           const std::string& idempotency_key = "") const {
-        const int64_t ts_ms = http::now_ms();
+        return auth_headers_with_timestamp(method, request_path, payload, http::now_ms(),
+                                           idempotency_key);
+    }
+
+    std::vector<std::string> auth_headers_with_timestamp(const char* method,
+                                                         const std::string& request_path,
+                                                         const std::string& payload,
+                                                         int64_t ts_ms,
+                                                         const std::string& idempotency_key = "") const {
         const std::string ts_ms_s = std::to_string(ts_ms);
         const std::string ts_s = std::to_string(static_cast<double>(ts_ms) / 1000.0);
 
@@ -273,6 +289,7 @@ class LiveConnectorBase : public ExchangeConnector {
             const std::string prehash = ts_s + method + request_path + payload;
             headers.push_back("OK-ACCESS-KEY: " + api_key_);
             headers.push_back("OK-ACCESS-TIMESTAMP: " + ts_s);
+            headers.push_back("OK-ACCESS-PASSPHRASE: " + api_passphrase_);
             headers.push_back("OK-ACCESS-SIGN: " + hmac_sha256_base64(prehash));
             break;
         }
@@ -437,6 +454,7 @@ class LiveConnectorBase : public ExchangeConnector {
     Exchange exchange_;
     std::string api_key_;
     std::string api_secret_;
+    std::string api_passphrase_;
     std::string api_url_;
     RetryPolicy retry_policy_;
     std::atomic<bool> connected_{false};
