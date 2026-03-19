@@ -89,15 +89,12 @@ class NeuralAlphaBacktest:
         stop_loss    = self.cfg.stop_loss_bps        * 1e-4
         lat          = self.cfg.latency_ticks
         fee_rate     = self.cfg.taker_fee_bps * 1e-4
-        maker_fee_rate = self.cfg.maker_fee_bps * 1e-4
 
-        # Extract bid/ask arrays
         best_bid = self._get_col(df, "best_bid")
         best_ask = self._get_col(df, "best_ask")
         ts_arr   = df["timestamp_ns"].to_numpy()
 
         T = len(df)
-        # Signals are aligned: at tick t we use signals[t - lat] (latency offset)
         padded_signals = np.concatenate([np.zeros(lat), signals])
 
         for t in range(T):
@@ -108,16 +105,13 @@ class NeuralAlphaBacktest:
             mid = (bid + ask) / 2.0
 
             if self._position != 0.0:
-                # Mark-to-market PnL
                 current_val = self._position * (mid - self._entry_price)
                 self._equity.append((ts, self._pnl + current_val))
 
-                # Stop loss check
                 if current_val / (abs(self._position) * self._entry_price + 1e-9) < -stop_loss:
                     self._close_position(t, bid, ask, ts, fee_rate, reason="STOP")
                     continue
 
-                # Exit conditions
                 should_exit = (
                     (self._position > 0 and sig < exit_thresh)
                     or (self._position < 0 and sig > -exit_thresh)
@@ -128,7 +122,6 @@ class NeuralAlphaBacktest:
             else:
                 self._equity.append((ts, self._pnl))
 
-            # Entry conditions (no open position)
             if self._position == 0.0:
                 net_long_sig  = sig - fee_rate * 2   # round-trip cost
                 net_short_sig = -sig - fee_rate * 2
@@ -146,7 +139,6 @@ class NeuralAlphaBacktest:
                         fill_px = self._apply_market_impact(ask, -qty)
                         self._open_position(t, fill_px, -qty, "SHORT", ts, fee_rate)
 
-        # Close any open position at end
         if self._position != 0.0 and T > 0:
             self._close_position(
                 T - 1, best_bid[T - 1], best_ask[T - 1], ts_arr[T - 1], fee_rate, "EOD"

@@ -10,7 +10,6 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
-
 _EPS = 1e-12
 
 
@@ -247,12 +246,10 @@ def _calm_anchored_fallback(
     means = np.tile(obs_mean, (n, 1))
     variances = np.tile(obs_var, (n, 1))
 
-    # Near-certain start in calm; tiny mass on other states for numeric stability
     initial = np.full(n, 1e-6)
     initial[calm_idx] = 1.0 - (n - 1) * 1e-6
     initial /= initial.sum()
 
-    # Strong self-transition so the model stays in whatever state it entered
     transition = np.full((n, n), 0.1 / max(n - 1, 1))
     np.fill_diagonal(transition, 0.9)
     transition /= transition.sum(axis=1, keepdims=True)
@@ -305,10 +302,6 @@ def train_regime_model_from_df(df: pl.DataFrame, cfg: RegimeConfig) -> tuple[Reg
     raw_scales = x_raw.std(axis=0)
     n_degenerate = int(np.sum(raw_scales < 1e-8))
     if n_degenerate > len(raw_scales) // 2:
-        # Flat data with no variation is calm by definition — anchor to calm
-        # rather than failing. The artifact will infer high p_calm for flat
-        # live data and allow probability to flow to other states as real
-        # variation appears, at which point a proper HMM retrain will take over.
         print(
             f"[REGIME] Flat training data ({n_degenerate}/{len(raw_scales)} features "
             f"near-zero variance) — anchoring artifact to calm regime."
