@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../live_connector_base.hpp"
+#include "../common/live_connector_base.hpp"
 
 namespace trading {
 
@@ -22,4 +22,4 @@ class OkxConnector : public LiveConnectorBase {
     ConnectorResult fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot) override;
 };
 
-} // namespace trading
+}

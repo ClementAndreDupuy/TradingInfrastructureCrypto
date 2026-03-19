@@ -63,7 +63,7 @@ std::string encode_component(const std::string& value) {
     return out;
 }
 
-bool validate_order(const Order& order) {
+bool validate_order_request(const Order& order) {
     if (!has_non_empty_symbol(order.symbol))
         return false;
     if (order.quantity <= 0.0)
@@ -75,7 +75,7 @@ bool validate_order(const Order& order) {
     return true;
 }
 
-ConnectorResult classify_binance_response(const http::HttpResponse& response) {
+ConnectorResult classify_order_response(const http::HttpResponse& response) {
     const auto json = nlohmann::json::parse(response.body, nullptr, false);
     if (!json.is_discarded()) {
         const std::string message = json_string(json, "msg");
@@ -127,15 +127,15 @@ std::string percent_encode_params(const std::vector<Param>& params) {
     return encoded;
 }
 
-std::string client_order_id_for(const std::string& idempotency_key, uint64_t client_order_id) {
+std::string build_client_order_id(const std::string& idempotency_key, uint64_t client_order_id) {
     if (!idempotency_key.empty())
         return idempotency_key;
     return std::string("TRT-") + std::to_string(client_order_id);
 }
 
-bool append_order_params(const Order& order, const std::string& client_order_id,
+bool build_order_params(const Order& order, const std::string& client_order_id,
                          std::vector<Param>& params) {
-    if (!validate_order(order))
+    if (!validate_order_request(order))
         return false;
 
     const std::string symbol = SymbolMapper::map_for_exchange(Exchange::BINANCE, order.symbol);
@@ -192,14 +192,14 @@ bool parse_order_id_value(const nlohmann::json& json, std::string& venue_order_i
     return false;
 }
 
-bool parse_binance_order_id(const std::string& body, std::string& venue_order_id) {
+bool parse_order_id(const std::string& body, std::string& venue_order_id) {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded())
         return false;
     return parse_order_id_value(json, venue_order_id);
 }
 
-OrderState parse_binance_status(const std::string& raw) {
+OrderState parse_order_status(const std::string& raw) {
     if (raw == "NEW" || raw == "PENDING_NEW")
         return OrderState::OPEN;
     if (raw == "PARTIALLY_FILLED")
@@ -228,7 +228,7 @@ double json_number(const nlohmann::json& json, const char* key) {
     return 0.0;
 }
 
-bool parse_binance_query(const std::string& body, FillUpdate& status) {
+bool parse_query_status(const std::string& body, FillUpdate& status) {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded())
         return false;
@@ -241,12 +241,12 @@ bool parse_binance_query(const std::string& body, FillUpdate& status) {
         status.avg_fill_price = cumulative_quote_qty / status.cumulative_filled_qty;
     }
     status.fill_price = status.avg_fill_price;
-    status.new_state = parse_binance_status(json.value("status", std::string()));
+    status.new_state = parse_order_status(json.value("status", std::string()));
     status.local_ts_ns = http::now_ns();
     return true;
 }
 
-bool parse_binance_cancel_ack(const std::string& body) {
+bool parse_cancel_result(const std::string& body) {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded())
         return false;
@@ -273,11 +273,11 @@ uint64_t parse_client_order_id(const std::string& client_order_id) {
 
 auto BinanceConnector::submit_to_venue(const Order& order, const std::string& idempotency_key,
                                        std::string& venue_order_id) -> ConnectorResult {
-    if (!validate_order(order))
+    if (!validate_order_request(order))
         return ConnectorResult::ERROR_INVALID_ORDER;
 
     std::vector<Param> params;
-    if (!append_order_params(order, client_order_id_for(idempotency_key, order.client_order_id),
+    if (!build_order_params(order, build_client_order_id(idempotency_key, order.client_order_id),
                              params)) {
         return ConnectorResult::ERROR_INVALID_ORDER;
     }
@@ -289,8 +289,8 @@ auto BinanceConnector::submit_to_venue(const Order& order, const std::string& id
     const auto response =
         http::post(api_url() + "/api/v3/order?" + signed_query, "", binance_api_headers());
     if (!response.ok())
-        return classify_binance_response(response);
-    if (!parse_binance_order_id(response.body, venue_order_id))
+        return classify_order_response(response);
+    if (!parse_order_id(response.body, venue_order_id))
         return ConnectorResult::ERROR_UNKNOWN;
     return ConnectorResult::OK;
 }
@@ -304,13 +304,13 @@ auto BinanceConnector::cancel_at_venue(const VenueOrderEntry& entry) -> Connecto
                                         hmac_sha256_hex_for_payload(payload),
                                     binance_api_headers());
     if (!response.ok())
-        return classify_binance_response(response);
-    return parse_binance_cancel_ack(response.body) ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
+        return classify_order_response(response);
+    return parse_cancel_result(response.body) ? ConnectorResult::OK : ConnectorResult::ERROR_UNKNOWN;
 }
 
 auto BinanceConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& replacement,
                                         std::string& new_venue_order_id) -> ConnectorResult {
-    if (!validate_order(replacement))
+    if (!validate_order_request(replacement))
         return ConnectorResult::ERROR_INVALID_ORDER;
     if (std::string_view(entry.symbol) != std::string_view(replacement.symbol))
         return ConnectorResult::ERROR_INVALID_ORDER;
@@ -318,8 +318,8 @@ auto BinanceConnector::replace_at_venue(const VenueOrderEntry& entry, const Orde
     std::vector<Param> params = {{"symbol", SymbolMapper::map_for_exchange(Exchange::BINANCE, entry.symbol)},
                                  {"cancelOrderId", entry.venue_order_id},
                                  {"cancelReplaceMode", "STOP_ON_FAILURE"}};
-    if (!append_order_params(replacement,
-                             client_order_id_for(make_idempotency_key(replacement.client_order_id),
+    if (!build_order_params(replacement,
+                             build_client_order_id(make_idempotency_key(replacement.client_order_id),
                                                  replacement.client_order_id),
                              params)) {
         return ConnectorResult::ERROR_INVALID_ORDER;
@@ -332,12 +332,12 @@ auto BinanceConnector::replace_at_venue(const VenueOrderEntry& entry, const Orde
                                          "&signature=" + hmac_sha256_hex_for_payload(payload),
                                      "", binance_api_headers());
     if (!response.ok())
-        return classify_binance_response(response);
-    if (!parse_binance_cancel_ack(response.body) &&
+        return classify_order_response(response);
+    if (!parse_cancel_result(response.body) &&
         response.body.find("newOrderResponse") == std::string::npos) {
         return ConnectorResult::ERROR_UNKNOWN;
     }
-    if (!parse_binance_order_id(response.body, new_venue_order_id))
+    if (!parse_order_id(response.body, new_venue_order_id))
         return ConnectorResult::ERROR_UNKNOWN;
     return ConnectorResult::OK;
 }
@@ -352,8 +352,8 @@ auto BinanceConnector::query_at_venue(const VenueOrderEntry& entry,
                                         hmac_sha256_hex_for_payload(payload),
                                     binance_api_headers());
     if (!response.ok())
-        return classify_binance_response(response);
-    return parse_binance_query(response.body, status) ? ConnectorResult::OK
+        return classify_order_response(response);
+    return parse_query_status(response.body, status) ? ConnectorResult::OK
                                                       : ConnectorResult::ERROR_UNKNOWN;
 }
 
@@ -368,7 +368,7 @@ auto BinanceConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResul
                                         hmac_sha256_hex_for_payload(payload),
                                     binance_api_headers());
     if (!response.ok())
-        return classify_binance_response(response);
+        return classify_order_response(response);
     const auto json = nlohmann::json::parse(response.body, nullptr, false);
     return (!json.is_discarded() && json.is_array()) ? ConnectorResult::OK
                                                      : ConnectorResult::ERROR_UNKNOWN;
@@ -389,7 +389,7 @@ auto BinanceConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sna
                                                 hmac_sha256_hex_for_payload(account_payload),
                                             binance_api_headers());
     if (!account_response.ok())
-        return classify_binance_response(account_response);
+        return classify_order_response(account_response);
 
     const auto account_json = nlohmann::json::parse(account_response.body, nullptr, false);
     const auto& balances = account_json["balances"];
@@ -412,10 +412,10 @@ auto BinanceConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sna
                       hmac_sha256_hex_for_payload(open_order_payload),
                   binance_api_headers());
     if (!open_order_response.ok())
-        return classify_binance_response(open_order_response);
+        return classify_order_response(open_order_response);
 
     std::set<std::string> symbols;
-    order_map().for_each_active([&](const VenueOrderEntry& entry) {
+    venue_order_map().for_each_active([&](const VenueOrderEntry& entry) {
         if (entry.symbol[0] != '\0')
             symbols.insert(SymbolMapper::map_for_exchange(Exchange::BINANCE, entry.symbol));
     });
@@ -437,7 +437,7 @@ auto BinanceConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sna
         order.quantity = json_number(item, "origQty");
         order.filled_quantity = json_number(item, "executedQty");
         order.price = json_number(item, "price");
-        order.state = parse_binance_status(item.value("status", std::string()));
+        order.state = parse_order_status(item.value("status", std::string()));
         if (!snapshot.open_orders.push(order))
             return ConnectorResult::ERROR_UNKNOWN;
     }
@@ -455,7 +455,7 @@ auto BinanceConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sna
             continue;
         }
         if (!trades_response.ok())
-            return classify_binance_response(trades_response);
+            return classify_order_response(trades_response);
 
         const auto trades_json = nlohmann::json::parse(trades_response.body, nullptr, false);
         if (!trades_json.is_array())

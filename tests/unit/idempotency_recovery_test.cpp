@@ -1,4 +1,4 @@
-#include "core/execution/live_connector_base.hpp"
+#include "core/execution/common/live_connector_base.hpp"
 #include "core/risk/recovery_guard.hpp"
 
 #include <gtest/gtest.h>
@@ -83,7 +83,7 @@ TEST(IdempotencyRecoveryTest, DuplicateSubmitAckRecoveredWithoutVenueCall) {
 
     EXPECT_EQ(result, ConnectorResult::OK);
     EXPECT_EQ(c.submit_calls, 0);
-    const VenueOrderEntry* mapped = c.order_map().get(100);
+    const VenueOrderEntry* mapped = c.venue_order_map().get(100);
     ASSERT_NE(mapped, nullptr);
     EXPECT_STREQ(mapped->venue_order_id, "venue-acked");
 }
@@ -116,7 +116,7 @@ TEST(IdempotencyRecoveryTest, RetryStormPersistsAndRecoversDeterministically) {
     EXPECT_EQ(second, ConnectorResult::OK);
     EXPECT_EQ(c.submit_calls, 4);
 
-    const VenueOrderEntry* mapped = c.order_map().get(77);
+    const VenueOrderEntry* mapped = c.venue_order_map().get(77);
     ASSERT_NE(mapped, nullptr);
     EXPECT_STREQ(mapped->venue_order_id, "venue-retry");
 }

@@ -6,7 +6,7 @@
 #include "../ipc/regime_signal.hpp"
 #include "../risk/circuit_breaker.hpp"
 #include "../risk/kill_switch.hpp"
-#include "order_manager.hpp"
+#include "common/order_manager.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -18,34 +18,28 @@ struct MarketMakerConfig {
     char symbol[16] = "BTCUSDT";
     Exchange exchange = Exchange::BINANCE;
 
-    // Quoting
-    double half_spread_bps = 2.0; // base half-spread (maker earn)
-    double skew_factor = 0.3;     // signal_bps contribution to skew
-    double max_skew_bps = 5.0;    // clip skew to ±this
-    double order_qty = 0.001;     // BTC per quote
-    double max_position = 0.01;   // net position limit (BTC)
+    double half_spread_bps = 2.0;
+    double skew_factor = 0.3;
+    double max_skew_bps = 5.0;
+    double order_qty = 0.001;
+    double max_position = 0.01;
 
-    // Re-quoting
-    double requote_bps = 1.0;    // re-quote when mid moves by this
-    double requote_signal = 2.0; // re-quote when signal changes by this (bps)
+    double requote_bps = 1.0;
+    double requote_signal = 2.0;
 
-    // Stop-limit
-    double stop_loss_bps = 20.0; // unrealized loss threshold
-    double limit_slip_bps = 3.0; // limit price = stop ± this
+    double stop_loss_bps = 20.0;
+    double limit_slip_bps = 3.0;
 
-    // Risk
-    double risk_max = 0.65;                  // adverse-selection threshold
-    double risk_widen_bps = 3.0;             // extra spread when risk_score >= risk_max
-    double signal_min_bps = 1.5;             // don't skew below this signal magnitude
-    double inventory_skew_decay_power = 2.0; // stronger decay as inventory approaches flat
+    double risk_max = 0.65;
+    double risk_widen_bps = 3.0;
+    double signal_min_bps = 1.5;
+    double inventory_skew_decay_power = 2.0;
 
-    // Regime-aware gating
     double shock_block_threshold = 0.75;
     double illiquid_block_threshold = 0.80;
     double regime_widen_bps = 2.0;
 
-    // Signal staleness
-    int64_t stale_ns = 2'000'000'000LL; // 2 s
+    int64_t stale_ns = 2'000'000'000LL;
 };
 
 class NeuralAlphaMarketMaker {
@@ -75,10 +69,8 @@ class NeuralAlphaMarketMaker {
         if (mid <= 0.0)
             return;
 
-        // Stop-limit check first — always runs even if we don't requote
         check_stop(mid, sig);
 
-        // Decide whether to requote
         const bool mid_moved = std::abs(mid - last_quoted_mid_) / mid * 1e4 >= cfg_.requote_bps;
         const double sig_bps = sig.signal_bps;
         const bool sig_changed = std::abs(sig_bps - last_signal_bps_) >= cfg_.requote_signal;
@@ -159,7 +151,7 @@ class NeuralAlphaMarketMaker {
         double extra = (risk_score >= cfg_.risk_max) ? cfg_.risk_widen_bps : 0.0;
         extra += cfg_.regime_widen_bps * (p_shock + 0.5 * p_illiquid);
 
-        double half_bid = cfg_.half_spread_bps - skew + extra; // wider if negative skew
+        double half_bid = cfg_.half_spread_bps - skew + extra;
         double half_ask = cfg_.half_spread_bps + skew + extra;
 
         half_bid = std::max(half_bid, 0.5);
@@ -195,12 +187,11 @@ class NeuralAlphaMarketMaker {
     void check_stop(double mid, const AlphaSignal& /*sig*/) {
         double pos = om_.position();
         if (pos == 0.0 || stop_id_ != 0)
-            return; // no position or stop already live
+            return;
 
         if (entry_price_ <= 0.0)
             return;
 
-        // Unrealized PnL as fraction of notional
         double unreal_bps = (pos > 0.0) ? (mid - entry_price_) / entry_price_ * 1e4
                                         : (entry_price_ - mid) / entry_price_ * 1e4;
 
@@ -340,13 +331,9 @@ class NeuralAlphaMarketMaker {
         if (s.ts_ns == 0)
             return true;
         using namespace std::chrono;
-        // Python writes ts_ns via time.time_ns() which is UNIX wall-clock time.
-        // system_clock shares the same epoch; steady_clock must NOT be used here
-        // as its epoch differs (system boot), making the delta always huge and the
-        // signal perpetually stale.
         int64_t now = duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
         return (now - s.ts_ns) > cfg_.stale_ns;
     }
 };
 
-} // namespace trading
+}

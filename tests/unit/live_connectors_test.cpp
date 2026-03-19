@@ -125,7 +125,7 @@ void run_connector_flow(Connector& c, Exchange ex, const char* symbol, const cha
     const Order o = make_order(ex, 42, symbol);
     EXPECT_EQ(c.submit_order(o), ConnectorResult::OK);
 
-    const VenueOrderEntry* map_entry = c.order_map().get(42);
+    const VenueOrderEntry* map_entry = c.venue_order_map().get(42);
     ASSERT_NE(map_entry, nullptr);
     EXPECT_EQ(map_entry->exchange, ex);
 
@@ -137,11 +137,11 @@ void run_connector_flow(Connector& c, Exchange ex, const char* symbol, const cha
     replacement.client_order_id = 43;
     replacement.price = 101.0;
     EXPECT_EQ(c.replace_order(42, replacement), ConnectorResult::OK);
-    EXPECT_EQ(c.order_map().get(42), nullptr);
-    EXPECT_NE(c.order_map().get(43), nullptr);
+    EXPECT_EQ(c.venue_order_map().get(42), nullptr);
+    EXPECT_NE(c.venue_order_map().get(43), nullptr);
 
     EXPECT_EQ(c.cancel_order(43), ConnectorResult::OK);
-    EXPECT_EQ(c.order_map().get(43), nullptr);
+    EXPECT_EQ(c.venue_order_map().get(43), nullptr);
 
     EXPECT_EQ(c.submit_order(o), ConnectorResult::OK);
     EXPECT_EQ(c.cancel_all(symbol), ConnectorResult::OK);
@@ -383,8 +383,8 @@ TEST(LiveConnectorsTest, KrakenUsesDocumentedFormAuthAndOrderSemantics) {
     replacement.client_order_id = 43;
     replacement.price = 101.0;
     ASSERT_EQ(c.replace_order(42, replacement), ConnectorResult::OK);
-    ASSERT_NE(c.order_map().get(43), nullptr);
-    EXPECT_STREQ(c.order_map().get(43)->venue_order_id, "kr-42");
+    ASSERT_NE(c.venue_order_map().get(43), nullptr);
+    EXPECT_STREQ(c.venue_order_map().get(43)->venue_order_id, "kr-42");
     ASSERT_EQ(c.cancel_all("XBTUSD"), ConnectorResult::OK);
 
     EXPECT_EQ(submit_calls, 1);

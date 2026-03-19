@@ -75,21 +75,21 @@ void run_state_machine_contract(Connector& c, Exchange ex, const char* symbol,
 
     EXPECT_EQ(c.submit_order(first), ConnectorResult::OK);
     EXPECT_EQ(c.submit_order(second), ConnectorResult::OK);
-    ASSERT_NE(c.order_map().get(101), nullptr);
-    ASSERT_NE(c.order_map().get(102), nullptr);
+    ASSERT_NE(c.venue_order_map().get(101), nullptr);
+    ASSERT_NE(c.venue_order_map().get(102), nullptr);
 
     EXPECT_EQ(c.cancel_order(101), ConnectorResult::OK);
-    EXPECT_EQ(c.order_map().get(101), nullptr);
-    ASSERT_NE(c.order_map().get(102), nullptr);
+    EXPECT_EQ(c.venue_order_map().get(101), nullptr);
+    ASSERT_NE(c.venue_order_map().get(102), nullptr);
 
     EXPECT_EQ(c.cancel_order(999999), ConnectorResult::ERROR_INVALID_ORDER);
 
     EXPECT_EQ(c.reconcile(), ConnectorResult::OK);
-    EXPECT_EQ(c.order_map().get(102), nullptr);
+    EXPECT_EQ(c.venue_order_map().get(102), nullptr);
 
     const Order third = make_order<Connector>(ex, 103, symbol, Side::BID);
     EXPECT_EQ(c.submit_order(third), ConnectorResult::OK);
-    ASSERT_NE(c.order_map().get(103), nullptr);
+    ASSERT_NE(c.venue_order_map().get(103), nullptr);
     EXPECT_EQ(c.cancel_order(103), ConnectorResult::OK);
 }
 

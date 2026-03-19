@@ -66,7 +66,7 @@ auto private_payload(std::string payload) -> std::string {
     return std::string("nonce=") + nonce + "&" + payload;
 }
 
-auto order_payload(const Order& order) -> std::string {
+auto build_order_payload(const Order& order) -> std::string {
     std::string payload;
     append_field(payload, "ordertype", order_type_string(order.type));
     append_field(payload, "pair", SymbolMapper::map_for_exchange(Exchange::KRAKEN, order.symbol));
@@ -85,7 +85,7 @@ auto order_payload(const Order& order) -> std::string {
     return payload;
 }
 
-auto parse_kraken_order_id(const std::string& body, std::string& venue_order_id) -> bool {
+auto parse_order_id(const std::string& body, std::string& venue_order_id) -> bool {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded()) {
         return false;
@@ -98,7 +98,7 @@ auto parse_kraken_order_id(const std::string& body, std::string& venue_order_id)
     return !venue_order_id.empty();
 }
 
-auto parse_kraken_status(const std::string& raw) -> OrderState {
+auto parse_order_status(const std::string& raw) -> OrderState {
     if (raw == "open") {
         return OrderState::OPEN;
     }
@@ -114,7 +114,7 @@ auto parse_kraken_status(const std::string& raw) -> OrderState {
     return OrderState::REJECTED;
 }
 
-auto parse_kraken_query(const std::string& body, FillUpdate& status) -> bool {
+auto parse_query_status(const std::string& body, FillUpdate& status) -> bool {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded()) {
         return false;
@@ -130,12 +130,12 @@ auto parse_kraken_query(const std::string& body, FillUpdate& status) -> bool {
     status.fill_qty = status.cumulative_filled_qty;
     status.avg_fill_price = order.value("price", 0.0);
     status.fill_price = status.avg_fill_price;
-    status.new_state = parse_kraken_status(order.value("status", std::string("")));
+    status.new_state = parse_order_status(order.value("status", std::string("")));
     status.local_ts_ns = http::now_ns();
     return true;
 }
 
-auto parse_kraken_cancel_ack(const std::string& body) -> bool {
+auto parse_cancel_result(const std::string& body) -> bool {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded()) {
         return false;
@@ -143,11 +143,11 @@ auto parse_kraken_cancel_ack(const std::string& body) -> bool {
     return json["result"].value("count", int64_t{0}) > 0;
 }
 
-} // namespace
+}
 
 auto KrakenConnector::submit_to_venue(const Order& order, const std::string& idempotency_key,
                                       std::string& venue_order_id) -> ConnectorResult {
-    std::string payload = private_payload(order_payload(order));
+    std::string payload = private_payload(build_order_payload(order));
     append_field(payload, "cl_ord_id", idempotency_key);
     const auto resp = http::post(api_url() + "/0/private/AddOrder", payload,
                                  kraken_private_headers("/0/private/AddOrder", payload));
@@ -155,7 +155,7 @@ auto KrakenConnector::submit_to_venue(const Order& order, const std::string& ide
         return classify_http_error(resp.status);
     }
 
-    if (!parse_kraken_order_id(resp.body, venue_order_id)) {
+    if (!parse_order_id(resp.body, venue_order_id)) {
         return ConnectorResult::ERROR_UNKNOWN;
     }
     return ConnectorResult::OK;
@@ -168,7 +168,7 @@ auto KrakenConnector::cancel_at_venue(const VenueOrderEntry& entry) -> Connector
     if (!resp.ok()) {
         return classify_http_error(resp.status);
     }
-    return parse_kraken_cancel_ack(resp.body) ? ConnectorResult::OK
+    return parse_cancel_result(resp.body) ? ConnectorResult::OK
                                               : ConnectorResult::ERROR_UNKNOWN;
 }
 
@@ -199,7 +199,7 @@ auto KrakenConnector::query_at_venue(const VenueOrderEntry& entry,
     if (!resp.ok()) {
         return classify_http_error(resp.status);
     }
-    return parse_kraken_query(resp.body, status) ? ConnectorResult::OK
+    return parse_query_status(resp.body, status) ? ConnectorResult::OK
                                                  : ConnectorResult::ERROR_UNKNOWN;
 }
 
@@ -217,7 +217,7 @@ auto KrakenConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResult
                : ConnectorResult::ERROR_UNKNOWN;
 }
 
-} // namespace trading
+}
 
 namespace trading {
 
@@ -248,7 +248,7 @@ auto KrakenConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snap
         order.quantity = order_obj.value("vol", 0.0);
         order.filled_quantity = order_obj.value("vol_exec", 0.0);
         order.price = descr.value("price", 0.0);
-        order.state = parse_kraken_status(order_obj.value("status", std::string("")));
+        order.state = parse_order_status(order_obj.value("status", std::string("")));
         if (!snapshot.open_orders.push(order)) {
             return ConnectorResult::ERROR_UNKNOWN;
         }
@@ -318,4 +318,4 @@ auto KrakenConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snap
     return ConnectorResult::OK;
 }
 
-} // namespace trading
+}

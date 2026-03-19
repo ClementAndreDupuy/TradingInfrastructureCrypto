@@ -24,7 +24,7 @@ auto decimal_string(double value) -> std::string {
     return out.empty() ? std::string("0") : out;
 }
 
-auto order_payload(const Order& order) -> std::string {
+auto build_order_payload(const Order& order) -> std::string {
     const std::string product_id = SymbolMapper::map_for_exchange(Exchange::COINBASE, order.symbol);
     std::string config;
     if (order.type == OrderType::MARKET) {
@@ -51,7 +51,7 @@ auto order_payload(const Order& order) -> std::string {
            config + "}}";
 }
 
-auto parse_coinbase_order_id(const std::string& body, std::string& venue_order_id) -> bool {
+auto parse_order_id(const std::string& body, std::string& venue_order_id) -> bool {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded()) {
         return false;
@@ -66,7 +66,7 @@ auto parse_coinbase_order_id(const std::string& body, std::string& venue_order_i
     return !venue_order_id.empty();
 }
 
-auto parse_coinbase_status(const std::string& raw) -> OrderState {
+auto parse_order_status(const std::string& raw) -> OrderState {
     if (raw == "OPEN") {
         return OrderState::OPEN;
     }
@@ -82,7 +82,7 @@ auto parse_coinbase_status(const std::string& raw) -> OrderState {
     return OrderState::PENDING;
 }
 
-auto parse_coinbase_query(const std::string& body, FillUpdate& status) -> bool {
+auto parse_query_status(const std::string& body, FillUpdate& status) -> bool {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded()) {
         return false;
@@ -96,12 +96,12 @@ auto parse_coinbase_query(const std::string& body, FillUpdate& status) -> bool {
     status.fill_qty = status.cumulative_filled_qty;
     status.avg_fill_price = order.value("average_filled_price", 0.0);
     status.fill_price = status.avg_fill_price;
-    status.new_state = parse_coinbase_status(order.value("status", std::string("")));
+    status.new_state = parse_order_status(order.value("status", std::string("")));
     status.local_ts_ns = http::now_ns();
     return true;
 }
 
-auto parse_coinbase_cancel_ack(const std::string& body) -> bool {
+auto parse_cancel_result(const std::string& body) -> bool {
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded()) {
         return false;
@@ -113,7 +113,7 @@ auto parse_coinbase_cancel_ack(const std::string& body) -> bool {
     return results[0].value("success", false);
 }
 
-auto append_coinbase_open_orders(const std::string& body,
+auto append_open_orders(const std::string& body,
                                  ReconciliationSnapshot& snapshot) -> ConnectorResult {
     const auto open_json = nlohmann::json::parse(body, nullptr, false);
     const auto& orders = open_json["orders"];
@@ -140,7 +140,7 @@ auto append_coinbase_open_orders(const std::string& body,
         }
         if (order.price <= 0.0)
             order.price = item.value("limit_price", 0.0);
-        order.state = parse_coinbase_status(item.value("status", std::string("")));
+        order.state = parse_order_status(item.value("status", std::string("")));
         if (!snapshot.open_orders.push(order)) {
             return ConnectorResult::ERROR_UNKNOWN;
         }
@@ -149,7 +149,7 @@ auto append_coinbase_open_orders(const std::string& body,
     return ConnectorResult::OK;
 }
 
-auto append_coinbase_balances(const std::string& body,
+auto append_balances(const std::string& body,
                               ReconciliationSnapshot& snapshot) -> ConnectorResult {
     const auto account_json = nlohmann::json::parse(body, nullptr, false);
     const auto& accounts = account_json["accounts"];
@@ -171,7 +171,7 @@ auto append_coinbase_balances(const std::string& body,
     return ConnectorResult::OK;
 }
 
-auto append_coinbase_positions(const std::string& body,
+auto append_positions(const std::string& body,
                                ReconciliationSnapshot& snapshot) -> ConnectorResult {
     const auto pos_json = nlohmann::json::parse(body, nullptr, false);
     const auto& positions = pos_json["positions"];
@@ -193,7 +193,7 @@ auto append_coinbase_positions(const std::string& body,
     return ConnectorResult::OK;
 }
 
-auto append_coinbase_fills(const std::string& body,
+auto append_fills(const std::string& body,
                            ReconciliationSnapshot& snapshot) -> ConnectorResult {
     const auto fills_json = nlohmann::json::parse(body, nullptr, false);
     const auto& fills = fills_json["fills"];
@@ -225,21 +225,21 @@ auto append_coinbase_fills(const std::string& body,
     return ConnectorResult::OK;
 }
 
-} // namespace
+}
 
 auto CoinbaseConnector::submit_to_venue(const Order& order, const std::string& idempotency_key,
                                         std::string& venue_order_id) -> ConnectorResult {
     if (order.type != OrderType::LIMIT && order.type != OrderType::MARKET) {
         return ConnectorResult::ERROR_INVALID_ORDER;
     }
-    const std::string payload = order_payload(order);
+    const std::string payload = build_order_payload(order);
     const auto headers = auth_headers("POST", "/api/v3/brokerage/orders", payload, idempotency_key);
     const auto resp = http::post(api_url() + "/api/v3/brokerage/orders", payload, headers);
     if (!resp.ok()) {
         return classify_http_error(resp.status);
     }
 
-    if (!parse_coinbase_order_id(resp.body, venue_order_id)) {
+    if (!parse_order_id(resp.body, venue_order_id)) {
         return ConnectorResult::ERROR_UNKNOWN;
     }
     return ConnectorResult::OK;
@@ -253,7 +253,7 @@ auto CoinbaseConnector::cancel_at_venue(const VenueOrderEntry& entry) -> Connect
     if (!resp.ok()) {
         return classify_http_error(resp.status);
     }
-    return parse_coinbase_cancel_ack(resp.body) ? ConnectorResult::OK
+    return parse_cancel_result(resp.body) ? ConnectorResult::OK
                                                 : ConnectorResult::ERROR_UNKNOWN;
 }
 
@@ -271,7 +271,7 @@ auto CoinbaseConnector::replace_at_venue(const VenueOrderEntry& entry, const Ord
     if (!resp.ok()) {
         return classify_http_error(resp.status);
     }
-    return parse_coinbase_order_id(resp.body, new_venue_order_id) ? ConnectorResult::OK
+    return parse_order_id(resp.body, new_venue_order_id) ? ConnectorResult::OK
                                                                   : ConnectorResult::ERROR_UNKNOWN;
 }
 
@@ -284,7 +284,7 @@ auto CoinbaseConnector::query_at_venue(const VenueOrderEntry& entry,
     if (!resp.ok()) {
         return classify_http_error(resp.status);
     }
-    return parse_coinbase_query(resp.body, status) ? ConnectorResult::OK
+    return parse_query_status(resp.body, status) ? ConnectorResult::OK
                                                    : ConnectorResult::ERROR_UNKNOWN;
 }
 
@@ -293,7 +293,7 @@ auto CoinbaseConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResu
     return ConnectorResult::ERROR_INVALID_ORDER;
 }
 
-} // namespace trading
+}
 
 namespace trading {
 
@@ -308,7 +308,7 @@ auto CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sn
         return classify_http_error(open_orders.status);
     }
 
-    ConnectorResult result = append_coinbase_open_orders(open_orders.body, snapshot);
+    ConnectorResult result = append_open_orders(open_orders.body, snapshot);
     if (result != ConnectorResult::OK) {
         return result;
     }
@@ -318,7 +318,7 @@ auto CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sn
     if (!account_resp.ok()) {
         return classify_http_error(account_resp.status);
     }
-    result = append_coinbase_balances(account_resp.body, snapshot);
+    result = append_balances(account_resp.body, snapshot);
     if (result != ConnectorResult::OK) {
         return result;
     }
@@ -329,7 +329,7 @@ auto CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sn
         if (!pos_resp.ok()) {
             return classify_http_error(pos_resp.status);
         }
-        result = append_coinbase_positions(pos_resp.body, snapshot);
+        result = append_positions(pos_resp.body, snapshot);
         if (result != ConnectorResult::OK) {
             return result;
         }
@@ -344,7 +344,7 @@ auto CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sn
     if (!fills_resp.ok()) {
         return classify_http_error(fills_resp.status);
     }
-    return append_coinbase_fills(fills_resp.body, snapshot);
+    return append_fills(fills_resp.body, snapshot);
 }
 
-} // namespace trading
+}

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../common/types.hpp"
+#include "../../common/types.hpp"
 
 #include <array>
 #include <cstddef>
@@ -83,4 +83,4 @@ inline void copy_cstr(char* dst, size_t dst_size, const std::string& src) {
     dst[dst_size - 1] = '\0';
 }
 
-} // namespace trading
+}

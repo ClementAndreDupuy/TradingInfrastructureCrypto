@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../common/logging.hpp"
+#include "../../common/logging.hpp"
 
 #include <array>
 #include <cstdint>
@@ -240,4 +240,4 @@ class IdempotencyJournal {
     uint64_t duplicate_ack_count_ = 0;
 };
 
-} // namespace trading
+}

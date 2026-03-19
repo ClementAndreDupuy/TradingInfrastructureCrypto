@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../common/logging.hpp"
+#include "../../common/logging.hpp"
 #include "exchange_connector.hpp"
 
 #include <array>
@@ -169,4 +169,4 @@ class OrderManager {
     }
 };
 
-} // namespace trading
+}
