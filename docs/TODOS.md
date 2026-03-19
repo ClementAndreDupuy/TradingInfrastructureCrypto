@@ -69,7 +69,7 @@ Last updated: 2026-03-19 — shadow session analysis (BTC & SOL).
     - [x] SPSC fill-event queue introduced for live mode, OR `std::mutex` guard added around all fill/slot mutations with a comment explaining the latency trade-off
     - [x] Unit or integration test verifying no data race under concurrent `on_fill` + `submit` + `active_order_count` (run with TSAN)
 
-- [ ] **H4** `core/feeds/kraken/kraken_feed_handler.cpp` — **Kraken book handler is out of sync with current WebSocket v2 protocol**
+- [x] **H4** `core/feeds/kraken/kraken_feed_handler.cpp` — **Kraken book handler is out of sync with current WebSocket v2 protocol**
   The current Kraken handler subscribes to the v2 `book` channel but bootstraps from
   REST `/0/public/Depth`, hard-requires a top-level `seq`, and never validates Kraken's
   documented CRC32 checksum. Kraken's current v2 book docs describe a WebSocket snapshot /
@@ -80,11 +80,11 @@ Last updated: 2026-03-19 — shadow session analysis (BTC & SOL).
   the exchange-delivered WebSocket snapshot, validate the documented checksum on updates,
   and maintain local depth exactly to the subscribed level.
   - acceptance criteria:
-    - [ ] Initial synchronization uses the Kraken WebSocket v2 `book` snapshot path instead of REST `/0/public/Depth`, and a successful start no longer depends on a REST bootstrap
-    - [ ] Message parsing is updated to the currently documented Kraken v2 book envelope; any required continuity fields are taken only from fields that are present in the current docs and verified by fixture coverage
-    - [ ] CRC32 checksum validation is implemented exactly as Kraken documents for the v2 book feed, with unit tests covering a passing fixture and a failing fixture
-    - [ ] Local Kraken book state is truncated to the subscribed depth after each update so out-of-scope levels do not accumulate indefinitely
-    - [ ] The normalized output preserves exchange timestamps alongside local receipt timestamps for Kraken snapshots / deltas, or the missing field is explicitly documented and tested as unsupported
+    - [x] Initial synchronization uses the Kraken WebSocket v2 `book` snapshot path instead of REST `/0/public/Depth`, and a successful start no longer depends on a REST bootstrap
+    - [x] Message parsing is updated to the currently documented Kraken v2 book envelope; any required continuity fields are taken only from fields that are present in the current docs and verified by fixture coverage
+    - [x] CRC32 checksum validation is implemented exactly as Kraken documents for the v2 book feed, with unit tests covering a passing fixture and a failing fixture
+    - [x] Local Kraken book state is truncated to the subscribed depth after each update so out-of-scope levels do not accumulate indefinitely
+    - [x] The normalized output preserves exchange timestamps alongside local receipt timestamps for Kraken snapshots / deltas, or the missing field is explicitly documented and tested as unsupported
 
 - [x] **H5** `core/feeds/coinbase/coinbase_feed_handler.cpp` — **Coinbase Advanced Trade subscription contract aligned with current docs**
   Coinbase Advanced Trade market-data subscriptions now send a dedicated `heartbeats`
