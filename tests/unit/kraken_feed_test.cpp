@@ -44,7 +44,7 @@ uint32_t update_checksum_after_insert() {
         {{"50000.0", "1.50000000"}, {"49999.5", "0.75000000"}}));
 }
 
-} // namespace
+}
 
 class KrakenFeedHandlerTest : public ::testing::Test {
   protected:

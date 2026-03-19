@@ -49,13 +49,13 @@ class KrakenFeedHandler {
     void stop();
 
     bool is_running() const { return running_.load(std::memory_order_acquire); }
-    uint64_t get_sequence() const { return last_seq_.load(std::memory_order_acquire); }
+    uint64_t get_sequence() const { return last_sequence_.load(std::memory_order_acquire); }
     double tick_size() const noexcept { return tick_size_; }
 
     Result process_message(const std::string& message);
 
     void set_streaming_state_for_test(uint64_t last_sequence) {
-        last_seq_.store(last_sequence, std::memory_order_release);
+        last_sequence_.store(last_sequence, std::memory_order_release);
         state_.store(State::STREAMING, std::memory_order_release);
     }
 
@@ -87,7 +87,7 @@ class KrakenFeedHandler {
     double tick_size_{0.0};
 
     std::atomic<bool> running_{false};
-    std::atomic<uint64_t> last_seq_{0};
+    std::atomic<uint64_t> last_sequence_{0};
     std::atomic<State> state_{State::DISCONNECTED};
     std::atomic<void*> lws_ctx_{nullptr};
 
@@ -122,4 +122,4 @@ class KrakenFeedHandler {
     std::map<double, std::pair<std::string, std::string>> asks_;
 };
 
-} // namespace trading
+}

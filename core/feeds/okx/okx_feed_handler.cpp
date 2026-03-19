@@ -37,7 +37,7 @@ struct OkxWsSession {
     size_t frag_len{0};
 };
 
-static auto okx_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* /*user*/,
+static auto okx_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* unused,
                        void* input, size_t len) -> int {
     auto* session = static_cast<OkxWsSession*>(lws_context_user(lws_get_context(wsi)));
     if (session == nullptr) {
@@ -61,7 +61,6 @@ static auto okx_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* 
             std::memcpy(session->frag_buf + session->frag_len, data, len);
             session->frag_len += len;
         } else {
-            // Message exceeds buffer: discard the entire fragmented message.
             session->frag_len = 0;
         }
         if (is_final && session->frag_len > 0 && (session->handler != nullptr)) {
@@ -105,16 +104,16 @@ static struct lws_protocols k_okx_protocols[] = {
 
 OkxFeedHandler::OkxFeedHandler(const std::string& symbol, const std::string& api_url,
                                const std::string& ws_url)
-    : symbol_(symbol), venue_symbols_(SymbolMapper::map_all(symbol)), inst_id_(venue_symbols_.okx),
+    : symbol_(symbol), venue_symbols_(SymbolMapper::map_all(symbol)), instrument_id_(venue_symbols_.okx),
       api_url_(api_url), ws_url_(ws_url) {
-    LOG_INFO("OkxFeedHandler created", "symbol", symbol_.c_str(), "inst_id", inst_id_.c_str());
+    LOG_INFO("OkxFeedHandler created", "symbol", symbol_.c_str(), "inst_id", instrument_id_.c_str());
 }
 
 OkxFeedHandler::~OkxFeedHandler() { stop(); }
 
 auto OkxFeedHandler::fetch_tick_size() -> Result {
     const std::string url =
-        api_url_ + "/api/v5/public/instruments?instType=SPOT&instId=" + inst_id_;
+        api_url_ + "/api/v5/public/instruments?instType=SPOT&instId=" + instrument_id_;
     auto resp = http::get(url);
     if (!resp.ok() || resp.body.empty()) {
         LOG_WARN("fetch_tick_size failed", "symbol", symbol_.c_str(), "status", resp.status);
@@ -232,7 +231,7 @@ void OkxFeedHandler::ws_event_loop() {
 
         nlohmann::json sub = {
             {"op", "subscribe"},
-            {"args", nlohmann::json::array({{{"channel", "books"}, {"instId", inst_id_}}})},
+            {"args", nlohmann::json::array({{{"channel", "books"}, {"instId", instrument_id_}}})},
         };
         session.subscribe_msg = sub.dump();
 
@@ -322,7 +321,7 @@ void OkxFeedHandler::ws_event_loop() {
     ws_cv_.notify_all();
 }
 
-auto OkxFeedHandler::process_ws_snapshot(const nlohmann::json& json) -> Result {
+auto OkxFeedHandler::process_snapshot(const nlohmann::json& json) -> Result {
     auto data_it = json.find("data");
     if (data_it == json.end() || !data_it->is_array() || data_it->empty()) {
         return Result::SUCCESS;
@@ -450,14 +449,14 @@ auto OkxFeedHandler::process_message(const std::string& message) -> Result {
 
     auto inst_it = arg_it->find("instId");
     if (inst_it == arg_it->end() || !inst_it->is_string() ||
-        inst_it->get<std::string>() != inst_id_) {
+        inst_it->get<std::string>() != instrument_id_) {
         return Result::SUCCESS;
     }
 
     auto action_it = json.find("action");
     if (action_it != json.end() && action_it->is_string() &&
         action_it->get<std::string>() == "snapshot") {
-        return process_ws_snapshot(json);
+        return process_snapshot(json);
     }
 
     auto data_it = json.find("data");
@@ -618,7 +617,6 @@ auto OkxFeedHandler::validate_checksum(const nlohmann::json& data) const -> bool
     apply_side(data.value("bids", nlohmann::json::array()), test_bids);
     apply_side(data.value("asks", nlohmann::json::array()), test_asks);
 
-    // Serialise: bid1:bid1_sz:ask1:ask1_sz:bid2:bid2_sz:ask2:ask2_sz:... (top 25 each side)
     std::ostringstream oss;
     auto bid_it = test_bids.begin();
     auto ask_it = test_asks.begin();
@@ -690,4 +688,4 @@ void OkxFeedHandler::trigger_resnapshot(const std::string& reason) {
     }
 }
 
-} // namespace trading
+}

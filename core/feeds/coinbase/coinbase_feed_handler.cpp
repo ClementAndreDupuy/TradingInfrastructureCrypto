@@ -155,7 +155,7 @@ static auto parse_rfc3339_ns(const std::string& value) -> int64_t {
     return static_cast<int64_t>(seconds) * 1'000'000'000LL + nanos;
 }
 
-static auto coinbase_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* /*user*/,
+static auto coinbase_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* unused,
                             void* input, size_t len) -> int {
     auto* session = static_cast<CoinbaseWsSession*>(lws_context_user(lws_get_context(wsi)));
     if (session == nullptr) {
@@ -223,7 +223,7 @@ static struct lws_protocols k_coinbase_protocols[] = {
     {nullptr, nullptr, 0, 0, 0, nullptr, 0},
 };
 
-} // namespace
+}
 
 CoinbaseFeedHandler::CoinbaseFeedHandler(const std::string& symbol, const std::string& ws_url,
                                          const std::string& api_url)
@@ -651,7 +651,7 @@ auto CoinbaseFeedHandler::process_snapshot(const nlohmann::json& json, uint64_t 
     return Result::SUCCESS;
 }
 
-auto CoinbaseFeedHandler::process_update(const nlohmann::json& json, uint64_t seq) -> Result {
+auto CoinbaseFeedHandler::process_delta(const nlohmann::json& json, uint64_t seq) -> Result {
     last_sequence_.store(seq, std::memory_order_release);
     const int64_t timestamp_local_ns = http::now_ns();
     const int64_t timestamp_exchange_ns = extract_exchange_timestamp_ns(json);
@@ -830,7 +830,7 @@ auto CoinbaseFeedHandler::process_message(const std::string& message) -> Result 
         return Result::ERROR_SEQUENCE_GAP;
     }
 
-    return process_update(json, seq);
+    return process_delta(json, seq);
 }
 
 auto CoinbaseFeedHandler::apply_buffered_deltas() -> Result {
@@ -864,7 +864,7 @@ auto CoinbaseFeedHandler::apply_buffered_deltas() -> Result {
             return Result::ERROR_SEQUENCE_GAP;
         }
 
-        if (process_update(json, seq) == Result::SUCCESS) {
+        if (process_delta(json, seq) == Result::SUCCESS) {
             ++applied;
         }
     }
@@ -892,4 +892,4 @@ void CoinbaseFeedHandler::trigger_resnapshot(const std::string& reason) {
     }
 }
 
-} // namespace trading
+}

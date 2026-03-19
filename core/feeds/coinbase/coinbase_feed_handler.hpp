@@ -91,11 +91,11 @@ class CoinbaseFeedHandler {
     void ws_event_loop();
     int64_t extract_exchange_timestamp_ns(const nlohmann::json& j) const;
     Result process_snapshot(const nlohmann::json& j, uint64_t seq);
-    Result process_update(const nlohmann::json& j, uint64_t seq);
+    Result process_delta(const nlohmann::json& j, uint64_t seq);
     Result apply_buffered_deltas();
     bool validate_delta_sequence(uint64_t seq) const;
     void trigger_resnapshot(const std::string& reason);
     void emit_ops_event();
 };
 
-} // namespace trading
+}

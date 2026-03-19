@@ -39,9 +39,8 @@ auto compute_snapshot_checksum(const std::vector<PriceLevel>& bids,
     return hash;
 }
 
-} // namespace
+}
 
-// ─── Per-connection session (lives on ws_event_loop stack) ──────────────────
 struct BinanceWsSession {
     BinanceFeedHandler* handler;
     struct lws* wsi{nullptr};
@@ -53,8 +52,7 @@ struct BinanceWsSession {
     size_t frag_len{0};
 };
 
-// ─── libwebsockets callback ──────────────────────────────────────────────────
-static auto binance_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* /*user*/,
+static auto binance_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* unused,
                            void* input, size_t len) -> int {
     auto* session = static_cast<BinanceWsSession*>(lws_context_user(lws_get_context(wsi)));
     if (session == nullptr) {
@@ -76,7 +74,6 @@ static auto binance_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, vo
             std::memcpy(session->frag_buf + session->frag_len, data, len);
             session->frag_len += len;
         } else {
-            // Message exceeds buffer: discard the entire fragmented message.
             session->frag_len = 0;
         }
         if (is_final && session->frag_len > 0 && (session->handler != nullptr)) {
@@ -110,7 +107,6 @@ static struct lws_protocols k_binance_protocols[] = {
     {"binance-depth", binance_lws_cb, 0, 131072, 0, nullptr, 0},
     {nullptr, nullptr, 0, 0, 0, nullptr, 0}};
 
-// ─── Constructor / destructor ────────────────────────────────────────────────
 BinanceFeedHandler::BinanceFeedHandler(const std::string& symbol, const std::string& api_key,
                                        const std::string& api_secret, const std::string& api_url,
                                        const std::string& ws_url)
@@ -164,7 +160,6 @@ auto BinanceFeedHandler::fetch_tick_size() -> Result {
     return Result::ERROR_BOOK_CORRUPTED;
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────────
 auto BinanceFeedHandler::start() -> Result {
     if (running_.load(std::memory_order_acquire)) {
         return Result::SUCCESS;
@@ -177,7 +172,6 @@ auto BinanceFeedHandler::start() -> Result {
 
     ws_thread_ = std::thread([this]() -> void { ws_event_loop(); });
 
-    // Block until STREAMING state (first sync complete) or failure (30s timeout).
     std::unique_lock<std::mutex> lock(ws_mutex_);
     bool ready = ws_cv_.wait_for(lock, std::chrono::seconds(30), [this]() -> bool {
         return state_.load(std::memory_order_acquire) == State::STREAMING ||
@@ -220,19 +214,16 @@ void BinanceFeedHandler::stop() {
     }
 }
 
-// ─── WebSocket event loop (runs in ws_thread_) ────────────────────────────────
 void BinanceFeedHandler::ws_event_loop() {
     constexpr uint32_t MAX_DELAY_MS = 30000;
     uint32_t delay_ms = 100;
 
-    // Build stream path  /ws/<symbol_lower>@depth@100ms
     std::string sym_lower = venue_symbols_.binance;
     for (auto& character : sym_lower) {
         character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
     }
     const std::string ws_path = "/ws/" + sym_lower + "@depth@100ms";
 
-    // Parse host and port from ws_url_: wss://host:port/...
     std::string ws_host = "stream.binance.com";
     int ws_port = 9443;
     {
@@ -292,7 +283,6 @@ void BinanceFeedHandler::ws_event_loop() {
             continue;
         }
 
-        // Wait for ESTABLISHED or error.
         while (running_.load() && !session.established && !session.closed) {
             lws_service(ctx, 50);
         }
@@ -311,8 +301,7 @@ void BinanceFeedHandler::ws_event_loop() {
         state_.store(State::BUFFERING, std::memory_order_release);
         delta_buffer_.clear();
 
-        // Fetch REST snapshot (blocking; WebSocket buffers deltas meanwhile).
-        if (fetch_snapshot() != Result::SUCCESS) {
+        if (process_snapshot() != Result::SUCCESS) {
             lws_context_destroy(ctx);
             lws_ctx_.store(nullptr, std::memory_order_release);
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
@@ -323,12 +312,10 @@ void BinanceFeedHandler::ws_event_loop() {
         state_.store(State::SYNCHRONIZED, std::memory_order_release);
         apply_buffered_deltas();
         state_.store(State::STREAMING, std::memory_order_release);
-        delay_ms = 100; // reset backoff on successful sync
+        delay_ms = 100;
 
-        // Unblock start().
         ws_cv_.notify_all();
 
-        // ── Stream phase ──────────────────────────────────────────────────
         while (running_.load() && !session.closed) {
             lws_service(ctx, 1000);
 
@@ -355,11 +342,7 @@ void BinanceFeedHandler::ws_event_loop() {
     }
 }
 
-// ─── REST snapshot ────────────────────────────────────────────────────────────
-// Rate limit: Binance allows 1200 weight/min. Snapshot at limit=1000 costs
-// weight 10. Enforce a minimum 1s cooldown between calls so reconnect storms
-// (e.g. rapid disconnect/reconnect) don't ban the IP.
-auto BinanceFeedHandler::fetch_snapshot() -> Result {
+auto BinanceFeedHandler::process_snapshot() -> Result {
     using clock = std::chrono::steady_clock;
     auto now = clock::now();
     if (last_snapshot_time_ != clock::time_point{}) {
@@ -449,7 +432,7 @@ auto BinanceFeedHandler::fetch_snapshot() -> Result {
         return Result::ERROR_BOOK_CORRUPTED;
     }
 
-    last_update_id_.store(snap.sequence, std::memory_order_release);
+    last_sequence_.store(snap.sequence, std::memory_order_release);
     if (snapshot_callback_) {
         snapshot_callback_(snap);
     }
@@ -459,7 +442,6 @@ auto BinanceFeedHandler::fetch_snapshot() -> Result {
     return Result::SUCCESS;
 }
 
-// ─── Message dispatch ─────────────────────────────────────────────────────────
 auto BinanceFeedHandler::process_message(const std::string& message) -> Result {
     auto json = nlohmann::json::parse(message, nullptr, false);
     if (json.is_discarded()) {
@@ -492,7 +474,7 @@ auto BinanceFeedHandler::process_message(const std::string& message) -> Result {
     }
 
     if (!validate_delta_sequence(first_update_id, last_update_id)) {
-        LOG_ERROR("Sequence gap", "expected", last_update_id_.load() + 1, "U", first_update_id);
+        LOG_ERROR("Sequence gap", "expected", last_sequence_.load() + 1, "U", first_update_id);
         trigger_resnapshot("Sequence gap");
         return Result::ERROR_SEQUENCE_GAP;
     }
@@ -500,9 +482,8 @@ auto BinanceFeedHandler::process_message(const std::string& message) -> Result {
     return process_delta(json, last_update_id);
 }
 
-// ─── Delta processing ─────────────────────────────────────────────────────────
 auto BinanceFeedHandler::process_delta(const nlohmann::json& json, uint64_t seq) -> Result {
-    last_update_id_.store(seq, std::memory_order_release);
+    last_sequence_.store(seq, std::memory_order_release);
 
     int64_t timestamp_ns = http::now_ns();
 
@@ -531,7 +512,6 @@ auto BinanceFeedHandler::process_delta(const nlohmann::json& json, uint64_t seq)
         }
     };
 
-    // Binance depthUpdate: bids under "b", asks under "a".
     emit_levels(json.value("b", nlohmann::json::array()), Side::BID);
     emit_levels(json.value("a", nlohmann::json::array()), Side::ASK);
 
@@ -539,7 +519,6 @@ auto BinanceFeedHandler::process_delta(const nlohmann::json& json, uint64_t seq)
     return Result::SUCCESS;
 }
 
-// ─── Buffered-delta replay ────────────────────────────────────────────────────
 auto BinanceFeedHandler::apply_buffered_deltas() -> Result {
     size_t applied = 0, skipped = 0;
 
@@ -557,8 +536,7 @@ auto BinanceFeedHandler::apply_buffered_deltas() -> Result {
 
         uint64_t first_update_id = first_update_it->get<uint64_t>();
         uint64_t last_update_id = last_update_it->get<uint64_t>();
-        // Reload last_id each iteration so it reflects updates made by process_delta.
-        uint64_t last_id = last_update_id_.load(std::memory_order_acquire);
+        uint64_t last_id = last_sequence_.load(std::memory_order_acquire);
 
         if (first_update_id <= last_id + 1 && last_id + 1 <= last_update_id) {
             if (process_delta(json, last_update_id) == Result::SUCCESS) {
@@ -578,10 +556,9 @@ auto BinanceFeedHandler::apply_buffered_deltas() -> Result {
     return Result::SUCCESS;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 auto BinanceFeedHandler::validate_delta_sequence(uint64_t first_update_id,
                                                  uint64_t last_update_id) -> bool {
-    uint64_t expected = last_update_id_.load(std::memory_order_acquire) + 1;
+    uint64_t expected = last_sequence_.load(std::memory_order_acquire) + 1;
     return first_update_id <= expected && expected <= last_update_id;
 }
 
@@ -594,4 +571,4 @@ void BinanceFeedHandler::trigger_resnapshot(const std::string& reason) {
     state_.store(State::BUFFERING, std::memory_order_release);
 }
 
-} // namespace trading
+}
