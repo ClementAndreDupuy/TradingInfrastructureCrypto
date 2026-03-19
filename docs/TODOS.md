@@ -69,6 +69,40 @@ Last updated: 2026-03-19 — shadow session analysis (BTC & SOL).
     - [x] SPSC fill-event queue introduced for live mode, OR `std::mutex` guard added around all fill/slot mutations with a comment explaining the latency trade-off
     - [x] Unit or integration test verifying no data race under concurrent `on_fill` + `submit` + `active_order_count` (run with TSAN)
 
+- [ ] **H4** `core/feeds/kraken/kraken_feed_handler.cpp` — **Kraken book handler is out of sync with current WebSocket v2 protocol**
+  The current Kraken handler subscribes to the v2 `book` channel but bootstraps from
+  REST `/0/public/Depth`, hard-requires a top-level `seq`, and never validates Kraken's
+  documented CRC32 checksum. Kraken's current v2 book docs describe a WebSocket snapshot /
+  update model with checksum-driven integrity and depth-truncation rules. As implemented,
+  the handler risks rejecting valid messages, missing silent book corruption, and drifting
+  from the subscribed depth after incremental updates.
+  Fix: align the handler with Kraken's current WebSocket v2 `book` specification. Consume
+  the exchange-delivered WebSocket snapshot, validate the documented checksum on updates,
+  and maintain local depth exactly to the subscribed level.
+  - acceptance criteria:
+    - [ ] Initial synchronization uses the Kraken WebSocket v2 `book` snapshot path instead of REST `/0/public/Depth`, and a successful start no longer depends on a REST bootstrap
+    - [ ] Message parsing is updated to the currently documented Kraken v2 book envelope; any required continuity fields are taken only from fields that are present in the current docs and verified by fixture coverage
+    - [ ] CRC32 checksum validation is implemented exactly as Kraken documents for the v2 book feed, with unit tests covering a passing fixture and a failing fixture
+    - [ ] Local Kraken book state is truncated to the subscribed depth after each update so out-of-scope levels do not accumulate indefinitely
+    - [ ] The normalized output preserves exchange timestamps alongside local receipt timestamps for Kraken snapshots / deltas, or the missing field is explicitly documented and tested as unsupported
+
+- [ ] **H5** `core/feeds/coinbase/coinbase_feed_handler.cpp` — **Coinbase Advanced Trade subscription likely missing required JWT auth**
+  The current Coinbase handler sends a bare `subscribe` payload for `level2` / `l2_data`
+  processing, but the current Coinbase Advanced Trade WebSocket docs require JWT-backed
+  subscriptions for channels other than heartbeats. If enforced, this can leave the
+  handler unable to subscribe reliably in production despite connecting successfully to the
+  socket. The handler also does not subscribe to Coinbase heartbeats, reducing liveness
+  visibility when the book is quiet.
+  Fix: update the Coinbase market-data subscription flow to match current Advanced Trade
+  docs, including JWT generation / attachment where required and heartbeat coverage for
+  liveness monitoring.
+  - acceptance criteria:
+    - [ ] Coinbase `subscribe` messages include the currently documented authentication fields for `level2` / `l2_data` subscriptions, with secrets sourced from the existing config / env path and never hardcoded
+    - [ ] A documented integration test or replay fixture proves the handler can receive an initial `l2_data` snapshot and at least one incremental update using the current subscription contract
+    - [ ] Heartbeat subscription / handling is added if still recommended by Coinbase docs, and stale-feed detection uses the documented heartbeat cadence rather than only transport-level pings
+    - [ ] Exchange event timestamps from Coinbase market-data messages are propagated into the normalized feed events, or the omission is explicitly documented as unsupported
+    - [ ] Feed-start logging distinguishes auth rejection, subscription rejection, timeout waiting for snapshot, and sequence-gap resync so operators can identify Coinbase-specific failures quickly
+
 ---
 
 ### MEDIUM
@@ -118,6 +152,36 @@ Last updated: 2026-03-19 — shadow session analysis (BTC & SOL).
     - [ ] `atomic_add` helper extended with a bounded-CAS variant (`atomic_add_bounded`) that rejects atomically if the post-add value would exceed the cap
     - [ ] `commit_order` refactored to use `atomic_add_bounded` on all four counters (gross notional, net notional, venue, symbol) with no separate `check_order` pre-pass
     - [ ] Unit test verifying that concurrent `commit_order` calls never cause any counter to exceed its configured cap (run with TSAN and/or explicit concurrent threads)
+
+- [ ] **M4** `core/feeds/okx/okx_feed_handler.cpp` — **OKX transport assumptions may drift from documented heartbeat / reset behavior**
+  The OKX handler validates `seqId`, `prevSeqId`, and checksum correctly, but it currently
+  relies on WebSocket ping control frames for keepalive and treats sequence resets as a
+  generic resnapshot condition. OKX's current docs describe an application-level `ping` /
+  `pong` heartbeat convention and explicitly note that sequence values can reset during
+  maintenance. The current behavior is safe but may cause unnecessary reconnects or idle
+  disconnects under venue-specific edge cases.
+  Fix: align heartbeat and reset handling with the current OKX v5 docs while preserving
+  checksum-first correctness.
+  - acceptance criteria:
+    - [ ] Heartbeat behavior is updated to the currently documented OKX mechanism (`ping` / `pong` text flow if still required), with a test or fixture proving the connection stays alive through an idle interval
+    - [ ] Sequence-reset handling distinguishes a documented OKX maintenance reset from a true gap, and the chosen behavior (continue vs forced resync) is documented in code comments and tested
+    - [ ] A replay / fixture test covers checksum validation across a snapshot plus multiple incremental updates, including one reset-edge-case message if available
+    - [ ] OKX exchange timestamps are exposed in normalized events, or the omission is explicitly documented as unsupported
+
+- [ ] **M5** `core/feeds/binance/binance_feed_handler.cpp` — **Binance local-book sync lacks explicit full-depth / exchange-timestamp coverage**
+  The Binance handler follows the documented `U` / `u` diff-depth sequencing model, but it
+  bootstraps with `limit=1000` snapshots and only stamps normalized deltas with local
+  receipt time. That is likely sufficient for trading, yet it leaves two gaps versus the
+  current venue docs and the repository feed contract: outer-book depth beyond the chosen
+  snapshot cap is not represented after sync, and exchange event time is not propagated
+  into normalized events.
+  Fix: make the intended Binance depth-fidelity target explicit and surface exchange event
+  timestamps through the normalized feed layer.
+  - acceptance criteria:
+    - [ ] The intended Binance depth target is documented in code / docs (for example, 1000 levels by design vs a larger bootstrap depth), with rationale tied to latency / memory trade-offs
+    - [ ] If deeper bootstrap depth is required, snapshot sync is updated to the chosen documented limit and replay tests confirm buffered deltas still apply correctly across resync
+    - [ ] Exchange event timestamps from Binance depth updates are preserved in normalized events alongside local receipt timestamps
+    - [ ] A replay / integration test demonstrates correct recovery from a forced Binance sequence gap using the updated bootstrap policy
 
 ---
 
