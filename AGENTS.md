@@ -132,6 +132,7 @@ Use this as a lightweight operating checklist for future agent sessions.
 
 ### Execution connector remediation (2026-03-19)
 - **`core/execution/binance/binance_connector.cpp`** — Binance Spot signed requests now use query-string `timestamp`/`signature`, order placement supplies venue-correct mandatory fields plus `newClientOrderId`, order query/cancel/fill reconciliation are symbol-scoped, and replace flows use `POST /api/v3/order/cancelReplace` with explicit rejection of unsupported stop-limit semantics.
+- **`core/execution/kraken/kraken_connector.cpp`** + **`core/execution/live_connector_base.hpp`** — Kraken private REST calls now sign the form-encoded payload with the documented nonce + URI-path contract using the base64-decoded secret, AddOrder includes limit price and `cl_ord_id`, replace flows use `POST /0/private/AmendOrder`, and `cancel_all()` now targets `POST /0/private/CancelAll` instead of the dead-man-switch endpoint.
 
 ### Shadow session (2026-03-18)
 - **`research/neural_alpha/features.py`** — spread normalisation divided by zero when bid == ask. Guard changed to `raw_spread > 0` instead of `mid > 0`.
