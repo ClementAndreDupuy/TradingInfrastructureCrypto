@@ -114,11 +114,31 @@ def pretrain_spatial(
     model.spatial_enc.train()
     temperature = 0.07
 
+    # Guard: if LOB features have near-zero variance the NT-Xent loss can't learn
+    # (all snapshots look identical → loss stays at log(2B−1) every epoch).
+    # We detect this once on the first batch and skip pretraining entirely.
+    _first_batch = next(iter(loader), None)
+    if _first_batch is not None:
+        _lob_check = _first_batch["lob"].float()
+        _lob_std = float(_lob_check.std())
+        if _lob_std < 1e-5:
+            print(
+                f"  [pretrain] skipped — LOB features have near-zero variance "
+                f"(std={_lob_std:.2e}); contrastive pre-training requires diverse LOB snapshots."
+            )
+            return
+
     for epoch in range(epochs):
         total_loss = 0.0
         n_batches = 0
         for batch in loader:
             lob = batch["lob"].to(device)  # (B, T, L, 4)
+
+            # Per-feature standardisation across (B, T, L) so that absolute price
+            # magnitude (e.g. BTC at $69,700 with $1 tick spacing) doesn't collapse
+            # all embeddings to a single point and defeat the contrastive objective.
+            lob_std = lob.std(dim=(0, 1, 2), keepdim=True).clamp(min=1e-6)
+            lob = lob / lob_std
 
             view1 = _augment_lob(lob, noise_std)
             view2 = _augment_lob(lob, noise_std)
