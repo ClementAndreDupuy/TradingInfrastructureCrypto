@@ -13,6 +13,7 @@
 #include <functional>
 #include <cstring>
 #include <string>
+#include <array>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -21,10 +22,13 @@
 #define TRT_HAS_OPENSSL 0
 #elif defined(__has_include)
 #if __has_include(<openssl/hmac.h>) && __has_include(<openssl/evp.h>)
+#include <openssl/bn.h>
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
+#include <openssl/ecdsa.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
+#include <openssl/pem.h>
 #include <openssl/sha.h>
 #define TRT_HAS_OPENSSL 1
 #else
@@ -295,16 +299,76 @@ class LiveConnectorBase : public ExchangeConnector {
         }
         case Exchange::COINBASE: {
             headers.push_back("Content-Type: application/json");
-            const std::string prehash = ts_s + method + request_path + payload;
-            headers.push_back("CB-ACCESS-KEY: " + api_key_);
-            headers.push_back("CB-ACCESS-TIMESTAMP: " + ts_s);
-            headers.push_back("CB-ACCESS-SIGN: " + hmac_sha256_base64(prehash));
+            headers.push_back("Accept: application/json");
+            const std::string jwt = coinbase_bearer_token(method, request_path);
+            if (!jwt.empty()) {
+                headers.push_back("Authorization: Bearer " + jwt);
+            }
             break;
         }
         default:
             break;
         }
         return headers;
+    }
+
+
+    std::string coinbase_bearer_token(const char* method, const std::string& request_path) const {
+#if TRT_HAS_OPENSSL
+        if (api_key_.empty() || api_secret_.empty())
+            return std::string();
+
+        const std::string host = extract_host(api_url_);
+        if (host.empty())
+            return std::string();
+
+        const int64_t now_s = http::now_ns() / 1000000000LL;
+        const std::string header = R"({"alg":"ES256","kid":"")" + json_escape(api_key_) +
+                                   R"(","typ":"JWT"})";
+        const std::string payload =
+            R"({"sub":")" + json_escape(api_key_) + R"(","iss":"cdp","nbf":)" +
+            std::to_string(now_s) + R"(,"exp":)" + std::to_string(now_s + 120) +
+            R"(,"uri":")" + json_escape(std::string(method) + " " + host + request_path) +
+            R"("})";
+        const std::string signing_input =
+            base64url_encode(header) + "." + base64url_encode(payload);
+
+        BIO* bio = BIO_new_mem_buf(api_secret_.data(), static_cast<int>(api_secret_.size()));
+        if (bio == nullptr)
+            return std::string();
+        EVP_PKEY* key = PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
+        BIO_free(bio);
+        if (key == nullptr)
+            return std::string();
+
+        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+        if (ctx == nullptr) {
+            EVP_PKEY_free(key);
+            return std::string();
+        }
+
+        std::string jwt;
+        size_t der_len = 0;
+        if (EVP_DigestSignInit(ctx, nullptr, EVP_sha256(), nullptr, key) == 1 &&
+            EVP_DigestSignUpdate(ctx, signing_input.data(), signing_input.size()) == 1 &&
+            EVP_DigestSignFinal(ctx, nullptr, &der_len) == 1) {
+            std::vector<unsigned char> der(der_len);
+            if (EVP_DigestSignFinal(ctx, der.data(), &der_len) == 1) {
+                der.resize(der_len);
+                const std::string signature = ecdsa_der_to_jose(der.data(), der.size());
+                if (!signature.empty())
+                    jwt = signing_input + "." + signature;
+            }
+        }
+
+        EVP_MD_CTX_free(ctx);
+        EVP_PKEY_free(key);
+        return jwt;
+#else
+        (void)method;
+        (void)request_path;
+        return std::string();
+#endif
     }
 
     std::vector<std::string> kraken_private_headers(const std::string& request_path,
@@ -403,6 +467,73 @@ class LiveConnectorBase : public ExchangeConnector {
     }
 
     static std::string encode_hex(const HmacDigest& d) { return encode_hex(d.data, d.len); }
+
+
+    static std::string extract_host(const std::string& url) {
+        const size_t scheme = url.find("://");
+        const size_t host_start = scheme == std::string::npos ? 0 : scheme + 3;
+        size_t host_end = url.find('/', host_start);
+        if (host_end == std::string::npos)
+            host_end = url.size();
+        return url.substr(host_start, host_end - host_start);
+    }
+
+    static std::string json_escape(const std::string& input) {
+        std::string out;
+        out.reserve(input.size());
+        for (char ch : input) {
+            if (ch == '\\' || ch == '"')
+                out.push_back('\\');
+            out.push_back(ch);
+        }
+        return out;
+    }
+
+    static std::string base64url_encode(const std::string& data) {
+        return base64url_encode(reinterpret_cast<const unsigned char*>(data.data()), data.size());
+    }
+
+    static std::string base64url_encode(const unsigned char* data, size_t len) {
+        static constexpr char k_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        std::string out;
+        out.reserve(((len + 2U) / 3U) * 4U);
+        for (size_t i = 0; i < len; i += 3U) {
+            const unsigned int octet_a = data[i];
+            const unsigned int octet_b = (i + 1U < len) ? data[i + 1U] : 0U;
+            const unsigned int octet_c = (i + 2U < len) ? data[i + 2U] : 0U;
+            const unsigned int triple = (octet_a << 16U) | (octet_b << 8U) | octet_c;
+            out.push_back(k_chars[(triple >> 18U) & 0x3FU]);
+            out.push_back(k_chars[(triple >> 12U) & 0x3FU]);
+            if (i + 1U < len)
+                out.push_back(k_chars[(triple >> 6U) & 0x3FU]);
+            if (i + 2U < len)
+                out.push_back(k_chars[triple & 0x3FU]);
+        }
+        return out;
+    }
+
+#if TRT_HAS_OPENSSL
+    static std::string ecdsa_der_to_jose(const unsigned char* der, size_t der_len) {
+        const unsigned char* cursor = der;
+        ECDSA_SIG* sig = d2i_ECDSA_SIG(nullptr, &cursor, static_cast<long>(der_len));
+        if (sig == nullptr)
+            return std::string();
+        const BIGNUM* r = nullptr;
+        const BIGNUM* s = nullptr;
+        ECDSA_SIG_get0(sig, &r, &s);
+        if (r == nullptr || s == nullptr) {
+            ECDSA_SIG_free(sig);
+            return std::string();
+        }
+        std::array<unsigned char, 64> raw = {};
+        if (BN_bn2binpad(r, raw.data(), 32) != 32 || BN_bn2binpad(s, raw.data() + 32, 32) != 32) {
+            ECDSA_SIG_free(sig);
+            return std::string();
+        }
+        ECDSA_SIG_free(sig);
+        return base64url_encode(raw.data(), raw.size());
+    }
+#endif
 
     static std::string extract_kraken_nonce(const std::string& encoded_payload) {
         const std::string key = "nonce=";

@@ -114,9 +114,14 @@ TEST(ConnectorContractTest, OkxStateMachineDeterministic) {
 }
 
 TEST(ConnectorContractTest, CoinbaseStateMachineDeterministic) {
-    CoinbaseConnector c("", "", "https://coinbase.test");
+    CoinbaseConnector c("organizations/test/apiKeys/test-key", R"(-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIChMXeSk0sJJ7hQwUju2z8uVg7Vu0vCEe6F7jkFBJ7M0oAoGCCqGSM49
+AwEHoUQDQgAEz5P6ZfbP2sYLVylf9g10wW9V7E+b55mzYf6z2NaE9mCVx38DSHLV
+BkP4Jrped1IovnHgwlHGawEq+y3OCAXo+A==
+-----END EC PRIVATE KEY-----
+)", "https://coinbase.test");
     run_state_machine_contract(c, Exchange::COINBASE, "BTC-USD",
-                               R"({"success_response":{"order_id":"cb-101"}})",
+                               R"({"success":true,"success_response":{"order_id":"cb-101"}})",
                                R"({"results":[{"success":true}]})");
 }
 

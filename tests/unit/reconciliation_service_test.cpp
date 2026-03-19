@@ -187,10 +187,10 @@ http::HttpResponse coinbase_snapshot_response(const char* method, const std::str
         return {
             200,
             R"({"accounts":[{"currency":"USD","available_balance":{"value":1000.0},"hold":{"value":12.0}}]})"};
-    if (contains(url, "/positions"))
+    if (contains(url, "/cfm/positions"))
         return {
             200,
-            R"({"positions":[{"product_id":"BTC-USD","size":0.6,"average_entry_price":98.0}]})"};
+            R"({"positions":[{"product_id":"BTC-USD","number_of_contracts":2.0,"avg_entry_price":98.0}]})"};
     if (contains(url, "historical/fills"))
         return {
             200,

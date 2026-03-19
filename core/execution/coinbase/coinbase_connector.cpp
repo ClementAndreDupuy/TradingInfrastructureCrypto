@@ -13,12 +13,42 @@
 namespace trading {
 namespace {
 
+auto decimal_string(double value) -> std::string {
+    std::string out = std::to_string(value);
+    while (!out.empty() && out.back() == '0') {
+        out.pop_back();
+    }
+    if (!out.empty() && out.back() == '.') {
+        out.pop_back();
+    }
+    return out.empty() ? std::string("0") : out;
+}
+
 auto order_payload(const Order& order) -> std::string {
     const std::string product_id = SymbolMapper::map_for_exchange(Exchange::COINBASE, order.symbol);
-    return std::string(R"({"product_id":")") + product_id + R"(","side":")" +
-           (order.side == Side::BID ? "BUY" : "SELL") + R"(","order_type":")" +
-           (order.type == OrderType::MARKET ? "MARKET" : "LIMIT") + R"(","size":")" +
-           std::to_string(order.quantity) + R"("})";
+    std::string config;
+    if (order.type == OrderType::MARKET) {
+        config = std::string(R"("market_market_ioc":{"base_size":")") +
+                 decimal_string(order.quantity) + R"("})";
+    } else if (order.type == OrderType::LIMIT) {
+        if (order.tif == TimeInForce::IOC) {
+            config = std::string(R"("sor_limit_ioc":{"base_size":")") +
+                     decimal_string(order.quantity) + R"(","limit_price":")" +
+                     decimal_string(order.price) + R"("})";
+        } else if (order.tif == TimeInForce::FOK) {
+            config = std::string(R"("limit_limit_fok":{"base_size":")") +
+                     decimal_string(order.quantity) + R"(","limit_price":")" +
+                     decimal_string(order.price) + R"("})";
+        } else {
+            config = std::string(R"("limit_limit_gtc":{"base_size":")") +
+                     decimal_string(order.quantity) + R"(","limit_price":")" +
+                     decimal_string(order.price) + R"(","post_only":false})";
+        }
+    }
+    return std::string(R"({"client_order_id":")") + std::to_string(order.client_order_id) +
+           R"(","product_id":")" + product_id + R"(","side":")" +
+           (order.side == Side::BID ? "BUY" : "SELL") + R"(","order_configuration":{)" +
+           config + "}}";
 }
 
 auto parse_coinbase_order_id(const std::string& body, std::string& venue_order_id) -> bool {
@@ -26,7 +56,13 @@ auto parse_coinbase_order_id(const std::string& body, std::string& venue_order_i
     if (json.is_discarded()) {
         return false;
     }
-    venue_order_id = json["success_response"].value("order_id", std::string(""));
+    if (json.value("success", false)) {
+        venue_order_id = json["success_response"].value("order_id", std::string(""));
+    } else if (json.find("success_response") != json.end()) {
+        venue_order_id = json["success_response"].value("order_id", std::string(""));
+    } else if (json.find("order_id") != json.end()) {
+        venue_order_id = json.value("order_id", std::string(""));
+    }
     return !venue_order_id.empty();
 }
 
@@ -93,7 +129,17 @@ auto append_coinbase_open_orders(const std::string& body,
         order.side = item.value("side", std::string("BUY")) == "SELL" ? Side::ASK : Side::BID;
         order.quantity = item.value("base_size", 0.0);
         order.filled_quantity = item.value("filled_size", 0.0);
-        order.price = item.value("limit_price", 0.0);
+        if (item.find("order_configuration") != item.end() && item["order_configuration"].is_object()) {
+            const auto& cfg = item["order_configuration"];
+            if (cfg.find("limit_limit_gtc") != cfg.end())
+                order.price = cfg["limit_limit_gtc"].value("limit_price", 0.0);
+            else if (cfg.find("sor_limit_ioc") != cfg.end())
+                order.price = cfg["sor_limit_ioc"].value("limit_price", 0.0);
+            else if (cfg.find("limit_limit_fok") != cfg.end())
+                order.price = cfg["limit_limit_fok"].value("limit_price", 0.0);
+        }
+        if (order.price <= 0.0)
+            order.price = item.value("limit_price", 0.0);
         order.state = parse_coinbase_status(item.value("status", std::string("")));
         if (!snapshot.open_orders.push(order)) {
             return ConnectorResult::ERROR_UNKNOWN;
@@ -137,8 +183,8 @@ auto append_coinbase_positions(const std::string& body,
         ReconciledPosition position;
         copy_cstr(position.symbol, sizeof(position.symbol),
                   item.value("product_id", std::string("")));
-        position.quantity = item.value("size", 0.0);
-        position.avg_entry_price = item.value("average_entry_price", 0.0);
+        position.quantity = item.value("size", item.value("number_of_contracts", 0.0));
+        position.avg_entry_price = item.value("average_entry_price", item.value("avg_entry_price", 0.0));
         if (!snapshot.positions.push(position)) {
             return ConnectorResult::ERROR_UNKNOWN;
         }
@@ -183,6 +229,9 @@ auto append_coinbase_fills(const std::string& body,
 
 auto CoinbaseConnector::submit_to_venue(const Order& order, const std::string& idempotency_key,
                                         std::string& venue_order_id) -> ConnectorResult {
+    if (order.type != OrderType::LIMIT && order.type != OrderType::MARKET) {
+        return ConnectorResult::ERROR_INVALID_ORDER;
+    }
     const std::string payload = order_payload(order);
     const auto headers = auth_headers("POST", "/api/v3/brokerage/orders", payload, idempotency_key);
     const auto resp = http::post(api_url() + "/api/v3/brokerage/orders", payload, headers);
@@ -210,12 +259,15 @@ auto CoinbaseConnector::cancel_at_venue(const VenueOrderEntry& entry) -> Connect
 
 auto CoinbaseConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& replacement,
                                          std::string& new_venue_order_id) -> ConnectorResult {
-    const std::string payload = std::string(R"({"order_id":")") + entry.venue_order_id +
-                                R"(","size":")" + std::to_string(replacement.quantity) +
-                                R"(","limit_price":")" + std::to_string(replacement.price) +
-                                R"("})";
-    const auto resp = http::post(api_url() + "/api/v3/brokerage/orders/edit", payload,
-                                 auth_headers("POST", "/api/v3/brokerage/orders/edit", payload));
+    if (replacement.type != OrderType::LIMIT) {
+        return ConnectorResult::ERROR_INVALID_ORDER;
+    }
+    const std::string payload_body = std::string(R"({"order_id":")") + entry.venue_order_id +
+                                     R"(","size":")" + decimal_string(replacement.quantity) +
+                                     R"(","price":")" + decimal_string(replacement.price) +
+                                     R"("})";
+    const auto resp = http::post(api_url() + "/api/v3/brokerage/orders/edit", payload_body,
+                                 auth_headers("POST", "/api/v3/brokerage/orders/edit", payload_body));
     if (!resp.ok()) {
         return classify_http_error(resp.status);
     }
@@ -237,19 +289,8 @@ auto CoinbaseConnector::query_at_venue(const VenueOrderEntry& entry,
 }
 
 auto CoinbaseConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResult {
-    const std::string product_id =
-        (symbol != nullptr && symbol[0] != '\0')
-            ? SymbolMapper::map_for_exchange(Exchange::COINBASE, symbol)
-            : std::string();
-    const std::string payload = std::string(R"({"product_id":")") + product_id + R"("})";
-    const auto resp =
-        http::post(api_url() + "/api/v3/brokerage/orders/batch_cancel", payload,
-                   auth_headers("POST", "/api/v3/brokerage/orders/batch_cancel", payload));
-    if (!resp.ok()) {
-        return classify_http_error(resp.status);
-    }
-    return parse_coinbase_cancel_ack(resp.body) ? ConnectorResult::OK
-                                                : ConnectorResult::ERROR_UNKNOWN;
+    (void)symbol;
+    return ConnectorResult::ERROR_INVALID_ORDER;
 }
 
 } // namespace trading
@@ -282,14 +323,16 @@ auto CoinbaseConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& sn
         return result;
     }
 
-    const auto pos_resp = http::get(api_url() + "/api/v3/brokerage/positions",
-                                    auth_headers("GET", "/api/v3/brokerage/positions", ""));
-    if (!pos_resp.ok()) {
-        return classify_http_error(pos_resp.status);
-    }
-    result = append_coinbase_positions(pos_resp.body, snapshot);
-    if (result != ConnectorResult::OK) {
-        return result;
+    const auto pos_resp = http::get(api_url() + "/api/v3/brokerage/cfm/positions",
+                                    auth_headers("GET", "/api/v3/brokerage/cfm/positions", ""));
+    if (pos_resp.status != 404 && pos_resp.status != 405 && pos_resp.status != 501) {
+        if (!pos_resp.ok()) {
+            return classify_http_error(pos_resp.status);
+        }
+        result = append_coinbase_positions(pos_resp.body, snapshot);
+        if (result != ConnectorResult::OK) {
+            return result;
+        }
     }
 
     const auto fills_resp =
