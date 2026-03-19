@@ -66,6 +66,7 @@ from research.regime import (
 from .pipeline import (
     _fetch_binance_l5,
     _fetch_coinbase_l5,
+    _fetch_kraken_l5,
     _fetch_okx_l5,
     collect_from_core_bridge,
 )
@@ -598,10 +599,9 @@ class NeuralAlphaShadowSession:
             return bridge_ticks
 
         ticks: list[dict] = []
-        # Kraken data comes from the C++ core bridge only — REST uses the futures
-        # endpoint (PI_XBTUSD) which is unreliable and wrong for spot/perp sessions.
         _fetchers = {
             "BINANCE": _fetch_binance_l5,
+            "KRAKEN": _fetch_kraken_l5,
             "OKX": _fetch_okx_l5,
             "COINBASE": _fetch_coinbase_l5,
         }

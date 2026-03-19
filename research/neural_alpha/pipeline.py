@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 # ── Data fetcher ──────────────────────────────────────────────────────────────
 
 BINANCE_DEPTH_URL = "https://fapi.binance.com/fapi/v1/depth"
-KRAKEN_DEPTH_URL = "https://futures.kraken.com/derivatives/api/v3/orderbook"
+KRAKEN_DEPTH_URL = "https://api.kraken.com/0/public/Depth"
 OKX_DEPTH_URL = "https://www.okx.com/api/v5/market/books"
 COINBASE_DEPTH_URL = "https://api.exchange.coinbase.com/products/{product_id}/book"
 N_LEVELS = 5
@@ -106,14 +106,14 @@ def _symbol_family(symbol: str) -> str:
 
 
 def _kraken_symbol(symbol: str) -> str:
-    # Kraken Futures REST uses PI_{BASE}{QUOTE} format with XBT for BTC and USD not USDT.
+    # Kraken spot REST uses XBTUSD / SOLUSD format (XBT for BTC, USD not USDT).
     if _tc is not None:
         vs = _tc.SymbolMapper.map_all(symbol)
         base, _, quote = vs.kraken_rest.partition("/")
         if base == "BTC":
             base = "XBT"
         quote = quote.replace("USDT", "USD")
-        return f"PI_{base}{quote}"
+        return f"{base}{quote}"
     clean = symbol.replace("-", "").upper()
     if clean.endswith("USDT"):
         base = clean[:-4]
@@ -123,7 +123,7 @@ def _kraken_symbol(symbol: str) -> str:
         base = clean
     if base == "BTC":
         base = "XBT"
-    return f"PI_{base}USD"
+    return f"{base}USD"
 
 def _fetch_binance_l5(symbol: str = "BTCUSDT") -> dict | None:
     try:
@@ -141,30 +141,34 @@ def _fetch_binance_l5(symbol: str = "BTCUSDT") -> dict | None:
 
 def _fetch_kraken_l5(symbol: str = "BTCUSDT") -> dict | None:
     try:
+        pair = _kraken_symbol(symbol)
         r = requests.get(
             KRAKEN_DEPTH_URL,
-            params={"symbol": _kraken_symbol(symbol)},
+            params={"pair": pair, "count": N_LEVELS},
             timeout=5,
         )
         r.raise_for_status()
         d = r.json()
-        bids = sorted(d["orderBook"]["bids"], key=lambda x: -float(x[0]))[:N_LEVELS]
-        asks = sorted(d["orderBook"]["asks"], key=lambda x: float(x[0]))[:N_LEVELS]
+        # Spot response: {"result": {"XXBTZUSD": {"bids": [[px, sz, ts], ...], ...}}}
+        # The inner key may differ from the requested pair name; take the first value.
+        book = next(iter(d["result"].values()))
+        bids = [[float(e[0]), float(e[1])] for e in book["bids"][:N_LEVELS]]
+        asks = [[float(e[0]), float(e[1])] for e in book["asks"][:N_LEVELS]]
         if not bids or not asks:
             return None
         row: dict = {
             "timestamp_ns": time.time_ns(),
             "exchange": "KRAKEN",
-            "symbol": _kraken_symbol(symbol),
-            "best_bid": float(bids[0][0]),
-            "best_ask": float(asks[0][0]),
+            "symbol": pair,
+            "best_bid": bids[0][0],
+            "best_ask": asks[0][0],
         }
         for i, (bp, bs) in enumerate(bids, 1):
-            row[f"bid_price_{i}"] = float(bp)
-            row[f"bid_size_{i}"] = float(bs)
+            row[f"bid_price_{i}"] = bp
+            row[f"bid_size_{i}"] = bs
         for i, (ap, as_) in enumerate(asks, 1):
-            row[f"ask_price_{i}"] = float(ap)
-            row[f"ask_size_{i}"] = float(as_)
+            row[f"ask_price_{i}"] = ap
+            row[f"ask_size_{i}"] = as_
         return row
     except Exception as e:
         print(f"  [WARN] Kraken L5 fetch: {e}")
