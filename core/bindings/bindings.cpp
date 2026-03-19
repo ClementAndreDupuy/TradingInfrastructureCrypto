@@ -324,9 +324,8 @@ PYBIND11_MODULE(trading_core, m) {
     bind_feed_handler<KrakenFeedHandler>(
         m, "KrakenFeedHandler",
         "Kraken order book feed handler using the WebSocket v2 book channel.")
-        .def(py::init<const std::string&, const std::string&, const std::string&,
-                      const std::string&, const std::string&>(),
-             py::arg("symbol"), py::arg("api_key") = "", py::arg("api_secret") = "",
+        .def(py::init<const std::string&, const std::string&, const std::string&>(),
+             py::arg("symbol"),
              py::arg("api_url") = "https://api.kraken.com",
              py::arg("ws_url") = "wss://ws.kraken.com/v2");
 

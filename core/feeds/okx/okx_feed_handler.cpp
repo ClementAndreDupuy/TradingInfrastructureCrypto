@@ -121,7 +121,7 @@ auto OkxFeedHandler::fetch_tick_size() -> Result {
         return Result::ERROR_CONNECTION_LOST;
     }
     auto json = nlohmann::json::parse(resp.body, nullptr, false);
-    if (json.is_discarded() || json.value("code", "") != "0") {
+    if (json.is_discarded() || json.value("code", std::string("")) != "0") {
         LOG_WARN("fetch_tick_size: bad response", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
@@ -130,7 +130,7 @@ auto OkxFeedHandler::fetch_tick_size() -> Result {
         LOG_WARN("fetch_tick_size: no data", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
-    std::string ts = (*data_it)[0].value("tickSz", "");
+    std::string ts = (*data_it)[0].value("tickSz", std::string(""));
     if (ts.empty()) {
         LOG_WARN("fetch_tick_size: tickSz missing", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;

@@ -358,7 +358,7 @@ auto CoinbaseFeedHandler::fetch_tick_size() -> Result {
         LOG_WARN("fetch_tick_size JSON parse failed", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
-    std::string ts = json.value("quote_increment", "");
+    std::string ts = json.value("quote_increment", std::string(""));
     if (ts.empty()) {
         LOG_WARN("fetch_tick_size: quote_increment missing", "symbol", symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;

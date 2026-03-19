@@ -140,6 +140,8 @@ class json {
 
     const json& operator[](const char* key) const { return at_key(key); }
     const json& operator[](const std::string& key) const { return at_key(key); }
+    json& operator[](const char* key) { return at_key_mut(std::string(key)); }
+    json& operator[](const std::string& key) { return at_key_mut(key); }
 
     // ── Iterator ────────────────────────────────────────────────────────────
     class iterator {
@@ -191,6 +193,9 @@ class json {
     iterator end() const { return iterator(this, size()); }
 
     // ── find ────────────────────────────────────────────────────────────────
+    bool contains(const std::string& key) const { return find(key) != end(); }
+    bool contains(const char* key) const { return find(key) != end(); }
+
     iterator find(const std::string& key) const {
         if (is_object() && obj_) {
             for (size_t i = 0; i < obj_->size(); ++i) {
@@ -402,6 +407,21 @@ class json {
             if (kv.first == key)
                 return kv.second;
         return null_j;
+    }
+
+    json& at_key_mut(const std::string& key) {
+        if (!is_object()) {
+            clear();
+            type_ = value_t::object;
+            obj_ = new object_t();
+        }
+        if (!obj_)
+            obj_ = new object_t();
+        for (auto& kv : *obj_)
+            if (kv.first == key)
+                return kv.second;
+        obj_->emplace_back(key, json{});
+        return obj_->back().second;
     }
 
     // ── Recursive-descent parser ─────────────────────────────────────────────

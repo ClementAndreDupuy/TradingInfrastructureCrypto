@@ -152,8 +152,8 @@ auto BinanceFeedHandler::fetch_tick_size() -> Result {
         return Result::ERROR_BOOK_CORRUPTED;
     }
     for (const auto& f : (*sym_it)[0].value("filters", nlohmann::json::array())) {
-        if (f.value("filterType", "") == "PRICE_FILTER") {
-            std::string ts = f.value("tickSize", "");
+        if (f.value("filterType", std::string("")) == "PRICE_FILTER") {
+            std::string ts = f.value("tickSize", std::string(""));
             if (ts.empty()) break;
             tick_size_ = tick_from_string(ts);
             LOG_INFO("Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
