@@ -108,7 +108,7 @@ TEST(ConnectorContractTest, KrakenStateMachineDeterministic) {
 }
 
 TEST(ConnectorContractTest, OkxStateMachineDeterministic) {
-    OkxConnector c("", "", "https://okx.test");
+    OkxConnector c("", "", "pass", "https://okx.test");
     run_state_machine_contract(c, Exchange::OKX, "BTC-USDT-SWAP",
                                R"({"data":[{"ordId":"ok-101"}]})", R"({"data":[{"sCode":"0"}]})");
 }

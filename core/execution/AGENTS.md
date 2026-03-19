@@ -118,6 +118,7 @@ virtual ConnectorResult query_order(uint64_t client_order_id, FillUpdate& status
 4. Updates `VenueOrderMap`
 
 Supported venues: Binance, OKX, Coinbase, Kraken, Shadow (paper trading).
+- OKX live execution requires an API passphrase in addition to key/secret, and `cancel_all()` is intentionally unsupported until the strategy layer supplies a documented OKX-wide cancellation flow.
 
 ---
 

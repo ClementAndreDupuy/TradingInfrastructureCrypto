@@ -25,13 +25,13 @@ This file isolates the execution-layer live-trading blockers from the main rolli
     - [x] `cancel_all()` uses the correct Kraken endpoint/semantics instead of the dead-man-switch `CancelAllOrdersAfter` path
     - [x] Order modification explicitly distinguishes `AmendOrder` vs `EditOrder`, with tests documenting which path is used
 
-- [ ] **C4** `core/execution/okx/okx_connector.cpp` + `core/execution/live_connector_base.hpp` — **OKX connector omits mandatory auth and trade parameters from current v5 docs**
+- [x] **C4** `core/execution/okx/okx_connector.cpp` + `core/execution/live_connector_base.hpp` — **OKX connector omits mandatory auth and trade parameters from current v5 docs**
   The connector does not send the documented OKX passphrase header, omits `tdMode` on order placement, under-specifies cancel/query/amend requests, and misuses `cancel-batch-orders` as a symbol-scoped cancel-all path. The current OKX live connector should not be used in production.
   - acceptance criteria:
-    - [ ] Private REST auth includes the full documented OKX header set, including passphrase, with fixture tests proving signature correctness
-    - [ ] Placement payloads include all mandatory venue fields for the supported trading mode, including `tdMode`
-    - [ ] Cancel/query/amend requests include the documented identifiers such as `instId` plus `ordId`/`clOrdId` as required by the current API
-    - [ ] `cancel_all()` is re-implemented using a documented OKX contract or marked unsupported with an explicit strategy-layer fallback
+    - [x] Private REST auth includes the full documented OKX header set, including passphrase, with fixture tests proving signature correctness
+    - [x] Placement payloads include all mandatory venue fields for the supported trading mode, including `tdMode`
+    - [x] Cancel/query/amend requests include the documented identifiers such as `instId` plus `ordId`/`clOrdId` as required by the current API
+    - [x] `cancel_all()` is re-implemented using a documented OKX contract or marked unsupported with an explicit strategy-layer fallback
 
 - [ ] **C5** `core/execution/coinbase/coinbase_connector.cpp` + `core/execution/live_connector_base.hpp` — **Coinbase connector is still speaking a legacy auth/request dialect instead of current Advanced Trade**
   The connector uses legacy `CB-ACCESS-*` style signing instead of bearer JWT authentication, submits orders with a non-current payload schema, and uses unsupported request shapes for edit/cancel-all behavior. As written, the Coinbase execution connector is not aligned with current Advanced Trade docs.
