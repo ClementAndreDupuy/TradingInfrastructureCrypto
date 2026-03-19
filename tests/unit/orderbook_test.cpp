@@ -340,28 +340,30 @@ TEST(OrderBook, RejectsSnapshotWithInvalidChecksum) {
     EXPECT_FALSE(book.is_initialized());
 }
 
-// Regression: base_price_ can be exactly 0.0 for low-priced assets.
-// E.g. ETH at $1000, tick=0.10, max_levels=20000 → base = 1000 - 10000*0.10 = 0.
-// The old code used (base_price_ != 0.0) as the initialized sentinel, giving a false
-// negative that permanently blocked all delta processing.
-TEST(OrderBook, IsInitializedWhenBasePriceIsZero) {
-    // tick=0.10, max_levels=20000 → half_range = 10000 * 0.10 = 1000
-    // best_bid=1000 → base = 1000 - 1000 = 0.0  (the problematic case)
+// The initialized sentinel uses a dedicated atomic<bool>, not the (now-rejected)
+// base_price_ != 0.0 check.  Verify that is_initialized() returns true for a
+// snapshot that produces a small-but-positive base_price, and that deltas are
+// accepted normally.  (ETH at $1000, tick=0.10 previously gave base=0 and was
+// accepted by old code; that scenario is now rejected — see ZeroBasePriceRejected.)
+TEST(OrderBook, IsInitializedWithSmallPositiveBase) {
+    // tick=0.10, max_levels=20000 → half_range = 1000.
+    // best_bid=1001 → base = 1001 - 1000 = 1.0 > 0  (small but valid)
     OrderBook book("ETHUSD", Exchange::KRAKEN, 0.10, 20000);
     Snapshot s;
     s.symbol   = "ETHUSD";
     s.exchange = Exchange::KRAKEN;
     s.sequence = 1;
-    s.bids.push_back(PriceLevel(1000.0, 5.0));
-    s.asks.push_back(PriceLevel(1000.1, 5.0));
+    s.bids.push_back(PriceLevel(1001.0, 5.0));
+    s.asks.push_back(PriceLevel(1001.1, 5.0));
 
     EXPECT_EQ(book.apply_snapshot(s), Result::SUCCESS);
     EXPECT_TRUE(book.is_initialized());
+    EXPECT_GT(book.base_price(), 0.0);
 
-    // Deltas must also be accepted — base_price_ == 0.0 must not block them.
-    Delta d = make_delta(Side::BID, 1000.0, 3.0, 2);
+    // Deltas must be accepted.
+    Delta d = make_delta(Side::BID, 1001.0, 3.0, 2);
     EXPECT_EQ(book.apply_delta(d), Result::SUCCESS);
-    EXPECT_DOUBLE_EQ(book.get_best_bid(), 1000.0);
+    EXPECT_DOUBLE_EQ(book.get_best_bid(), 1001.0);
 }
 
 TEST(OrderBook, NegativeSizeDeltaRejected) {
@@ -410,10 +412,20 @@ TEST(OrderBook, CompatibleWithAllFourExchanges) {
     }
 }
 
-// Low-priced asset where base_price_ goes negative.
-// SOL at $20 with tick=0.01, max_levels=20000: base = 20 - 10000*0.01 = -80.
-// price_to_index must correctly handle a negative base.
-TEST(OrderBook, NegativeBasePriceAsset) {
+// ── C1 regression: negative base_price ────────────────────────────────────────
+//
+// Root cause: when tick_size is too large relative to the asset price, the grid
+// origin (best_bid - (max_levels/2)*tick_size) goes non-positive.  The Python
+// feature layer uses base_price as a reference price (e.g. log(mid/base_price))
+// and produces NaN / huge values when base_price <= 0.
+//
+// Fix: apply_snapshot now rejects any snapshot whose computed base_price would be
+// <= 0, returning ERROR_INVALID_PRICE and leaving the book uninitialized so the
+// feed handler can trigger a re-snapshot with corrected parameters.
+
+// SOL at $20, tick=0.01, max_levels=20000 → base = 20 - 10000*0.01 = -80.
+// Previously accepted; must now be rejected (negative base corrupts features).
+TEST(OrderBook, NegativeBasePriceSnapshotRejected) {
     OrderBook book("SOLUSD", Exchange::COINBASE, 0.01, 20000);
     Snapshot s;
     s.symbol   = "SOLUSD";
@@ -422,22 +434,167 @@ TEST(OrderBook, NegativeBasePriceAsset) {
     s.bids.push_back(PriceLevel(20.00, 10.0));
     s.asks.push_back(PriceLevel(20.01, 8.0));
 
+    // base = 20 - 10000*0.01 = -80  →  must be rejected
+    EXPECT_EQ(book.apply_snapshot(s), Result::ERROR_INVALID_PRICE);
+    EXPECT_FALSE(book.is_initialized());
+    EXPECT_EQ(book.get_best_bid(), 0.0);
+    EXPECT_EQ(book.get_best_ask(), 0.0);
+}
+
+// SOL at $20, tick=0.001, max_levels=20000 → base = 20 - 10000*0.001 = 10 > 0.
+// Correct tick size keeps the grid origin positive.
+TEST(OrderBook, SOLCorrectTickSizePositiveBase) {
+    OrderBook book("SOLUSD", Exchange::COINBASE, 0.001, 20000);
+    Snapshot s;
+    s.symbol   = "SOLUSD";
+    s.exchange = Exchange::COINBASE;
+    s.sequence = 1;
+    s.bids.push_back(PriceLevel(20.000, 10.0));
+    s.asks.push_back(PriceLevel(20.001, 8.0));
+
     EXPECT_EQ(book.apply_snapshot(s), Result::SUCCESS);
     EXPECT_TRUE(book.is_initialized());
-    EXPECT_LT(book.base_price(), 0.0); // confirms the negative-base scenario
+    EXPECT_GT(book.base_price(), 0.0);
+    EXPECT_DOUBLE_EQ(book.get_best_bid(), 20.000);
+    EXPECT_DOUBLE_EQ(book.get_best_ask(), 20.001);
 
-    EXPECT_DOUBLE_EQ(book.get_best_bid(), 20.00);
-    EXPECT_DOUBLE_EQ(book.get_best_ask(), 20.01);
-
-    // Confirm a delta is also applied correctly with a negative base.
-    Delta d = make_delta(Side::BID, 19.99, 3.0, 2);
+    // Deltas must also be accepted.
+    Delta d = make_delta(Side::BID, 19.999, 3.0, 2);
     EXPECT_EQ(book.apply_delta(d), Result::SUCCESS);
 
     std::vector<PriceLevel> bids, asks;
     book.get_top_levels(5, bids, asks);
     ASSERT_GE(bids.size(), 2u);
-    EXPECT_DOUBLE_EQ(bids[0].price, 20.00); // best bid still 20.00
-    EXPECT_DOUBLE_EQ(bids[1].price, 19.99);
+    EXPECT_DOUBLE_EQ(bids[0].price, 20.000);
+    EXPECT_DOUBLE_EQ(bids[1].price, 19.999);
+}
+
+// SOL at $140, tick=0.01, max_levels=20000 → base = 140 - 100 = 40 > 0.
+// Simulates the production scenario that was reporting base_price=-410.5;
+// with correct tick the base stays positive and no features are corrupted.
+TEST(OrderBook, SOLAt140CorrectTickPositiveBase) {
+    OrderBook book("SOLUSDT", Exchange::BINANCE, 0.01, 20000);
+    Snapshot s;
+    s.symbol   = "SOLUSDT";
+    s.exchange = Exchange::BINANCE;
+    s.sequence = 1;
+    s.bids.push_back(PriceLevel(140.00, 500.0));
+    s.asks.push_back(PriceLevel(140.01, 450.0));
+
+    EXPECT_EQ(book.apply_snapshot(s), Result::SUCCESS);
+    EXPECT_TRUE(book.is_initialized());
+    EXPECT_DOUBLE_EQ(book.base_price(), 140.00 - 10000 * 0.01); // 40.0
+    EXPECT_GT(book.base_price(), 0.0);
+    EXPECT_DOUBLE_EQ(book.get_best_bid(), 140.00);
+    EXPECT_DOUBLE_EQ(book.get_best_ask(), 140.01);
+}
+
+// SOL at $140, tick=0.1, max_levels=20000 → base = 140 - 1000 = -860.
+// Large tick causes negative base; snapshot must be rejected.
+TEST(OrderBook, SOLLargeTickNegativeBaseRejected) {
+    OrderBook book("SOLUSDT", Exchange::BINANCE, 0.1, 20000);
+    Snapshot s;
+    s.symbol   = "SOLUSDT";
+    s.exchange = Exchange::BINANCE;
+    s.sequence = 1;
+    s.bids.push_back(PriceLevel(140.0, 500.0));
+    s.asks.push_back(PriceLevel(140.1, 450.0));
+
+    // base = 140 - 10000*0.1 = -860  →  must be rejected
+    EXPECT_EQ(book.apply_snapshot(s), Result::ERROR_INVALID_PRICE);
+    EXPECT_FALSE(book.is_initialized());
+}
+
+// BTC at $69000, tick=1.0, max_levels=20000 → base = 69000 - 10000 = 59000 > 0.
+// Ensures the guard does not false-positive for BTC with a typical 1-dollar tick.
+TEST(OrderBook, BTCTypicalTickPositiveBase) {
+    OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
+    Snapshot s;
+    s.symbol   = "BTCUSDT";
+    s.exchange = Exchange::BINANCE;
+    s.sequence = 1;
+    s.bids.push_back(PriceLevel(69000.0, 1.0));
+    s.asks.push_back(PriceLevel(69001.0, 1.0));
+
+    EXPECT_EQ(book.apply_snapshot(s), Result::SUCCESS);
+    EXPECT_TRUE(book.is_initialized());
+    EXPECT_DOUBLE_EQ(book.base_price(), 69000.0 - 10000 * 1.0); // 59000.0
+    EXPECT_GT(book.base_price(), 0.0);
+}
+
+// ETH at $1000, tick=0.10, max_levels=20000 → base = 1000 - 1000 = 0.
+// Zero is also invalid (log(0) is undefined); snapshot must be rejected.
+TEST(OrderBook, ZeroBasePriceRejected) {
+    // base = 1000 - 10000*0.10 = 0.0  →  must be rejected
+    OrderBook book("ETHUSD", Exchange::KRAKEN, 0.10, 20000);
+    Snapshot s;
+    s.symbol   = "ETHUSD";
+    s.exchange = Exchange::KRAKEN;
+    s.sequence = 1;
+    s.bids.push_back(PriceLevel(1000.0, 5.0));
+    s.asks.push_back(PriceLevel(1000.1, 5.0));
+
+    EXPECT_EQ(book.apply_snapshot(s), Result::ERROR_INVALID_PRICE);
+    EXPECT_FALSE(book.is_initialized());
+}
+
+// ── C1 regression: price_to_index grouping precision ──────────────────────────
+//
+// The old rounding  (int64_t)(relative + 0.5)  truncates toward zero for
+// negative inputs, so prices between -1.5 and -0.5 ticks from the base
+// incorrectly collide into index 0 instead of being rejected.  The fix uses
+// std::llround which rounds half-away-from-zero on both sides.
+
+// A delta whose price lands exactly 1 tick below the grid base must be rejected,
+// not silently mapped onto index 0.
+TEST(OrderBook, PriceOneTickBelowBaseRejected) {
+    OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
+    book.apply_snapshot(make_snapshot(50000.0, 50001.0, 1, 1.0, 100));
+
+    // base = 50000 - 10000 = 40000.
+    // A price of 39999.0 is exactly 1 tick below the base → must be rejected.
+    Delta d = make_delta(Side::BID, 39999.0, 1.0, 101);
+    EXPECT_EQ(book.apply_delta(d), Result::ERROR_INVALID_PRICE);
+}
+
+// A delta at the very bottom of the grid (base price itself) must be accepted.
+TEST(OrderBook, PriceAtBaseAccepted) {
+    OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
+    book.apply_snapshot(make_snapshot(50000.0, 50001.0, 1, 1.0, 100));
+
+    // base = 40000.  A bid at exactly base maps to index 0.
+    double base = book.base_price();
+    Delta d = make_delta(Side::BID, base, 2.0, 101);
+    EXPECT_EQ(book.apply_delta(d), Result::SUCCESS);
+}
+
+// Two prices that differ by exactly one tick must NOT collide into the same index.
+// This is the core grouping-precision correctness check.
+TEST(OrderBook, AdjacentTicksDontCollide) {
+    OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
+    book.apply_snapshot(make_snapshot(50000.0, 50001.0, 1, 1.0, 100));
+
+    Delta d1 = make_delta(Side::BID, 48000.0, 1.1, 101);
+    Delta d2 = make_delta(Side::BID, 48001.0, 2.2, 102);
+    EXPECT_EQ(book.apply_delta(d1), Result::SUCCESS);
+    EXPECT_EQ(book.apply_delta(d2), Result::SUCCESS);
+
+    std::vector<PriceLevel> bids, asks;
+    book.get_top_levels(20000, bids, asks);
+
+    bool found48000 = false, found48001 = false;
+    for (const auto& l : bids) {
+        if (std::fabs(l.price - 48000.0) < 0.01) {
+            found48000 = true;
+            EXPECT_DOUBLE_EQ(l.size, 1.1);
+        }
+        if (std::fabs(l.price - 48001.0) < 0.01) {
+            found48001 = true;
+            EXPECT_DOUBLE_EQ(l.size, 2.2);
+        }
+    }
+    EXPECT_TRUE(found48000) << "48000 level missing";
+    EXPECT_TRUE(found48001) << "48001 level missing";
 }
 
 int main(int argc, char** argv) {
