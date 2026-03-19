@@ -500,12 +500,78 @@ TEST(LiveConnectorsTest, OkxRejectsUnsupportedStopLimitOrders) {
 }
 
 TEST(LiveConnectorsTest, CoinbaseAuthenticatedFlow) {
+    CoinbaseConnector c("organizations/test/apiKeys/test-key", R"(-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIChMXeSk0sJJ7hQwUju2z8uVg7Vu0vCEe6F7jkFBJ7M0oAoGCCqGSM49
+AwEHoUQDQgAEz5P6ZfbP2sYLVylf9g10wW9V7E+b55mzYf6z2NaE9mCVx38DSHLV
+BkP4Jrped1IovnHgwlHGawEq+y3OCAXo+A==
+-----END EC PRIVATE KEY-----
+)", "https://coinbase.test");
+    int submit_calls = 0;
+    int query_calls = 0;
+    int replace_calls = 0;
+    int cancel_calls = 0;
+    ScopedMockTransport transport([&](const char* method, const std::string& url,
+                                      const std::string& body,
+                                      const std::vector<std::string>& headers) {
+        const std::string* auth = find_header(headers, "Authorization: Bearer ");
+        if (auth == nullptr) {
+            ADD_FAILURE() << "missing bearer token";
+            return http::HttpResponse{500, ""};
+        }
+        EXPECT_NE(auth->size(), std::strlen("Authorization: Bearer "));
+        EXPECT_EQ(find_header(headers, "CB-ACCESS-KEY: "), nullptr);
+        EXPECT_NE(find_header(headers, "Content-Type: application/json"), nullptr);
+        EXPECT_NE(find_header(headers, "Accept: application/json"), nullptr);
+        if (std::strcmp(method, "POST") == 0 && contains(url, "/orders/edit")) {
+            ++replace_calls;
+            EXPECT_TRUE(contains(body, "\"order_id\":\"cb-42\""));
+            EXPECT_TRUE(contains(body, "\"size\":\"0.1\""));
+            EXPECT_TRUE(contains(body, "\"price\":\"101\""));
+            return http::HttpResponse{200,
+                                      R"({"success":true,"success_response":{"order_id":"cb-43"}})"};
+        }
+        if (std::strcmp(method, "POST") == 0 && contains(url, "/orders/batch_cancel")) {
+            ++cancel_calls;
+            EXPECT_TRUE(contains(body, "\"order_ids\":[\"cb-43\"]"));
+            return http::HttpResponse{200, R"({"results":[{"success":true}]})"};
+        }
+        if (std::strcmp(method, "GET") == 0 && contains(url, "/historical/cb-42")) {
+            ++query_calls;
+            return http::HttpResponse{
+                200, R"({"order":{"status":"OPEN","filled_size":0.0,"average_filled_price":0.0}})"};
+        }
+        if (std::strcmp(method, "POST") == 0 && contains(url, "/api/v3/brokerage/orders")) {
+            ++submit_calls;
+            EXPECT_TRUE(contains(body, "\"client_order_id\":\"42\""));
+            EXPECT_TRUE(contains(body, "\"product_id\":\"BTC-USD\""));
+            EXPECT_TRUE(contains(body, "\"sor_limit_ioc\""));
+            EXPECT_TRUE(contains(body, "\"limit_price\":\"100\""));
+            EXPECT_TRUE(contains(body, "\"base_size\":\"0.1\""));
+            return http::HttpResponse{200,
+                                      R"({"success":true,"success_response":{"order_id":"cb-42"}})"};
+        }
+        return http::HttpResponse{404, ""};
+    });
+
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    Order order = make_order(Exchange::COINBASE, 42, "BTC-USD");
+    EXPECT_EQ(c.submit_order(order), ConnectorResult::OK);
+
+    FillUpdate query = {};
+    EXPECT_EQ(c.query_order(42, query), ConnectorResult::OK);
+    order.client_order_id = 43;
+    order.price = 101.0;
+    EXPECT_EQ(c.replace_order(42, order), ConnectorResult::OK);
+    EXPECT_EQ(c.cancel_order(43), ConnectorResult::OK);
+    EXPECT_EQ(submit_calls, 1);
+    EXPECT_EQ(query_calls, 1);
+    EXPECT_EQ(replace_calls, 1);
+    EXPECT_EQ(cancel_calls, 1);
+}
+
+TEST(LiveConnectorsTest, CoinbaseRejectsUnsupportedCancelAll) {
     CoinbaseConnector c("k", "s", "https://coinbase.test");
-    run_connector_flow(c, Exchange::COINBASE, "BTC-USD",
-                       R"({"success_response":{"order_id":"cb-42"}})",
-                       R"({"success_response":{"order_id":"cb-43"}})",
-                       R"({"order":{"status":"OPEN","filled_size":0,"average_filled_price":0}})",
-                       R"({"results":[{"success":true}]})", R"({"results":[{"success":true}]})");
+    EXPECT_EQ(c.cancel_all("BTC-USD"), ConnectorResult::ERROR_INVALID_ORDER);
 }
 
 } // namespace trading
