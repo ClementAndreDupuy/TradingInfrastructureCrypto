@@ -1,0 +1,20 @@
+{
+  "trained_at_ns": 1773909214682280000,
+  "train_ticks": 2000,
+  "train_epochs": 5,
+  "seq_len": 64,
+  "d_spatial": 64,
+  "d_temporal": 128,
+  "metrics": {
+    "loss_return": 8.415176732038768e-06,
+    "loss_direction": 0.18288980921109518,
+    "loss_risk": 4.0581068042981155e-07,
+    "loss_tc": 0.0001603905123677881,
+    "loss_total": 0.09146948034564654
+  },
+  "oos_holdout_mse": {
+    "incumbent": 4.866889996658969e-05,
+    "challenger": 6.3133399772900984e-06,
+    "selected": "challenger"
+  }
+}
