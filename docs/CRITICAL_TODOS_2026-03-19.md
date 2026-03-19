@@ -17,13 +17,13 @@ This file isolates the execution-layer live-trading blockers from the main rolli
     - [ ] `cancel_order`, `query_order`, and trade-history reconciliation include the documented symbol-scoped parameters and pass fixture coverage against official examples
     - [ ] `replace_order` is reworked onto Binance's currently documented modify flow (`cancelReplace` and/or `amend/keepPriority`) with explicit unsupported-path handling where semantics differ
 
-- [ ] **C3** `core/execution/kraken/kraken_connector.cpp` + `core/execution/live_connector_base.hpp` — **Kraken live connector violates current Spot REST order semantics**
+- [x] **C3** `core/execution/kraken/kraken_connector.cpp` + `core/execution/live_connector_base.hpp` — **Kraken live connector violates current Spot REST order semantics**
   The connector omits the limit price on limit orders, maps `cancel_all()` onto `CancelAllOrdersAfter` instead of the ordinary cancel-all surface, and relies on a shared auth path that does not model Kraken's signed POST contract precisely enough. Treat Kraken live execution as unsafe until it is reworked against the current docs.
   - acceptance criteria:
-    - [ ] Limit-order placement includes all currently documented Kraken fields required for the chosen order type, including price for limit orders
-    - [ ] Private REST authentication matches Kraken's current signing model and passes golden tests built from official examples
-    - [ ] `cancel_all()` uses the correct Kraken endpoint/semantics instead of the dead-man-switch `CancelAllOrdersAfter` path
-    - [ ] Order modification explicitly distinguishes `AmendOrder` vs `EditOrder`, with code comments/tests documenting which path is used and why
+    - [x] Limit-order placement includes all currently documented Kraken fields required for the chosen order type, including price for limit orders
+    - [x] Private REST authentication matches Kraken's current signing model and passes golden tests built from official examples
+    - [x] `cancel_all()` uses the correct Kraken endpoint/semantics instead of the dead-man-switch `CancelAllOrdersAfter` path
+    - [x] Order modification explicitly distinguishes `AmendOrder` vs `EditOrder`, with tests documenting which path is used
 
 - [ ] **C4** `core/execution/okx/okx_connector.cpp` + `core/execution/live_connector_base.hpp` — **OKX connector omits mandatory auth and trade parameters from current v5 docs**
   The connector does not send the documented OKX passphrase header, omits `tdMode` on order placement, under-specifies cancel/query/amend requests, and misuses `cancel-batch-orders` as a symbol-scoped cancel-all path. The current OKX live connector should not be used in production.
