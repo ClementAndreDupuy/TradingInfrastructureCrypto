@@ -17,14 +17,14 @@ class CoinbaseFeedHandlerTest : public ::testing::Test {
         unsetenv("SHADOW_COINBASE_API_SECRET");
         handler_ = std::make_unique<CoinbaseFeedHandler>("BTC-USD");
 
-        handler_->set_snapshot_callback([this](const Snapshot& s) {
-            last_snapshot_ = s;
+        handler_->set_snapshot_callback([this](const Snapshot& snapshot) {
+            last_snapshot_ = snapshot;
             snapshot_count_++;
         });
 
-        handler_->set_delta_callback([this](const Delta& d) { deltas_.push_back(d); });
+        handler_->set_delta_callback([this](const Delta& delta) { deltas_.push_back(delta); });
 
-        handler_->set_error_callback([this](const std::string& e) { last_error_ = e; });
+        handler_->set_error_callback([this](const std::string& error) { last_error_ = error; });
     }
 
     void TearDown() override {
