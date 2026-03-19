@@ -8,17 +8,81 @@
 
 #include "../../common/symbol_mapper.hpp"
 
+#include <sstream>
 #include <string>
 
 namespace trading {
 namespace {
 
+auto order_type_string(OrderType type) -> const char* {
+    switch (type) {
+    case OrderType::MARKET:
+        return "market";
+    case OrderType::LIMIT:
+        return "limit";
+    case OrderType::STOP_LIMIT:
+        return "stop-loss-limit";
+    default:
+        return "limit";
+    }
+}
+
+auto tif_string(TimeInForce tif) -> const char* {
+    switch (tif) {
+    case TimeInForce::IOC:
+        return "ioc";
+    case TimeInForce::GTC:
+        return "gtc";
+    case TimeInForce::FOK:
+        return "fok";
+    case TimeInForce::GTX:
+        return "post_only";
+    default:
+        return "gtc";
+    }
+}
+
+auto decimal_string(double value) -> std::string {
+    std::ostringstream oss;
+    oss.precision(15);
+    oss << std::defaultfloat << value;
+    return oss.str();
+}
+
+auto append_field(std::string& payload, const char* key, const std::string& value) -> void {
+    if (!payload.empty()) {
+        payload.push_back('&');
+    }
+    payload.append(key);
+    payload.push_back('=');
+    payload.append(value);
+}
+
+auto private_payload(std::string payload) -> std::string {
+    const std::string nonce = std::to_string(http::now_ms());
+    if (payload.empty()) {
+        return std::string("nonce=") + nonce;
+    }
+    return std::string("nonce=") + nonce + "&" + payload;
+}
+
 auto order_payload(const Order& order) -> std::string {
-    const std::string pair = SymbolMapper::map_for_exchange(Exchange::KRAKEN, order.symbol);
-    return std::string("pair=") + pair +
-           "&type=" + (order.side == Side::BID ? "buy" : "sell") +
-           "&ordertype=" + (order.type == OrderType::MARKET ? "market" : "limit") +
-           "&volume=" + std::to_string(order.quantity);
+    std::string payload;
+    append_field(payload, "ordertype", order_type_string(order.type));
+    append_field(payload, "pair", SymbolMapper::map_for_exchange(Exchange::KRAKEN, order.symbol));
+    append_field(payload, "type", order.side == Side::BID ? "buy" : "sell");
+    append_field(payload, "volume", decimal_string(order.quantity));
+    if (order.type != OrderType::MARKET) {
+        append_field(payload, "price", decimal_string(order.price));
+    }
+    if (order.type == OrderType::STOP_LIMIT) {
+        append_field(payload, "price2", decimal_string(order.stop_price));
+    }
+    append_field(payload, "timeinforce", tif_string(order.tif));
+    if (order.tif == TimeInForce::GTX) {
+        append_field(payload, "oflags", "post");
+    }
+    return payload;
 }
 
 auto parse_kraken_order_id(const std::string& body, std::string& venue_order_id) -> bool {
@@ -83,9 +147,10 @@ auto parse_kraken_cancel_ack(const std::string& body) -> bool {
 
 auto KrakenConnector::submit_to_venue(const Order& order, const std::string& idempotency_key,
                                       std::string& venue_order_id) -> ConnectorResult {
-    const std::string payload = order_payload(order);
-    const auto headers = auth_headers("POST", "/0/private/AddOrder", payload, idempotency_key);
-    const auto resp = http::post(api_url() + "/0/private/AddOrder", payload, headers);
+    std::string payload = private_payload(order_payload(order));
+    append_field(payload, "cl_ord_id", idempotency_key);
+    const auto resp = http::post(api_url() + "/0/private/AddOrder", payload,
+                                 kraken_private_headers("/0/private/AddOrder", payload));
     if (!resp.ok()) {
         return classify_http_error(resp.status);
     }
@@ -97,9 +162,9 @@ auto KrakenConnector::submit_to_venue(const Order& order, const std::string& ide
 }
 
 auto KrakenConnector::cancel_at_venue(const VenueOrderEntry& entry) -> ConnectorResult {
-    const std::string payload = std::string("txid=") + entry.venue_order_id;
+    const std::string payload = private_payload(std::string("txid=") + entry.venue_order_id);
     const auto resp = http::post(api_url() + "/0/private/CancelOrder", payload,
-                                 auth_headers("POST", "/0/private/CancelOrder", payload));
+                                 kraken_private_headers("/0/private/CancelOrder", payload));
     if (!resp.ok()) {
         return classify_http_error(resp.status);
     }
@@ -109,22 +174,28 @@ auto KrakenConnector::cancel_at_venue(const VenueOrderEntry& entry) -> Connector
 
 auto KrakenConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& replacement,
                                        std::string& new_venue_order_id) -> ConnectorResult {
-    const std::string payload =
-        std::string("txid=") + entry.venue_order_id + "&" + order_payload(replacement);
-    const auto resp = http::post(api_url() + "/0/private/EditOrder", payload,
-                                 auth_headers("POST", "/0/private/EditOrder", payload));
+    std::string payload = private_payload(std::string("txid=") + entry.venue_order_id);
+    append_field(payload, "order_qty", decimal_string(replacement.quantity));
+    if (replacement.type != OrderType::MARKET) {
+        append_field(payload, "limit_price", decimal_string(replacement.price));
+    }
+    if (replacement.type == OrderType::STOP_LIMIT) {
+        append_field(payload, "trigger_price", decimal_string(replacement.stop_price));
+    }
+    const auto resp = http::post(api_url() + "/0/private/AmendOrder", payload,
+                                 kraken_private_headers("/0/private/AmendOrder", payload));
     if (!resp.ok()) {
         return classify_http_error(resp.status);
     }
-    return parse_kraken_order_id(resp.body, new_venue_order_id) ? ConnectorResult::OK
-                                                                : ConnectorResult::ERROR_UNKNOWN;
+    new_venue_order_id = entry.venue_order_id;
+    return ConnectorResult::OK;
 }
 
 auto KrakenConnector::query_at_venue(const VenueOrderEntry& entry,
                                      FillUpdate& status) -> ConnectorResult {
-    const std::string payload = std::string("txid=") + entry.venue_order_id;
+    const std::string payload = private_payload(std::string("txid=") + entry.venue_order_id);
     const auto resp = http::post(api_url() + "/0/private/QueryOrders", payload,
-                                 auth_headers("POST", "/0/private/QueryOrders", payload));
+                                 kraken_private_headers("/0/private/QueryOrders", payload));
     if (!resp.ok()) {
         return classify_http_error(resp.status);
     }
@@ -133,13 +204,10 @@ auto KrakenConnector::query_at_venue(const VenueOrderEntry& entry,
 }
 
 auto KrakenConnector::cancel_all_at_venue(const char* symbol) -> ConnectorResult {
-    const std::string pair =
-        (symbol != nullptr && symbol[0] != '\0')
-            ? SymbolMapper::map_for_exchange(Exchange::KRAKEN, symbol)
-            : std::string();
-    const std::string payload = std::string("pair=") + pair;
-    const auto resp = http::post(api_url() + "/0/private/CancelAllOrdersAfter", payload,
-                                 auth_headers("POST", "/0/private/CancelAllOrdersAfter", payload));
+    (void)symbol;
+    const std::string payload = private_payload(std::string());
+    const auto resp = http::post(api_url() + "/0/private/CancelAll", payload,
+                                 kraken_private_headers("/0/private/CancelAll", payload));
     if (!resp.ok()) {
         return classify_http_error(resp.status);
     }
@@ -157,8 +225,9 @@ auto KrakenConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snap
     -> ConnectorResult {
     snapshot.clear();
 
-    const auto open_resp = http::post(api_url() + "/0/private/OpenOrders", "",
-                                      auth_headers("POST", "/0/private/OpenOrders", ""));
+    const std::string open_payload = private_payload(std::string());
+    const auto open_resp = http::post(api_url() + "/0/private/OpenOrders", open_payload,
+                                      kraken_private_headers("/0/private/OpenOrders", open_payload));
     if (!open_resp.ok()) {
         return classify_http_error(open_resp.status);
     }
@@ -185,8 +254,10 @@ auto KrakenConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snap
         }
     }
 
-    const auto balance_resp = http::post(api_url() + "/0/private/Balance", "",
-                                         auth_headers("POST", "/0/private/Balance", ""));
+    const std::string balance_payload = private_payload(std::string());
+    const auto balance_resp = http::post(api_url() + "/0/private/Balance", balance_payload,
+                                         kraken_private_headers("/0/private/Balance",
+                                                                balance_payload));
     if (!balance_resp.ok()) {
         return classify_http_error(balance_resp.status);
     }
@@ -207,8 +278,10 @@ auto KrakenConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot& snap
         }
     }
 
-    const auto trades_resp = http::post(api_url() + "/0/private/TradesHistory", "",
-                                        auth_headers("POST", "/0/private/TradesHistory", ""));
+    const std::string trades_payload = private_payload(std::string());
+    const auto trades_resp = http::post(api_url() + "/0/private/TradesHistory", trades_payload,
+                                        kraken_private_headers("/0/private/TradesHistory",
+                                                               trades_payload));
     if (trades_resp.status == 404 || trades_resp.status == 405 || trades_resp.status == 501) {
         return ConnectorResult::OK;
     }

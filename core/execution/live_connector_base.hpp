@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <cstring>
 #include <string>
 #include <thread>
 #include <utility>
@@ -20,6 +21,8 @@
 #define TRT_HAS_OPENSSL 0
 #elif defined(__has_include)
 #if __has_include(<openssl/hmac.h>) && __has_include(<openssl/evp.h>)
+#include <openssl/bio.h>
+#include <openssl/buffer.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
@@ -248,27 +251,25 @@ class LiveConnectorBase : public ExchangeConnector {
         const std::string ts_ms_s = std::to_string(ts_ms);
         const std::string ts_s = std::to_string(static_cast<double>(ts_ms) / 1000.0);
 
-        std::vector<std::string> headers = {"Content-Type: application/json"};
+        std::vector<std::string> headers;
         if (!idempotency_key.empty()) {
             headers.push_back("X-IDEMPOTENCY-KEY: " + idempotency_key);
         }
 
         switch (exchange_) {
         case Exchange::BINANCE: {
+            headers.push_back("Content-Type: application/json");
             const std::string prehash = ts_ms_s + method + request_path + payload;
             headers.push_back("X-MBX-APIKEY: " + api_key_);
             headers.push_back("X-MBX-TIMESTAMP: " + ts_ms_s);
             headers.push_back("X-MBX-SIGNATURE: " + hmac_sha256_hex(prehash));
             break;
         }
-        case Exchange::KRAKEN: {
-            const std::string prehash = request_path + sha256_hex(ts_ms_s + payload);
-            headers.push_back("API-Key: " + api_key_);
-            headers.push_back("API-Nonce: " + ts_ms_s);
-            headers.push_back("API-Sign: " + hmac_sha512_base64(prehash));
+        case Exchange::KRAKEN:
+            headers.push_back("Content-Type: application/x-www-form-urlencoded; charset=utf-8");
             break;
-        }
         case Exchange::OKX: {
+            headers.push_back("Content-Type: application/json");
             const std::string prehash = ts_s + method + request_path + payload;
             headers.push_back("OK-ACCESS-KEY: " + api_key_);
             headers.push_back("OK-ACCESS-TIMESTAMP: " + ts_s);
@@ -276,6 +277,7 @@ class LiveConnectorBase : public ExchangeConnector {
             break;
         }
         case Exchange::COINBASE: {
+            headers.push_back("Content-Type: application/json");
             const std::string prehash = ts_s + method + request_path + payload;
             headers.push_back("CB-ACCESS-KEY: " + api_key_);
             headers.push_back("CB-ACCESS-TIMESTAMP: " + ts_s);
@@ -286,6 +288,15 @@ class LiveConnectorBase : public ExchangeConnector {
             break;
         }
         return headers;
+    }
+
+    std::vector<std::string> kraken_private_headers(const std::string& request_path,
+                                                    const std::string& encoded_payload) const {
+        return {
+            "Content-Type: application/x-www-form-urlencoded; charset=utf-8",
+            "API-Key: " + api_key_,
+            "API-Sign: " + kraken_api_sign(request_path, encoded_payload),
+        };
     }
 
   private:
@@ -329,13 +340,24 @@ class LiveConnectorBase : public ExchangeConnector {
 #endif
     }
 
-    std::string sha256_hex(const std::string& payload) const {
+    std::string kraken_api_sign(const std::string& request_path,
+                                const std::string& encoded_payload) const {
 #if TRT_HAS_OPENSSL
+        const std::string nonce = extract_kraken_nonce(encoded_payload);
+        if (nonce.empty())
+            return std::string();
+
         unsigned char digest[SHA256_DIGEST_LENGTH] = {};
-        SHA256(reinterpret_cast<const unsigned char*>(payload.data()), payload.size(), digest);
-        return encode_hex(digest, SHA256_DIGEST_LENGTH);
+        const std::string nonce_and_payload = nonce + encoded_payload;
+        SHA256(reinterpret_cast<const unsigned char*>(nonce_and_payload.data()),
+               nonce_and_payload.size(), digest);
+
+        std::string message = request_path;
+        message.append(reinterpret_cast<const char*>(digest), SHA256_DIGEST_LENGTH);
+        return encode_base64(compute_hmac_base64_secret(EVP_sha512(), message));
 #else
-        (void)payload;
+        (void)request_path;
+        (void)encoded_payload;
         return std::string();
 #endif
     }
@@ -354,7 +376,42 @@ class LiveConnectorBase : public ExchangeConnector {
         return result;
     }
 
+    HmacDigest compute_hmac_base64_secret(const EVP_MD* algo, const std::string& payload) const {
+        HmacDigest result;
+        const std::string decoded_secret = decode_base64(api_secret_);
+        HMAC(algo, decoded_secret.data(), static_cast<int>(decoded_secret.size()),
+             reinterpret_cast<const unsigned char*>(payload.data()), payload.size(), result.data,
+             &result.len);
+        return result;
+    }
+
     static std::string encode_hex(const HmacDigest& d) { return encode_hex(d.data, d.len); }
+
+    static std::string extract_kraken_nonce(const std::string& encoded_payload) {
+        const std::string key = "nonce=";
+        const std::size_t pos = encoded_payload.find(key);
+        if (pos == std::string::npos)
+            return std::string();
+        const std::size_t start = pos + key.size();
+        const std::size_t end = encoded_payload.find('&', start);
+        return encoded_payload.substr(start, end == std::string::npos ? std::string::npos
+                                                                       : end - start);
+    }
+
+    static std::string decode_base64(const std::string& encoded) {
+        BIO* b64 = BIO_new(BIO_f_base64());
+        BIO* mem = BIO_new_mem_buf(encoded.data(), static_cast<int>(encoded.size()));
+        BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
+        mem = BIO_push(b64, mem);
+
+        std::string decoded(encoded.size(), '\0');
+        const int len = BIO_read(mem, decoded.data(), static_cast<int>(decoded.size()));
+        BIO_free_all(mem);
+        if (len <= 0)
+            return std::string();
+        decoded.resize(static_cast<std::size_t>(len));
+        return decoded;
+    }
 
     static std::string encode_hex(const unsigned char* data, unsigned int len) {
         static const char hex_chars[] = "0123456789abcdef";

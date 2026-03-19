@@ -20,6 +20,12 @@ class ScopedMockTransport {
     ~ScopedMockTransport() { http::clear_mock_transport(); }
 };
 
+class TestableKrakenConnector : public KrakenConnector {
+  public:
+    using KrakenConnector::KrakenConnector;
+    using KrakenConnector::kraken_private_headers;
+};
+
 bool contains(const std::string& s, const char* token) {
     return s.find(token) != std::string::npos;
 }
@@ -68,6 +74,7 @@ void run_connector_flow(Connector& c, Exchange ex, const char* symbol, const cha
         }
 
         if (std::strcmp(method, "PUT") == 0 || contains(url, "EditOrder") ||
+            contains(url, "AmendOrder") ||
             contains(url, "amend-order") || contains(url, "/orders/edit")) {
             return http::HttpResponse{200, replace_body};
         }
@@ -83,7 +90,8 @@ void run_connector_flow(Connector& c, Exchange ex, const char* symbol, const cha
             return http::HttpResponse{200, cancel_body};
         }
 
-        if (std::strcmp(method, "POST") == 0 && contains(url, "CancelAllOrdersAfter"))
+        if (std::strcmp(method, "POST") == 0 &&
+            (contains(url, "CancelAllOrdersAfter") || contains(url, "CancelAll")))
             return http::HttpResponse{200, cancel_all_body};
 
         if (std::strcmp(method, "POST") == 0 && contains(url, "cancel-batch-orders"))
@@ -296,6 +304,86 @@ TEST(LiveConnectorsTest, KrakenAuthenticatedFlow) {
                        R"({"result":{"txid":["abc-456"]}})",
                        R"({"result":{"abc-123":{"status":"open","vol_exec":0.0,"price":0.0}}})",
                        R"({"result":{"count":1}})", R"({"result":{}})");
+}
+
+TEST(LiveConnectorsTest, KrakenUsesDocumentedFormAuthAndOrderSemantics) {
+    TestableKrakenConnector c(
+        "pub",
+        "kQH5HW/8p1uGOVjbgWA7FunAmGO8lsSUXNsu3eow76sz84Q18fWxnyRzBHCd3pd5nE9qa99HAZtuZuj6F1huXg==",
+        "https://kraken.test");
+
+    const auto example_headers = c.kraken_private_headers(
+        "/0/private/AddOrder",
+        "nonce=1616492376594&ordertype=limit&pair=XBTUSD&price=37500&type=buy&volume=1.25");
+    const std::string* example_sign = find_header(example_headers, "API-Sign: ");
+    ASSERT_NE(example_sign, nullptr);
+    EXPECT_EQ(*example_sign,
+              "API-Sign: "
+              "4/dpxb3iT4tp/ZCVEwSnEsLxx0bqyhLpdfOpc6fn7OR8+UClSV5n9E6aSS8MPtnRfp32bAb0nmbRn6H8ndwLUQ==");
+
+    int submit_calls = 0;
+    int amend_calls = 0;
+    int cancel_all_calls = 0;
+    ScopedMockTransport transport([&](const char* method, const std::string& url,
+                                      const std::string& body,
+                                      const std::vector<std::string>& headers) {
+        EXPECT_EQ(std::strcmp(method, "POST"), 0);
+        EXPECT_NE(find_header(headers, "API-Key: "), nullptr);
+        EXPECT_NE(find_header(headers, "API-Sign: "), nullptr);
+        EXPECT_NE(find_header(headers, "Content-Type: "), nullptr);
+        EXPECT_TRUE(contains(body, "nonce="));
+
+        if (contains(url, "AddOrder")) {
+            ++submit_calls;
+            EXPECT_TRUE(contains(body, "pair=XBT/USD"));
+            EXPECT_TRUE(contains(body, "ordertype=limit"));
+            EXPECT_TRUE(contains(body, "price=100"));
+            EXPECT_TRUE(contains(body, "volume=0.1"));
+            EXPECT_TRUE(contains(body, "cl_ord_id=TRT-42-KRAKEN"));
+            return http::HttpResponse{200, R"({"result":{"txid":["kr-42"]}})"};
+        }
+        if (contains(url, "QueryOrders")) {
+            return http::HttpResponse{
+                200, R"({"result":{"kr-42":{"status":"open","vol_exec":0.0,"price":100.0}}})"};
+        }
+        if (contains(url, "AmendOrder")) {
+            ++amend_calls;
+            EXPECT_TRUE(contains(body, "txid=kr-42"));
+            EXPECT_TRUE(contains(body, "order_qty=0.1"));
+            EXPECT_TRUE(contains(body, "limit_price=101"));
+            EXPECT_FALSE(contains(body, "EditOrder"));
+            return http::HttpResponse{200, R"({"result":{"amend_id":"ok"}})"};
+        }
+        if (contains(url, "CancelOrder")) {
+            return http::HttpResponse{200, R"({"result":{"count":1}})"};
+        }
+        if (contains(url, "CancelAll")) {
+            ++cancel_all_calls;
+            EXPECT_FALSE(contains(url, "CancelAllOrdersAfter"));
+            EXPECT_FALSE(contains(body, "pair="));
+            return http::HttpResponse{200, R"({"result":{"count":2}})"};
+        }
+        return http::HttpResponse{404, ""};
+    });
+
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    Order order = make_order(Exchange::KRAKEN, 42, "XBTUSD");
+    ASSERT_EQ(c.submit_order(order), ConnectorResult::OK);
+
+    FillUpdate status{};
+    ASSERT_EQ(c.query_order(42, status), ConnectorResult::OK);
+
+    Order replacement = order;
+    replacement.client_order_id = 43;
+    replacement.price = 101.0;
+    ASSERT_EQ(c.replace_order(42, replacement), ConnectorResult::OK);
+    ASSERT_NE(c.order_map().get(43), nullptr);
+    EXPECT_STREQ(c.order_map().get(43)->venue_order_id, "kr-42");
+    ASSERT_EQ(c.cancel_all("XBTUSD"), ConnectorResult::OK);
+
+    EXPECT_EQ(submit_calls, 1);
+    EXPECT_EQ(amend_calls, 1);
+    EXPECT_EQ(cancel_all_calls, 1);
 }
 
 TEST(LiveConnectorsTest, OkxAuthenticatedFlow) {
