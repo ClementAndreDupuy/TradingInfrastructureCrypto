@@ -2,14 +2,33 @@
 #include "../../common/rest_client.hpp"
 #include "../common/tick_size.hpp"
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <cctype>
+#include <ctime>
 #include <exception>
+#include <iomanip>
 #include <libwebsockets.h>
+#include <random>
+#include <sstream>
+#if defined(TRT_DISABLE_OPENSSL)
+#define TRT_HAS_OPENSSL 0
+#elif __has_include(<openssl/evp.h>)
+#include <openssl/bn.h>
+#include <openssl/ecdsa.h>
+#include <openssl/evp.h>
+#include <openssl/pem.h>
+#include <openssl/rand.h>
+#define TRT_HAS_OPENSSL 1
+#else
+#define TRT_HAS_OPENSSL 0
+#endif
 
 namespace trading {
+namespace {
 
 struct CoinbaseWsSession {
     CoinbaseFeedHandler* handler;
@@ -17,12 +36,124 @@ struct CoinbaseWsSession {
     bool established{false};
     bool closed{false};
     bool send_ping{false};
-    bool send_subscribe{false};
     int64_t last_ping_ns{0};
-    std::string subscribe_msg;
+    size_t pending_msg_index{0};
+    std::vector<std::string> subscribe_msgs;
     char frag_buf[131072];
     size_t frag_len{0};
 };
+
+static auto base64url_encode(const unsigned char* data, size_t len) -> std::string {
+    static constexpr char k_chars[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    std::string out;
+    out.reserve(((len + 2U) / 3U) * 4U);
+    for (size_t i = 0; i < len; i += 3U) {
+        const unsigned int octet_a = data[i];
+        const unsigned int octet_b = (i + 1U < len) ? data[i + 1U] : 0U;
+        const unsigned int octet_c = (i + 2U < len) ? data[i + 2U] : 0U;
+        const unsigned int triple = (octet_a << 16U) | (octet_b << 8U) | octet_c;
+        out.push_back(k_chars[(triple >> 18U) & 0x3FU]);
+        out.push_back(k_chars[(triple >> 12U) & 0x3FU]);
+        if (i + 1U < len) {
+            out.push_back(k_chars[(triple >> 6U) & 0x3FU]);
+        }
+        if (i + 2U < len) {
+            out.push_back(k_chars[triple & 0x3FU]);
+        }
+    }
+    return out;
+}
+
+static auto base64url_encode(const std::string& data) -> std::string {
+    return base64url_encode(reinterpret_cast<const unsigned char*>(data.data()), data.size());
+}
+
+static auto random_hex(size_t bytes) -> std::string {
+    static constexpr char k_hex[] = "0123456789abcdef";
+    std::string out(bytes * 2U, '0');
+#if TRT_HAS_OPENSSL
+    std::vector<unsigned char> buf(bytes);
+    if (RAND_bytes(buf.data(), static_cast<int>(buf.size())) == 1) {
+        for (size_t i = 0; i < bytes; ++i) {
+            out[2U * i] = k_hex[(buf[i] >> 4U) & 0xFU];
+            out[2U * i + 1U] = k_hex[buf[i] & 0xFU];
+        }
+        return out;
+    }
+#endif
+    std::random_device rd;
+    for (size_t i = 0; i < bytes; ++i) {
+        const unsigned char b = static_cast<unsigned char>(rd());
+        out[2U * i] = k_hex[(b >> 4U) & 0xFU];
+        out[2U * i + 1U] = k_hex[b & 0xFU];
+    }
+    return out;
+}
+
+
+#if TRT_HAS_OPENSSL
+static auto ecdsa_der_to_jose(const unsigned char* der, size_t der_len) -> std::string {
+    const unsigned char* cursor = der;
+    ECDSA_SIG* sig = d2i_ECDSA_SIG(nullptr, &cursor, static_cast<long>(der_len));
+    if (sig == nullptr) {
+        return std::string();
+    }
+
+    const BIGNUM* r = nullptr;
+    const BIGNUM* s = nullptr;
+    ECDSA_SIG_get0(sig, &r, &s);
+    if (r == nullptr || s == nullptr) {
+        ECDSA_SIG_free(sig);
+        return std::string();
+    }
+
+    std::array<unsigned char, 64> raw = {};
+    if (BN_bn2binpad(r, raw.data(), 32) != 32 || BN_bn2binpad(s, raw.data() + 32, 32) != 32) {
+        ECDSA_SIG_free(sig);
+        return std::string();
+    }
+
+    ECDSA_SIG_free(sig);
+    return base64url_encode(raw.data(), raw.size());
+}
+#endif
+
+static auto parse_rfc3339_ns(const std::string& value) -> int64_t {
+    if (value.size() < 20U) {
+        return 0;
+    }
+    std::tm tm = {};
+    std::istringstream ss(value.substr(0, 19));
+    ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
+    if (ss.fail()) {
+        return 0;
+    }
+    int64_t nanos = 0;
+    size_t pos = 19U;
+    if (pos < value.size() && value[pos] == '.') {
+        ++pos;
+        size_t digits = 0;
+        while (pos < value.size() && std::isdigit(static_cast<unsigned char>(value[pos])) &&
+               digits < 9U) {
+            nanos = nanos * 10 + static_cast<int64_t>(value[pos] - '0');
+            ++pos;
+            ++digits;
+        }
+        while (digits < 9U) {
+            nanos *= 10;
+            ++digits;
+        }
+        while (pos < value.size() && std::isdigit(static_cast<unsigned char>(value[pos]))) {
+            ++pos;
+        }
+    }
+    time_t seconds = timegm(&tm);
+    if (seconds < 0) {
+        return 0;
+    }
+    return static_cast<int64_t>(seconds) * 1'000'000'000LL + nanos;
+}
 
 static auto coinbase_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* /*user*/,
                             void* input, size_t len) -> int {
@@ -35,7 +166,6 @@ static auto coinbase_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, v
     case LWS_CALLBACK_CLIENT_ESTABLISHED:
         session->wsi = wsi;
         session->established = true;
-        session->send_subscribe = true;
         session->last_ping_ns = http::now_ns();
         lws_callback_on_writable(wsi);
         lws_cancel_service(lws_get_context(wsi));
@@ -48,7 +178,6 @@ static auto coinbase_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, v
             std::memcpy(session->frag_buf + session->frag_len, data, len);
             session->frag_len += len;
         } else {
-            // Message exceeds buffer: discard the entire fragmented message.
             session->frag_len = 0;
         }
         if (is_final && session->frag_len > 0 && (session->handler != nullptr)) {
@@ -59,12 +188,15 @@ static auto coinbase_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, v
     }
 
     case LWS_CALLBACK_CLIENT_WRITEABLE: {
-        if (session->send_subscribe && !session->subscribe_msg.empty()) {
-            std::vector<unsigned char> buf(LWS_PRE + session->subscribe_msg.size());
-            std::memcpy(buf.data() + LWS_PRE, session->subscribe_msg.c_str(),
-                        session->subscribe_msg.size());
-            lws_write(wsi, buf.data() + LWS_PRE, session->subscribe_msg.size(), LWS_WRITE_TEXT);
-            session->send_subscribe = false;
+        if (session->pending_msg_index < session->subscribe_msgs.size()) {
+            const std::string& msg = session->subscribe_msgs[session->pending_msg_index];
+            std::vector<unsigned char> buf(LWS_PRE + msg.size());
+            std::memcpy(buf.data() + LWS_PRE, msg.c_str(), msg.size());
+            lws_write(wsi, buf.data() + LWS_PRE, msg.size(), LWS_WRITE_TEXT);
+            ++session->pending_msg_index;
+            if (session->pending_msg_index < session->subscribe_msgs.size()) {
+                lws_callback_on_writable(wsi);
+            }
         } else if (session->send_ping) {
             unsigned char buf[LWS_PRE + 4] = {};
             lws_write(wsi, buf + LWS_PRE, 0, LWS_WRITE_PING);
@@ -91,6 +223,8 @@ static struct lws_protocols k_coinbase_protocols[] = {
     {nullptr, nullptr, 0, 0, 0, nullptr, 0},
 };
 
+} // namespace
+
 CoinbaseFeedHandler::CoinbaseFeedHandler(const std::string& symbol, const std::string& ws_url,
                                          const std::string& api_url)
     : symbol_(symbol), ws_url_(ws_url), api_url_(api_url),
@@ -99,6 +233,118 @@ CoinbaseFeedHandler::CoinbaseFeedHandler(const std::string& symbol, const std::s
 }
 
 CoinbaseFeedHandler::~CoinbaseFeedHandler() { stop(); }
+
+auto CoinbaseFeedHandler::coinbase_api_key_from_env() -> std::string {
+    std::string value = http::env_var("COINBASE_API_KEY");
+    if (!value.empty()) {
+        return value;
+    }
+    value = http::env_var("LIVE_COINBASE_API_KEY");
+    if (!value.empty()) {
+        return value;
+    }
+    return http::env_var("SHADOW_COINBASE_API_KEY");
+}
+
+auto CoinbaseFeedHandler::coinbase_api_secret_from_env() -> std::string {
+    std::string value = http::env_var("COINBASE_API_SECRET");
+    if (!value.empty()) {
+        return value;
+    }
+    value = http::env_var("LIVE_COINBASE_API_SECRET");
+    if (!value.empty()) {
+        return value;
+    }
+    return http::env_var("SHADOW_COINBASE_API_SECRET");
+}
+
+auto CoinbaseFeedHandler::generate_jwt(const std::string& api_key, const std::string& api_secret)
+    -> std::string {
+#if TRT_HAS_OPENSSL
+    if (api_key.empty() || api_secret.empty()) {
+        return std::string();
+    }
+
+    const int64_t now_s = http::now_ns() / 1'000'000'000LL;
+    nlohmann::json header = {{"alg", "ES256"}, {"kid", api_key}, {"nonce", random_hex(16)}};
+    nlohmann::json payload = {
+        {"iss", "cdp"},
+        {"nbf", now_s},
+        {"exp", now_s + 120},
+        {"sub", api_key},
+    };
+
+    const std::string signing_input = base64url_encode(header.dump()) + "." +
+                                      base64url_encode(payload.dump());
+
+    BIO* bio = BIO_new_mem_buf(api_secret.data(), static_cast<int>(api_secret.size()));
+    if (bio == nullptr) {
+        return std::string();
+    }
+    EVP_PKEY* key = PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
+    BIO_free(bio);
+    if (key == nullptr) {
+        return std::string();
+    }
+
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (ctx == nullptr) {
+        EVP_PKEY_free(key);
+        return std::string();
+    }
+
+    size_t der_len = 0;
+    std::string jwt;
+    if (EVP_DigestSignInit(ctx, nullptr, EVP_sha256(), nullptr, key) == 1 &&
+        EVP_DigestSignUpdate(ctx, signing_input.data(), signing_input.size()) == 1 &&
+        EVP_DigestSignFinal(ctx, nullptr, &der_len) == 1) {
+        std::vector<unsigned char> der(der_len);
+        if (EVP_DigestSignFinal(ctx, der.data(), &der_len) == 1) {
+            der.resize(der_len);
+            const std::string signature = ecdsa_der_to_jose(der.data(), der.size());
+            if (!signature.empty()) {
+                jwt = signing_input + "." + signature;
+            }
+        }
+    }
+
+    EVP_MD_CTX_free(ctx);
+    EVP_PKEY_free(key);
+    return jwt;
+#else
+    (void)api_key;
+    (void)api_secret;
+    return std::string();
+#endif
+}
+
+auto CoinbaseFeedHandler::build_subscription_messages() -> std::vector<std::string> {
+    std::vector<std::string> messages;
+    const std::string api_key = coinbase_api_key_from_env();
+    const std::string api_secret = coinbase_api_secret_from_env();
+    const bool have_credentials = !api_key.empty() && !api_secret.empty();
+
+    auto make_sub = [&](const char* channel, bool include_product_ids) {
+        nlohmann::json sub = {{"type", "subscribe"}, {"channel", channel}};
+        if (include_product_ids) {
+            sub["product_ids"] = nlohmann::json::array({venue_symbols_.coinbase});
+        }
+        if (have_credentials) {
+            const std::string jwt = generate_jwt(api_key, api_secret);
+            if (!jwt.empty()) {
+                sub["jwt"] = jwt;
+            } else {
+                LOG_WARN("Coinbase JWT generation failed, sending unauthenticated subscribe",
+                         "symbol", symbol_.c_str(), "channel", channel);
+            }
+        }
+        messages.push_back(sub.dump());
+    };
+
+    make_sub("heartbeats", false);
+    make_sub("level2", true);
+    return messages;
+}
 
 auto CoinbaseFeedHandler::fetch_tick_size() -> Result {
     const std::string url = api_url_ + "/products/" + venue_symbols_.coinbase;
@@ -152,8 +398,13 @@ auto CoinbaseFeedHandler::start() -> Result {
         running_.store(true, std::memory_order_release);
         state_.store(State::BUFFERING, std::memory_order_release);
         last_sequence_.store(0, std::memory_order_release);
+        last_heartbeat_ns_.store(0, std::memory_order_release);
+        last_event_time_exchange_ns_.store(0, std::memory_order_release);
+        last_start_failure_reason_ = "timeout waiting for snapshot";
         delta_buffer_.clear();
         reconnect_requested_.store(false, std::memory_order_release);
+        auth_rejected_.store(false, std::memory_order_release);
+        subscription_rejected_.store(false, std::memory_order_release);
 
         ws_thread_ = std::thread([this]() -> void { ws_event_loop(); });
 
@@ -170,10 +421,9 @@ auto CoinbaseFeedHandler::start() -> Result {
             return Result::SUCCESS;
         }
 
-        const char* sub_reason =
-            !ready ? "timeout waiting for snapshot" : "connection error before snapshot";
+        const std::string sub_reason = last_start_failure_reason_;
         LOG_ERROR("Coinbase feed start failed", "symbol", symbol_.c_str(), "attempt", attempt,
-                  "reason", sub_reason);
+                  "reason", sub_reason.c_str());
 
         running_.store(false, std::memory_order_release);
         if (auto* ctx =
@@ -218,6 +468,7 @@ void CoinbaseFeedHandler::stop() {
 
 void CoinbaseFeedHandler::ws_event_loop() {
     constexpr uint32_t MAX_DELAY_MS = 30000;
+    constexpr int64_t k_heartbeat_grace_ns = 5LL * 1'000'000'000LL;
     uint32_t delay_ms = 100;
 
     std::string ws_host = "advanced-trade-ws.coinbase.com";
@@ -251,13 +502,7 @@ void CoinbaseFeedHandler::ws_event_loop() {
     while (running_.load(std::memory_order_acquire)) {
         CoinbaseWsSession session;
         session.handler = this;
-
-        nlohmann::json sub = {
-            {"type", "subscribe"},
-            {"product_ids", nlohmann::json::array({venue_symbols_.coinbase})},
-            {"channel", "level2"},
-        };
-        session.subscribe_msg = sub.dump();
+        session.subscribe_msgs = build_subscription_messages();
 
         lws_context_creation_info ctx_info = {};
         ctx_info.port = CONTEXT_PORT_NO_LISTEN;
@@ -267,6 +512,7 @@ void CoinbaseFeedHandler::ws_event_loop() {
 
         auto* ctx = lws_create_context(&ctx_info);
         if (ctx == nullptr) {
+            last_start_failure_reason_ = "websocket context creation failed";
             LOG_ERROR("lws_create_context failed", "symbol", symbol_.c_str());
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
@@ -285,6 +531,7 @@ void CoinbaseFeedHandler::ws_event_loop() {
         connect_info.ssl_connection = LCCSCF_USE_SSL;
 
         if (lws_client_connect_via_info(&connect_info) == nullptr) {
+            last_start_failure_reason_ = "websocket connect failed";
             LOG_ERROR("Coinbase WebSocket connect failed", "symbol", symbol_.c_str());
             lws_context_destroy(ctx);
             lws_ctx_.store(nullptr, std::memory_order_release);
@@ -315,7 +562,14 @@ void CoinbaseFeedHandler::ws_event_loop() {
                 session.closed = true;
                 break;
             }
-            int64_t now_ns = http::now_ns();
+            const int64_t now_ns = http::now_ns();
+            const int64_t heartbeat_ns = last_heartbeat_ns_.load(std::memory_order_acquire);
+            if (heartbeat_ns > 0 && now_ns - heartbeat_ns > k_heartbeat_grace_ns) {
+                last_start_failure_reason_ = "heartbeat timeout";
+                trigger_resnapshot("Coinbase heartbeat timeout");
+                session.closed = true;
+                break;
+            }
             if (now_ns - session.last_ping_ns >= 20LL * 1'000'000'000LL) {
                 session.send_ping = true;
                 session.last_ping_ns = now_ns;
@@ -345,6 +599,7 @@ auto CoinbaseFeedHandler::process_snapshot(const nlohmann::json& json, uint64_t 
     snap.exchange = Exchange::COINBASE;
     snap.sequence = seq;
     snap.timestamp_local_ns = http::now_ns();
+    snap.timestamp_exchange_ns = extract_exchange_timestamp_ns(json);
 
     auto events_it = json.find("events");
     if (events_it == json.end() || !events_it->is_array()) {
@@ -388,6 +643,7 @@ auto CoinbaseFeedHandler::process_snapshot(const nlohmann::json& json, uint64_t 
     }
 
     last_sequence_.store(seq, std::memory_order_release);
+    last_event_time_exchange_ns_.store(snap.timestamp_exchange_ns, std::memory_order_release);
     if (snapshot_callback_) {
         snapshot_callback_(snap);
     }
@@ -397,7 +653,9 @@ auto CoinbaseFeedHandler::process_snapshot(const nlohmann::json& json, uint64_t 
 
 auto CoinbaseFeedHandler::process_update(const nlohmann::json& json, uint64_t seq) -> Result {
     last_sequence_.store(seq, std::memory_order_release);
-    int64_t timestamp_ns = http::now_ns();
+    const int64_t timestamp_local_ns = http::now_ns();
+    const int64_t timestamp_exchange_ns = extract_exchange_timestamp_ns(json);
+    last_event_time_exchange_ns_.store(timestamp_exchange_ns, std::memory_order_release);
 
     auto events_it = json.find("events");
     if (events_it == json.end() || !events_it->is_array()) {
@@ -424,7 +682,8 @@ auto CoinbaseFeedHandler::process_update(const nlohmann::json& json, uint64_t se
                 delta.price = std::stod(px_it->get<std::string>());
                 delta.size = std::stod(qty_it->get<std::string>());
                 delta.sequence = seq;
-                delta.timestamp_local_ns = timestamp_ns;
+                delta.timestamp_exchange_ns = timestamp_exchange_ns;
+                delta.timestamp_local_ns = timestamp_local_ns;
                 if (delta_callback_) {
                     delta_callback_(delta);
                 }
@@ -438,19 +697,76 @@ auto CoinbaseFeedHandler::process_update(const nlohmann::json& json, uint64_t se
     return Result::SUCCESS;
 }
 
+auto CoinbaseFeedHandler::extract_exchange_timestamp_ns(const nlohmann::json& json) const
+    -> int64_t {
+    auto ts_it = json.find("timestamp");
+    if (ts_it != json.end() && ts_it->is_string()) {
+        return parse_rfc3339_ns(ts_it->get<std::string>());
+    }
+
+    auto events_it = json.find("events");
+    if (events_it != json.end() && events_it->is_array()) {
+        for (const auto& event : *events_it) {
+            auto event_ts_it = event.find("event_time");
+            if (event_ts_it != event.end() && event_ts_it->is_string()) {
+                return parse_rfc3339_ns(event_ts_it->get<std::string>());
+            }
+            auto current_time_it = event.find("current_time");
+            if (current_time_it != event.end() && current_time_it->is_string()) {
+                return parse_rfc3339_ns(current_time_it->get<std::string>());
+            }
+        }
+    }
+
+    return 0;
+}
+
 auto CoinbaseFeedHandler::process_message(const std::string& message) -> Result {
     auto json = nlohmann::json::parse(message, nullptr, false);
     if (json.is_discarded()) {
         return Result::SUCCESS;
     }
 
-    auto channel_it = json.find("channel");
     auto type_it = json.find("type");
-    if (channel_it == json.end() || type_it == json.end()) {
+    if (type_it != json.end() && type_it->is_string() && type_it->get<std::string>() == "error") {
+        std::string reason = json.value("message", std::string("unknown error"));
+        std::string reason_lower = reason;
+        std::transform(reason_lower.begin(), reason_lower.end(), reason_lower.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (reason_lower.find("auth") != std::string::npos ||
+            reason_lower.find("jwt") != std::string::npos ||
+            reason_lower.find("signature") != std::string::npos) {
+            auth_rejected_.store(true, std::memory_order_release);
+            last_start_failure_reason_ = "authentication rejected: " + reason;
+        } else {
+            subscription_rejected_.store(true, std::memory_order_release);
+            last_start_failure_reason_ = "subscription rejected: " + reason;
+        }
+        running_.store(false, std::memory_order_release);
+        ws_cv_.notify_all();
+        if (error_callback_) {
+            error_callback_(last_start_failure_reason_);
+        }
+        return Result::ERROR_CONNECTION_LOST;
+    }
+
+    auto channel_it = json.find("channel");
+    if (channel_it == json.end() || !channel_it->is_string()) {
         return Result::SUCCESS;
     }
 
     const std::string channel = channel_it->get<std::string>();
+    if (channel == "subscriptions") {
+        return Result::SUCCESS;
+    }
+    if (channel == "heartbeats") {
+        const int64_t exchange_ts = extract_exchange_timestamp_ns(json);
+        last_heartbeat_ns_.store(http::now_ns(), std::memory_order_release);
+        if (exchange_ts > 0) {
+            last_event_time_exchange_ns_.store(exchange_ts, std::memory_order_release);
+        }
+        return Result::SUCCESS;
+    }
     if (channel != "l2_data") {
         return Result::SUCCESS;
     }
@@ -481,11 +797,13 @@ auto CoinbaseFeedHandler::process_message(const std::string& message) -> Result 
     if (has_snapshot) {
         Result result = process_snapshot(json, seq);
         if (result != Result::SUCCESS) {
+            last_start_failure_reason_ = "invalid snapshot payload";
             trigger_resnapshot("Invalid Coinbase snapshot");
             return result;
         }
 
         if (apply_buffered_deltas() != Result::SUCCESS) {
+            last_start_failure_reason_ = "buffered delta replay failed";
             trigger_resnapshot("Buffered Coinbase deltas invalid after snapshot");
             return Result::ERROR_SEQUENCE_GAP;
         }
@@ -500,12 +818,14 @@ auto CoinbaseFeedHandler::process_message(const std::string& message) -> Result 
         if (delta_buffer_.size() < MAX_BUFFER_SIZE) {
             delta_buffer_.push_back(message);
         } else {
+            last_start_failure_reason_ = "buffer overflow before snapshot";
             trigger_resnapshot("Buffer overflow");
         }
         return Result::SUCCESS;
     }
 
     if (!validate_delta_sequence(seq)) {
+        last_start_failure_reason_ = "sequence gap resync";
         trigger_resnapshot("Coinbase sequence gap");
         return Result::ERROR_SEQUENCE_GAP;
     }
