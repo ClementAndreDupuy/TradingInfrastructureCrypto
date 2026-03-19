@@ -51,6 +51,10 @@ class CoinbaseFeedHandler {
     double tick_size() const noexcept { return tick_size_; }
 
     Result process_message(const std::string& message);
+    std::vector<std::string> build_subscription_messages();
+    static std::string coinbase_api_key_from_env();
+    static std::string coinbase_api_secret_from_env();
+    static std::string generate_jwt(const std::string& api_key, const std::string& api_secret);
 
   private:
     Result fetch_tick_size();
@@ -67,10 +71,15 @@ class CoinbaseFeedHandler {
     std::atomic<State> state_{State::DISCONNECTED};
     std::atomic<void*> lws_ctx_{nullptr};
     std::atomic<bool> reconnect_requested_{false};
+    std::atomic<int64_t> last_heartbeat_ns_{0};
+    std::atomic<int64_t> last_event_time_exchange_ns_{0};
+    std::atomic<bool> auth_rejected_{false};
+    std::atomic<bool> subscription_rejected_{false};
 
     std::thread ws_thread_;
     std::mutex ws_mutex_;
     std::condition_variable ws_cv_;
+    std::string last_start_failure_reason_;
 
     std::deque<std::string> delta_buffer_;
     static constexpr size_t MAX_BUFFER_SIZE = 1000;
@@ -80,6 +89,7 @@ class CoinbaseFeedHandler {
     ErrorCallback error_callback_;
 
     void ws_event_loop();
+    int64_t extract_exchange_timestamp_ns(const nlohmann::json& j) const;
     Result process_snapshot(const nlohmann::json& j, uint64_t seq);
     Result process_update(const nlohmann::json& j, uint64_t seq);
     Result apply_buffered_deltas();

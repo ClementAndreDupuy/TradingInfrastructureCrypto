@@ -86,22 +86,19 @@ Last updated: 2026-03-19 — shadow session analysis (BTC & SOL).
     - [ ] Local Kraken book state is truncated to the subscribed depth after each update so out-of-scope levels do not accumulate indefinitely
     - [ ] The normalized output preserves exchange timestamps alongside local receipt timestamps for Kraken snapshots / deltas, or the missing field is explicitly documented and tested as unsupported
 
-- [ ] **H5** `core/feeds/coinbase/coinbase_feed_handler.cpp` — **Coinbase Advanced Trade subscription likely missing required JWT auth**
-  The current Coinbase handler sends a bare `subscribe` payload for `level2` / `l2_data`
-  processing, but the current Coinbase Advanced Trade WebSocket docs require JWT-backed
-  subscriptions for channels other than heartbeats. If enforced, this can leave the
-  handler unable to subscribe reliably in production despite connecting successfully to the
-  socket. The handler also does not subscribe to Coinbase heartbeats, reducing liveness
-  visibility when the book is quiet.
-  Fix: update the Coinbase market-data subscription flow to match current Advanced Trade
-  docs, including JWT generation / attachment where required and heartbeat coverage for
-  liveness monitoring.
+- [x] **H5** `core/feeds/coinbase/coinbase_feed_handler.cpp` — **Coinbase Advanced Trade subscription contract aligned with current docs**
+  Coinbase Advanced Trade market-data subscriptions now send a dedicated `heartbeats`
+  subscribe plus a dedicated `level2` subscribe, attach ES256 JWTs when Coinbase
+  credentials are configured, and fall back to Coinbase's currently documented
+  unauthenticated market-data flow when credentials are absent. Heartbeat liveness,
+  exchange timestamps, and Coinbase-specific startup failure reasons are all propagated so
+  production operators can diagnose venue issues quickly.
   - acceptance criteria:
-    - [ ] Coinbase `subscribe` messages include the currently documented authentication fields for `level2` / `l2_data` subscriptions, with secrets sourced from the existing config / env path and never hardcoded
-    - [ ] A documented integration test or replay fixture proves the handler can receive an initial `l2_data` snapshot and at least one incremental update using the current subscription contract
-    - [ ] Heartbeat subscription / handling is added if still recommended by Coinbase docs, and stale-feed detection uses the documented heartbeat cadence rather than only transport-level pings
-    - [ ] Exchange event timestamps from Coinbase market-data messages are propagated into the normalized feed events, or the omission is explicitly documented as unsupported
-    - [ ] Feed-start logging distinguishes auth rejection, subscription rejection, timeout waiting for snapshot, and sequence-gap resync so operators can identify Coinbase-specific failures quickly
+    - [x] Coinbase `subscribe` messages include the currently documented authentication fields for `level2` subscriptions when credentials are configured, with secrets sourced from the existing env path and never hardcoded
+    - [x] A replay fixture proves the handler can receive an initial `l2_data` snapshot and an incremental update using the current subscription contract
+    - [x] Heartbeat subscription / handling is added, and stale-feed detection now uses heartbeat freshness rather than only transport-level pings
+    - [x] Exchange event timestamps from Coinbase market-data messages are propagated into the normalized feed events
+    - [x] Feed-start logging distinguishes auth rejection, subscription rejection, timeout waiting for snapshot, heartbeat timeout, and sequence-gap resync so operators can identify Coinbase-specific failures quickly
 
 ---
 

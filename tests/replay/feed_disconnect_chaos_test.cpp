@@ -10,7 +10,6 @@ namespace {
 
 TEST(FeedDisconnectChaosTest, BinanceGapThenRecoveryMessageSucceeds) {
     BinanceFeedHandler h("BTCUSDT");
-    // Stay offline: deterministic gap/recovery validation without network I/O.
     const uint64_t base = h.get_sequence();
 
     const std::string gap = R"({"e":"depthUpdate","s":"BTCUSDT","U":)" +
@@ -41,6 +40,31 @@ TEST(FeedDisconnectChaosTest, KrakenGapThenRecoveryMessageSucceeds) {
     EXPECT_EQ(h.process_message(recover), Result::SUCCESS);
 }
 
+TEST(FeedDisconnectChaosTest, CoinbaseSubscriptionContractSnapshotAndUpdateSucceed) {
+    CoinbaseFeedHandler h("BTC-USD");
+    const auto subscribe_messages = h.build_subscription_messages();
+    ASSERT_EQ(subscribe_messages.size(), 2u);
+    const auto heartbeat_sub = nlohmann::json::parse(subscribe_messages[0]);
+    const auto level2_sub = nlohmann::json::parse(subscribe_messages[1]);
+    EXPECT_EQ(heartbeat_sub.at("channel").get<std::string>(), "heartbeats");
+    EXPECT_FALSE(heartbeat_sub.contains("product_ids"));
+    EXPECT_EQ(level2_sub.at("channel").get<std::string>(), "level2");
+    ASSERT_TRUE(level2_sub.contains("product_ids"));
+    EXPECT_EQ(level2_sub.at("product_ids")[0].get<std::string>(), "BTC-USD");
+
+    const std::string heartbeat =
+        R"({"channel":"heartbeats","timestamp":"2026-03-19T12:00:00.000000000Z","events":[{"current_time":"2026-03-19T12:00:00.000000000Z","heartbeat_counter":"1"}]})";
+    EXPECT_EQ(h.process_message(heartbeat), Result::SUCCESS);
+
+    const std::string snap =
+        R"({"channel":"l2_data","type":"l2_data","timestamp":"2026-03-19T12:00:01.000000000Z","sequence_num":100,"events":[{"type":"snapshot","updates":[{"side":"bid","price_level":"50000.0","new_quantity":"1.0"},{"side":"offer","price_level":"50001.0","new_quantity":"1.0"}]}]})";
+    ASSERT_EQ(h.process_message(snap), Result::SUCCESS);
+
+    const std::string update =
+        R"({"channel":"l2_data","type":"l2_data","timestamp":"2026-03-19T12:00:02.000000000Z","sequence_num":101,"events":[{"type":"update","updates":[{"side":"bid","price_level":"50000.5","new_quantity":"1.5"}]}]})";
+    EXPECT_EQ(h.process_message(update), Result::SUCCESS);
+}
+
 TEST(FeedDisconnectChaosTest, CoinbaseGapThenRecoveryViaSnapshot) {
     CoinbaseFeedHandler h("BTC-USD");
 
@@ -56,9 +80,9 @@ TEST(FeedDisconnectChaosTest, CoinbaseGapThenRecoveryViaSnapshot) {
         R"({"channel":"l2_data","type":"l2_data","sequence_num":200,"events":[{"type":"snapshot","updates":[{"side":"bid","price_level":"50010.0","new_quantity":"1.0"},{"side":"offer","price_level":"50011.0","new_quantity":"1.0"}]}]})";
     EXPECT_EQ(h.process_message(resnap), Result::SUCCESS);
 
-    const std::string update =
+    const std::string update2 =
         R"({"channel":"l2_data","type":"l2_data","sequence_num":201,"events":[{"type":"update","updates":[{"side":"bid","price_level":"50010.5","new_quantity":"1.5"}]}]})";
-    EXPECT_EQ(h.process_message(update), Result::SUCCESS);
+    EXPECT_EQ(h.process_message(update2), Result::SUCCESS);
 }
 
 TEST(FeedDisconnectChaosTest, OkxGapThenRecoveryWithStreamingState) {
