@@ -52,7 +52,7 @@ class BinanceFeedHandler {
     void stop();
 
     bool is_running() const { return running_.load(std::memory_order_acquire); }
-    uint64_t get_sequence() const { return last_update_id_.load(std::memory_order_acquire); }
+    uint64_t get_sequence() const { return last_sequence_.load(std::memory_order_acquire); }
     double tick_size() const noexcept { return tick_size_; }
 
     Result process_message(const std::string& message);
@@ -71,7 +71,7 @@ class BinanceFeedHandler {
     double tick_size_{0.0};
 
     std::atomic<bool> running_{false};
-    std::atomic<uint64_t> last_update_id_{0};
+    std::atomic<uint64_t> last_sequence_{0};
     std::atomic<State> state_{State::DISCONNECTED};
     std::atomic<void*> lws_ctx_{nullptr};
 
@@ -86,16 +86,14 @@ class BinanceFeedHandler {
     DeltaCallback delta_callback_;
     ErrorCallback error_callback_;
 
-    // Launched by start(); handles connect → snapshot → stream → reconnect loop.
     void ws_event_loop();
-    Result fetch_snapshot();
+    Result process_snapshot();
     Result process_delta(const nlohmann::json& j, uint64_t seq);
     Result apply_buffered_deltas();
     bool validate_delta_sequence(uint64_t first_update_id, uint64_t last_update_id);
     void trigger_resnapshot(const std::string& reason);
 
-    // Rate limit: enforces minimum 1s between REST snapshot calls.
     std::chrono::steady_clock::time_point last_snapshot_time_{};
 };
 
-} // namespace trading
+}

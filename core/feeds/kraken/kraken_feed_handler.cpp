@@ -41,7 +41,7 @@ struct KrakenWsSession {
     size_t frag_len{0};
 };
 
-static auto kraken_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* /*user*/,
+static auto kraken_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* unused,
                           void* input, size_t len) -> int {
     auto* session = static_cast<KrakenWsSession*>(lws_context_user(lws_get_context(wsi)));
     if (session == nullptr) {
@@ -165,7 +165,7 @@ auto KrakenFeedHandler::start() -> Result {
     fetch_tick_size();
     running_.store(true, std::memory_order_release);
     state_.store(State::BUFFERING, std::memory_order_release);
-    last_seq_.store(0, std::memory_order_release);
+    last_sequence_.store(0, std::memory_order_release);
     bids_.clear();
     asks_.clear();
     delta_buffer_.clear();
@@ -301,7 +301,7 @@ void KrakenFeedHandler::ws_event_loop() {
         LOG_INFO("WebSocket established, waiting for Kraken snapshot", "symbol", symbol_.c_str());
         state_.store(State::BUFFERING, std::memory_order_release);
         delta_buffer_.clear();
-        last_seq_.store(0, std::memory_order_release);
+        last_sequence_.store(0, std::memory_order_release);
         bids_.clear();
         asks_.clear();
         delay_ms = 100;
@@ -365,7 +365,7 @@ auto KrakenFeedHandler::process_message(const std::string& message) -> Result {
         return Result::SUCCESS;
     }
 
-    const uint64_t seq = last_seq_.load(std::memory_order_acquire) + 1;
+    const uint64_t seq = last_sequence_.load(std::memory_order_acquire) + 1;
     auto cur = state_.load(std::memory_order_acquire);
     if (cur == State::BUFFERING) {
         if (delta_buffer_.size() < MAX_BUFFER_SIZE) {
@@ -420,7 +420,7 @@ auto KrakenFeedHandler::process_snapshot(const std::string& message,
         return Result::ERROR_BOOK_CORRUPTED;
     }
 
-    last_seq_.store(0, std::memory_order_release);
+    last_sequence_.store(0, std::memory_order_release);
     if (snapshot_callback_) {
         snapshot_callback_(snap);
     }
@@ -485,7 +485,7 @@ auto KrakenFeedHandler::process_delta(const std::string& message, const nlohmann
         return Result::ERROR_BOOK_CORRUPTED;
     }
 
-    last_seq_.store(seq, std::memory_order_release);
+    last_sequence_.store(seq, std::memory_order_release);
     return Result::SUCCESS;
 }
 
@@ -703,8 +703,8 @@ void KrakenFeedHandler::trigger_resnapshot(const std::string& reason) {
     delta_buffer_.clear();
     bids_.clear();
     asks_.clear();
-    last_seq_.store(0, std::memory_order_release);
+    last_sequence_.store(0, std::memory_order_release);
     state_.store(State::BUFFERING, std::memory_order_release);
 }
 
-} // namespace trading
+}

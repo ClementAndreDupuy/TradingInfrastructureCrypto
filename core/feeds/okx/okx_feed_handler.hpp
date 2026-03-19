@@ -54,7 +54,6 @@ class OkxFeedHandler {
 
     Result process_message(const std::string& message);
 
-    // Test hooks for deterministic unit coverage without touching internal symbols.
     void set_streaming_state_for_test(uint64_t last_sequence) {
         last_sequence_.store(last_sequence, std::memory_order_release);
         state_.store(State::STREAMING, std::memory_order_release);
@@ -72,7 +71,6 @@ class OkxFeedHandler {
         }
     }
 
-    // Exposes the internal CRC32 algorithm for test checksum construction.
     static uint32_t crc32_for_test(const std::string& data);
 
   private:
@@ -80,7 +78,7 @@ class OkxFeedHandler {
 
     std::string symbol_;
     VenueSymbols venue_symbols_;
-    std::string inst_id_;
+    std::string instrument_id_;
     std::string api_url_;
     std::string ws_url_;
     double tick_size_{0.0};
@@ -105,9 +103,7 @@ class OkxFeedHandler {
     Result fetch_tick_size();
 
     void ws_event_loop();
-    // Handles action:"snapshot" WS push — initialises the book, replays any buffered
-    // updates that arrived before the snapshot, then transitions to STREAMING.
-    Result process_ws_snapshot(const nlohmann::json& json);
+    Result process_snapshot(const nlohmann::json& json);
     Result process_delta(const nlohmann::json& j, uint64_t seq);
     Result apply_buffered_deltas();
     bool validate_delta_sequence(uint64_t seq, uint64_t prev_seq) const;
@@ -115,10 +111,8 @@ class OkxFeedHandler {
     void apply_local_book_levels(const nlohmann::json& data);
     void trigger_resnapshot(const std::string& reason);
 
-    // Key: price as double (for ordering/lookup).
-    // Value: {price_str, size_str} — original wire strings used verbatim in CRC32.
     std::map<double, std::pair<std::string, std::string>, std::greater<double>> bids_;
     std::map<double, std::pair<std::string, std::string>> asks_;
 };
 
-} // namespace trading
+}
