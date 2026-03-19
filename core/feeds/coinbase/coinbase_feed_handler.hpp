@@ -32,7 +32,7 @@ class CoinbaseFeedHandler {
     explicit CoinbaseFeedHandler(
         const std::string& symbol,
         const std::string& ws_url = "wss://advanced-trade-ws.coinbase.com",
-        const std::string& api_url = "https://api.exchange.coinbase.com");
+        const std::string& api_url = "https://api.coinbase.com");
 
     ~CoinbaseFeedHandler();
 

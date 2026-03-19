@@ -347,7 +347,7 @@ auto CoinbaseFeedHandler::build_subscription_messages() -> std::vector<std::stri
 }
 
 auto CoinbaseFeedHandler::fetch_tick_size() -> Result {
-    const std::string url = api_url_ + "/products/" + venue_symbols_.coinbase;
+    const std::string url = api_url_ + "/api/v3/brokerage/market/products/" + venue_symbols_.coinbase;
     auto resp = http::get(url);
     if (!resp.ok() || resp.body.empty()) {
         LOG_WARN("fetch_tick_size failed", "symbol", symbol_.c_str(), "status", resp.status);

@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 BINANCE_DEPTH_URL = "https://fapi.binance.com/fapi/v1/depth"
 KRAKEN_DEPTH_URL = "https://api.kraken.com/0/public/Depth"
 OKX_DEPTH_URL = "https://www.okx.com/api/v5/market/books"
-COINBASE_DEPTH_URL = "https://api.exchange.coinbase.com/products/{product_id}/book"
+COINBASE_DEPTH_URL = "https://api.coinbase.com/api/v3/brokerage/market/product_book"
 N_LEVELS = 5
 
 
@@ -79,12 +79,11 @@ def _okx_symbol(symbol: str) -> str:
 
 
 def _coinbase_symbol(symbol: str) -> str:
-    # Coinbase spot uses USD-denominated pairs, so USDT is mapped to USD.
     if _tc is not None:
-        return _tc.SymbolMapper.map_for_exchange(_tc.Exchange.COINBASE, symbol).replace("USDT", "USD")
+        return _tc.SymbolMapper.map_for_exchange(_tc.Exchange.COINBASE, symbol)
     clean = symbol.replace("-", "").upper()
     if clean.endswith("USDT"):
-        return f"{clean[:-4]}-USD"
+        return f"{clean[:-4]}-USDT"
     if clean.endswith("USD"):
         return f"{clean[:-3]}-USD"
     return clean
@@ -204,11 +203,15 @@ def _fetch_okx_l5(symbol: str = "BTCUSDT") -> dict | None:
 def _fetch_coinbase_l5(symbol: str = "BTCUSDT") -> dict | None:
     try:
         product_id = _coinbase_symbol(symbol)
-        r = requests.get(COINBASE_DEPTH_URL.format(product_id=product_id), params={"level": 2}, timeout=5)
+        r = requests.get(
+            COINBASE_DEPTH_URL,
+            params={"product_id": product_id, "limit": N_LEVELS},
+            timeout=5,
+        )
         r.raise_for_status()
-        d = r.json()
-        bids = [(float(px), float(sz)) for px, sz, *_ in d.get("bids", [])][:N_LEVELS]
-        asks = [(float(px), float(sz)) for px, sz, *_ in d.get("asks", [])][:N_LEVELS]
+        pricebook = r.json().get("pricebook", {})
+        bids = [(float(b["price"]), float(b["size"])) for b in pricebook.get("bids", [])][:N_LEVELS]
+        asks = [(float(a["price"]), float(a["size"])) for a in pricebook.get("asks", [])][:N_LEVELS]
         if not bids or not asks:
             return None
         row: dict = {

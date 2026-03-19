@@ -96,6 +96,9 @@ def _load_prod_model_ic() -> float:
         return -1.0
     with open(meta_path) as f:
         meta = json.load(f)
+    oos_ic = meta.get("challenger_holdout_ic")
+    if oos_ic is not None:
+        return float(oos_ic)
     return float(meta.get("ic_mean", -1.0))
 
 
@@ -396,6 +399,22 @@ def run() -> dict:
     }
 
     registry = ChampionChallengerRegistry(REGISTRY_PATH)
+
+    if registry.current_champion() is None and PROD_MODEL_PATH.exists():
+        baseline_ic = champion_holdout_ic if champion_holdout_ic != -1.0 else _load_prod_model_ic()
+        bootstrap_meta = {"ic_mean": baseline_ic, "challenger_holdout_ic": baseline_ic, "bootstrapped": True}
+        bootstrap_id = registry.register_challenger(PROD_MODEL_PATH, bootstrap_meta)
+        registry.promote(bootstrap_id, reason="bootstrap_existing_model")
+        log.info(
+            "Bootstrapped existing model as champion in registry (holdout IC=%.4f): %s",
+            baseline_ic, PROD_MODEL_PATH,
+        )
+        _publish_ops_event("model_bootstrapped", {
+            "model_path": str(PROD_MODEL_PATH),
+            "holdout_ic": baseline_ic,
+            "date": date_str,
+        })
+
     challenger_id = registry.register_challenger(CANDIDATE_MODEL_PATH, train_metrics)
 
     # 7. Promote if better than current production model — compared on the SAME
