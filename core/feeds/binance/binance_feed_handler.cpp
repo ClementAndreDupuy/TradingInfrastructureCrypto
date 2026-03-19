@@ -132,6 +132,38 @@ auto BinanceFeedHandler::get_api_secret_from_env() -> std::string {
 
 BinanceFeedHandler::~BinanceFeedHandler() { stop(); }
 
+// ─── Symbol info ─────────────────────────────────────────────────────────────
+auto BinanceFeedHandler::fetch_tick_size() -> Result {
+    const std::string url =
+        api_url_ + "/api/v3/exchangeInfo?symbol=" + venue_symbols_.binance;
+    auto resp = http::get(url, {"X-MBX-APIKEY: " + api_key_});
+    if (!resp.ok() || resp.body.empty()) {
+        LOG_WARN("fetch_tick_size failed", "symbol", symbol_.c_str(), "status", resp.status);
+        return Result::ERROR_CONNECTION_LOST;
+    }
+    auto json = nlohmann::json::parse(resp.body, nullptr, false);
+    if (json.is_discarded()) {
+        LOG_WARN("fetch_tick_size JSON parse failed", "symbol", symbol_.c_str());
+        return Result::ERROR_BOOK_CORRUPTED;
+    }
+    auto sym_it = json.find("symbols");
+    if (sym_it == json.end() || !sym_it->is_array() || sym_it->empty()) {
+        LOG_WARN("fetch_tick_size: no symbols array", "symbol", symbol_.c_str());
+        return Result::ERROR_BOOK_CORRUPTED;
+    }
+    for (const auto& f : (*sym_it)[0].value("filters", nlohmann::json::array())) {
+        if (f.value("filterType", "") == "PRICE_FILTER") {
+            try {
+                tick_size_ = std::stod(f.value("tickSize", "0"));
+                LOG_INFO("Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
+                return Result::SUCCESS;
+            } catch (...) {}
+        }
+    }
+    LOG_WARN("fetch_tick_size: PRICE_FILTER not found", "symbol", symbol_.c_str());
+    return Result::ERROR_BOOK_CORRUPTED;
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 auto BinanceFeedHandler::start() -> Result {
     if (running_.load(std::memory_order_acquire)) {
@@ -139,6 +171,7 @@ auto BinanceFeedHandler::start() -> Result {
     }
 
     LOG_INFO("Starting feed handler", "symbol", symbol_.c_str());
+    fetch_tick_size();
     running_.store(true, std::memory_order_release);
     state_.store(State::BUFFERING, std::memory_order_release);
 

@@ -51,12 +51,6 @@ class OrderBook {
 
         double new_base = best_bid - static_cast<double>(max_levels_ / 2) * tick_size_;
 
-        // Guard: a non-positive base_price corrupts every book-relative feature that
-        // downstream Python computes (log_ret_1, queue_imbalance, bid/ask offsets).
-        // This happens when tick_size is too large for the asset price — e.g. SOL at
-        // $140 with tick_size=0.1 gives new_base = 140 - 10000*0.1 = -860.
-        // Reject immediately so the feed handler triggers a re-snapshot with correct
-        // parameters rather than silently publishing a poisoned base_price.
         if (new_base <= 0.0) {
             LOG_ERROR("Snapshot rejected: base_price would be non-positive", "symbol",
                       symbol_.c_str(), "base_price", new_base, "best_bid", best_bid, "tick_size",
@@ -307,10 +301,6 @@ class OrderBook {
             return false;
         double base = base_price_.load(std::memory_order_acquire);
         double relative = (price - base) / tick_size_;
-        // Use llround for correct round-half-away-from-zero on both positive and
-        // negative values.  The naive (int64_t)(relative + 0.5) trick truncates
-        // toward zero for negative inputs: e.g. relative=-0.6 gives idx=0 instead
-        // of -1, silently mapping a price below the grid base to index 0.
         int64_t idx = static_cast<int64_t>(std::llround(relative));
         if (idx < 0 || static_cast<size_t>(idx) >= max_levels_)
             return false;

@@ -52,12 +52,13 @@ class BinanceFeedHandler {
     void stop();
 
     bool is_running() const { return running_.load(std::memory_order_acquire); }
-
     uint64_t get_sequence() const { return last_update_id_.load(std::memory_order_acquire); }
+    double tick_size() const noexcept { return tick_size_; }
 
     Result process_message(const std::string& message);
 
   private:
+    Result fetch_tick_size();
     enum class State { DISCONNECTED, BUFFERING, SYNCHRONIZED, STREAMING };
 
     std::string symbol_;
@@ -66,6 +67,8 @@ class BinanceFeedHandler {
     std::string api_url_;
     std::string ws_url_;
     VenueSymbols venue_symbols_;
+
+    double tick_size_{0.0};
 
     std::atomic<bool> running_{false};
     std::atomic<uint64_t> last_update_id_{0};

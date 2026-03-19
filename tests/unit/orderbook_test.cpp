@@ -340,14 +340,8 @@ TEST(OrderBook, RejectsSnapshotWithInvalidChecksum) {
     EXPECT_FALSE(book.is_initialized());
 }
 
-// The initialized sentinel uses a dedicated atomic<bool>, not the (now-rejected)
-// base_price_ != 0.0 check.  Verify that is_initialized() returns true for a
-// snapshot that produces a small-but-positive base_price, and that deltas are
-// accepted normally.  (ETH at $1000, tick=0.10 previously gave base=0 and was
-// accepted by old code; that scenario is now rejected — see ZeroBasePriceRejected.)
+// ETH at $1001, tick=0.10 → base = 1.0 > 0; initialized sentinel works correctly.
 TEST(OrderBook, IsInitializedWithSmallPositiveBase) {
-    // tick=0.10, max_levels=20000 → half_range = 1000.
-    // best_bid=1001 → base = 1001 - 1000 = 1.0 > 0  (small but valid)
     OrderBook book("ETHUSD", Exchange::KRAKEN, 0.10, 20000);
     Snapshot s;
     s.symbol   = "ETHUSD";
@@ -412,19 +406,7 @@ TEST(OrderBook, CompatibleWithAllFourExchanges) {
     }
 }
 
-// ── C1 regression: negative base_price ────────────────────────────────────────
-//
-// Root cause: when tick_size is too large relative to the asset price, the grid
-// origin (best_bid - (max_levels/2)*tick_size) goes non-positive.  The Python
-// feature layer uses base_price as a reference price (e.g. log(mid/base_price))
-// and produces NaN / huge values when base_price <= 0.
-//
-// Fix: apply_snapshot now rejects any snapshot whose computed base_price would be
-// <= 0, returning ERROR_INVALID_PRICE and leaving the book uninitialized so the
-// feed handler can trigger a re-snapshot with corrected parameters.
-
-// SOL at $20, tick=0.01, max_levels=20000 → base = 20 - 10000*0.01 = -80.
-// Previously accepted; must now be rejected (negative base corrupts features).
+// SOL at $20, tick=0.01, max_levels=20000 → base = 20 - 10000*0.01 = -80, rejected.
 TEST(OrderBook, NegativeBasePriceSnapshotRejected) {
     OrderBook book("SOLUSD", Exchange::COINBASE, 0.01, 20000);
     Snapshot s;
@@ -441,8 +423,7 @@ TEST(OrderBook, NegativeBasePriceSnapshotRejected) {
     EXPECT_EQ(book.get_best_ask(), 0.0);
 }
 
-// SOL at $20, tick=0.001, max_levels=20000 → base = 20 - 10000*0.001 = 10 > 0.
-// Correct tick size keeps the grid origin positive.
+// SOL at $20, tick=0.001, max_levels=20000 → base = 10 > 0, accepted.
 TEST(OrderBook, SOLCorrectTickSizePositiveBase) {
     OrderBook book("SOLUSD", Exchange::COINBASE, 0.001, 20000);
     Snapshot s;
@@ -469,9 +450,7 @@ TEST(OrderBook, SOLCorrectTickSizePositiveBase) {
     EXPECT_DOUBLE_EQ(bids[1].price, 19.999);
 }
 
-// SOL at $140, tick=0.01, max_levels=20000 → base = 140 - 100 = 40 > 0.
-// Simulates the production scenario that was reporting base_price=-410.5;
-// with correct tick the base stays positive and no features are corrupted.
+// SOL at $140, tick=0.01 (exchange-sourced) → base = 40 > 0, accepted.
 TEST(OrderBook, SOLAt140CorrectTickPositiveBase) {
     OrderBook book("SOLUSDT", Exchange::BINANCE, 0.01, 20000);
     Snapshot s;
@@ -489,8 +468,7 @@ TEST(OrderBook, SOLAt140CorrectTickPositiveBase) {
     EXPECT_DOUBLE_EQ(book.get_best_ask(), 140.01);
 }
 
-// SOL at $140, tick=0.1, max_levels=20000 → base = 140 - 1000 = -860.
-// Large tick causes negative base; snapshot must be rejected.
+// SOL at $140, tick=0.1 (oversized, wrong precision) → base = -860, rejected.
 TEST(OrderBook, SOLLargeTickNegativeBaseRejected) {
     OrderBook book("SOLUSDT", Exchange::BINANCE, 0.1, 20000);
     Snapshot s;
@@ -505,8 +483,7 @@ TEST(OrderBook, SOLLargeTickNegativeBaseRejected) {
     EXPECT_FALSE(book.is_initialized());
 }
 
-// BTC at $69000, tick=1.0, max_levels=20000 → base = 69000 - 10000 = 59000 > 0.
-// Ensures the guard does not false-positive for BTC with a typical 1-dollar tick.
+// BTC at $69000, tick=1.0 → base = 59000 > 0, accepted.
 TEST(OrderBook, BTCTypicalTickPositiveBase) {
     OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
     Snapshot s;
@@ -522,10 +499,8 @@ TEST(OrderBook, BTCTypicalTickPositiveBase) {
     EXPECT_GT(book.base_price(), 0.0);
 }
 
-// ETH at $1000, tick=0.10, max_levels=20000 → base = 1000 - 1000 = 0.
-// Zero is also invalid (log(0) is undefined); snapshot must be rejected.
+// ETH at $1000, tick=0.10, max_levels=20000 → base = 0.0, rejected (log(0) undefined).
 TEST(OrderBook, ZeroBasePriceRejected) {
-    // base = 1000 - 10000*0.10 = 0.0  →  must be rejected
     OrderBook book("ETHUSD", Exchange::KRAKEN, 0.10, 20000);
     Snapshot s;
     s.symbol   = "ETHUSD";
@@ -538,15 +513,7 @@ TEST(OrderBook, ZeroBasePriceRejected) {
     EXPECT_FALSE(book.is_initialized());
 }
 
-// ── C1 regression: price_to_index grouping precision ──────────────────────────
-//
-// The old rounding  (int64_t)(relative + 0.5)  truncates toward zero for
-// negative inputs, so prices between -1.5 and -0.5 ticks from the base
-// incorrectly collide into index 0 instead of being rejected.  The fix uses
-// std::llround which rounds half-away-from-zero on both sides.
-
-// A delta whose price lands exactly 1 tick below the grid base must be rejected,
-// not silently mapped onto index 0.
+// Price 1 tick below the grid base must be rejected, not silently mapped to index 0.
 TEST(OrderBook, PriceOneTickBelowBaseRejected) {
     OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
     book.apply_snapshot(make_snapshot(50000.0, 50001.0, 1, 1.0, 100));
@@ -557,7 +524,6 @@ TEST(OrderBook, PriceOneTickBelowBaseRejected) {
     EXPECT_EQ(book.apply_delta(d), Result::ERROR_INVALID_PRICE);
 }
 
-// A delta at the very bottom of the grid (base price itself) must be accepted.
 TEST(OrderBook, PriceAtBaseAccepted) {
     OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
     book.apply_snapshot(make_snapshot(50000.0, 50001.0, 1, 1.0, 100));
@@ -568,8 +534,6 @@ TEST(OrderBook, PriceAtBaseAccepted) {
     EXPECT_EQ(book.apply_delta(d), Result::SUCCESS);
 }
 
-// Two prices that differ by exactly one tick must NOT collide into the same index.
-// This is the core grouping-precision correctness check.
 TEST(OrderBook, AdjacentTicksDontCollide) {
     OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
     book.apply_snapshot(make_snapshot(50000.0, 50001.0, 1, 1.0, 100));
