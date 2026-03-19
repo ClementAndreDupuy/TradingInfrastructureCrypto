@@ -1,7 +1,7 @@
 ## TODO List
 
 Open items carried forward from the previous TODO cycle, ranked by priority/severity.
-Last updated: 2026-03-19 — execution connector exchange-doc audit + shadow session analysis.
+Last updated: 2026-03-19 — execution connector exchange-doc audit refresh + shadow session analysis.
 
 ---
 

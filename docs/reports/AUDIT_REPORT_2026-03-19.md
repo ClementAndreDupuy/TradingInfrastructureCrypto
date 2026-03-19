@@ -20,6 +20,17 @@ This is not a polish issue. It is a **production-blocking correctness issue**:
 
 ---
 
+## At-a-glance matrix
+
+| Exchange | Auth vs docs | Submit vs docs | Cancel / replace vs docs | Reconciliation vs docs | Overall status |
+|---|---|---|---|---|---|
+| Binance | Wrong signing transport shape | Missing required limit-order fields | Cancel/query miss `symbol`; replace path undocumented | `myTrades` call is not symbol-scoped | **Do not deploy** |
+| Kraken | Likely wrong private REST signing contract | Limit orders omit `price` | `cancel_all()` mapped to dead-man switch; replace uses older semantics | Core paths need fixture proof against current docs | **Do not deploy** |
+| OKX | Missing `OK-ACCESS-PASSPHRASE` | Missing `tdMode` | Cancel/amend/query under-specified; cancel-all shape wrong | Private account/trade calls need venue-accurate identifiers | **Do not deploy** |
+| Coinbase | Uses legacy HMAC headers instead of bearer JWT | Uses non-current Advanced Trade payload schema | Edit/cancel-all request shapes diverge from docs | Advanced Trade response/endpoint coverage needs rebuild | **Do not deploy** |
+
+---
+
 ## Sources used
 
 ### Official exchange docs
