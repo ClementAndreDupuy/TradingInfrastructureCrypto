@@ -160,6 +160,7 @@ class ShadowSessionConfig:
     safe_mode_ticks: int = 120
     continuous_train_every_ticks: int = 1000
     continuous_train_window_ticks: int = 2000
+    continuous_train_min_interval_s: int = 1200  # never retrain more often than this (wall clock)
     canary_ic_margin: float = 0.02      # ensemble must not lag primary IC by more than this
     canary_icir_floor: float = 0.0      # ensemble ICIR must stay above this
     canary_window: int = 200            # rolling window for canary IC calculation
@@ -208,6 +209,7 @@ class NeuralAlphaShadowSession:
         self._bridge.open()
         self._processed_ticks = 0
         self._last_continuous_train_tick = 0
+        self._last_continuous_train_time: float = 0.0
         self._canary: EnsembleCanary | None = None
         self._prev_primary_signal: float | None = None
         self._prev_ensemble_signal: float | None = None
@@ -399,7 +401,11 @@ class NeuralAlphaShadowSession:
             d_spatial=32,
             d_temporal=64,
             n_temp_layers=1,
-            # Use a distinct seed offset so secondary explores a different basin.
+            dropout=0.25,
+            lr=7e-4,
+            w_return=0.2,
+            w_direction=1.0,
+            w_risk=0.7,
             fold_seed_offset=9999,
             lr_warmup_epochs=min(3, self.cfg.train_epochs // 4),
             early_stop_patience=4,
@@ -586,23 +592,35 @@ class NeuralAlphaShadowSession:
 
     def _fetch_tick(self) -> list[dict]:
         bridge_ticks = self._bridge.read_new_ticks()
-        if bridge_ticks:
-            return bridge_ticks
 
-        ticks: list[dict] = []
         _fetchers = {
             "BINANCE": _fetch_binance_l5,
             "KRAKEN": _fetch_kraken_l5,
             "OKX": _fetch_okx_l5,
             "COINBASE": _fetch_coinbase_l5,
         }
+
+        bridge_exchanges = {t.get("exchange", "").upper() for t in bridge_ticks}
+        missing = [ex for ex in self.cfg.exchanges if ex.upper() not in bridge_exchanges]
+
+        rest_ticks: list[dict] = []
+        for ex in missing:
+            fetcher = _fetchers.get(ex)
+            if fetcher:
+                row = fetcher(self.cfg.symbol)
+                if row:
+                    rest_ticks.append(row)
+
+        if bridge_ticks or rest_ticks:
+            return bridge_ticks + rest_ticks
+
         for ex in self.cfg.exchanges:
             fetcher = _fetchers.get(ex)
             if fetcher:
                 row = fetcher(self.cfg.symbol)
                 if row:
-                    ticks.append(row)
-        return ticks
+                    rest_ticks.append(row)
+        return rest_ticks
 
     # ── Ops event publishing ──────────────────────────────────────────────────
 
@@ -653,6 +671,12 @@ class NeuralAlphaShadowSession:
         if ticks_since_train < self.cfg.continuous_train_every_ticks:
             return
 
+        now = time.time()
+        elapsed = now - self._last_continuous_train_time
+        min_s = self.cfg.continuous_train_min_interval_s
+        if min_s > 0 and elapsed < min_s:
+            return
+
         train_window = max(self.cfg.seq_len * 4, self.cfg.continuous_train_window_ticks)
         print(
             f"[CONTINUOUS_TRAIN] starting incremental retrain at tick={self._processed_ticks} "
@@ -661,6 +685,7 @@ class NeuralAlphaShadowSession:
         try:
             self.train_on_recent(train_window)
             self._last_continuous_train_tick = self._processed_ticks
+            self._last_continuous_train_time = time.time()
             print("[CONTINUOUS_TRAIN] completed")
         except Exception as exc:
             print(f"[CONTINUOUS_TRAIN] failed: {exc}")
@@ -790,6 +815,9 @@ def main() -> None:
                     dest="continuous_train_every_ticks")
     ap.add_argument("--continuous-train-window-ticks", type=int, default=2000,
                     dest="continuous_train_window_ticks")
+    ap.add_argument("--continuous-train-min-interval-s", type=int, default=1200,
+                    dest="continuous_train_min_interval_s",
+                    help="Minimum wall-clock seconds between continuous retrains (0=disabled)")
     ap.add_argument("--canary-ic-margin", type=float, default=0.02, dest="canary_ic_margin",
                     help="Max IC degradation of ensemble vs primary before canary fires")
     ap.add_argument("--canary-icir-floor", type=float, default=0.0, dest="canary_icir_floor",
@@ -833,6 +861,7 @@ def main() -> None:
         safe_mode_ticks=args.safe_mode_ticks,
         continuous_train_every_ticks=args.continuous_train_every_ticks,
         continuous_train_window_ticks=args.continuous_train_window_ticks,
+        continuous_train_min_interval_s=args.continuous_train_min_interval_s,
         canary_ic_margin=args.canary_ic_margin,
         canary_icir_floor=args.canary_icir_floor,
         canary_window=args.canary_window,

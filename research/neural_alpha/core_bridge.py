@@ -81,7 +81,6 @@ class CoreBridge:
             exchange_id = unpacked[0]
             symbol_raw = unpacked[1]
             timestamp_ns = unpacked[2]
-            mid_price = unpacked[3]
             price_size_values = unpacked[4:24]
 
             bids_p = price_size_values[0:5]
@@ -89,14 +88,20 @@ class CoreBridge:
             asks_p = price_size_values[10:15]
             asks_s = price_size_values[15:20]
 
+            best_bid = float(bids_p[0])
+            best_ask = float(asks_p[0])
+
+            if best_bid <= 0.0 or best_ask <= 0.0 or best_ask <= best_bid:
+                continue
+
             symbol = symbol_raw.split(b"\x00", 1)[0].decode("utf-8", errors="ignore")
             exchange = _EXCHANGE_MAP.get(exchange_id, "UNKNOWN")
             row: dict[str, Any] = {
                 "timestamp_ns": int(timestamp_ns),
                 "exchange": exchange,
                 "symbol": symbol,
-                "best_bid": float(bids_p[0]) if bids_p else float(mid_price),
-                "best_ask": float(asks_p[0]) if asks_p else float(mid_price),
+                "best_bid": best_bid,
+                "best_ask": best_ask,
             }
             for i in range(5):
                 row[f"bid_price_{i + 1}"] = float(bids_p[i])
