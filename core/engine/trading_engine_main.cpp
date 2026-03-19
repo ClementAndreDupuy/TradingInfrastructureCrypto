@@ -60,6 +60,13 @@ auto parse_args(int argc, char** argv) -> CliOptions {
 
 std::atomic<bool> g_running{true};
 
+auto grid_max_levels(const std::string& symbol) -> size_t {
+    if (symbol == "BTCUSDT" || symbol == "XBTUSD" || symbol == "BTC-USD" || symbol == "BTC-USDT") {
+        return 40000;
+    }
+    return 20000;
+}
+
 auto has_venue(const std::string& csv, const std::string& needle) -> bool {
     std::stringstream csv_stream(csv);
     std::string item;
@@ -142,10 +149,14 @@ auto main(int argc, char** argv) -> int {
         const bool run_okx = has_venue(opts.venues, "OKX");
         const bool run_coinbase = has_venue(opts.venues, "COINBASE");
 
-        BookManager binance_book(opts.symbol, Exchange::BINANCE, 0.1, 10000);
-        BookManager kraken_book(opts.symbol, Exchange::KRAKEN, 0.1, 10000);
-        BookManager okx_book(opts.symbol, Exchange::OKX, 0.1, 10000);
-        BookManager coinbase_book(opts.symbol, Exchange::COINBASE, 0.1, 10000);
+        const size_t max_levels = grid_max_levels(opts.symbol);
+        LOG_INFO("Grid configuration", "symbol", opts.symbol.c_str(), "max_levels", max_levels,
+                 "tick_size", 0.1, "grid_range_usd", max_levels * 0.1);
+
+        BookManager binance_book(opts.symbol, Exchange::BINANCE, 0.1, max_levels);
+        BookManager kraken_book(opts.symbol, Exchange::KRAKEN, 0.1, max_levels);
+        BookManager okx_book(opts.symbol, Exchange::OKX, 0.1, max_levels);
+        BookManager coinbase_book(opts.symbol, Exchange::COINBASE, 0.1, max_levels);
 
         LobPublisher lob_publisher;
         if (!lob_publisher.open()) {

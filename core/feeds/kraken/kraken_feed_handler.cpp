@@ -1,5 +1,6 @@
 #include "kraken_feed_handler.hpp"
 #include "../../common/rest_client.hpp"
+#include "../common/tick_size.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -132,9 +133,19 @@ auto KrakenFeedHandler::fetch_tick_size() -> Result {
         return Result::ERROR_BOOK_CORRUPTED;
     }
     const auto& pair_data = res_it->begin().value();
+    auto ts_it = pair_data.find("tick_size");
+    if (ts_it != pair_data.end() && ts_it->is_string()) {
+        std::string ts = ts_it->get<std::string>();
+        if (!ts.empty()) {
+            tick_size_ = tick_from_string(ts);
+            LOG_INFO("Tick size fetched", "symbol", symbol_.c_str(), "tick_size", tick_size_);
+            return Result::SUCCESS;
+        }
+    }
     auto dec_it = pair_data.find("pair_decimals");
     if (dec_it == pair_data.end() || !dec_it->is_number_integer()) {
-        LOG_WARN("fetch_tick_size: pair_decimals missing", "symbol", symbol_.c_str());
+        LOG_WARN("fetch_tick_size: tick_size and pair_decimals both missing", "symbol",
+                 symbol_.c_str());
         return Result::ERROR_BOOK_CORRUPTED;
     }
     tick_size_ = std::pow(10.0, -dec_it->get<int>());

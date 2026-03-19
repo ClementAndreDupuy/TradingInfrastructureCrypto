@@ -575,6 +575,45 @@ TEST(OrderBook, AdjacentTicksDontCollide) {
     EXPECT_TRUE(found48001) << "48001 level missing";
 }
 
+TEST(OrderBook, SnapshotRejectedWhenMajorityOutOfRange) {
+    OrderBook book("BTCUSDT", Exchange::KRAKEN, 0.1, 10000);
+
+    Snapshot s;
+    s.symbol = "BTCUSDT";
+    s.exchange = Exchange::KRAKEN;
+    s.sequence = 1;
+
+    const double mid = 69000.0;
+    s.bids.push_back(PriceLevel(mid, 1.0));
+    s.asks.push_back(PriceLevel(mid + 0.1, 1.0));
+
+    for (int i = 1; i <= 499; ++i) {
+        s.bids.push_back(PriceLevel(mid - i * 10.0, 1.0));
+        s.asks.push_back(PriceLevel(mid + 0.1 + i * 10.0, 1.0));
+    }
+
+    EXPECT_EQ(book.apply_snapshot(s), Result::ERROR_BOOK_CORRUPTED);
+    EXPECT_FALSE(book.is_initialized());
+}
+
+TEST(OrderBook, SnapshotAcceptedWhenMinorityOutOfRange) {
+    OrderBook book("BTCUSDT", Exchange::KRAKEN, 0.1, 40000);
+
+    Snapshot s;
+    s.symbol = "BTCUSDT";
+    s.exchange = Exchange::KRAKEN;
+    s.sequence = 1;
+
+    const double mid = 69000.0;
+    for (int i = 0; i < 500; ++i) {
+        s.bids.push_back(PriceLevel(mid - i * 0.1, 1.0));
+        s.asks.push_back(PriceLevel(mid + 0.1 + i * 0.1, 1.0));
+    }
+
+    EXPECT_EQ(book.apply_snapshot(s), Result::SUCCESS);
+    EXPECT_TRUE(book.is_initialized());
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

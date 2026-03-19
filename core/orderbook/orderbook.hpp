@@ -71,6 +71,10 @@ class OrderBook {
         // Re-enable after base_price_ is committed so price_to_index() works during populate.
         initialized_.store(true, std::memory_order_release);
 
+        LOG_INFO("Grid bounds", "symbol", symbol_.c_str(), "exchange",
+                 exchange_to_string(exchange_), "tick_size", tick_size_, "max_levels", max_levels_,
+                 "base", new_base, "top", new_base + static_cast<double>(max_levels_) * tick_size_);
+
         size_t skipped = 0;
         for (const auto& level : snapshot.bids) {
             size_t idx;
@@ -89,9 +93,20 @@ class OrderBook {
             ask_sizes_[idx] = level.size;
         }
 
+        const size_t total = snapshot.bids.size() + snapshot.asks.size();
+        if (skipped * 2 > total) {
+            LOG_ERROR("Snapshot rejected: majority of levels out of grid range", "symbol",
+                      symbol_.c_str(), "exchange", exchange_to_string(exchange_), "skipped",
+                      skipped, "total", total, "tick_size", tick_size_, "max_levels", max_levels_,
+                      "base", new_base,
+                      "top", new_base + static_cast<double>(max_levels_) * tick_size_);
+            initialized_.store(false, std::memory_order_release);
+            return Result::ERROR_BOOK_CORRUPTED;
+        }
+
         if (skipped > 0) {
             LOG_WARN("Snapshot levels out of grid range", "symbol", symbol_.c_str(), "skipped",
-                     skipped);
+                     skipped, "total", total);
         }
 
         LOG_INFO("Snapshot applied", "symbol", symbol_.c_str(), "sequence", snapshot.sequence,
