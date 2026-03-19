@@ -25,7 +25,7 @@ Last updated: 2026-03-19 — shadow session analysis (BTC & SOL).
 
 ### HIGH
 
-- [ ] **H1** `C++ Coinbase feed handler` — **Coinbase feed fails to start in both BTC and SOL sessions**
+- [x] **H1** `C++ Coinbase feed handler` — **Coinbase feed fails to start in both BTC and SOL sessions**
   The Coinbase WebSocket connects successfully but the feed handler never reaches a
   snapshot-ready state, timing out exactly ~30 seconds later in both runs. The system
   continues with three venues instead of four, reducing venue diversity by 25 % and biasing
@@ -35,9 +35,10 @@ Last updated: 2026-03-19 — shadow session analysis (BTC & SOL).
   for failure, emit an `OPS_EVENT` on final failure, and exclude Coinbase signals from the
   ensemble gracefully rather than silently degrading.
   - acceptance criteria:
-    - [ ] Failure sub-reason (timeout waiting for subscription ack, snapshot fetch error, or parse failure) logged at ERROR level rather than the current generic WARN
-    - [ ] Retry with exponential backoff (at least three attempts: 2 s, 4 s, 8 s) implemented before the feed is declared failed
-    - [ ] On final failure an `OPS_EVENT` is emitted so operators are alerted
+    - [x] Root cause identified: subscription message used `"channel": "l2_data"` but Coinbase Advanced Trade WS requires `"channel": "level2"` for subscriptions (responses correctly come back as `"channel": "l2_data"`). The wrong channel name caused silent subscription rejection, so no snapshot was ever delivered, producing the consistent 30 s timeout.
+    - [x] Failure sub-reason (timeout waiting for subscription ack, snapshot fetch error, or parse failure) logged at ERROR level rather than the current generic WARN — both `start()` per-attempt failures and `trigger_resnapshot()` now use `LOG_ERROR`.
+    - [x] Retry with exponential backoff (at least three attempts: 2 s, 4 s, 8 s) implemented before the feed is declared failed — `start()` now loops up to 3 times with 15 s per-attempt timeout and 2 s / 4 s / 8 s waits between attempts.
+    - [x] On final failure an `OPS_EVENT` is emitted so operators are alerted — `emit_ops_event()` writes a JSON record to `logs/ops_events.jsonl` and prints `[OPS_EVENT] coinbase_feed_failed` to stdout, consistent with the Python ops-event pattern.
     - [ ] Shadow run confirms Coinbase feed starts successfully, or — if the exchange is unreachable — the system degrades gracefully with the remaining three venues and the absence is clearly flagged in session statistics
 
 - [ ] **H2** `C++ Kraken feed handler / grid configuration` — **Kraken grid-range overflow discards ~97 % of BTC book levels**

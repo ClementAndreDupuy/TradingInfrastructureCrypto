@@ -85,6 +85,7 @@ class CoinbaseFeedHandler {
     Result apply_buffered_deltas();
     bool validate_delta_sequence(uint64_t seq) const;
     void trigger_resnapshot(const std::string& reason);
+    void emit_ops_event();
 };
 
 } // namespace trading
