@@ -22,7 +22,7 @@ class RecoveryGuard {
                uint32_t cancel_replace_races) noexcept {
         if (in_flight_ops > cfg_.max_in_flight_ops || duplicate_acks > cfg_.max_duplicate_acks ||
             cancel_replace_races > cfg_.max_cancel_replace_races) {
-            LOG_ERROR("RecoveryGuard: limit breached", "in_flight_ops", in_flight_ops,
+            LOG_ERROR("[RecoveryGuard] limit breached", "in_flight_ops", in_flight_ops,
                       "max_in_flight_ops", cfg_.max_in_flight_ops, "duplicate_acks", duplicate_acks,
                       "max_duplicate_acks", cfg_.max_duplicate_acks, "cancel_replace_races",
                       cancel_replace_races, "max_cancel_replace_races",

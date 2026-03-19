@@ -159,10 +159,6 @@ class GlobalRiskControls {
     std::atomic<double> net_notional_{0.0};
     std::array<std::atomic<double>, NUM_VENUES> venue_gross_notional_{};
     std::array<SymbolState, MAX_SYMBOLS> symbol_states_{};
-    // Linear allocator index: each new symbol claims the next slot atomically.
-    // Ensures that the symbol name is written to a privately-owned slot before
-    // active is published, so find_symbol never observes an active slot with a
-    // stale/empty symbol name.
     std::atomic<size_t> next_slot_{0};
 
     static void atomic_add(std::atomic<double>& target, double delta) noexcept {
@@ -208,10 +204,6 @@ class GlobalRiskControls {
             }
         }
 
-        // Claim the next free slot atomically.  Each thread gets a distinct
-        // index so the symbol write below is free of data races.  active is
-        // stored last (with release ordering) so that find_symbol never sees a
-        // slot where active==true but symbol[] is still zeroed.
         const size_t idx = next_slot_.fetch_add(1, std::memory_order_acq_rel);
         if (idx >= MAX_SYMBOLS) {
             LOG_ERROR("Global risk symbol table exhausted", "max_symbols", MAX_SYMBOLS);
@@ -221,8 +213,6 @@ class GlobalRiskControls {
         SymbolState& state = symbol_states_[idx];
         std::strncpy(state.symbol, symbol, sizeof(state.symbol) - 1);
         state.symbol[sizeof(state.symbol) - 1] = '\0';
-        // gross_notional and net_notional are already 0 from default-member-init;
-        // no explicit store needed.
         state.active.store(true, std::memory_order_release); // publish after symbol is written
         return &state;
     }

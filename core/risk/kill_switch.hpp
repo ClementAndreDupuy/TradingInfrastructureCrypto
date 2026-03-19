@@ -15,14 +15,6 @@ enum class KillReason : uint8_t {
     BOOK_CORRUPTED = 4,
 };
 
-// Software kill switch + dead man's switch.
-// All hot-path operations are lock-free (atomic loads/stores).
-//
-// Usage:
-//   - Hot path: call is_active() before every order submission
-//   - Main loop: call heartbeat() every iteration (< 1 second interval)
-//   - Monitoring thread: call check_heartbeat() periodically
-//   - Manual reset: call reset() after operator intervention
 class KillSwitch {
   public:
     static constexpr int64_t DEFAULT_HEARTBEAT_TIMEOUT_NS = 5'000'000'000LL; // 5s
@@ -31,27 +23,22 @@ class KillSwitch {
         : active_(false), reason_(KillReason::MANUAL), last_heartbeat_ns_(now_ns()),
           heartbeat_timeout_ns_(heartbeat_timeout_ns) {}
 
-    // Hot path: < 10ns on x86-64
     bool is_active() const noexcept { return active_.load(std::memory_order_acquire); }
 
-    // Hot path safe - atomic store
     void trigger(KillReason reason) noexcept {
         reason_.store(reason, std::memory_order_relaxed);
         active_.store(true, std::memory_order_release);
-        LOG_ERROR("Kill switch triggered", "reason", reason_to_string(reason));
+        LOG_ERROR("[KillSwitch] Kill switch triggered", "reason", reason_to_string(reason));
     }
 
-    // Manual reset - operator intervention only
     void reset() noexcept {
         active_.store(false, std::memory_order_release);
         last_heartbeat_ns_.store(now_ns(), std::memory_order_release);
-        LOG_INFO("Kill switch reset", "active", false);
+        LOG_INFO("[KillSwitch] Kill switch reset", "active", false);
     }
 
-    // Call from main hot-path loop (< 1 second frequency)
     void heartbeat() noexcept { last_heartbeat_ns_.store(now_ns(), std::memory_order_release); }
 
-    // Call from monitoring thread - triggers kill if heartbeat stalled
     bool check_heartbeat() noexcept {
         int64_t elapsed = now_ns() - last_heartbeat_ns_.load(std::memory_order_acquire);
         if (elapsed > heartbeat_timeout_ns_) {

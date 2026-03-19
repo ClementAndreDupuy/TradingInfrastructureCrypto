@@ -11,22 +11,15 @@
 namespace trading {
 
 struct CircuitBreakerConfig {
-    // Rate limits
+    int32_t consecutive_loss_count = 5;
     int32_t max_orders_per_second = 10;
     int32_t max_orders_per_minute = 200;
-    int32_t max_messages_per_second = 1000; // feed msg rate guard
-
-    // Drawdown
-    double max_drawdown_usd = -5000.0;
-
-    // Stale book
+    int32_t max_messages_per_second = 1000;
     int64_t max_book_age_ms = 500;
 
-    double max_price_deviation_bps = 300.0; // vs EMA reference price
-    double price_ema_alpha = 0.01;          // EMA smoothing (per tick)
-
-    // Consecutive-loss circuit breaker
-    int32_t consecutive_loss_count = 5;
+    double max_drawdown_usd = -5000.0;
+    double max_price_deviation_bps = 300.0;
+    double price_ema_alpha = 0.01;
     double per_leg_loss_usd = -50.0;
 };
 
@@ -53,7 +46,6 @@ class CircuitBreaker {
 
         int64_t sec_start = sec_window_start_ns_.load(std::memory_order_acquire);
         if (now - sec_start >= 1'000'000'000LL) {
-            // Try to reset the window. If another thread beats us, it's fine — they reset it.
             if (sec_window_start_ns_.compare_exchange_strong(sec_start, now,
                                                              std::memory_order_acq_rel)) {
                 order_count_sec_.store(0, std::memory_order_release);
@@ -61,7 +53,7 @@ class CircuitBreaker {
         }
         int32_t sec_count = order_count_sec_.fetch_add(1, std::memory_order_acq_rel);
         if (sec_count >= cfg_.max_orders_per_second) {
-            LOG_WARN("Circuit breaker: per-second order rate exceeded", "count", sec_count + 1,
+            LOG_WARN("[Circuit breaker] per-second order rate exceeded", "count", sec_count + 1,
                      "limit", cfg_.max_orders_per_second);
             return CircuitCheckResult::RATE_LIMIT_SEC;
         }
@@ -75,7 +67,7 @@ class CircuitBreaker {
         }
         int32_t min_count = order_count_min_.fetch_add(1, std::memory_order_acq_rel);
         if (min_count >= cfg_.max_orders_per_minute) {
-            LOG_WARN("Circuit breaker: per-minute order rate exceeded", "count", min_count + 1,
+            LOG_WARN("[Circuit breaker] per-minute order rate exceeded", "count", min_count + 1,
                      "limit", cfg_.max_orders_per_minute);
             return CircuitCheckResult::RATE_LIMIT_MIN;
         }
@@ -94,7 +86,7 @@ class CircuitBreaker {
         }
         int32_t count = msg_count_sec_.fetch_add(1, std::memory_order_acq_rel);
         if (count >= cfg_.max_messages_per_second) {
-            LOG_WARN("Circuit breaker: feed message rate exceeded", "count", count + 1, "limit",
+            LOG_WARN("[Circuit breaker] feed message rate exceeded", "count", count + 1, "limit",
                      cfg_.max_messages_per_second);
             return CircuitCheckResult::MSG_RATE_LIMIT;
         }
@@ -104,7 +96,7 @@ class CircuitBreaker {
     CircuitCheckResult check_drawdown(double realized_pnl) noexcept {
         realized_pnl_.store(realized_pnl, std::memory_order_release);
         if (realized_pnl <= cfg_.max_drawdown_usd) {
-            LOG_ERROR("Circuit breaker: drawdown limit breached", "pnl", realized_pnl, "limit",
+            LOG_ERROR("[Circuit breaker] drawdown limit breached", "pnl", realized_pnl, "limit",
                       cfg_.max_drawdown_usd);
             kill_switch_.trigger(KillReason::DRAWDOWN);
             return CircuitCheckResult::DRAWDOWN;
@@ -115,7 +107,7 @@ class CircuitBreaker {
     CircuitCheckResult check_book_age(const BookManager& book) noexcept {
         int64_t age = book.age_ms();
         if (age > cfg_.max_book_age_ms) {
-            LOG_ERROR("Circuit breaker: stale book", "age_ms", age, "limit_ms",
+            LOG_ERROR("[Circuit breaker] stale book", "age_ms", age, "limit_ms",
                       cfg_.max_book_age_ms, "symbol", book.book().symbol().c_str());
             kill_switch_.trigger(KillReason::BOOK_CORRUPTED);
             return CircuitCheckResult::STALE_BOOK;
@@ -127,9 +119,6 @@ class CircuitBreaker {
         if (price <= 0.0)
             return CircuitCheckResult::OK;
 
-        // Load and update reference price EMA atomically.
-        // Using a relaxed load + store here is acceptable: the worst case
-        // is a slightly stale EMA on concurrent threads, which is fine.
         double ref = ref_price_.load(std::memory_order_relaxed);
         if (ref == 0.0) {
             ref_price_.store(price, std::memory_order_release);
@@ -142,7 +131,7 @@ class CircuitBreaker {
 
         double deviation_bps = std::abs(price - ref) / ref * 10000.0;
         if (deviation_bps > cfg_.max_price_deviation_bps) {
-            LOG_ERROR("Circuit breaker: flash crash detected", "price", price, "ref", ref,
+            LOG_ERROR("[Circuit breaker] flash crash detected", "price", price, "ref", ref,
                       "dev_bps", deviation_bps, "limit_bps", cfg_.max_price_deviation_bps);
             kill_switch_.trigger(KillReason::CIRCUIT_BREAKER);
             return CircuitCheckResult::FLASH_CRASH;
@@ -154,15 +143,14 @@ class CircuitBreaker {
         if (leg_pnl <= cfg_.per_leg_loss_usd) {
             int32_t n = consec_losses_.fetch_add(1, std::memory_order_acq_rel) + 1;
             if (n >= cfg_.consecutive_loss_count) {
-                LOG_ERROR("Circuit breaker: consecutive loss limit hit", "count", n, "limit",
+                LOG_ERROR("[Circuit breaker] consecutive loss limit hit", "count", n, "limit",
                           cfg_.consecutive_loss_count, "last_pnl", leg_pnl);
                 kill_switch_.trigger(KillReason::CIRCUIT_BREAKER);
                 return CircuitCheckResult::CONSEC_LOSSES;
             }
-            LOG_WARN("Circuit breaker: consecutive loss incremented", "count", n, "limit",
+            LOG_WARN("[Circuit breaker] consecutive loss incremented", "count", n, "limit",
                      cfg_.consecutive_loss_count);
         } else {
-            // A profitable leg resets the consecutive-loss counter.
             consec_losses_.store(0, std::memory_order_release);
         }
         return CircuitCheckResult::OK;
@@ -207,7 +195,7 @@ class CircuitBreaker {
     void reset_daily() noexcept {
         realized_pnl_.store(0.0, std::memory_order_release);
         consec_losses_.store(0, std::memory_order_release);
-        LOG_INFO("CircuitBreaker: daily counters reset", "component", "circuit_breaker");
+        LOG_INFO("[CircuitBreaker] daily counters reset", "component", "circuit_breaker");
     }
 
   private:
@@ -221,11 +209,10 @@ class CircuitBreaker {
     std::atomic<int32_t> msg_count_sec_;
     std::atomic<int64_t> msg_window_start_ns_;
 
-    std::atomic<double> realized_pnl_;
-
-    std::atomic<double> ref_price_;
-
     std::atomic<int32_t> consec_losses_;
+
+    std::atomic<double> realized_pnl_;
+    std::atomic<double> ref_price_;
 
     static int64_t now_ns() noexcept {
         using namespace std::chrono;
