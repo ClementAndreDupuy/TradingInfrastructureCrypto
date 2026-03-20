@@ -13,13 +13,12 @@ Usage:
     python -m research.neural_alpha.pipeline [options]
     python research/neural_alpha/pipeline.py --ticks 200 --epochs 10
 """
-from __future__ import annotations
 
+from __future__ import annotations
 import argparse
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
-
 import numpy as np
 import polars as pl
 import requests
@@ -27,13 +26,11 @@ import requests
 try:
     import trading_core as _tc
 except ImportError:
-    _tc = None  # type: ignore[assignment]
-
-from .core_bridge import CoreBridge
+    _tc = None
+from .runtime.core_bridge import CoreBridge
 
 if TYPE_CHECKING:
     from .trainer import TrainerConfig
-
 BINANCE_DEPTH_URL = "https://fapi.binance.com/fapi/v1/depth"
 KRAKEN_DEPTH_URL = "https://api.kraken.com/0/public/Depth"
 OKX_DEPTH_URL = "https://www.okx.com/api/v5/market/books"
@@ -58,7 +55,6 @@ def _parse_binance_l5(d: dict, symbol: str, exchange_label: str) -> dict:
         row[f"ask_price_{i}"] = float(ap)
         row[f"ask_size_{i}"] = float(as_)
     return row
-
 
 
 def _binance_symbol(symbol: str) -> str:
@@ -105,7 +101,7 @@ def _symbol_family(symbol: str) -> str:
 def _kraken_symbol(symbol: str) -> str:
     if _tc is not None:
         vs = _tc.SymbolMapper.map_all(symbol)
-        base, _, quote = vs.kraken_rest.partition("/")
+        (base, _, quote) = vs.kraken_rest.partition("/")
         if base == "BTC":
             base = "XBT"
         quote = quote.replace("USDT", "USD")
@@ -120,6 +116,7 @@ def _kraken_symbol(symbol: str) -> str:
     if base == "BTC":
         base = "XBT"
     return f"{base}USD"
+
 
 def _fetch_binance_l5(symbol: str = "BTCUSDT") -> dict | None:
     try:
@@ -138,11 +135,7 @@ def _fetch_binance_l5(symbol: str = "BTCUSDT") -> dict | None:
 def _fetch_kraken_l5(symbol: str = "BTCUSDT") -> dict | None:
     try:
         pair = _kraken_symbol(symbol)
-        r = requests.get(
-            KRAKEN_DEPTH_URL,
-            params={"pair": pair, "count": N_LEVELS},
-            timeout=5,
-        )
+        r = requests.get(KRAKEN_DEPTH_URL, params={"pair": pair, "count": N_LEVELS}, timeout=5)
         r.raise_for_status()
         d = r.json()
         book = next(iter(d["result"].values()))
@@ -171,14 +164,16 @@ def _fetch_kraken_l5(symbol: str = "BTCUSDT") -> dict | None:
 
 def _fetch_okx_l5(symbol: str = "BTCUSDT") -> dict | None:
     try:
-        r = requests.get(OKX_DEPTH_URL, params={"instId": _okx_symbol(symbol), "sz": N_LEVELS}, timeout=5)
+        r = requests.get(
+            OKX_DEPTH_URL, params={"instId": _okx_symbol(symbol), "sz": N_LEVELS}, timeout=5
+        )
         r.raise_for_status()
         data = r.json().get("data", [])
         if not data:
             return None
         book = data[0]
-        bids = [(float(px), float(sz)) for px, sz, *_ in book.get("bids", [])][:N_LEVELS]
-        asks = [(float(px), float(sz)) for px, sz, *_ in book.get("asks", [])][:N_LEVELS]
+        bids = [(float(px), float(sz)) for (px, sz, *_) in book.get("bids", [])][:N_LEVELS]
+        asks = [(float(px), float(sz)) for (px, sz, *_) in book.get("asks", [])][:N_LEVELS]
         if not bids or not asks:
             return None
         row: dict = {
@@ -204,9 +199,7 @@ def _fetch_coinbase_l5(symbol: str = "BTCUSDT") -> dict | None:
     try:
         product_id = _coinbase_symbol(symbol)
         r = requests.get(
-            COINBASE_DEPTH_URL,
-            params={"product_id": product_id, "limit": N_LEVELS},
-            timeout=5,
+            COINBASE_DEPTH_URL, params={"product_id": product_id, "limit": N_LEVELS}, timeout=5
         )
         r.raise_for_status()
         pricebook = r.json().get("pricebook", {})
@@ -237,7 +230,6 @@ def collect_from_core_bridge(n_ticks: int, interval_ms: int) -> pl.DataFrame | N
     bridge = CoreBridge()
     if not bridge.open():
         return None
-
     rows: list[dict] = []
     interval_s = interval_ms / 1000.0
     while len(rows) < n_ticks:
@@ -246,20 +238,16 @@ def collect_from_core_bridge(n_ticks: int, interval_ms: int) -> pl.DataFrame | N
             break
         time.sleep(interval_s)
     bridge.close()
-
     if not rows:
         return None
     return pl.DataFrame(rows[:n_ticks]).sort("timestamp_ns")
 
 
 def _enforce_symbol_and_exchange_coverage(
-    df: pl.DataFrame,
-    exchanges: list[str],
-    symbol: str,
+    df: pl.DataFrame, exchanges: list[str], symbol: str
 ) -> pl.DataFrame:
     wanted_symbol_family = _symbol_family(symbol)
     wanted_exchanges = {ex.upper() for ex in exchanges}
-
     filtered = [
         row
         for row in df.to_dicts()
@@ -267,21 +255,20 @@ def _enforce_symbol_and_exchange_coverage(
         and _symbol_family(str(row.get("symbol", ""))) == wanted_symbol_family
     ]
     out = pl.DataFrame(filtered).sort("timestamp_ns") if filtered else pl.DataFrame([])
-
     if len(out) == 0:
         return out
-
     found_exchanges = {ex.upper() for ex in out["exchange"].to_list()}
     missing = sorted(wanted_exchanges - found_exchanges)
     if missing:
         raise RuntimeError(
-            "Dataset does not include all configured exchanges for requested symbol "
-            f"{symbol}: missing={missing}, found={sorted(found_exchanges)}"
+            f"Dataset does not include all configured exchanges for requested symbol {symbol}: missing={missing}, found={sorted(found_exchanges)}"
         )
     return out
 
 
-def _collect_l5_ticks_rest(n_ticks: int, interval_ms: int, exchanges: list[str], symbol: str = "BTCUSDT") -> pl.DataFrame:
+def _collect_l5_ticks_rest(
+    n_ticks: int, interval_ms: int, exchanges: list[str], symbol: str = "BTCUSDT"
+) -> pl.DataFrame:
     rows: list[dict] = []
     interval_s = interval_ms / 1000.0
     _fetchers = {
@@ -290,7 +277,6 @@ def _collect_l5_ticks_rest(n_ticks: int, interval_ms: int, exchanges: list[str],
         "OKX": _fetch_okx_l5,
         "COINBASE": _fetch_coinbase_l5,
     }
-
     print(f"Collecting {n_ticks} L5 snapshots per exchange over REST (interval {interval_ms} ms)…")
     for i in range(n_ticks):
         for ex in exchanges:
@@ -303,7 +289,6 @@ def _collect_l5_ticks_rest(n_ticks: int, interval_ms: int, exchanges: list[str],
                 rows.append(row)
         if i < n_ticks - 1:
             time.sleep(interval_s)
-
     if not rows:
         raise RuntimeError("No data collected — check network and exchange APIs.")
     return pl.DataFrame(rows).sort("timestamp_ns")
@@ -319,12 +304,15 @@ def collect_l5_ticks(
     """Fetch L5 LOB snapshots from core feed bridge, optionally topped up via REST."""
     exchanges = exchanges or ["BINANCE", "KRAKEN", "OKX", "COINBASE"]
     bridge_df = collect_from_core_bridge(n_ticks=n_ticks, interval_ms=interval_ms)
-
     if bridge_df is not None and len(bridge_df) >= n_ticks // 2:
         bridge_df = _enforce_symbol_and_exchange_coverage(bridge_df, exchanges, symbol)
         if len(bridge_df) < n_ticks and allow_rest_fallback:
-            print(f"[WARN] bridge returned {len(bridge_df)} ticks (< {n_ticks}); topping up with REST")
-            rest_df = _collect_l5_ticks_rest(n_ticks - len(bridge_df), interval_ms, exchanges, symbol=symbol)
+            print(
+                f"[WARN] bridge returned {len(bridge_df)} ticks (< {n_ticks}); topping up with REST"
+            )
+            rest_df = _collect_l5_ticks_rest(
+                n_ticks - len(bridge_df), interval_ms, exchanges, symbol=symbol
+            )
             merged_df = pl.concat([bridge_df, rest_df]).sort("timestamp_ns")
             return _enforce_symbol_and_exchange_coverage(merged_df, exchanges, symbol)
         if len(bridge_df) < n_ticks:
@@ -332,12 +320,10 @@ def collect_l5_ticks(
                 f"Core bridge returned {len(bridge_df)} ticks (< {n_ticks}) and REST fallback is disabled."
             )
         return bridge_df
-
     if allow_rest_fallback:
         print("[WARN] core bridge unavailable or insufficient; falling back to REST collection")
         rest_df = _collect_l5_ticks_rest(n_ticks, interval_ms, exchanges, symbol=symbol)
         return _enforce_symbol_and_exchange_coverage(rest_df, exchanges, symbol)
-
     raise RuntimeError("Core bridge unavailable and REST fallback disabled.")
 
 
@@ -346,38 +332,38 @@ def _fold_slices(T: int, n_folds: int, train_frac: float) -> list[tuple[int, int
     fold_size = T // n_folds
     slices = []
     for i in range(n_folds):
-        end_test  = (i + 1) * fold_size
+        end_test = (i + 1) * fold_size
         start_test = int(end_test - fold_size * (1 - train_frac))
         slices.append((start_test, end_test))
     return slices
 
 
-
 def _evaluate_state_on_holdout(df: pl.DataFrame, state_dict: dict, cfg: TrainerConfig) -> float:
     import torch
     from torch.utils.data import DataLoader
-
-    from .dataset import DatasetConfig, LOBDataset
-    from .model import CryptoAlphaNet
+    from .data.dataset import DatasetConfig, LOBDataset
+    from .models.model import CryptoAlphaNet
 
     dataset = LOBDataset(df, DatasetConfig(seq_len=cfg.seq_len))
     if len(dataset) == 0:
         return float("inf")
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     loader = DataLoader(dataset, batch_size=64, shuffle=False)
-    model = CryptoAlphaNet(
-        d_spatial=cfg.d_spatial,
-        d_temporal=cfg.d_temporal,
-        n_lob_heads=cfg.n_lob_heads,
-        n_lob_layers=cfg.n_lob_layers,
-        n_temp_heads=cfg.n_temp_heads,
-        n_temp_layers=cfg.n_temp_layers,
-        dropout=cfg.dropout,
-        seq_len=cfg.seq_len,
-    ).to(device).eval()
+    model = (
+        CryptoAlphaNet(
+            d_spatial=cfg.d_spatial,
+            d_temporal=cfg.d_temporal,
+            n_lob_heads=cfg.n_lob_heads,
+            n_lob_layers=cfg.n_lob_layers,
+            n_temp_heads=cfg.n_temp_heads,
+            n_temp_layers=cfg.n_temp_layers,
+            dropout=cfg.dropout,
+            seq_len=cfg.seq_len,
+        )
+        .to(device)
+        .eval()
+    )
     model.load_state_dict(state_dict, strict=False)
-
     sqerr = 0.0
     n = 0
     with torch.no_grad():
@@ -389,7 +375,6 @@ def _evaluate_state_on_holdout(df: pl.DataFrame, state_dict: dict, cfg: TrainerC
             diff = pred_mid - true_mid
             sqerr += float((diff * diff).sum().item())
             n += int(diff.numel())
-
     return sqerr / max(n, 1)
 
 
@@ -402,27 +387,20 @@ def _atomic_torch_save(state_dict: dict, output_path: Path) -> None:
     tmp_path.replace(output_path)
 
 
-
-def _blend_fold_results(
-    primary_folds: list[dict],
-    secondary_folds: list[dict],
-) -> list[dict]:
+def _blend_fold_results(primary_folds: list[dict], secondary_folds: list[dict]) -> list[dict]:
     """Average prediction tensors from two fold-result lists."""
     if len(primary_folds) != len(secondary_folds):
         raise ValueError("Primary/secondary fold counts do not match for ensembling.")
-
     blended: list[dict] = []
     for primary, secondary in zip(primary_folds, secondary_folds):
         p_pred = primary.get("predictions")
         s_pred = secondary.get("predictions")
         p_lbl = primary.get("labels")
         s_lbl = secondary.get("labels")
-
-        if p_pred is None or s_pred is None or p_lbl is None or s_lbl is None:
+        if p_pred is None or s_pred is None or p_lbl is None or (s_lbl is None):
             raise ValueError("Missing predictions/labels while building fold ensemble.")
         if p_pred.shape != s_pred.shape or p_lbl.shape != s_lbl.shape:
             raise ValueError("Primary/secondary fold tensor shapes do not match.")
-
         blended.append(
             {
                 **primary,
@@ -431,15 +409,14 @@ def _blend_fold_results(
                 "ensemble": True,
             }
         )
-
     return blended
+
 
 def run_pipeline(args: argparse.Namespace) -> None:
     from research.regime import RegimeConfig, save_regime_artifact, train_regime_model_from_ipc
-
-    from .alpha_regression import analyse_alpha, print_alpha_report
-    from .backtest import BacktestConfig, NeuralAlphaBacktest
-    from .trainer import TrainerConfig, walk_forward_train
+    from .evaluation.alpha_regression import analyse_alpha, print_alpha_report
+    from .evaluation.backtest import BacktestConfig, NeuralAlphaBacktest
+    from .models.trainer import TrainerConfig, walk_forward_train
 
     if args.data_path and Path(args.data_path).exists():
         print(f"Loading data from {args.data_path}")
@@ -452,15 +429,12 @@ def run_pipeline(args: argparse.Namespace) -> None:
             symbol=args.symbol,
             allow_rest_fallback=not args.core_only,
         )
-
     if args.save_data:
         out = Path(args.save_data)
         out.parent.mkdir(parents=True, exist_ok=True)
         df.write_parquet(str(out))
         print(f"Data saved → {out}")
-
     print(f"Dataset: {len(df)} ticks  columns={df.columns[:8]}…\n")
-
     trainer_cfg = TrainerConfig(
         epochs=args.epochs,
         n_folds=args.folds,
@@ -472,13 +446,10 @@ def run_pipeline(args: argparse.Namespace) -> None:
         batch_size=args.batch_size,
         lr=args.lr,
     )
-
     fold_results = walk_forward_train(df, trainer_cfg)
-
     if not fold_results:
         print("No fold results — dataset too small for the chosen seq_len / n_folds.")
         return
-
     secondary_fold_results: list[dict] | None = None
     effective_folds = fold_results
     if args.enable_secondary_model:
@@ -500,90 +471,71 @@ def run_pipeline(args: argparse.Namespace) -> None:
             raise RuntimeError("Secondary ensemble model produced no fold results.")
         effective_folds = _blend_fold_results(fold_results, secondary_fold_results)
         print("Secondary model blended with primary predictions (50/50).")
-
-    bt_cfg = BacktestConfig(
-        entry_threshold_bps=args.entry_bps,
-        taker_fee_bps=args.fee_bps,
-    )
+    bt_cfg = BacktestConfig(entry_threshold_bps=args.entry_bps, taker_fee_bps=args.fee_bps)
     test_slices = _fold_slices(len(df), args.folds, trainer_cfg.train_frac)
-
     all_bt_metrics: list[dict] = []
     for fold, (start, end) in zip(effective_folds, test_slices):
-        test_df  = df[start:end]
-        signals  = fold["predictions"][:, 2]  # mid-horizon (index 2 = 100t)
-
-        # Expand per-window predictions to per-tick (last-tick alignment)
+        test_df = df[start:end]
+        signals = fold["predictions"][:, 2]
         T_test = len(test_df)
         tick_signals = np.zeros(T_test, dtype=np.float32)
         for i, sig in enumerate(signals):
             idx = min(i + trainer_cfg.seq_len - 1, T_test - 1)
             tick_signals[idx] = sig
-
         bt = NeuralAlphaBacktest(bt_cfg)
         bt_result = bt.run(test_df, tick_signals)
         all_bt_metrics.append(bt_result["metrics"])
         print(f"Fold {fold['fold']} backtest: {bt_result['metrics']}")
-
-    # Aggregate backtest metrics across folds
     merged_bt: dict = {}
     float_keys = [k for k in all_bt_metrics[0] if isinstance(all_bt_metrics[0][k], float)]
     for k in float_keys:
         vals = [m[k] for m in all_bt_metrics if k in m]
         merged_bt[k] = float(np.mean(vals)) if vals else 0.0
-    merged_bt["total_trades"] = sum(m.get("total_trades", 0) for m in all_bt_metrics)
-
+    merged_bt["total_trades"] = sum((m.get("total_trades", 0) for m in all_bt_metrics))
     alpha_metrics = analyse_alpha(effective_folds, horizon_idx=2)
-
     print_alpha_report(alpha_metrics, merged_bt)
-
     try:
         regime_cfg = RegimeConfig(n_regimes=args.regimes)
-        regime_artifact, regime_dist = train_regime_model_from_ipc(args.ipc_dir, regime_cfg)
+        (regime_artifact, regime_dist) = train_regime_model_from_ipc(args.ipc_dir, regime_cfg)
         save_regime_artifact(regime_artifact, args.save_regime_model)
         print(
-            f"R2 regime model trained (n_regimes={regime_cfg.n_regimes}) "
-            f"from {args.ipc_dir} and saved → {args.save_regime_model}"
+            f"R2 regime model trained (n_regimes={regime_cfg.n_regimes}) from {args.ipc_dir} and saved → {args.save_regime_model}"
         )
         print(f"R2 regime distribution: {regime_dist}")
     except Exception as exc:
         print(f"[WARN] R2 regime training skipped: {exc}")
-
     if args.save_model:
         import torch
 
-        best_fold = min(fold_results, key=lambda f: f["metrics"].get("loss_total", 1e9))
+        best_fold = min(fold_results, key=lambda f: f["metrics"].get("loss_total", 1000000000.0))
         challenger_state = best_fold["model_state"]
         selected_state = challenger_state
-
         holdout_start = int(len(df) * 0.8)
         holdout_df = df[holdout_start:]
         incumbent_oos_mse: float | None = None
         challenger_oos_mse: float | None = None
-
         if len(holdout_df) >= trainer_cfg.seq_len * 2:
-            challenger_oos_mse = _evaluate_state_on_holdout(holdout_df, challenger_state, trainer_cfg)
+            challenger_oos_mse = _evaluate_state_on_holdout(
+                holdout_df, challenger_state, trainer_cfg
+            )
             incumbent_path = Path(args.save_model)
             if incumbent_path.exists():
                 incumbent_state = torch.load(incumbent_path, map_location="cpu", weights_only=True)
-                incumbent_oos_mse = _evaluate_state_on_holdout(holdout_df, incumbent_state, trainer_cfg)
+                incumbent_oos_mse = _evaluate_state_on_holdout(
+                    holdout_df, incumbent_state, trainer_cfg
+                )
                 if incumbent_oos_mse < challenger_oos_mse:
                     selected_state = incumbent_state
                     print(
-                        "[MODEL_SELECT] challenger rejected on holdout "
-                        f"(incumbent_mse={incumbent_oos_mse:.6e}, "
-                        f"challenger_mse={challenger_oos_mse:.6e})"
+                        f"[MODEL_SELECT] challenger rejected on holdout (incumbent_mse={incumbent_oos_mse:.6e}, challenger_mse={challenger_oos_mse:.6e})"
                     )
-
         primary_path = Path(args.save_model)
         _atomic_torch_save(selected_state, primary_path)
         print(f"Best primary model saved → {primary_path}")
         if challenger_oos_mse is not None:
             print(
-                "[MODEL_SELECT] holdout mid-return MSE "
-                f"incumbent={incumbent_oos_mse} challenger={challenger_oos_mse} "
-                f"selected={'incumbent' if selected_state is not challenger_state else 'challenger'}"
+                f"[MODEL_SELECT] holdout mid-return MSE incumbent={incumbent_oos_mse} challenger={challenger_oos_mse} selected={('incumbent' if selected_state is not challenger_state else 'challenger')}"
             )
-
         if args.enable_secondary_model and secondary_fold_results:
             secondary_cfg = TrainerConfig(
                 epochs=args.epochs,
@@ -598,8 +550,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 lr=args.lr,
             )
             best_secondary = min(
-                secondary_fold_results,
-                key=lambda f: f["metrics"].get("loss_total", 1e9),
+                secondary_fold_results, key=lambda f: f["metrics"].get("loss_total", 1000000000.0)
             )
             secondary_path = primary_path.with_name(
                 f"{primary_path.stem}_secondary{primary_path.suffix}"
@@ -610,7 +561,9 @@ def run_pipeline(args: argparse.Namespace) -> None:
             holdout_start = int(len(df) * 0.8)
             holdout_df = df[holdout_start:]
             if len(holdout_df) >= secondary_cfg.seq_len * 2:
-                secondary_mse = _evaluate_state_on_holdout(holdout_df, secondary_state, secondary_cfg)
+                secondary_mse = _evaluate_state_on_holdout(
+                    holdout_df, secondary_state, secondary_cfg
+                )
             print(
                 f"Secondary ensemble model saved → {secondary_path}"
                 + (f" (holdout_mse={secondary_mse:.6e})" if secondary_mse is not None else "")
@@ -619,20 +572,28 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Neural crypto alpha pipeline")
-    ap.add_argument("--ticks",           type=int,   default=300,
-                    help="Ticks to collect per exchange (default 300)")
-    ap.add_argument("--interval-ms",     type=int,   default=500,   dest="interval_ms")
-    ap.add_argument("--symbol",          type=str,   default="BTCUSDT")
+    ap.add_argument(
+        "--ticks", type=int, default=300, help="Ticks to collect per exchange (default 300)"
+    )
+    ap.add_argument("--interval-ms", type=int, default=500, dest="interval_ms")
+    ap.add_argument("--symbol", type=str, default="BTCUSDT")
     ap.add_argument("--exchanges", type=str, default="BINANCE,KRAKEN,OKX,COINBASE")
-    ap.add_argument("--core-only", action="store_true",
-                    help="Require core feed bridge data; disable REST fallback")
-    ap.add_argument("--data-path",       type=str,   default=None,  dest="data_path",
-                    help="Load existing Parquet instead of fetching")
-    ap.add_argument("--save-data",       type=str,   default=None,  dest="save_data")
-    ap.add_argument("--save-model",      type=str,   default=None,  dest="save_model")
-    ap.add_argument("--ipc-dir",         type=str,   default="/ipc", dest="ipc_dir")
-    ap.add_argument("--regimes",         type=int,   default=4,
-                    help="R2 regime count (supported: 3 or 4)")
+    ap.add_argument(
+        "--core-only",
+        action="store_true",
+        help="Require core feed bridge data; disable REST fallback",
+    )
+    ap.add_argument(
+        "--data-path",
+        type=str,
+        default=None,
+        dest="data_path",
+        help="Load existing Parquet instead of fetching",
+    )
+    ap.add_argument("--save-data", type=str, default=None, dest="save_data")
+    ap.add_argument("--save-model", type=str, default=None, dest="save_model")
+    ap.add_argument("--ipc-dir", type=str, default="/ipc", dest="ipc_dir")
+    ap.add_argument("--regimes", type=int, default=4, help="R2 regime count (supported: 3 or 4)")
     ap.add_argument(
         "--save-regime-model",
         type=str,
@@ -640,23 +601,17 @@ def main() -> None:
         dest="save_regime_model",
         help="Path to save trained R2 regime model artifact",
     )
-
-    # Model
-    ap.add_argument("--d-spatial",       type=int,   default=64,    dest="d_spatial")
-    ap.add_argument("--d-temporal",      type=int,   default=128,   dest="d_temporal")
-    ap.add_argument("--seq-len",         type=int,   default=64,    dest="seq_len")
-
-    # Training
-    ap.add_argument("--epochs",          type=int,   default=20)
-    ap.add_argument("--folds",           type=int,   default=4)
-    ap.add_argument("--batch-size",      type=int,   default=32,    dest="batch_size")
-    ap.add_argument("--lr",              type=float, default=3e-4)
-    ap.add_argument("--no-pretrain",     action="store_true",       dest="no_pretrain")
-    ap.add_argument("--pretrain-epochs", type=int,   default=5,     dest="pretrain_epochs")
-
-    # Backtest
-    ap.add_argument("--entry-bps",       type=float, default=5.0,   dest="entry_bps")
-    ap.add_argument("--fee-bps",         type=float, default=5.0,   dest="fee_bps")
+    ap.add_argument("--d-spatial", type=int, default=64, dest="d_spatial")
+    ap.add_argument("--d-temporal", type=int, default=128, dest="d_temporal")
+    ap.add_argument("--seq-len", type=int, default=64, dest="seq_len")
+    ap.add_argument("--epochs", type=int, default=20)
+    ap.add_argument("--folds", type=int, default=4)
+    ap.add_argument("--batch-size", type=int, default=32, dest="batch_size")
+    ap.add_argument("--lr", type=float, default=0.0003)
+    ap.add_argument("--no-pretrain", action="store_true", dest="no_pretrain")
+    ap.add_argument("--pretrain-epochs", type=int, default=5, dest="pretrain_epochs")
+    ap.add_argument("--entry-bps", type=float, default=5.0, dest="entry_bps")
+    ap.add_argument("--fee-bps", type=float, default=5.0, dest="fee_bps")
     ap.add_argument(
         "--enable-secondary-model",
         action=argparse.BooleanOptionalAction,
@@ -664,7 +619,6 @@ def main() -> None:
         dest="enable_secondary_model",
         help="Train and save a smaller secondary alpha model alongside the primary model (enabled by default).",
     )
-
     args = ap.parse_args()
     run_pipeline(args)
 

@@ -9,12 +9,14 @@ import pytest
 
 ROOT = Path(__file__).parent.parent.parent
 import sys
+
 sys.path.insert(0, str(ROOT))
 
-from research.neural_alpha.core_bridge import CoreBridge
+from research.neural_alpha.runtime.core_bridge import CoreBridge
 
 try:
     import trading_core as tc
+
     _HAS_TC = True
 except ImportError:
     tc = None  # type: ignore[assignment]
@@ -165,7 +167,9 @@ def test_collect_l5_ticks_prefers_bridge_then_tops_up(monkeypatch) -> None:
         ]
     )
 
-    monkeypatch.setattr(pipeline, "collect_from_core_bridge", lambda n_ticks, interval_ms: bridge_df)
+    monkeypatch.setattr(
+        pipeline, "collect_from_core_bridge", lambda n_ticks, interval_ms: bridge_df
+    )
     monkeypatch.setattr(
         pipeline,
         "_collect_l5_ticks_rest",
@@ -196,7 +200,9 @@ def test_collect_l5_ticks_rejects_missing_exchange(monkeypatch) -> None:
         ]
     )
 
-    monkeypatch.setattr(pipeline, "collect_from_core_bridge", lambda n_ticks, interval_ms: bridge_df)
+    monkeypatch.setattr(
+        pipeline, "collect_from_core_bridge", lambda n_ticks, interval_ms: bridge_df
+    )
     with pytest.raises(RuntimeError, match="missing"):
         pipeline.collect_l5_ticks(
             n_ticks=1,

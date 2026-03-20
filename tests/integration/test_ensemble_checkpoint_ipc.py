@@ -18,6 +18,7 @@ Configuration via environment variables:
     TRT_IPC_TIMEOUT_MS        Maximum milliseconds to wait for ticks
                               (default: 5000)
 """
+
 from __future__ import annotations
 
 import os
@@ -33,19 +34,20 @@ import torch
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from research.neural_alpha.core_bridge import CoreBridge, RING_PATH
-from research.neural_alpha.dataset import DatasetConfig, LOBDataset
-from research.neural_alpha.model import CryptoAlphaNet
+from research.neural_alpha.runtime.core_bridge import CoreBridge, RING_PATH
+from research.neural_alpha.data.dataset import DatasetConfig, LOBDataset
+from research.neural_alpha.models.model import CryptoAlphaNet
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
-_DEFAULT_PRIMARY   = ROOT / "models" / "neural_alpha_btcusdt_latest.pt"
+_DEFAULT_PRIMARY = ROOT / "models" / "neural_alpha_btcusdt_latest.pt"
 _DEFAULT_SECONDARY = ROOT / "models" / "neural_alpha_btcusdt_secondary.pt"
 _DEFAULT_MIN_TICKS = 64
 _DEFAULT_TIMEOUT_MS = 5_000
 
 
 # ── Configuration helpers ─────────────────────────────────────────────────────
+
 
 def _ipc_path() -> str:
     return os.environ.get("TRT_IPC_FEED_PATH", RING_PATH)
@@ -68,6 +70,7 @@ def _secondary_checkpoint() -> Path:
 
 
 # ── IPC capture ───────────────────────────────────────────────────────────────
+
 
 def _capture_ipc_ticks(min_ticks: int, timeout_ms: int) -> list[dict]:
     """
@@ -100,6 +103,7 @@ def _capture_ipc_ticks(min_ticks: int, timeout_ms: int) -> list[dict]:
 
 # ── Checkpoint loading ────────────────────────────────────────────────────────
 
+
 def _load_checkpoint(path: Path, seq_len: int) -> CryptoAlphaNet | None:
     """
     Load a CryptoAlphaNet from a saved state-dict checkpoint.
@@ -111,12 +115,10 @@ def _load_checkpoint(path: Path, seq_len: int) -> CryptoAlphaNet | None:
     if not path.exists():
         return None
 
-    state: dict[str, torch.Tensor] = torch.load(
-        path, map_location="cpu", weights_only=True
-    )
+    state: dict[str, torch.Tensor] = torch.load(path, map_location="cpu", weights_only=True)
 
     # Infer spatial dim from the learnable level-position embedding
-    d_spatial  = int(state["spatial_enc.pos_emb.weight"].shape[1])
+    d_spatial = int(state["spatial_enc.pos_emb.weight"].shape[1])
     # Infer temporal dim from the final LayerNorm weight
     d_temporal = int(state["temporal_enc.norm.weight"].shape[0])
 
@@ -127,6 +129,7 @@ def _load_checkpoint(path: Path, seq_len: int) -> CryptoAlphaNet | None:
 
 
 # ── Inference ─────────────────────────────────────────────────────────────────
+
 
 def _infer_last_window(
     model: CryptoAlphaNet, df: pl.DataFrame, seq_len: int
@@ -145,7 +148,7 @@ def _infer_last_window(
         )
 
     sample = dataset[len(dataset) - 1]
-    lob    = sample["lob"].unsqueeze(0)     # (1, seq_len, N_LEVELS, 4)
+    lob = sample["lob"].unsqueeze(0)  # (1, seq_len, N_LEVELS, 4)
     scalar = sample["scalar"].unsqueeze(0)  # (1, seq_len, D_SCALAR)
 
     with torch.no_grad():
@@ -154,34 +157,40 @@ def _infer_last_window(
 
 # ── Output assertions ─────────────────────────────────────────────────────────
 
-def _assert_valid_outputs(
-    preds: dict[str, torch.Tensor], label: str, seq_len: int
-) -> None:
+
+def _assert_valid_outputs(preds: dict[str, torch.Tensor], label: str, seq_len: int) -> None:
     """Assert shape correctness, finiteness, and risk boundedness."""
-    ret  = preds["returns"]    # (1, seq_len, 4)
+    ret = preds["returns"]  # (1, seq_len, 4)
     dirn = preds["direction"]  # (1, seq_len, 3)
-    risk = preds["risk"]       # (1, seq_len)
+    risk = preds["risk"]  # (1, seq_len)
 
-    assert ret.shape  == (1, seq_len, 4), \
-        f"{label} returns: expected (1, {seq_len}, 4), got {tuple(ret.shape)}"
-    assert dirn.shape == (1, seq_len, 3), \
-        f"{label} direction: expected (1, {seq_len}, 3), got {tuple(dirn.shape)}"
-    assert risk.shape == (1, seq_len), \
-        f"{label} risk: expected (1, {seq_len}), got {tuple(risk.shape)}"
+    assert ret.shape == (
+        1,
+        seq_len,
+        4,
+    ), f"{label} returns: expected (1, {seq_len}, 4), got {tuple(ret.shape)}"
+    assert dirn.shape == (
+        1,
+        seq_len,
+        3,
+    ), f"{label} direction: expected (1, {seq_len}, 3), got {tuple(dirn.shape)}"
+    assert risk.shape == (
+        1,
+        seq_len,
+    ), f"{label} risk: expected (1, {seq_len}), got {tuple(risk.shape)}"
 
-    assert torch.isfinite(ret).all(), \
-        f"{label} returns contain non-finite values"
-    assert torch.isfinite(dirn).all(), \
-        f"{label} direction logits contain non-finite values"
-    assert torch.isfinite(risk).all(), \
-        f"{label} risk scores contain non-finite values"
+    assert torch.isfinite(ret).all(), f"{label} returns contain non-finite values"
+    assert torch.isfinite(dirn).all(), f"{label} direction logits contain non-finite values"
+    assert torch.isfinite(risk).all(), f"{label} risk scores contain non-finite values"
 
     r_min, r_max = float(risk.min()), float(risk.max())
-    assert r_min >= 0.0 and r_max <= 1.0, \
-        f"{label} risk not in [0, 1]: min={r_min:.4f} max={r_max:.4f}"
+    assert (
+        r_min >= 0.0 and r_max <= 1.0
+    ), f"{label} risk not in [0, 1]: min={r_min:.4f} max={r_max:.4f}"
 
 
 # ── Integration test ──────────────────────────────────────────────────────────
+
 
 def test_ensemble_checkpoint_inference_on_live_ipc_feed() -> None:
     """
@@ -208,7 +217,7 @@ def test_ensemble_checkpoint_inference_on_live_ipc_feed() -> None:
     - A checkpoint file exists but contains non-finite or out-of-range outputs.
     - The checkpoint state dict is structurally incompatible with CryptoAlphaNet.
     """
-    seq_len    = _min_ticks()
+    seq_len = _min_ticks()
     timeout_ms = _timeout_ms()
 
     # ── Step 1–2: Live IPC capture ───────────────────────────────────────────
@@ -230,10 +239,10 @@ def test_ensemble_checkpoint_inference_on_live_ipc_feed() -> None:
     df = pl.DataFrame(ticks).sort("timestamp_ns")
 
     # ── Step 3: Checkpoint loading ───────────────────────────────────────────
-    primary_path   = _primary_checkpoint()
+    primary_path = _primary_checkpoint()
     secondary_path = _secondary_checkpoint()
 
-    primary_model   = _load_checkpoint(primary_path,   seq_len=seq_len)
+    primary_model = _load_checkpoint(primary_path, seq_len=seq_len)
     secondary_model = _load_checkpoint(secondary_path, seq_len=seq_len)
 
     if primary_model is None and secondary_model is None:
@@ -244,7 +253,7 @@ def test_ensemble_checkpoint_inference_on_live_ipc_feed() -> None:
         )
 
     # ── Steps 4–5: Per-model inference and output validation ─────────────────
-    primary_preds   = None
+    primary_preds = None
     secondary_preds = None
 
     if primary_model is not None:
@@ -257,17 +266,17 @@ def test_ensemble_checkpoint_inference_on_live_ipc_feed() -> None:
 
     # ── Step 6: Ensemble blend validation ────────────────────────────────────
     if primary_preds is not None and secondary_preds is not None:
-        ensemble_ret  = (primary_preds["returns"]   + secondary_preds["returns"])   / 2.0
+        ensemble_ret = (primary_preds["returns"] + secondary_preds["returns"]) / 2.0
         ensemble_dirn = (primary_preds["direction"] + secondary_preds["direction"]) / 2.0
-        ensemble_risk = (primary_preds["risk"]       + secondary_preds["risk"])      / 2.0
+        ensemble_risk = (primary_preds["risk"] + secondary_preds["risk"]) / 2.0
 
-        assert torch.isfinite(ensemble_ret).all(), \
-            "Ensemble returns contain non-finite values"
-        assert torch.isfinite(ensemble_dirn).all(), \
-            "Ensemble direction logits contain non-finite values"
-        assert torch.isfinite(ensemble_risk).all(), \
-            "Ensemble risk scores contain non-finite values"
+        assert torch.isfinite(ensemble_ret).all(), "Ensemble returns contain non-finite values"
+        assert torch.isfinite(
+            ensemble_dirn
+        ).all(), "Ensemble direction logits contain non-finite values"
+        assert torch.isfinite(ensemble_risk).all(), "Ensemble risk scores contain non-finite values"
 
         e_min, e_max = float(ensemble_risk.min()), float(ensemble_risk.max())
-        assert e_min >= 0.0 and e_max <= 1.0, \
-            f"Ensemble risk not in [0, 1]: min={e_min:.4f} max={e_max:.4f}"
+        assert (
+            e_min >= 0.0 and e_max <= 1.0
+        ), f"Ensemble risk not in [0, 1]: min={e_min:.4f} max={e_max:.4f}"
