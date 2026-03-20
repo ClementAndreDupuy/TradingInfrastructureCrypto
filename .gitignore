@@ -70,5 +70,8 @@ Thumbs.db
 !tests/data/replay/
 !tests/data/replay/binance_btcusdt_replay.csv
 
+# Source-code packages named data/ (not data storage)
+!research/neural_alpha/data/
+
 config/trading.env
 config/shadow/trading.env
