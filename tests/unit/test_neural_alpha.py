@@ -55,8 +55,11 @@ from research.neural_alpha.models.model import (
 from research.neural_alpha.runtime.shadow_session import (
     NeuralAlphaShadowSession,
     ShadowSessionConfig,
+    _build_signal_alignment,
+    _summarise_timestamp_quality,
     _symbol_model_path,
 )
+from research.backtest.shadow_metrics import analyse_signals
 
 
 # ── Test data helpers ─────────────────────────────────────────────────────────
@@ -503,10 +506,8 @@ class TestShadowSessionTraining:
     def test_main_loads_secondary_model_after_train_on_recent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """After train_on_recent, main() must attempt to load the secondary model
-        before calling _validate_production_stack, mirroring the primary-model-exists branch."""
         import sys
-        from research.neural_alpha.runtime.shadow_session import main, _symbol_model_path
+        from research.neural_alpha.runtime.shadow_session import main
         from research.neural_alpha.models.model import CryptoAlphaNet
 
         primary_path = tmp_path / "neural_alpha_btcusdt_latest.pt"
@@ -514,7 +515,6 @@ class TestShadowSessionTraining:
         log_path = tmp_path / "shadow.jsonl"
         signal_path = tmp_path / "alpha_signal.bin"
 
-        # Save a small secondary model so the file exists for loading.
         secondary_model = CryptoAlphaNet(d_spatial=32, d_temporal=64, n_temp_layers=1, seq_len=8)
         torch.save(secondary_model.state_dict(), secondary_path)
 
@@ -587,7 +587,6 @@ class TestShadowSessionTraining:
 
         def _fake_load_secondary(self_session, path: str) -> None:
             loaded_secondary.append(True)
-            # Build the small secondary model just like the real method.
             m = CryptoAlphaNet(d_spatial=32, d_temporal=64, n_temp_layers=1, seq_len=8)
             state = torch.load(path, map_location="cpu", weights_only=True)
             m.load_state_dict(state)
@@ -612,3 +611,73 @@ class TestShadowSessionTraining:
         main()
 
         assert loaded_secondary, "load_secondary_model was not called after train_on_recent"
+
+
+class TestShadowTimestampMetrics:
+    def test_signal_alignment_uses_event_order(self) -> None:
+        records = [
+            {"event_index": 2, "session_elapsed_ns": 2, "mid_price": 101.0, "signal": 0.2},
+            {"event_index": 1, "session_elapsed_ns": 1, "mid_price": 100.0, "signal": 0.1},
+            {"event_index": 3, "session_elapsed_ns": 3, "mid_price": 102.0, "signal": 0.3},
+        ]
+
+        (signals, outcomes) = _build_signal_alignment(records)
+
+        assert signals.tolist() == pytest.approx([0.1, 0.2])
+        assert outcomes.tolist() == pytest.approx([0.01, 1.0 / 101.0], rel=1e-6)
+
+    def test_timestamp_quality_flags_non_monotonic_records(self) -> None:
+        records = [
+            {
+                "event_index": 1,
+                "session_elapsed_ns": 1,
+                "timestamp_exchange_ns": 10,
+                "timestamp_local_ns": 100,
+                "exchange": "BINANCE",
+            },
+            {
+                "event_index": 2,
+                "session_elapsed_ns": 2,
+                "timestamp_exchange_ns": 9,
+                "timestamp_local_ns": 99,
+                "exchange": "BINANCE",
+            },
+        ]
+
+        diagnostics = _summarise_timestamp_quality(records)
+
+        assert diagnostics["has_timestamp_issues"] is True
+        assert diagnostics["exchange_non_monotonic"] == 1
+        assert diagnostics["local_non_monotonic"] == 1
+
+    def test_shadow_metrics_uses_session_elapsed_for_duration_and_blocks_bad_timestamps(self) -> None:
+        rows = [
+            {
+                "event_index": 1,
+                "session_elapsed_ns": 0,
+                "timestamp_ns": 1_000,
+                "timestamp_exchange_ns": 1_000,
+                "timestamp_local_ns": 1_000,
+                "mid_price": 100.0,
+                "signal": 0.1,
+                "risk_score": 0.2,
+                "exchange": "BINANCE",
+            },
+            {
+                "event_index": 2,
+                "session_elapsed_ns": 30_000_000_000,
+                "timestamp_ns": 999,
+                "timestamp_exchange_ns": 999,
+                "timestamp_local_ns": 999,
+                "mid_price": 101.0,
+                "signal": 0.2,
+                "risk_score": 0.3,
+                "exchange": "BINANCE",
+            },
+        ]
+
+        metrics = analyse_signals(rows)
+
+        assert metrics["duration_min"] == pytest.approx(0.5)
+        assert metrics["timestamp_quality"]["has_timestamp_issues"] is True
+        assert metrics["ic"] == 0.0

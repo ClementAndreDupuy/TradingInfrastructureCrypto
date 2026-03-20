@@ -22,6 +22,9 @@ import math
 from pathlib import Path
 import numpy as np
 
+_IC_WINDOW = 20
+_MAX_EXCHANGE_JUMP_NS = 60 * 1000000000
+
 
 def load_jsonl(path: str) -> list[dict]:
     rows: list[dict] = []
@@ -88,40 +91,114 @@ def analyse_decisions(rows: list[dict]) -> dict:
 def analyse_signals(rows: list[dict]) -> dict:
     if not rows:
         return {}
-    sigs = np.nan_to_num(np.array([r.get("signal", 0.0) for r in rows], dtype=np.float64))
-    risk = np.nan_to_num(np.array([r.get("risk_score", 0.0) for r in rows], dtype=np.float64))
-    ts = np.array([r.get("timestamp_ns", 0) for r in rows], dtype=np.int64)
-    mids = np.nan_to_num(np.array([r.get("mid_price", 0.0) for r in rows], dtype=np.float64))
-    with np.errstate(invalid="ignore", divide="ignore"):
-        realised = np.where(mids[:-1] > 0, (mids[1:] - mids[:-1]) / mids[:-1], 0.0)
+    ordered = sorted(
+        rows, key=lambda r: (int(r.get("event_index", 0)), int(r.get("session_elapsed_ns", 0)))
+    )
+    sigs = np.nan_to_num(np.array([r.get("signal", 0.0) for r in ordered], dtype=np.float64))
+    risk = np.nan_to_num(np.array([r.get("risk_score", 0.0) for r in ordered], dtype=np.float64))
+    mids = np.nan_to_num(np.array([r.get("mid_price", 0.0) for r in ordered], dtype=np.float64))
+    elapsed = np.array([r.get("session_elapsed_ns", 0) for r in ordered], dtype=np.int64)
+    signals_for_ic: list[float] = []
+    realised_values: list[float] = []
+    for i in range(len(ordered) - 1):
+        if mids[i] <= 0.0 or mids[i + 1] <= 0.0:
+            continue
+        signals_for_ic.append(float(ordered[i].get("signal", 0.0)))
+        realised_values.append((mids[i + 1] - mids[i]) / mids[i])
+    realised = np.asarray(realised_values, dtype=np.float64)
+    aligned_sigs = np.asarray(signals_for_ic, dtype=np.float64)
     ic = 0.0
     icir = 0.0
-    _IC_WINDOW = 20
-    if len(realised) >= _IC_WINDOW and sigs[:-1].std() > 0:
+    if len(realised) >= _IC_WINDOW and aligned_sigs.std() > 0:
         ic_series = np.array(
             [
                 (
-                    float(np.corrcoef(sigs[i - _IC_WINDOW : i], realised[i - _IC_WINDOW : i])[0, 1])
+                    float(
+                        np.corrcoef(
+                            aligned_sigs[i - _IC_WINDOW : i], realised[i - _IC_WINDOW : i]
+                        )[0, 1]
+                    )
                     if i >= _IC_WINDOW
                     else 0.0
                 )
-                for i in range(1, len(sigs))
+                for i in range(1, len(aligned_sigs) + 1)
             ]
         )
         ic_series = np.nan_to_num(ic_series)
         ic = float(np.mean(ic_series))
         ic_std = float(np.std(ic_series))
         icir = float(ic / ic_std) * math.sqrt(252) if ic_std > 1e-06 else 0.0
-    duration_min = (int(ts[-1]) - int(ts[0])) / 1000000000.0 / 60.0 if len(ts) > 1 else 0.0
+    timestamp_quality = analyse_timestamp_quality(ordered)
+    duration_min = (
+        (int(elapsed[-1]) - int(elapsed[0])) / 1000000000.0 / 60.0 if len(elapsed) > 1 else 0.0
+    )
+    if timestamp_quality["has_timestamp_issues"]:
+        ic = 0.0
+        icir = 0.0
     return {
-        "total_signals": len(rows),
+        "total_signals": len(ordered),
         "duration_min": round(duration_min, 2),
         "signal_mean_bps": round(float(np.mean(sigs)) * 10000.0, 4),
         "signal_std_bps": round(float(np.std(sigs)) * 10000.0, 4),
         "avg_risk_score": round(float(np.mean(risk)), 4),
         "ic": round(ic, 4),
         "icir_annualised": round(icir, 4),
+        "timestamp_quality": timestamp_quality,
     }
+
+
+def analyse_timestamp_quality(rows: list[dict]) -> dict:
+    diagnostics = {
+        "exchange_missing": 0,
+        "local_missing": 0,
+        "exchange_non_monotonic": 0,
+        "local_non_monotonic": 0,
+        "event_index_non_monotonic": 0,
+        "cross_venue_timestamp_jumps": 0,
+        "max_exchange_jump_ns": 0,
+        "max_local_gap_ns": 0,
+    }
+    prev_exchange = None
+    prev_local = None
+    prev_event_index = None
+    prev_by_exchange: dict[str, int] = {}
+    for row in rows:
+        exchange_ts = int(row.get("timestamp_exchange_ns", row.get("timestamp_ns", 0)))
+        local_ts = int(row.get("timestamp_local_ns", row.get("timestamp_ns", 0)))
+        event_index = int(row.get("event_index", 0))
+        exchange = str(row.get("exchange", "UNKNOWN"))
+        if exchange_ts <= 0:
+            diagnostics["exchange_missing"] += 1
+        if local_ts <= 0:
+            diagnostics["local_missing"] += 1
+        if prev_exchange is not None and exchange_ts > 0:
+            diagnostics["max_exchange_jump_ns"] = max(
+                diagnostics["max_exchange_jump_ns"], abs(exchange_ts - prev_exchange)
+            )
+            if exchange_ts < prev_exchange:
+                diagnostics["exchange_non_monotonic"] += 1
+        if prev_local is not None and local_ts > 0:
+            diagnostics["max_local_gap_ns"] = max(
+                diagnostics["max_local_gap_ns"], abs(local_ts - prev_local)
+            )
+            if local_ts < prev_local:
+                diagnostics["local_non_monotonic"] += 1
+        if prev_event_index is not None and event_index <= prev_event_index:
+            diagnostics["event_index_non_monotonic"] += 1
+        prev_exchange_ts = prev_by_exchange.get(exchange)
+        if prev_exchange_ts is not None and exchange_ts > 0:
+            jump = abs(exchange_ts - prev_exchange_ts)
+            diagnostics["max_exchange_jump_ns"] = max(diagnostics["max_exchange_jump_ns"], jump)
+            if jump > _MAX_EXCHANGE_JUMP_NS:
+                diagnostics["cross_venue_timestamp_jumps"] += 1
+        if exchange_ts > 0:
+            prev_exchange = exchange_ts
+            prev_by_exchange[exchange] = exchange_ts
+        if local_ts > 0:
+            prev_local = local_ts
+        prev_event_index = event_index
+    diagnostics["has_timestamp_issues"] = any(value > 0 for value in diagnostics.values())
+    return diagnostics
 
 
 def fill_rate_check(
@@ -175,6 +252,17 @@ def print_report(dec: dict, sig: dict, out_path: str | None = None) -> None:
             f"  Avg risk score         : {sig.get('avg_risk_score', 0):.4f}",
             f"  IC (rolling 20)        : {sig.get('ic', 0):.4f}",
             f"  ICIR (annualised)      : {sig.get('icir_annualised', 0):.4f}",
+            "",
+        ]
+        quality = sig.get("timestamp_quality", {})
+        lines += [
+            "── Timestamp quality ───────────────────────────────────────",
+            f"  Exchange ts missing    : {quality.get('exchange_missing', 0)}",
+            f"  Local ts missing       : {quality.get('local_missing', 0)}",
+            f"  Exchange non-monotonic : {quality.get('exchange_non_monotonic', 0)}",
+            f"  Local non-monotonic    : {quality.get('local_non_monotonic', 0)}",
+            f"  Event-index regressions: {quality.get('event_index_non_monotonic', 0)}",
+            f"  Venue timestamp jumps  : {quality.get('cross_venue_timestamp_jumps', 0)}",
             "",
         ]
     lines += [

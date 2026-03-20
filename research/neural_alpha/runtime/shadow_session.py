@@ -71,6 +71,7 @@ _SEQ_OFFSET = 0
 _DATA_FMT = "=ddq"
 _DATA_OFFSET = 8
 _REGIME_SIGNAL_FILE = "/tmp/trt_ipc/regime_signal.bin"
+_MAX_EXCHANGE_JUMP_NS = 60 * 1000000000
 
 
 def _ensure_parent_dir(path: str | Path) -> None:
@@ -119,7 +120,6 @@ class ShadowSessionConfig:
     duration_s: int = 3600
     report_interval_s: int = 60
     seq_len: int = 64
-    entry_threshold_bps: float = 5.0
     d_spatial: int = 64
     d_temporal: int = 128
     train_ticks: int = 0
@@ -144,6 +144,105 @@ class ShadowSessionConfig:
     canary_min_samples: int = 60
     ops_events_log: str = "logs/ops_events.jsonl"
     require_full_model_stack: bool = True
+
+
+def _extract_tick_timestamps(tick: dict) -> tuple[int, int]:
+    exchange_ts = int(
+        tick.get("timestamp_exchange_ns", tick.get("exchange_timestamp_ns", tick.get("timestamp_ns", 0)))
+    )
+    local_ts = int(
+        tick.get("timestamp_local_ns", tick.get("local_timestamp_ns", tick.get("timestamp_ns", 0)))
+    )
+    return (exchange_ts, local_ts)
+
+
+def _build_signal_alignment(records: list[dict]) -> tuple[np.ndarray, np.ndarray]:
+    ordered = sorted(records, key=lambda r: (int(r.get("event_index", 0)), int(r.get("session_elapsed_ns", 0))))
+    signals: list[float] = []
+    outcomes: list[float] = []
+    for i in range(len(ordered) - 1):
+        current = ordered[i]
+        following = ordered[i + 1]
+        current_mid = float(current.get("mid_price", 0.0))
+        next_mid = float(following.get("mid_price", 0.0))
+        if current_mid <= 0.0 or next_mid <= 0.0:
+            continue
+        signals.append(float(current.get("signal", 0.0)))
+        outcomes.append((next_mid - current_mid) / current_mid)
+    return (np.asarray(signals, dtype=np.float64), np.asarray(outcomes, dtype=np.float64))
+
+
+def _summarise_timestamp_quality(records: list[dict]) -> dict[str, int | float | bool]:
+    diagnostics = {
+        "records": len(records),
+        "exchange_missing": 0,
+        "local_missing": 0,
+        "exchange_non_monotonic": 0,
+        "local_non_monotonic": 0,
+        "event_index_non_monotonic": 0,
+        "cross_venue_exchange_jumps": 0,
+        "max_exchange_jump_ns": 0,
+        "max_local_gap_ns": 0,
+        "exchange_monotonic": True,
+        "local_monotonic": True,
+        "event_index_monotonic": True,
+    }
+    prev_exchange = None
+    prev_local = None
+    prev_event_index = None
+    prev_venue_exchange_ts: dict[str, int] = {}
+    for record in sorted(
+        records, key=lambda r: (int(r.get("event_index", 0)), int(r.get("session_elapsed_ns", 0)))
+    ):
+        exchange_ts = int(record.get("timestamp_exchange_ns", 0))
+        local_ts = int(record.get("timestamp_local_ns", 0))
+        event_index = int(record.get("event_index", 0))
+        venue = str(record.get("exchange", "UNKNOWN"))
+        if exchange_ts <= 0:
+            diagnostics["exchange_missing"] += 1
+        if local_ts <= 0:
+            diagnostics["local_missing"] += 1
+        if prev_exchange is not None and exchange_ts > 0:
+            diagnostics["max_exchange_jump_ns"] = max(
+                int(diagnostics["max_exchange_jump_ns"]), abs(exchange_ts - prev_exchange)
+            )
+            if exchange_ts < prev_exchange:
+                diagnostics["exchange_non_monotonic"] += 1
+                diagnostics["exchange_monotonic"] = False
+        if prev_local is not None and local_ts > 0:
+            diagnostics["max_local_gap_ns"] = max(
+                int(diagnostics["max_local_gap_ns"]), abs(local_ts - prev_local)
+            )
+            if local_ts < prev_local:
+                diagnostics["local_non_monotonic"] += 1
+                diagnostics["local_monotonic"] = False
+        if prev_event_index is not None and event_index <= prev_event_index:
+            diagnostics["event_index_non_monotonic"] += 1
+            diagnostics["event_index_monotonic"] = False
+        previous_venue_ts = prev_venue_exchange_ts.get(venue)
+        if previous_venue_ts is not None and exchange_ts > 0 and previous_venue_ts > 0:
+            jump = abs(exchange_ts - previous_venue_ts)
+            diagnostics["max_exchange_jump_ns"] = max(int(diagnostics["max_exchange_jump_ns"]), jump)
+            if jump > _MAX_EXCHANGE_JUMP_NS:
+                diagnostics["cross_venue_exchange_jumps"] += 1
+        if exchange_ts > 0:
+            prev_venue_exchange_ts[venue] = exchange_ts
+            prev_exchange = exchange_ts
+        if local_ts > 0:
+            prev_local = local_ts
+        prev_event_index = event_index
+    diagnostics["has_timestamp_issues"] = any(
+        int(diagnostics[key]) > 0
+        for key in (
+            "exchange_missing",
+            "local_missing",
+            "exchange_non_monotonic",
+            "local_non_monotonic",
+            "event_index_non_monotonic",
+            "cross_venue_exchange_jumps",
+        )
+    )
+    return diagnostics
 
 
 class NeuralAlphaShadowSession:
@@ -172,8 +271,7 @@ class NeuralAlphaShadowSession:
             except Exception as exc:
                 print(f"[WARN] failed to load regime model {cfg.regime_model_path}: {exc}")
         self._running = False
-        self._signals: list[float] = []
-        self._outcomes: list[float] = []
+        self._signal_records: list[dict[str, float | int | str | bool]] = []
         self._registry = ChampionChallengerRegistry(cfg.registry_path)
         self._drift_guard = DriftGuard(
             window=cfg.drift_window, min_samples=cfg.drift_min_samples, ic_floor=cfg.drift_ic_floor
@@ -183,6 +281,9 @@ class NeuralAlphaShadowSession:
         self._bridge.open()
         self._processed_ticks = 0
         self._last_continuous_train_tick = 0
+        self._session_event_index = 0
+        self._session_wall_start_ns = time.time_ns()
+        self._session_steady_start_ns = time.monotonic_ns()
 
         self._canary: EnsembleCanary | None = None
         self._prev_primary_signal: float | None = None
@@ -492,12 +593,19 @@ class NeuralAlphaShadowSession:
             regime_probs["p_illiquid"],
         )
         last = self._ring[-1]
+        (exchange_ts, local_ts) = _extract_tick_timestamps(last)
+        self._session_event_index += 1
         mid = (
             last.get("best_bid", last.get("bid_price_1", 0.0))
             + last.get("best_ask", last.get("ask_price_1", 0.0))
         ) / 2.0
         return {
-            "timestamp_ns": last["timestamp_ns"],
+            "timestamp_ns": local_ts,
+            "timestamp_exchange_ns": exchange_ts,
+            "timestamp_local_ns": local_ts,
+            "event_index": self._session_event_index,
+            "session_wall_start_ns": self._session_wall_start_ns,
+            "session_elapsed_ns": time.monotonic_ns() - self._session_steady_start_ns,
             "exchange": last.get("exchange", "BINANCE"),
             "mid_price": mid,
             "ret_1tick_bps": ret_1tick_bps,
@@ -572,27 +680,25 @@ class NeuralAlphaShadowSession:
         print(f"[OPS_EVENT] {event_type}: {details}")
 
     def _log(self, signal_info: dict) -> None:
+        self._signal_records.append(signal_info)
         self._log_fp.write(json.dumps(signal_info) + "\n")
         self._log_fp.flush()
 
     def _print_summary(self) -> None:
-        n = len(self._signals)
+        n = len(self._signal_records)
         if n == 0:
             print("  [shadow] No signals yet.")
             return
-        sigs = np.array(self._signals)
+        sigs = np.array([float(record.get("signal", 0.0)) for record in self._signal_records])
         mean_sig = float(np.mean(sigs)) * 10000.0
         std_sig = float(np.std(sigs)) * 10000.0
         ic = 0.0
         icir = 0.0
-        if len(self._outcomes) >= 10:
-            outs = np.array(self._outcomes[: len(self._signals)])
-            aligned = min(len(outs), n)
-            sig_aligned = sigs[:aligned]
-            out_aligned = outs[:aligned]
-            if out_aligned.std() > 0 and sig_aligned.std() > 0:
-                ic = float(np.corrcoef(sig_aligned, out_aligned)[0, 1])
-            if aligned >= 40:
+        (sig_aligned, out_aligned) = _build_signal_alignment(self._signal_records)
+        if len(out_aligned) >= 10 and out_aligned.std() > 0 and sig_aligned.std() > 0:
+            ic = float(np.corrcoef(sig_aligned, out_aligned)[0, 1])
+            if len(out_aligned) >= 40:
+                aligned = len(out_aligned)
                 chunk = aligned // 4
                 ic_chunks = []
                 for i in range(4):
@@ -604,6 +710,7 @@ class NeuralAlphaShadowSession:
                     ic_arr = np.array(ic_chunks)
                     if ic_arr.std() > 1e-9:
                         icir = float(ic_arr.mean() / ic_arr.std() * np.sqrt(252))
+        diagnostics = _summarise_timestamp_quality(self._signal_records)
         safe_pct = 0.0
         gated_pct = 0.0
         try:
@@ -633,6 +740,7 @@ class NeuralAlphaShadowSession:
             f"  [shadow] ticks={n}  mean={mean_sig:.2f}bps  std={std_sig:.2f}bps"
             f"  IC={ic:.4f}  ICIR={icir:.3f}"
             f"  safe_mode={safe_pct:.1f}%  gated={gated_pct:.1f}%"
+            f"  ts_issues={int(diagnostics['has_timestamp_issues'])}"
         )
 
     def _maybe_continuous_train(self) -> None:
@@ -657,7 +765,6 @@ class NeuralAlphaShadowSession:
         interval_s = self.cfg.interval_ms / 1000.0
         end_time = time.time() + self.cfg.duration_s
         last_report = time.time()
-        prev_mid = None
         print(
             f"Shadow session started — duration={self.cfg.duration_s}s  interval={self.cfg.interval_ms}ms  symbol={self.cfg.symbol}  exchanges={','.join(self.cfg.exchanges)}  signal_file={self.cfg.signal_file} regime_signal_file={self.cfg.regime_signal_file}"
         )
@@ -675,33 +782,34 @@ class NeuralAlphaShadowSession:
                 if signal_info is None:
                     self._publisher.publish(0.0, 0.0)
                 if signal_info:
-                    if prev_mid is not None and prev_mid > 0:
-                        realised = (signal_info["mid_price"] - prev_mid) / prev_mid
-                        self._outcomes.append(realised)
-                        drift_triggered = self._drift_guard.update(signal_info["signal"], realised)
-                        if drift_triggered:
-                            ic = self._drift_guard.current_ic()
-                            self._trigger_safe_mode(
-                                reason=f"drift_ic_breach ic={ic:.4f} floor={self.cfg.drift_ic_floor:.4f}"
-                            )
-                        if (
-                            self._canary is not None
-                            and self._prev_primary_signal is not None
-                            and (self._prev_ensemble_signal is not None)
-                        ):
-                            canary_triggered = self._canary.update(
-                                self._prev_primary_signal, self._prev_ensemble_signal, realised
-                            )
-                            if canary_triggered:
-                                e_ic = self._canary.ensemble_ic()
-                                p_ic = self._canary.primary_ic()
-                                self._unload_secondary_model(
-                                    reason=f"ic_degradation ensemble_ic={e_ic:.4f} primary_ic={p_ic:.4f} margin={self.cfg.canary_ic_margin}"
+                    if self._signal_records:
+                        previous_record = self._signal_records[-1]
+                        previous_mid = float(previous_record.get("mid_price", 0.0))
+                        if previous_mid > 0:
+                            realised = (signal_info["mid_price"] - previous_mid) / previous_mid
+                            previous_signal = float(previous_record.get("signal", 0.0))
+                            drift_triggered = self._drift_guard.update(previous_signal, realised)
+                            if drift_triggered:
+                                ic = self._drift_guard.current_ic()
+                                self._trigger_safe_mode(
+                                    reason=f"drift_ic_breach ic={ic:.4f} floor={self.cfg.drift_ic_floor:.4f}"
                                 )
+                            if (
+                                self._canary is not None
+                                and self._prev_primary_signal is not None
+                                and (self._prev_ensemble_signal is not None)
+                            ):
+                                canary_triggered = self._canary.update(
+                                    self._prev_primary_signal, self._prev_ensemble_signal, realised
+                                )
+                                if canary_triggered:
+                                    e_ic = self._canary.ensemble_ic()
+                                    p_ic = self._canary.primary_ic()
+                                    self._unload_secondary_model(
+                                        reason=f"ic_degradation ensemble_ic={e_ic:.4f} primary_ic={p_ic:.4f} margin={self.cfg.canary_ic_margin}"
+                                    )
                     self._prev_primary_signal = signal_info["primary_signal"]
                     self._prev_ensemble_signal = signal_info["ensemble_signal"]
-                    self._signals.append(signal_info["signal"])
-                    prev_mid = signal_info["mid_price"]
                     self._log(signal_info)
                 if time.time() - last_report >= self.cfg.report_interval_s:
                     self._print_summary()
@@ -756,7 +864,6 @@ def main() -> None:
     ap.add_argument("--duration", type=int, default=3600)
     ap.add_argument("--report-interval", type=int, default=60, dest="report_interval_s")
     ap.add_argument("--seq-len", type=int, default=64, dest="seq_len")
-    ap.add_argument("--entry-bps", type=float, default=5.0, dest="entry_threshold_bps")
     ap.add_argument("--d-spatial", type=int, default=64, dest="d_spatial")
     ap.add_argument("--d-temporal", type=int, default=128, dest="d_temporal")
     ap.add_argument("--train-ticks", type=int, default=0, dest="train_ticks")
@@ -817,7 +924,6 @@ def main() -> None:
         duration_s=args.duration,
         report_interval_s=args.report_interval_s,
         seq_len=args.seq_len,
-        entry_threshold_bps=args.entry_threshold_bps,
         d_spatial=args.d_spatial,
         d_temporal=args.d_temporal,
         train_ticks=args.train_ticks,
