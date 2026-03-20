@@ -1,19 +1,3 @@
-"""
-Feature engineering from L5 order book snapshots and tick data.
-
-Input schema (Polars DataFrame):
-    timestamp_ns  : int64
-    exchange      : str
-    bid_prices    : list[float]  — top N bid levels, best first
-    bid_sizes     : list[float]
-    ask_prices    : list[float]  — top N ask levels, best first
-    ask_sizes     : list[float]
-
-Outputs two arrays:
-    lob_tensor  : (T, N_LEVELS, 4)  — per-level [bid_p, bid_s, ask_p, ask_s] normalised
-    scalar_feat : (T, D_SCALAR)     — midprice-derived features
-"""
-
 from __future__ import annotations
 
 import numpy as np
@@ -31,10 +15,8 @@ def _safe_col(df: pl.DataFrame, name: str, default: float = 0.0) -> np.ndarray:
 
 
 def _extract_levels(df: pl.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Returns bid_prices, bid_sizes, ask_prices, ask_sizes each shaped (T, N_LEVELS).
-    Handles both list-column and flat-column schemas.
-    """
+    """Returns bid_prices, bid_sizes, ask_prices, ask_sizes each shaped (T, N_LEVELS).
+    Handles both list-column and flat-column schemas."""
     T = len(df)
 
     def _list_col(name: str, fallback_fmt: str) -> np.ndarray:
@@ -43,7 +25,6 @@ def _extract_levels(df: pl.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarra
             if arr.ndim == 1:
                 arr = arr[:, None]
             return arr[:, :N_LEVELS]
-        # flat columns: bid_price_1 … bid_price_N
         cols = []
         for i in range(1, N_LEVELS + 1):
             col = fallback_fmt.format(i)
@@ -51,58 +32,39 @@ def _extract_levels(df: pl.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarra
                 cols.append(df[col].to_numpy(allow_copy=True).astype(np.float64))
             else:
                 cols.append(np.zeros(T, dtype=np.float64))
-        return np.stack(cols, axis=1)  # (T, N_LEVELS)
+        return np.stack(cols, axis=1)
 
     bp = _list_col("bid_prices", "bid_price_{}")
     bs = _list_col("bid_sizes", "bid_size_{}")
     ap = _list_col("ask_prices", "ask_price_{}")
     as_ = _list_col("ask_sizes", "ask_size_{}")
 
-    # Pad or truncate to N_LEVELS
     def _pad_to_levels(arr: np.ndarray) -> np.ndarray:
         if arr.shape[1] < N_LEVELS:
-            pad = N_LEVELS - arr.shape[1]
-            return np.pad(arr, ((0, 0), (0, pad)))
+            return np.pad(arr, ((0, 0), (0, N_LEVELS - arr.shape[1])))
         return arr
 
-    bp  = _pad_to_levels(bp)
-    bs  = _pad_to_levels(bs)
-    ap  = _pad_to_levels(ap)
-    as_ = _pad_to_levels(as_)
-
-    return bp, bs, ap, as_
+    return _pad_to_levels(bp), _pad_to_levels(bs), _pad_to_levels(ap), _pad_to_levels(as_)
 
 
 def compute_lob_tensor(df: pl.DataFrame) -> np.ndarray:
-    """
-    Build the (T, N_LEVELS, 4) LOB tensor.
-
+    """Build the (T, N_LEVELS, 4) LOB tensor.
     Each level: [normalised_bid_price, bid_size_share, normalised_ask_price, ask_size_share]
-
-    Prices are expressed as tick offsets from mid-price (dimensionless).
-    Sizes are fractional share of total visible depth on each side.
-    """
+    Prices are expressed as tick offsets from mid-price; sizes as fractional depth share."""
     bp, bs, ap, as_ = _extract_levels(df)
 
     best_bid = bp[:, 0]
     best_ask = ap[:, 0]
     mid = (best_bid + best_ask) / 2.0
-    raw_spread = best_ask - best_bid
-    spread = np.where(raw_spread > 0, raw_spread, 1.0)
+    spread = np.where(best_ask - best_bid > 0, best_ask - best_bid, 1.0)
 
-    # Normalise prices as distance from mid in units of spread
-    bid_p_norm = (bp - mid[:, None]) / spread[:, None]  # negative for bids
-    ask_p_norm = (ap - mid[:, None]) / spread[:, None]  # positive for asks
+    bid_p_norm = (bp - mid[:, None]) / spread[:, None]
+    ask_p_norm = (ap - mid[:, None]) / spread[:, None]
 
-    # Normalise sizes as fraction of total depth
-    total_bid = bs.sum(axis=1, keepdims=True).clip(1e-9)
-    total_ask = as_.sum(axis=1, keepdims=True).clip(1e-9)
-    bid_s_norm = bs / total_bid
-    ask_s_norm = as_ / total_ask
+    bid_s_norm = bs / bs.sum(axis=1, keepdims=True).clip(1e-9)
+    ask_s_norm = as_ / as_.sum(axis=1, keepdims=True).clip(1e-9)
 
-    # Stack into (T, N_LEVELS, 4)
-    lob = np.stack([bid_p_norm, bid_s_norm, ask_p_norm, ask_s_norm], axis=2)
-    return lob.astype(np.float32)
+    return np.stack([bid_p_norm, bid_s_norm, ask_p_norm, ask_s_norm], axis=2).astype(np.float32)
 
 
 def _lag_diff(arr: np.ndarray, lag: int) -> np.ndarray:
@@ -129,8 +91,7 @@ def _rolling_std(x: np.ndarray, window: int) -> np.ndarray:
     s1 = cum[end] - cum[start]
     s2 = cum2[end] - cum2[start]
     n = (end - start).astype(np.float64)
-    var = (s2 / n - (s1 / n) ** 2).clip(0)
-    return np.sqrt(var)
+    return np.sqrt((s2 / n - (s1 / n) ** 2).clip(0))
 
 
 def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
@@ -158,101 +119,63 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
 
     best_bid = bp[:, 0]
     best_ask = ap[:, 0]
-    mid = (best_bid + best_ask) / 2.0
-    mid = np.where(mid > 0, mid, np.nan)
+    mid = np.where((best_bid + best_ask) / 2.0 > 0, (best_bid + best_ask) / 2.0, np.nan)
 
     spread_bps = np.where(mid > 0, (best_ask - best_bid) / mid * 1e4, 0.0)
 
-    # Microprice: size-weighted
-    total_bid_top = bs[:, 0]
-    total_ask_top = as_[:, 0]
-    denom = total_bid_top + total_ask_top
+    denom = bs[:, 0] + as_[:, 0]
     denom = np.where(denom > 0, denom, 1.0)
-    microprice = (best_bid * total_ask_top + best_ask * total_bid_top) / denom
+    microprice = (best_bid * as_[:, 0] + best_ask * bs[:, 0]) / denom
 
-    # OBI
     depth_bid = bs.sum(axis=1)
     depth_ask = as_.sum(axis=1)
     total_depth = depth_bid + depth_ask
     obi = np.where(total_depth > 0, depth_bid / total_depth, 0.5)
 
-    log_depth_bid = np.log1p(depth_bid)
-    log_depth_ask = np.log1p(depth_ask)
-
-    # OFI: delta(bid_depth) - delta(ask_depth) at lags 1, 5, 10, 20
     ofi_1 = _lag_diff(depth_bid, 1) - _lag_diff(depth_ask, 1)
     ofi_5 = _lag_diff(depth_bid, 5) - _lag_diff(depth_ask, 5)
     ofi_10 = _lag_diff(depth_bid, 10) - _lag_diff(depth_ask, 10)
     ofi_20 = _lag_diff(depth_bid, 20) - _lag_diff(depth_ask, 20)
 
-    # Log mid-price return
     log_mid = np.log(np.where(mid > 0, mid, np.nan))
-    log_ret = np.diff(log_mid, prepend=log_mid[0])
-    log_ret = np.nan_to_num(log_ret, nan=0.0, posinf=0.0, neginf=0.0)
+    log_ret = np.nan_to_num(np.diff(log_mid, prepend=log_mid[0]), nan=0.0, posinf=0.0, neginf=0.0)
 
-    signed_flow = log_ret * total_depth
-
-    # Rolling volatility (vectorized)
     vol_5 = _rolling_std(log_ret, 5)
     vol_20 = _rolling_std(log_ret, 20)
     vol_60 = _rolling_std(log_ret, 60)
     vol_200 = _rolling_std(log_ret, 200)
-    vol_ratio_5_60 = vol_5 / (vol_60 + 1e-8)
 
-    # Per-level queue imbalance: (bid_size_i - ask_size_i) / (bid_size_i + ask_size_i + 1e-8)
-    qi = (bs - as_) / (bs + as_ + 1e-8)  # (T, N_LEVELS)
+    qi = (bs - as_) / (bs + as_ + 1e-8)
 
     base_features = [
-        log_ret,
-        spread_bps,
-        microprice - mid,
-        obi,
-        log_depth_bid,
-        log_depth_ask,
-        ofi_1,
-        signed_flow,
-        vol_5,
-        vol_20,
-        ofi_5,
-        ofi_10,
-        ofi_20,
-        vol_60,
-        vol_200,
-        vol_ratio_5_60,
+        log_ret, spread_bps, microprice - mid, obi,
+        np.log1p(depth_bid), np.log1p(depth_ask),
+        ofi_1, log_ret * total_depth,
+        vol_5, vol_20, ofi_5, ofi_10, ofi_20,
+        vol_60, vol_200, vol_5 / (vol_60 + 1e-8),
     ]
-    queue_imbalance_features = [qi[:, i] for i in range(N_LEVELS)]
     features = np.stack(
-        base_features[:13] + queue_imbalance_features + base_features[13:],
+        base_features[:13] + [qi[:, i] for i in range(N_LEVELS)] + base_features[13:],
         axis=1,
     )
-
-    features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
-    return features.astype(np.float32)
+    return np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
 
 
 def compute_labels(df: pl.DataFrame, horizons: tuple[int, ...] = (1, 10, 100, 500)) -> np.ndarray:
     """
     Compute multi-horizon forward log-returns.
 
-    Args:
-        horizons: tick offsets (1-tick, short, mid, long)
-
-    Returns:
-        (T, 6) array:
-            col 0-3 : log returns at each horizon (clipped at ±5 bps)
-            col 4   : direction at mid horizon index 2 (0=down, 1=flat, 2=up)
-            col 5   : adverse selection proxy (0/1) — price reversion within 10 ticks
+    Returns (T, 6) array:
+        col 0-3 : log returns at each horizon (clipped at ±5 bps)
+        col 4   : direction at mid horizon index 2 (0=down, 1=flat, 2=up)
+        col 5   : adverse selection proxy (0/1) — price reversion within 10 ticks
     """
     bp, _, ap, _ = _extract_levels(df)
-    best_bid = bp[:, 0]
-    best_ask = ap[:, 0]
-    mid = (best_bid + best_ask) / 2.0
-    mid = np.where(mid > 0, mid, np.nan)
+    mid = np.where((bp[:, 0] + ap[:, 0]) / 2.0 > 0, (bp[:, 0] + ap[:, 0]) / 2.0, np.nan)
     log_mid = np.log(np.where(mid > 0, mid, 1.0))
 
     T = len(df)
-    n_horizons = len(horizons)
-    returns = np.zeros((T, n_horizons), dtype=np.float32)
+    returns = np.zeros((T, len(horizons)), dtype=np.float32)
     for i, h in enumerate(horizons):
         h = min(h, T - 1)
         fwd = np.zeros(T, dtype=np.float32)
@@ -267,9 +190,8 @@ def compute_labels(df: pl.DataFrame, horizons: tuple[int, ...] = (1, 10, 100, 50
         np.float32
     )
 
-    # Adverse selection using fill-reversion model:
-    # infer fill direction from immediate move, then mark adverse if
-    # price reverts against that direction within next N ticks.
+    # Adverse selection: infer fill direction from immediate move, mark adverse if price
+    # reverts against that direction within the next 10 ticks.
     reversion_h = 10
     fwd_ret_1 = returns[:, 0]
     adv_sel = np.zeros(T, dtype=np.float32)
@@ -281,15 +203,11 @@ def compute_labels(df: pl.DataFrame, horizons: tuple[int, ...] = (1, 10, 100, 50
         path = log_mid[t + 1 : t + 1 + reversion_h] - log_mid[t]
         if path.size == 0:
             continue
-        if fill_dir > 0:
-            reversion = np.min(path)
-        else:
-            reversion = -np.max(path)
+        reversion = np.min(path) if fill_dir > 0 else -np.max(path)
         if reversion < -2e-5:
             adv_sel[t] = 1.0
 
-    labels = np.concatenate([returns, direction[:, None], adv_sel[:, None]], axis=1)
-    return labels.astype(np.float32)
+    return np.concatenate([returns, direction[:, None], adv_sel[:, None]], axis=1).astype(np.float32)
 
 
 def normalise_scalar(

@@ -1,9 +1,3 @@
-"""
-LOBDataset — sliding-window PyTorch Dataset over LOB snapshot sequences.
-
-Reads from a Polars DataFrame produced by the data fetcher. Applies feature
-engineering and builds (lob_tensor, scalar_features, labels) windows.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -24,12 +18,9 @@ class DatasetConfig:
 
 
 def rolling_normalise(x: np.ndarray, window: int = 500) -> np.ndarray:
-    """
-    Rolling z-score normalisation with no future leakage.
-
+    """Rolling z-score normalisation with no future leakage.
     Each tick is normalised using the mean and std of the previous `window` ticks
-    (expanding window for the first `window` ticks).
-    """
+    (expanding window for the first `window` ticks)."""
     T, D = x.shape
     if T == 0:
         return x.astype(np.float32)
@@ -49,14 +40,13 @@ def rolling_normalise(x: np.ndarray, window: int = 500) -> np.ndarray:
 
 
 class LOBDataset(Dataset):
-    """
-    Sliding-window dataset.
+    """Sliding-window dataset.
 
     Each sample is a dict:
         lob   : (seq_len, N_LEVELS, 4)  float32
         scalar: (seq_len, D_SCALAR)     float32
         labels: (seq_len, 6)            float32
-        mask  : (seq_len,)              bool   True = valid (always True here)
+        mask  : (seq_len,)              bool
     """
 
     def __init__(
@@ -100,17 +90,10 @@ def split_walk_forward(
     train_frac: float = 0.75,
     min_samples: int = 1,
 ) -> list[tuple[pl.DataFrame, pl.DataFrame]]:
-    """
-    Walk-forward splits: each fold uses a rolling train window followed by a
-    test window. No data leakage — test always comes after train.
+    """Walk-forward splits with no data leakage — test always follows train.
 
-    ``min_samples`` is the minimum number of rows required in *both* the train
-    and test slice for the fold to be included.  Pass ``seq_len`` here so that
-    folds whose slices are too short to produce even a single sliding window are
-    filtered out early, before the DataLoader is constructed.
-
-    Returns list of (train_df, test_df) tuples.
-    """
+    ``min_samples`` is the minimum rows required in both train and test slices;
+    pass ``seq_len`` to filter out folds too short for a sliding window."""
     T = len(df)
     fold_size = T // n_folds
     splits: list[tuple[pl.DataFrame, pl.DataFrame]] = []
@@ -134,13 +117,7 @@ def build_loaders(
     num_workers: int = 0,
 ) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader,
            np.ndarray | None, np.ndarray | None]:
-    """
-    Build train/test DataLoaders. Rolling normalisation is applied per-dataset
-    (no global stats to pass between train and test).
-
-    Returns:
-        train_loader, test_loader, scalar_mean (None), scalar_std (None)
-    """
+    """Build train/test DataLoaders with per-dataset rolling normalisation."""
     from torch.utils.data import DataLoader
 
     cfg = cfg or DatasetConfig()
