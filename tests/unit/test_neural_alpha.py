@@ -506,10 +506,8 @@ class TestShadowSessionTraining:
     def test_main_loads_secondary_model_after_train_on_recent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """After train_on_recent, main() must attempt to load the secondary model
-        before calling _validate_production_stack, mirroring the primary-model-exists branch."""
         import sys
-        from research.neural_alpha.runtime.shadow_session import main, _symbol_model_path
+        from research.neural_alpha.runtime.shadow_session import main
         from research.neural_alpha.models.model import CryptoAlphaNet
 
         primary_path = tmp_path / "neural_alpha_btcusdt_latest.pt"
@@ -517,7 +515,6 @@ class TestShadowSessionTraining:
         log_path = tmp_path / "shadow.jsonl"
         signal_path = tmp_path / "alpha_signal.bin"
 
-        # Save a small secondary model so the file exists for loading.
         secondary_model = CryptoAlphaNet(d_spatial=32, d_temporal=64, n_temp_layers=1, seq_len=8)
         torch.save(secondary_model.state_dict(), secondary_path)
 
@@ -590,7 +587,6 @@ class TestShadowSessionTraining:
 
         def _fake_load_secondary(self_session, path: str) -> None:
             loaded_secondary.append(True)
-            # Build the small secondary model just like the real method.
             m = CryptoAlphaNet(d_spatial=32, d_temporal=64, n_temp_layers=1, seq_len=8)
             state = torch.load(path, map_location="cpu", weights_only=True)
             m.load_state_dict(state)
