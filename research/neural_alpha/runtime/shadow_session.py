@@ -137,7 +137,7 @@ class ShadowSessionConfig:
     safe_mode_ticks: int = 120
     continuous_train_every_ticks: int = 1000
     continuous_train_window_ticks: int = 2000
-    continuous_train_min_interval_s: int = 1200
+
     canary_ic_margin: float = 0.02
     canary_icir_floor: float = 0.0
     canary_window: int = 200
@@ -183,7 +183,7 @@ class NeuralAlphaShadowSession:
         self._bridge.open()
         self._processed_ticks = 0
         self._last_continuous_train_tick = 0
-        self._last_continuous_train_time: float = 0.0
+
         self._canary: EnsembleCanary | None = None
         self._prev_primary_signal: float | None = None
         self._prev_ensemble_signal: float | None = None
@@ -584,12 +584,55 @@ class NeuralAlphaShadowSession:
         mean_sig = float(np.mean(sigs)) * 10000.0
         std_sig = float(np.std(sigs)) * 10000.0
         ic = 0.0
+        icir = 0.0
         if len(self._outcomes) >= 10:
             outs = np.array(self._outcomes[: len(self._signals)])
-            if outs.std() > 0 and sigs.std() > 0:
-                ic = float(np.corrcoef(sigs[: len(outs)], outs)[0, 1])
+            aligned = min(len(outs), n)
+            sig_aligned = sigs[:aligned]
+            out_aligned = outs[:aligned]
+            if out_aligned.std() > 0 and sig_aligned.std() > 0:
+                ic = float(np.corrcoef(sig_aligned, out_aligned)[0, 1])
+            if aligned >= 40:
+                chunk = aligned // 4
+                ic_chunks = []
+                for i in range(4):
+                    s_c = sig_aligned[i * chunk : (i + 1) * chunk]
+                    o_c = out_aligned[i * chunk : (i + 1) * chunk]
+                    if s_c.std() > 1e-9 and o_c.std() > 1e-9:
+                        ic_chunks.append(float(np.corrcoef(s_c, o_c)[0, 1]))
+                if len(ic_chunks) >= 2:
+                    ic_arr = np.array(ic_chunks)
+                    if ic_arr.std() > 1e-9:
+                        icir = float(ic_arr.mean() / ic_arr.std() * np.sqrt(252))
+        safe_pct = 0.0
+        gated_pct = 0.0
+        try:
+            import json as _json
+            safe_c = gated_c = 0
+            total_c = 0
+            with open(self._log_fp.name) as _lf:
+                for _line in _lf:
+                    _line = _line.strip()
+                    if not _line:
+                        continue
+                    try:
+                        _ev = _json.loads(_line)
+                        total_c += 1
+                        if _ev.get("safe_mode"):
+                            safe_c += 1
+                        if _ev.get("gated"):
+                            gated_c += 1
+                    except Exception:
+                        pass
+            if total_c:
+                safe_pct = 100.0 * safe_c / total_c
+                gated_pct = 100.0 * gated_c / total_c
+        except Exception:
+            pass
         print(
-            f"  [shadow] ticks={n}  signal_mean={mean_sig:.2f}bps  signal_std={std_sig:.2f}bps  IC={ic:.3f}"
+            f"  [shadow] ticks={n}  mean={mean_sig:.2f}bps  std={std_sig:.2f}bps"
+            f"  IC={ic:.4f}  ICIR={icir:.3f}"
+            f"  safe_mode={safe_pct:.1f}%  gated={gated_pct:.1f}%"
         )
 
     def _maybe_continuous_train(self) -> None:
@@ -598,11 +641,6 @@ class NeuralAlphaShadowSession:
         ticks_since_train = self._processed_ticks - self._last_continuous_train_tick
         if ticks_since_train < self.cfg.continuous_train_every_ticks:
             return
-        now = time.time()
-        elapsed = now - self._last_continuous_train_time
-        min_s = self.cfg.continuous_train_min_interval_s
-        if min_s > 0 and elapsed < min_s:
-            return
         train_window = max(self.cfg.seq_len * 4, self.cfg.continuous_train_window_ticks)
         print(
             f"[CONTINUOUS_TRAIN] starting incremental retrain at tick={self._processed_ticks} window={train_window}"
@@ -610,7 +648,6 @@ class NeuralAlphaShadowSession:
         try:
             self.train_on_recent(train_window)
             self._last_continuous_train_tick = self._processed_ticks
-            self._last_continuous_train_time = time.time()
             print("[CONTINUOUS_TRAIN] completed")
         except Exception as exc:
             print(f"[CONTINUOUS_TRAIN] failed: {exc}")
@@ -746,13 +783,6 @@ def main() -> None:
         dest="continuous_train_window_ticks",
     )
     ap.add_argument(
-        "--continuous-train-min-interval-s",
-        type=int,
-        default=1200,
-        dest="continuous_train_min_interval_s",
-        help="Minimum wall-clock seconds between continuous retrains (0=disabled)",
-    )
-    ap.add_argument(
         "--canary-ic-margin",
         type=float,
         default=0.02,
@@ -805,7 +835,6 @@ def main() -> None:
         safe_mode_ticks=args.safe_mode_ticks,
         continuous_train_every_ticks=args.continuous_train_every_ticks,
         continuous_train_window_ticks=args.continuous_train_window_ticks,
-        continuous_train_min_interval_s=args.continuous_train_min_interval_s,
         canary_ic_margin=args.canary_ic_margin,
         canary_icir_floor=args.canary_icir_floor,
         canary_window=args.canary_window,
