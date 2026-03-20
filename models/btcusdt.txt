@@ -1,116 +1,101 @@
 (.venv) clementandredupuy@Mac ThamesRiverTrading % ./deploy/run_shadow.sh
-[2026-03-20T16:10:50Z] [shadow] [INFO] Starting python shadow session with python3.11 (symbol=BTCUSDT, exchanges=BINANCE,KRAKEN,OKX,COINBASE, signals -> /tmp/trt_ipc/neural_alpha_signal.bin, log=/Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl)
-[2026-03-20T16:10:50Z] [shadow] [INFO] Starting C++ shadow runner symbol=BTCUSDT venues=BINANCE,KRAKEN,OKX,COINBASE duration=2000s interval=1000ms
-2026-03-20 16:10:50.742146166 [INFO ] [Binance] FeedHandler created (public data only) symbol=BTCUSDT
-2026-03-20 16:10:50.742184541 [INFO ] [Kraken] FeedHandler created symbol=BTCUSDT
-2026-03-20 16:10:50.742205583 [INFO ] [OKX] FeedHandler created symbol=BTCUSDT inst_id=BTC-USDT
-2026-03-20 16:10:50.742216708 [INFO ] [Coinbase] FeedHandler created symbol=BTCUSDT
-2026-03-20 16:10:50.742226625 [INFO ] [Binance] Starting feed handler symbol=BTCUSDT
-2026-03-20 16:10:51.023438882 [INFO ] [Binance] Tick size fetched symbol=BTCUSDT tick_size=0.01
-[2026/03/20 16:10:51:0240] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
-[2026/03/20 16:10:51:0301] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
-[2026/03/20 16:10:51:0301] W: ssh pvo "ops" is mandatory
-[2026/03/20 16:10:51:0301] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
-[2026/03/20 16:10:51:0301] W: handler_server_protocol_init: requires 'upload-dir' pvo
-Collecting 1000 ticks for in-place training...
-2026-03-20 16:10:51.997652834 [INFO ] [Binance] WebSocket established, fetching snapshot symbol=BTCUSDT
-2026-03-20 16:10:51.997662875 [INFO ] [Binance] Fetching snapshot symbol=BTCUSDT
-2026-03-20 16:10:52.273202041 [INFO ] [Binance] Snapshot received symbol=BTCUSDT sequence=90531606985 bids=1000 asks=1000
-2026-03-20 16:10:52.274231459 [INFO ] [Binance] Applied buffered deltas applied=0 skipped=0
-2026-03-20 16:10:52.274240084 [INFO ] [Binance] Feed handler started symbol=BTCUSDT
-2026-03-20 16:10:52.274240876 [INFO ] [Kraken] Starting feed handler symbol=BTCUSDT
-2026-03-20 16:10:52.274312084 [ERROR] [Binance] Sequence gap expected=90531606986 U=90531606921
-2026-03-20 16:10:52.274312334 [WARN ] [Binance] Triggering re-snapshot reason=Sequence gap
-2026-03-20 16:10:52.341911738 [INFO ] [Kraken] Tick size fetched symbol=BTCUSDT tick_size=0.1
-[2026/03/20 16:10:52:3420] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
-[2026/03/20 16:10:52:3428] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
-[2026/03/20 16:10:52:3428] W: ssh pvo "ops" is mandatory
-[2026/03/20 16:10:52:3428] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
-[2026/03/20 16:10:52:3428] W: handler_server_protocol_init: requires 'upload-dir' pvo
-2026-03-20 16:10:53.520703778 [INFO ] [Kraken] WebSocket established, waiting for snapshot symbol=BTCUSDT
-2026-03-20 16:10:53.777889997 [INFO ] [Kraken] Feed handler started symbol=BTCUSDT
-2026-03-20 16:10:53.777890830 [INFO ] [OKX] Starting feed handler symbol=BTCUSDT
-[2026/03/20 16:10:54:0343] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
-2026-03-20 16:10:54.034266714 [INFO ] [OKX] Tick size fetched symbol=BTCUSDT tick_size=0.1
-[2026/03/20 16:10:54:0348] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
-[2026/03/20 16:10:54:0348] W: ssh pvo "ops" is mandatory
-[2026/03/20 16:10:54:0348] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
-[2026/03/20 16:10:54:0348] W: handler_server_protocol_init: requires 'upload-dir' pvo
-2026-03-20 16:10:54.878613491 [INFO ] [OKX] WebSocket established symbol=BTCUSDT
-2026-03-20 16:10:55.604639071 [INFO ] [OKX] Applied buffered deltas applied=0 skipped=0
-2026-03-20 16:10:55.604643362 [INFO ] [OKX] WS snapshot applied symbol=BTCUSDT seq=73956663732
-2026-03-20 16:10:55.604655987 [INFO ] [OKX] feed handler started symbol=BTCUSDT
-2026-03-20 16:10:55.604680446 [INFO ] [Coinbase] Starting feed handler symbol=BTCUSDT
+[2026-03-20T18:34:54Z] [shadow] [WARN] Coinbase credentials not configured (COINBASE_API_KEY / COINBASE_API_SECRET unset).
+[2026-03-20T18:34:54Z] [shadow] [WARN] The C++ Coinbase WebSocket feed will be skipped; training data uses REST fallback.
+[2026-03-20T18:34:54Z] [shadow] [INFO] Starting python shadow session with python3.11 (symbol=BTCUSDT, exchanges=BINANCE,KRAKEN,OKX,COINBASE, signals -> /tmp/trt_ipc/neural_alpha_signal.bin, log=/Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl)
+[2026-03-20T18:34:54Z] [shadow] [INFO] Starting C++ shadow runner symbol=BTCUSDT venues=BINANCE,KRAKEN,OKX,COINBASE duration=2000s interval=1000ms
+2026-03-20 18:34:54.610909209 [INFO ] [Binance] FeedHandler created symbol=BTCUSDT
+2026-03-20 18:34:54.610943834 [INFO ] [Kraken] FeedHandler created symbol=BTCUSDT
+2026-03-20 18:34:54.610954584 [INFO ] [OKX] FeedHandler created symbol=BTCUSDT inst_id=BTC-USDT
+2026-03-20 18:34:54.610965167 [INFO ] [Coinbase] FeedHandler created symbol=BTCUSDT
+2026-03-20 18:34:54.610978417 [INFO ] [Binance] Starting feed handler symbol=BTCUSDT
+2026-03-20 18:34:54.896976209 [INFO ] [Binance] Tick size fetched symbol=BTCUSDT tick_size=0.01
+[2026/03/20 18:34:54:8975] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+[2026/03/20 18:34:54:9030] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/20 18:34:54:9030] W: ssh pvo "ops" is mandatory
+[2026/03/20 18:34:54:9030] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/20 18:34:54:9030] W: handler_server_protocol_init: requires 'upload-dir' pvo
+Regime model loaded from /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/r2_regime_model_btcusdt.json
+Model loaded from /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_latest.pt
+Secondary model loaded from /Users/clementandredupuy/Desktop/ThamesRiverTrading/models/neural_alpha_btcusdt_secondary.pt
+Shadow session started — duration=2000s  interval=1000ms  symbol=BTCUSDT  exchanges=BINANCE,KRAKEN,OKX,COINBASE  signal_file=/tmp/trt_ipc/neural_alpha_signal.bin regime_signal_file=/tmp/trt_ipc/regime_signal.bin
+2026-03-20 18:34:55.886824500 [INFO ] [Binance] WebSocket established, fetching snapshot symbol=BTCUSDT
+2026-03-20 18:34:55.886828375 [INFO ] [Binance] Fetching snapshot symbol=BTCUSDT
+2026-03-20 18:34:56.200108584 [INFO ] [Binance] Snapshot received symbol=BTCUSDT sequence=90541176154 bids=5000 asks=5000 snapshot_latency_ms=287
+2026-03-20 18:34:56.205587709 [INFO ] [Binance] No buffered bridge delta required sequence=90541176154 skipped=0
+2026-03-20 18:34:56.205599417 [INFO ] [Binance] Feed handler started symbol=BTCUSDT
+2026-03-20 18:34:56.205616292 [INFO ] [Kraken] Starting feed handler symbol=BTCUSDT
+2026-03-20 18:34:56.257345542 [INFO ] [Kraken] Tick size fetched symbol=BTCUSDT tick_size=0.1
+[2026/03/20 18:34:56:2574] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+[2026/03/20 18:34:56:2578] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/20 18:34:56:2578] W: ssh pvo "ops" is mandatory
+[2026/03/20 18:34:56:2578] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/20 18:34:56:2578] W: handler_server_protocol_init: requires 'upload-dir' pvo
+2026-03-20 18:34:58.432195459 [INFO ] [Kraken] WebSocket established, waiting for snapshot symbol=BTCUSDT
+2026-03-20 18:34:58.581065667 [INFO ] [Kraken] Feed handler started symbol=BTCUSDT
+2026-03-20 18:34:58.581066334 [INFO ] [OKX] Starting feed handler symbol=BTCUSDT
+2026-03-20 18:34:58.829507250 [INFO ] [OKX] Tick size fetched symbol=BTCUSDT tick_size=0.1
+[2026/03/20 18:34:58:8295] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+[2026/03/20 18:34:58:8299] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/20 18:34:58:8299] W: ssh pvo "ops" is mandatory
+[2026/03/20 18:34:58:8299] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/20 18:34:58:8299] W: handler_server_protocol_init: requires 'upload-dir' pvo
+2026-03-20 18:34:59.630446500 [INFO ] [OKX] WebSocket established symbol=BTCUSDT
 [OPS_EVENT] coinbase_feed_failed: {"symbol":"BTCUSDT"}
-2026-03-20 16:10:55.605094405 [ERROR] [Coinbase] JWT generation failed — COINBASE_API_SECRET must be a valid EC private-key PEM (e.g. from Coinbase CDP).  The level2 WebSocket feed cannot authenticate without it. symbol=BTCUSDT
-2026-03-20 16:10:55.605556073 [WARN ] Coinbase feed failed to start symbol=BTCUSDT
-2026-03-20 16:10:55.605563364 [INFO ] Grid configuration target_range_usd=2000 binance_tick=0.01 binance_levels=200000 binance_range_usd=2000 kraken_tick=0.1 kraken_levels=20000 kraken_range_usd=2000 okx_tick=0.1 okx_levels=20000 okx_range_usd=2000 coinbase_tic
-2026-03-20 16:10:55.612348709 [INFO ] trading_engine started mode=shadow venues=BINANCE,KRAKEN,OKX,COINBASE symbol=BTCUSDT
-2026-03-20 16:12:32.134048143 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:14:12.234609726 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:15:52.337240604 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:17:32.436467393 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:19:12.534615264 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:20:52.635524390 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:22:32.736139265 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:24:12.835935763 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:25:52.936796972 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:27:33.036816513 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:29:13.137235804 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:30:53.237194219 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:32:33.344235480 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:34:13.442346059 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-[2026/03/20 16:35:14:8655] E: [wsicli|0|WS/h1/default/stream.binance.com]: lws_validity_cb: validity too old
-2026-03-20 16:35:14.921030946 [WARN ] [Binance] WebSocket disconnected, reconnecting symbol=BTCUSDT delay_ms=100
-2026-03-20 16:35:14.921031571 [WARN ] [Binance] Triggering re-snapshot reason=WebSocket disconnected
-[2026/03/20 16:35:14:9682] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
-[2026/03/20 16:35:14:9696] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
-[2026/03/20 16:35:14:9696] W: ssh pvo "ops" is mandatory
-[2026/03/20 16:35:14:9696] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
-[2026/03/20 16:35:14:9696] W: handler_server_protocol_init: requires 'upload-dir' pvo
-2026-03-20 16:35:16.015243638 [INFO ] [Binance] WebSocket established, fetching snapshot symbol=BTCUSDT
-2026-03-20 16:35:16.015246805 [INFO ] [Binance] Fetching snapshot symbol=BTCUSDT
-2026-03-20 16:35:16.305227328 [INFO ] [OrderBook] Grid bounds symbol=BTCUSDT exchange=BINANCE tick_size=0.01 max_levels=200000 base=68882.1 top=70882.1
-2026-03-20 16:35:16.305252703 [INFO ] [OrderBook] Snapshot applied symbol=BTCUSDT sequence=90533299469 base_price=68882.1 bids=1000 asks=1000
-2026-03-20 16:35:16.305780954 [INFO ] [Binance] Snapshot received symbol=BTCUSDT sequence=90533299469 bids=1000 asks=1000
-2026-03-20 16:35:16.306797039 [INFO ] [Binance] Applied buffered deltas applied=0 skipped=0
-2026-03-20 16:35:16.306962539 [ERROR] [Binance] Sequence gap expected=90533299470 U=90533299245
-2026-03-20 16:35:16.306962789 [WARN ] [Binance] Triggering re-snapshot reason=Sequence gap
-2026-03-20 16:36:56.144893270 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:38:36.245235103 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:40:16.345030851 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:41:56.438537881 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:43:36.538957464 [WARN ] [Binance] Triggering re-snapshot reason=Buffer overflow
-2026-03-20 16:45:00.618331661 [INFO ] [Binance] Stopping feed handler symbol=BTCUSDT
-[2026/03/20 16:45:00:5583] E: ZERO RANDOM FD
-2026-03-20 16:45:00.619708454 [INFO ] [Kraken] Stopping feed handler symbol=BTCUSDT
-2026-03-20 16:45:00.620463830 [INFO ] [OKX] Stopping feed handler symbol=BTCUSDT
-2026-03-20 16:45:00.622465042 [INFO ] trading_engine shutdown complete
-[2026-03-20T16:45:00Z] [shadow] [INFO] Completed shadow run window
-[2026-03-20T16:45:00Z] [shadow] [INFO] Final shadow session statistics from /Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl
+2026-03-20 18:35:00.387512500 [INFO ] [OKX] Applied buffered deltas applied=0 skipped=0
+2026-03-20 18:35:00.387517084 [INFO ] [OKX] WS snapshot applied symbol=BTCUSDT seq=73964458876
+2026-03-20 18:35:00.387522709 [INFO ] [OKX] feed handler started symbol=BTCUSDT
+2026-03-20 18:35:00.387523500 [INFO ] [Coinbase] Starting feed handler symbol=BTCUSDT
+2026-03-20 18:35:00.387526125 [ERROR] [Coinbase] No credentials configured — set COINBASE_API_KEY and COINBASE_API_SECRET (EC private-key PEM) to enable the level2 WebSocket feed.  Python REST fallback remains available for training data collection. symbol=BT
+2026-03-20 18:35:00.387654792 [WARN ] Coinbase feed failed to start symbol=BTCUSDT
+2026-03-20 18:35:00.387659834 [INFO ] Grid configuration target_range_usd=2000 binance_tick=0.01 binance_levels=200000 binance_range_usd=2000 kraken_tick=0.1 kraken_levels=20000 kraken_range_usd=2000 okx_tick=0.1 okx_levels=20000 okx_range_usd=2000 coinbase_tic
+2026-03-20 18:35:00.393426000 [INFO ] trading_engine started mode=shadow venues=BINANCE,KRAKEN,OKX,COINBASE symbol=BTCUSDT
+  [shadow] ticks=45  mean=-442.38bps  std=211.42bps  IC=0.1555  ICIR=1.048  safe_mode=58.3%  gated=98.7%  ts_issues=0
+[SAFE_MODE] no rollback champion available; publishing neutral signal only
+[OPS_EVENT] ensemble_canary_rollback: {'reason': 'ic_degradation ensemble_ic=0.0461 primary_ic=0.1530 margin=0.02'}
+  [shadow] ticks=105  mean=-443.21bps  std=226.58bps  IC=0.1333  ICIR=23.168  safe_mode=58.1%  gated=98.7%  ts_issues=0
+  [shadow] ticks=165  mean=-434.53bps  std=221.06bps  IC=0.0444  ICIR=5.848  safe_mode=56.9%  gated=98.7%  ts_issues=0
+  [shadow] ticks=223  mean=-385.35bps  std=232.48bps  IC=0.0838  ICIR=7.614  safe_mode=55.8%  gated=98.8%  ts_issues=0
+  [shadow] ticks=283  mean=-428.06bps  std=234.00bps  IC=0.0690  ICIR=10.526  safe_mode=54.7%  gated=98.8%  ts_issues=0
+  [shadow] ticks=342  mean=-452.65bps  std=228.42bps  IC=0.0428  ICIR=7.349  safe_mode=53.6%  gated=98.7%  ts_issues=0
+  [shadow] ticks=402  mean=-474.49bps  std=245.40bps  IC=0.0446  ICIR=14.818  safe_mode=52.6%  gated=98.8%  ts_issues=0
+  [shadow] ticks=461  mean=-494.15bps  std=242.45bps  IC=0.0527  ICIR=12.163  safe_mode=51.6%  gated=98.8%  ts_issues=0
+  [shadow] ticks=521  mean=-462.30bps  std=250.61bps  IC=0.0522  ICIR=20.001  safe_mode=50.7%  gated=98.8%  ts_issues=0
+  [shadow] ticks=579  mean=-454.95bps  std=249.86bps  IC=0.0554  ICIR=47.451  safe_mode=49.8%  gated=98.8%  ts_issues=0
+  [shadow] ticks=638  mean=-433.70bps  std=261.65bps  IC=0.0626  ICIR=37.418  safe_mode=49.0%  gated=98.8%  ts_issues=0
+  [shadow] ticks=687  mean=-425.64bps  std=262.46bps  IC=0.0688  ICIR=89.075  safe_mode=48.3%  gated=98.9%  ts_issues=0
+  [shadow] ticks=747  mean=-417.67bps  std=257.67bps  IC=0.0719  ICIR=45.203  safe_mode=47.4%  gated=98.9%  ts_issues=0
+  [shadow] ticks=807  mean=-419.68bps  std=256.23bps  IC=0.0687  ICIR=64.052  safe_mode=46.6%  gated=98.9%  ts_issues=0
+  [shadow] ticks=867  mean=-395.51bps  std=274.45bps  IC=0.0700  ICIR=73.118  safe_mode=45.9%  gated=98.9%  ts_issues=0
+  [shadow] ticks=924  mean=-379.74bps  std=276.62bps  IC=0.0605  ICIR=157.584  safe_mode=45.1%  gated=98.9%  ts_issues=0
+  [shadow] ticks=984  mean=-378.86bps  std=274.91bps  IC=0.0645  ICIR=157.276  safe_mode=44.4%  gated=99.0%  ts_issues=0
+[CONTINUOUS_TRAIN] starting incremental retrain at tick=4000 window=1000
+Collecting 1000 ticks for in-place training...
+^C
+Interrupt received — stopping session...
+[2026-03-20T19:00:14Z] [shadow] [INFO] Final shadow session statistics from /Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl
 ============================================================
   Shadow Session Report
 ============================================================
 
 ── Signal statistics ────────────────────────────────────────
-  Signals generated   : 2356
-  Session duration    : 2472.0 min
-  Mean signal         : 81.0348 bps
-  Signal std          : 386.6710 bps
+  Signals generated   : 3737
+  Session duration    : 2732.2 min
+  Mean signal         : -97.0685 bps
+  Signal std          : 418.3320 bps
   Max |signal|        : 1832.0985 bps
-  Avg risk score      : 0.0928
+  Avg risk score      : 0.1786
 
 ── Alpha quality ────────────────────────────────────────────
-  Realised IC         : -0.0013
-  ICIR (annualised)   : -2.3916
-  Safe-mode events    : 1544  (65.5% of ticks)
-  Gated events        : 2319  (98.4% of ticks)
+  Realised IC         : 0.0060
+  ICIR (annualised)   : 0.6950
+  Safe-mode events    : 1660  (44.4% of ticks)
+  Gated events        : 3698  (99.0% of ticks)
 
 ── Regime distribution (session avg) ────────────────────────
-  p_calm              : 0.117
-  p_trending          : 0.149
-  p_shock             : 0.604
-  p_illiquid          : 0.130
+  p_calm              : 0.074
+  p_trending          : 0.094
+  p_shock             : 0.750
+  p_illiquid          : 0.082
 
 ── Readiness check ──────────────────────────────────────────
   Run >= 2 weeks before promoting to live.
@@ -119,3 +104,41 @@ Collecting 1000 ticks for in-place training...
   ICIR (annualised) target: > 0.5.
 
 ============================================================
+[2026-03-20T19:00:14Z] [shadow] [ERROR] trading_engine exited with status 130
+[2026-03-20T19:00:14Z] [shadow] [INFO] Final shadow session statistics from /Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl
+2026-03-20 19:00:14.525404209 [INFO ] [Binance] Stopping feed handler symbol=BTCUSDT
+2026-03-20 19:00:14.527295959 [INFO ] [Kraken] Stopping feed handler symbol=BTCUSDT
+============================================================
+  Shadow Session Report
+============================================================
+
+── Signal statistics ────────────────────────────────────────
+  Signals generated   : 3737
+  Session duration    : 2732.2 min
+  Mean signal         : -97.0685 bps
+  Signal std          : 418.3320 bps
+  Max |signal|        : 1832.0985 bps
+  Avg risk score      : 0.1786
+
+── Alpha quality ────────────────────────────────────────────
+  Realised IC         : 0.0060
+  ICIR (annualised)   : 0.6950
+  Safe-mode events    : 1660  (44.4% of ticks)
+  Gated events        : 3698  (99.0% of ticks)
+
+── Regime distribution (session avg) ────────────────────────
+  p_calm              : 0.074
+  p_trending          : 0.094
+2026-03-20 19:00:14.527871459 [INFO ] [OKX] Stopping feed handler symbol=BTCUSDT
+  p_shock             : 0.750
+  p_illiquid          : 0.082
+
+── Readiness check ──────────────────────────────────────────
+  Run >= 2 weeks before promoting to live.
+  IC should be consistently positive (> 0.02).
+  Safe-mode rate should remain below 10%.
+  ICIR (annualised) target: > 0.5.
+
+============================================================
+2026-03-20 19:00:14.529893209 [INFO ] trading_engine shutdown complete
+(.venv) clementandredupuy@Mac ThamesRiverTrading %

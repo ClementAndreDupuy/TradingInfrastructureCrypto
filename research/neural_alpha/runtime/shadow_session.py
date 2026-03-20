@@ -737,7 +737,7 @@ class NeuralAlphaShadowSession:
         except Exception:
             pass
         print(
-            f"  [shadow] ticks={n}  mean={mean_sig:.2f}bps  std={std_sig:.2f}bps"
+            f"[Shadow] ticks={n}  mean={mean_sig:.2f}bps  std={std_sig:.2f}bps"
             f"  IC={ic:.4f}  ICIR={icir:.3f}"
             f"  safe_mode={safe_pct:.1f}%  gated={gated_pct:.1f}%"
             f"  ts_issues={int(diagnostics['has_timestamp_issues'])}"
