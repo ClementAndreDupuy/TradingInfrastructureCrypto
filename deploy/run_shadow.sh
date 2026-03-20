@@ -60,7 +60,7 @@ apply_config_defaults() {
     local train_ticks_from_cfg train_epochs_from_cfg report_interval_from_cfg
     local alpha_seq_len_from_cfg alpha_log_path_from_cfg
     local continuous_train_every_ticks_from_cfg continuous_train_window_ticks_from_cfg
-    local continuous_train_min_interval_s_from_cfg
+
     local safe_mode_ticks_from_cfg drift_min_samples_from_cfg drift_ic_floor_from_cfg
     local fallback_key_from_cfg fallback_secret_from_cfg
 
@@ -81,7 +81,7 @@ apply_config_defaults() {
     alpha_log_path_from_cfg="$(read_yaml_value "$CONFIG_FILE" "alpha_log_path")"
     continuous_train_every_ticks_from_cfg="$(read_yaml_value "$CONFIG_FILE" "continuous_train_every_ticks")"
     continuous_train_window_ticks_from_cfg="$(read_yaml_value "$CONFIG_FILE" "continuous_train_window_ticks")"
-    continuous_train_min_interval_s_from_cfg="$(read_yaml_value "$CONFIG_FILE" "continuous_train_min_interval_s")"
+
     safe_mode_ticks_from_cfg="$(read_yaml_value "$CONFIG_FILE" "safe_mode_ticks")"
     drift_min_samples_from_cfg="$(read_yaml_value "$CONFIG_FILE" "drift_min_samples")"
     drift_ic_floor_from_cfg="$(read_yaml_value "$CONFIG_FILE" "drift_ic_floor")"
@@ -105,12 +105,10 @@ apply_config_defaults() {
     [[ -n "$alpha_log_path_from_cfg" ]] && ALPHA_LOG_PATH="$(resolve_config_path "$alpha_log_path_from_cfg")"
     [[ -n "$continuous_train_every_ticks_from_cfg" ]] && CONTINUOUS_TRAIN_EVERY_TICKS="$continuous_train_every_ticks_from_cfg"
     [[ -n "$continuous_train_window_ticks_from_cfg" ]] && CONTINUOUS_TRAIN_WINDOW_TICKS="$continuous_train_window_ticks_from_cfg"
-    [[ -n "$continuous_train_min_interval_s_from_cfg" ]] && CONTINUOUS_TRAIN_MIN_INTERVAL_S="$continuous_train_min_interval_s_from_cfg"
+
     [[ -n "$safe_mode_ticks_from_cfg" ]] && SAFE_MODE_TICKS="$safe_mode_ticks_from_cfg"
     [[ -n "$drift_min_samples_from_cfg" ]] && DRIFT_MIN_SAMPLES="$drift_min_samples_from_cfg"
     [[ -n "$drift_ic_floor_from_cfg" ]] && DRIFT_IC_FLOOR="$drift_ic_floor_from_cfg"
-    # Intentionally allow empty-string override for fallback credentials so the
-    # YAML entry shadow_fallback_api_key: "" clears the default placeholder keys.
     SHADOW_FALLBACK_API_KEY="${fallback_key_from_cfg}"
     SHADOW_FALLBACK_API_SECRET="${fallback_secret_from_cfg}"
 }
@@ -141,8 +139,6 @@ Options:
   --report-interval <SEC>       Python shadow summary cadence (default: 60)
   --continuous-train-every-ticks <N>  Ticks between incremental retrains (default: 400)
   --continuous-train-window-ticks <N> Tick window used for each retrain (default: 1000)
-  --continuous-train-min-interval-s <SEC>
-                                Minimum wall-clock seconds between retrains (default: 300)
   --safe-mode-ticks <N>         Ticks of zeroed signal after a drift/canary event (default: 30)
   --drift-min-samples <N>       Minimum outcomes before DriftGuard can fire (default: 100)
   --drift-ic-floor <FLOAT>      IC floor below which DriftGuard fires (default: -0.08)
@@ -177,21 +173,15 @@ REGIME_MODEL_PATH="$REPO_ROOT/models/r2_regime_model.json"
 MODEL_PATH_SET=0
 SECONDARY_MODEL_PATH_SET=0
 TRAIN_TICKS=1000
-TRAIN_EPOCHS=10
+TRAIN_EPOCHS=4
 REPORT_INTERVAL=60
-# Trigger continuous retrains frequently enough to fire in a 15-min session.
-CONTINUOUS_TRAIN_EVERY_TICKS=400
+CONTINUOUS_TRAIN_EVERY_TICKS=10000
 CONTINUOUS_TRAIN_WINDOW_TICKS=1000
-# Must be < DURATION_SECS (900) so at least one retrain can occur per session.
-CONTINUOUS_TRAIN_MIN_INTERVAL_S=300
-# Brief safe-mode window — 30 ticks avoids crippling the entire session.
 SAFE_MODE_TICKS=30
 DRIFT_MIN_SAMPLES=100
 DRIFT_IC_FLOOR=-0.08
 ALPHA_SEQ_LEN=64
 ALPHA_LOG_PATH="$REPO_ROOT/logs/neural_alpha_shadow.jsonl"
-# Empty fallback: venues that need auth (Coinbase) will fast-fail cleanly
-# instead of burning 3×15 s on unauthenticated snapshot attempts.
 SHADOW_FALLBACK_API_KEY=""
 SHADOW_FALLBACK_API_SECRET=""
 SKIP_ALPHA=0
@@ -226,7 +216,6 @@ while [[ $# -gt 0 ]]; do
         --report-interval) REPORT_INTERVAL="$2"; shift 2 ;;
         --continuous-train-every-ticks) CONTINUOUS_TRAIN_EVERY_TICKS="$2"; shift 2 ;;
         --continuous-train-window-ticks) CONTINUOUS_TRAIN_WINDOW_TICKS="$2"; shift 2 ;;
-        --continuous-train-min-interval-s) CONTINUOUS_TRAIN_MIN_INTERVAL_S="$2"; shift 2 ;;
         --safe-mode-ticks) SAFE_MODE_TICKS="$2"; shift 2 ;;
         --drift-min-samples) DRIFT_MIN_SAMPLES="$2"; shift 2 ;;
         --drift-ic-floor) DRIFT_IC_FLOOR="$2"; shift 2 ;;
@@ -381,7 +370,6 @@ for prev, cur in zip(mid_prices, mid_prices[1:]):
     if prev > 0:
         returns.append((cur - prev) / prev)
 
-# Overall IC
 ic = 0.0
 if returns and n > 1:
     aligned = min(len(returns), n - 1)
@@ -395,7 +383,6 @@ if returns and n > 1:
     if vx > 0 and vy > 0:
         ic = cov / math.sqrt(vx * vy)
 
-# Rolling IC-IR: compute IC in 4 equal chunks then annualise
 icir = 0.0
 aligned_n = min(len(returns), n - 1)
 if aligned_n >= 40:
@@ -451,8 +438,6 @@ print()
 print(SEP)
 PY
 
-    # If shadow_metrics.py and the decisions log are both present, run the full
-    # structured report so fill-rate / P&L stats also appear in the output.
     local decisions_log="$REPO_ROOT/logs/shadow_decisions.jsonl"
     if [[ -f "$decisions_log" ]]; then
         log_info "Running full shadow metrics report..."
@@ -470,9 +455,6 @@ for venue in "${VENUE_LIST[@]}"; do
     set_shadow_creds "$venue"
 done
 
-# Warn when Coinbase credentials are absent.  Without a valid EC-key PEM the
-# C++ level2 WebSocket feed cannot authenticate and will fast-fail.  The Python
-# REST fallback still collects Coinbase order-book data for training.
 if [[ " ${VENUE_LIST[*]} " == *" COINBASE "* ]]; then
     _cb_key="${COINBASE_API_KEY:-}"
     _cb_secret="${COINBASE_API_SECRET:-}"
@@ -518,8 +500,6 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Ensure IPC directory exists before either process starts.  The C++ engine
-# writes the LOB ring buffer here even when --skip-alpha is set.
 mkdir -p "$(dirname "$LOB_FEED_PATH")"
 
 if [[ "$SKIP_ALPHA" -eq 0 ]]; then
@@ -542,7 +522,6 @@ if [[ "$SKIP_ALPHA" -eq 0 ]]; then
         --train-epochs "$TRAIN_EPOCHS"
         --continuous-train-every-ticks "$CONTINUOUS_TRAIN_EVERY_TICKS"
         --continuous-train-window-ticks "$CONTINUOUS_TRAIN_WINDOW_TICKS"
-        --continuous-train-min-interval-s "$CONTINUOUS_TRAIN_MIN_INTERVAL_S"
         --safe-mode-ticks "$SAFE_MODE_TICKS"
         --drift-min-samples "$DRIFT_MIN_SAMPLES"
         --drift-ic-floor "$DRIFT_IC_FLOOR"

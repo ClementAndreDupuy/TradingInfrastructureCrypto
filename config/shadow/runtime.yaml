@@ -1,4 +1,3 @@
-# Runtime defaults for deploy/run_shadow.sh
 symbol: BTCUSDT
 venues: BINANCE,KRAKEN,OKX,COINBASE
 duration_secs: 900
@@ -9,36 +8,16 @@ lob_feed_path: /tmp/trt_ipc/trt_lob_feed.bin
 model_path: models/neural_alpha_latest.pt
 secondary_model_path: models/neural_alpha_secondary.pt
 regime_model_path: models/r2_regime_model.json
-# Collect more ticks for a meaningful bootstrap train (400 was too sparse for
-# walk-forward folds with seq_len=64).
 train_ticks: 1000
-# More epochs → better-converged weights on the bootstrap run.
-train_epochs: 10
+train_epochs: 4
 report_interval: 60
 alpha_exchanges: BINANCE,KRAKEN,OKX,COINBASE
 alpha_seq_len: 64
 alpha_log_path: logs/neural_alpha_shadow.jsonl
-# Trigger incremental retrains frequently enough to fire within a 15-min session
-# (~3 600 ticks at 1 tick/s × 4 exchanges).  The old value of 10 000 never fired.
-continuous_train_every_ticks: 400
+continuous_train_every_ticks: 10000
 continuous_train_window_ticks: 1000
-# Must be shorter than the session duration (900 s).  The old value of 1 200 s
-# meant continuous training was structurally impossible in any standard run.
-continuous_train_min_interval_s: 300
-# Safe-mode suppression window.  120 ticks at 1 s/tick = 2 min blanked out per
-# drift event, which compounded across the session (1 544/2 356 = 65 % safe-mode
-# in session 5).  30 ticks gives a brief pause without crippling signal output.
 safe_mode_ticks: 30
-# Require more signal history before the DriftGuard can fire.  60 samples in a
-# noisy market is barely more than 1 min — too easy to breach the IC floor by
-# chance alone.
 drift_min_samples: 100
-# Slightly looser IC floor so a short stretch of neutral signals does not
-# immediately trigger rollback.
 drift_ic_floor: -0.08
-# Leave Coinbase credentials empty so the C++ feed handler detects missing auth
-# and fast-fails instead of burning 3 × 15 s on unauthenticated snapshot waits.
-# The Python REST fallback (_fetch_coinbase_l5) uses the public product_book
-# endpoint which requires no authentication.
 shadow_fallback_api_key: ""
 shadow_fallback_api_secret: ""
