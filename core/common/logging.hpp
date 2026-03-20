@@ -305,7 +305,10 @@ inline void set_log_level(LogLevel lvl) noexcept { AsyncLogger::instance().set_l
 
 } // namespace trading
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 #define LOG_DEBUG(msg, ...) ::trading::log(::trading::LogLevel::DEBUG, msg, ##__VA_ARGS__)
 #define LOG_INFO(msg, ...) ::trading::log(::trading::LogLevel::INFO, msg, ##__VA_ARGS__)
 #define LOG_WARN(msg, ...) ::trading::log(::trading::LogLevel::WARN, msg, ##__VA_ARGS__)
 #define LOG_ERROR(msg, ...) ::trading::log(::trading::LogLevel::ERROR, msg, ##__VA_ARGS__)
+#pragma clang diagnostic pop

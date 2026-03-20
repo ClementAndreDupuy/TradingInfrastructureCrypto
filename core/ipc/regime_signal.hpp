@@ -91,7 +91,7 @@ class RegimeSignalReader {
     bool is_stale(const RegimeSignal& s, int64_t stale_ns) const noexcept {
         if (s.ts_ns == 0)
             return true;
-        int64_t now = duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
+        int64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         return (now - s.ts_ns) > stale_ns;
     }
 

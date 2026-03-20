@@ -438,15 +438,13 @@ class ShadowConnector : public ExchangeConnector {
 
 class ShadowEngine {
   public:
-    hadowEngine(BookManager& binance_book, BookManager& kraken_book,
+    ShadowEngine(BookManager& binance_book, BookManager& kraken_book,
                  BookManager& okx_book, BookManager& coinbase_book,
                  const ShadowConfig& cfg = {})
         : binance_shadow_(Exchange::BINANCE,  cfg, binance_book),
           kraken_shadow_(Exchange::KRAKEN,    cfg, kraken_book),
           okx_shadow_(Exchange::OKX,          cfg, okx_book),
-          coinbase_shadow_(Exchange::COINBASE, cfg, coinbase_book),
-          binance_book_(binance_book), kraken_book_(kraken_book),
-          okx_book_(okx_book), coinbase_book_(coinbase_book) {}
+          coinbase_shadow_(Exchange::COINBASE, cfg, coinbase_book) {}
 
     ShadowConnector& binance_connector()  { return binance_shadow_; }
     ShadowConnector& kraken_connector()   { return kraken_shadow_; }
@@ -485,10 +483,6 @@ class ShadowEngine {
     ShadowConnector kraken_shadow_;
     ShadowConnector okx_shadow_;
     ShadowConnector coinbase_shadow_;
-    BookManager& binance_book_;
-    BookManager& kraken_book_;
-    BookManager& okx_book_;
-    BookManager& coinbase_book_;
 };
 
 } // namespace trading

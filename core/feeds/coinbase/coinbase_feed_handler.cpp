@@ -14,18 +14,11 @@
 #include <libwebsockets.h>
 #include <random>
 #include <sstream>
-#if defined(TRT_DISABLE_OPENSSL)
-#define TRT_HAS_OPENSSL 0
-#elif __has_include(<openssl/evp.h>)
 #include <openssl/bn.h>
 #include <openssl/ecdsa.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/rand.h>
-#define TRT_HAS_OPENSSL 1
-#else
-#define TRT_HAS_OPENSSL 0
-#endif
 
 namespace trading {
 namespace {
@@ -72,7 +65,6 @@ static auto base64url_encode(const std::string& data) -> std::string {
 static auto random_hex(size_t bytes) -> std::string {
     static constexpr char k_hex[] = "0123456789abcdef";
     std::string out(bytes * 2U, '0');
-#if TRT_HAS_OPENSSL
     std::vector<unsigned char> buf(bytes);
     if (RAND_bytes(buf.data(), static_cast<int>(buf.size())) == 1) {
         for (size_t i = 0; i < bytes; ++i) {
@@ -81,7 +73,6 @@ static auto random_hex(size_t bytes) -> std::string {
         }
         return out;
     }
-#endif
     std::random_device rd;
     for (size_t i = 0; i < bytes; ++i) {
         const unsigned char b = static_cast<unsigned char>(rd());
@@ -92,7 +83,6 @@ static auto random_hex(size_t bytes) -> std::string {
 }
 
 
-#if TRT_HAS_OPENSSL
 static auto ecdsa_der_to_jose(const unsigned char* der, size_t der_len) -> std::string {
     const unsigned char* cursor = der;
     ECDSA_SIG* sig = d2i_ECDSA_SIG(nullptr, &cursor, static_cast<long>(der_len));
@@ -117,7 +107,6 @@ static auto ecdsa_der_to_jose(const unsigned char* der, size_t der_len) -> std::
     ECDSA_SIG_free(sig);
     return base64url_encode(raw.data(), raw.size());
 }
-#endif
 
 static auto parse_rfc3339_ns(const std::string& value) -> int64_t {
     if (value.size() < 20U) {
@@ -260,7 +249,6 @@ auto CoinbaseFeedHandler::coinbase_api_secret_from_env() -> std::string {
 
 auto CoinbaseFeedHandler::generate_jwt(const std::string& api_key, const std::string& api_secret)
     -> std::string {
-#if TRT_HAS_OPENSSL
     if (api_key.empty() || api_secret.empty()) {
         return std::string();
     }
@@ -323,11 +311,6 @@ auto CoinbaseFeedHandler::generate_jwt(const std::string& api_key, const std::st
     EVP_MD_CTX_free(ctx);
     EVP_PKEY_free(key);
     return jwt;
-#else
-    (void)api_key;
-    (void)api_secret;
-    return std::string();
-#endif
 }
 
 auto CoinbaseFeedHandler::build_subscription_messages() -> std::vector<std::string> {

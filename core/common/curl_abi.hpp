@@ -1,8 +1,5 @@
 #pragma once
 
-// In environments with libcurl4-openssl-dev installed, include <curl/curl.h>
-// instead. This file is a zero-dependency fallback for build environments.
-
 #include <cstddef>
 #include <cstdint>
 

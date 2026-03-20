@@ -39,7 +39,7 @@ class CircuitBreaker {
     explicit CircuitBreaker(const CircuitBreakerConfig& cfg, KillSwitch& ks)
         : cfg_(cfg), kill_switch_(ks), order_count_sec_(0), sec_window_start_ns_(0),
           order_count_min_(0), min_window_start_ns_(0), msg_count_sec_(0), msg_window_start_ns_(0),
-          realized_pnl_(0.0), ref_price_(0.0), consec_losses_(0) {}
+          consec_losses_(0), realized_pnl_(0.0), ref_price_(0.0) {}
 
     CircuitCheckResult check_order_rate() noexcept {
         int64_t now = now_ns();
