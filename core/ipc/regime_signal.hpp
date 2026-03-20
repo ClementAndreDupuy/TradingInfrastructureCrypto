@@ -9,9 +9,6 @@
 
 namespace trading {
 
-// Probabilities are produced by the Python R2 regime model (Gaussian HMM
-// posterior over semantic states). Keep this payload contract stable; only
-// producer-side model internals may change.
 struct RegimeSignal {
     double p_calm = 1.0;
     double p_trending = 0.0;
@@ -22,7 +19,7 @@ struct RegimeSignal {
 
 class RegimeSignalReader {
   public:
-    static constexpr size_t FILE_SIZE = 48; // [seq][4xdouble probs][int64 ts_ns]
+    static constexpr size_t FILE_SIZE = 48;
     static constexpr int k_max_retries = 16;
 
     explicit RegimeSignalReader(const std::string& path = "/tmp/trt_ipc/regime_signal.bin") : path_(path) {}
@@ -71,8 +68,6 @@ class RegimeSignalReader {
             if (seq1 & 1ULL)
                 continue;
 
-            // Acquire fence: all subsequent loads see stores that completed
-            // before the writer incremented seq to even.
             std::atomic_thread_fence(std::memory_order_acquire);
 
             RegimeSignal s;
@@ -82,8 +77,6 @@ class RegimeSignalReader {
             std::memcpy(&s.p_illiquid, ptr_ + 32, sizeof(double));
             std::memcpy(&s.ts_ns, ptr_ + 40, sizeof(int64_t));
 
-            // Acquire fence: data loads above must not be reordered after
-            // the seq2 load.
             std::atomic_thread_fence(std::memory_order_acquire);
 
             uint64_t seq2 = 0;
@@ -98,12 +91,6 @@ class RegimeSignalReader {
     bool is_stale(const RegimeSignal& s, int64_t stale_ns) const noexcept {
         if (s.ts_ns == 0)
             return true;
-        using namespace std::chrono;
-        // Python publishes time.time_ns() which is UNIX wall-clock time.
-        // steady_clock has a different epoch (system boot) so it must NOT be
-        // used here — the comparison would always return true (signal always
-        // "stale"), causing the market maker to permanently fall back to
-        // conservative defaults and never react to regime changes.
         int64_t now = duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
         return (now - s.ts_ns) > stale_ns;
     }

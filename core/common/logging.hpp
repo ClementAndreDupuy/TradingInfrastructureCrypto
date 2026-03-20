@@ -1,15 +1,6 @@
 #pragma once
 
 // Async ring-buffer logger.
-//
-// Hot path: formats a fixed-size entry directly into an SPSC ring slot
-// (stack allocation only), then advances the tail pointer atomically.
-// No heap allocation, no mutex, no syscall on the hot path.
-//
-// RDTSC is used for nanosecond-precision timestamps.
-// A one-time startup calibration maps TSC cycles → wall-clock nanoseconds.
-//
-// Background writer thread pops entries and writes to stderr.
 
 #include <atomic>
 #include <chrono>
@@ -23,7 +14,6 @@
 #include <x86intrin.h>
 #define TRADING_RDTSC() __rdtsc()
 #else
-// Fallback: steady_clock nanoseconds (not a TSC but same type)
 #define TRADING_RDTSC()                                                                            \
     static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count())
 #endif
@@ -32,17 +22,12 @@ namespace trading {
 
 enum class LogLevel : uint8_t { DEBUG = 0, INFO = 1, WARN = 2, ERROR = 3 };
 
-// ── RDTSC calibration ─────────────────────────────────────────────────────────
-
 struct TscCalibration {
-    uint64_t tsc_base;   // TSC at calibration time
-    int64_t ns_base;     // wall-clock ns at calibration time
-    double ns_per_cycle; // nanoseconds per TSC cycle
+    uint64_t tsc_base;
+    int64_t ns_base;
+    double ns_per_cycle;
 
     static TscCalibration calibrate() noexcept {
-        // Sample wall-clock time twice while measuring elapsed time with a
-        // monotonic clock. system_clock answers "what time is it?"; steady_clock
-        // answers "how much time elapsed?".
         TscCalibration c;
         using WallClock = std::chrono::system_clock;
         using SteadyClock = std::chrono::steady_clock;
@@ -51,7 +36,6 @@ struct TscCalibration {
         auto t0_steady = SteadyClock::now();
         uint64_t t0_tsc = TRADING_RDTSC();
 
-        // Spin-wait ~50 ms to get a stable frequency sample.
         while (
             std::chrono::duration_cast<std::chrono::milliseconds>(SteadyClock::now() - t0_steady)
                 .count() <
@@ -79,9 +63,7 @@ struct TscCalibration {
     }
 };
 
-// ── Ring-buffer entry ─────────────────────────────────────────────────────────
-
-static constexpr size_t LOG_MSG_SIZE = 224; // total entry = 256 bytes
+static constexpr size_t LOG_MSG_SIZE = 224;
 
 struct alignas(256) LogEntry {
     uint64_t tsc;
@@ -91,17 +73,13 @@ struct alignas(256) LogEntry {
 };
 static_assert(sizeof(LogEntry) == 256, "LogEntry must be 256 bytes");
 
-// ── SPSC ring buffer ──────────────────────────────────────────────────────────
-
-static constexpr size_t LOG_RING_SIZE = 4096; // must be power of 2
+static constexpr size_t LOG_RING_SIZE = 4096;
 
 struct LogRing {
-    alignas(64) std::atomic<uint64_t> head{0}; // reader advances head
+    alignas(64) std::atomic<uint64_t> head{0};
     alignas(64) std::atomic<uint64_t> tail{0}; // writer advances tail
     alignas(256) LogEntry entries[LOG_RING_SIZE];
 };
-
-// ── Async logger singleton ────────────────────────────────────────────────────
 
 class AsyncLogger {
   public:
@@ -113,8 +91,6 @@ class AsyncLogger {
     void set_level(LogLevel lvl) noexcept { min_level_.store(lvl, std::memory_order_relaxed); }
     LogLevel min_level() const noexcept { return min_level_.load(std::memory_order_relaxed); }
 
-    // Hot-path: push a log entry into the ring (zero heap allocation).
-    // If the ring is full the entry is dropped (never blocks).
     void push(LogLevel level, const char* msg, size_t msg_len) noexcept {
         uint64_t tail = ring_.tail.load(std::memory_order_relaxed);
         uint64_t head = ring_.head.load(std::memory_order_acquire);
@@ -142,7 +118,6 @@ class AsyncLogger {
             return;
         if (writer_thread_.joinable())
             writer_thread_.join();
-        // Drain remaining entries synchronously
         drain(/*force=*/true);
     }
 
@@ -157,7 +132,6 @@ class AsyncLogger {
     void writer_loop() noexcept {
         while (running_.load(std::memory_order_acquire)) {
             drain(/*force=*/false);
-            // Brief sleep when ring is empty to yield CPU
             std::this_thread::sleep_for(std::chrono::microseconds(50));
         }
     }
@@ -180,7 +154,6 @@ class AsyncLogger {
     void write_entry(const LogEntry& e) noexcept {
         int64_t ns = calib_.tsc_to_ns(e.tsc);
 
-        // Convert ns → seconds + subsecond ns
         time_t sec = static_cast<time_t>(ns / 1'000'000'000LL);
         int nsub = static_cast<int>(ns % 1'000'000'000LL);
         if (nsub < 0) {
@@ -223,8 +196,6 @@ class AsyncLogger {
     TscCalibration calib_;
     std::thread writer_thread_;
 };
-
-// ── Format helpers (stack-only, no heap) ─────────────────────────────────────
 
 namespace detail {
 
@@ -314,15 +285,12 @@ void fmt_fields(char* buf, size_t& pos, size_t cap, const char* key, V&& val,
 
 } // namespace detail
 
-// ── Public log function (zero heap allocation on hot path) ────────────────────
-
 template <typename... Args>
 inline void log(LogLevel level, const char* msg, Args&&... args) noexcept {
     AsyncLogger& logger = AsyncLogger::instance();
     if (level < logger.min_level())
         return;
 
-    // Format entirely on the stack
     char buf[LOG_MSG_SIZE];
     size_t pos = 0;
 

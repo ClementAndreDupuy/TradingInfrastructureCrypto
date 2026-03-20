@@ -1,8 +1,5 @@
 #pragma once
-// Minimal libcurl ABI declarations for libcurl 7.x / 8.x.
-// Used when libcurl4-openssl-dev is not installed but the runtime library is.
-// Values match the stable libcurl ABI; do not modify.
-//
+
 // In environments with libcurl4-openssl-dev installed, include <curl/curl.h>
 // instead. This file is a zero-dependency fallback for build environments.
 
@@ -38,9 +35,6 @@ typedef enum {
     CURL_GLOBAL_NOTHING = 0,
 } CURLglobal;
 
-// CURLoption — only the subset used by rest_client.hpp.
-// Values: CURLOPTTYPE_LONG=0, CURLOPTTYPE_OBJECTPOINT=10000,
-//         CURLOPTTYPE_FUNCTIONPOINT=20000.
 typedef enum {
     CURLOPT_WRITEDATA = 10001,     // OBJECTPOINT + 1
     CURLOPT_URL = 10002,           // OBJECTPOINT + 2
@@ -59,8 +53,6 @@ typedef enum {
     CURLOPT_SSL_VERIFYHOST = 81,   // LONG + 81
 } CURLoption;
 
-// CURLINFO — only CURLINFO_RESPONSE_CODE used.
-// CURLINFO_LONG = 0x200000
 typedef enum {
     CURLINFO_RESPONSE_CODE = 0x200000 + 2, // CURLINFO_LONG + 2
 } CURLINFO;

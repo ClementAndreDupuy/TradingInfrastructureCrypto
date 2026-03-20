@@ -27,14 +27,14 @@ class OrderBook {
         const double best_ask = snapshot.asks[0].price;
         const double spread = best_ask - best_bid;
         if (spread <= 0.0) {
-            LOG_ERROR("Invalid snapshot spread", "symbol", symbol_.c_str(), "best_bid", best_bid,
+            LOG_ERROR("[OrderBook] Invalid snapshot spread", "symbol", symbol_.c_str(), "best_bid", best_bid,
                       "best_ask", best_ask);
             return Result::ERROR_INVALID_PRICE;
         }
 
         const double max_allowed_spread = max_allowed_spread_abs();
         if (spread > max_allowed_spread) {
-            LOG_ERROR("Snapshot spread too wide", "symbol", symbol_.c_str(), "spread", spread,
+            LOG_ERROR("[OrderBook] Snapshot spread too wide", "symbol", symbol_.c_str(), "spread", spread,
                       "max_allowed", max_allowed_spread, "best_bid", best_bid, "best_ask",
                       best_ask);
             return Result::ERROR_INVALID_PRICE;
@@ -43,7 +43,7 @@ class OrderBook {
         if (snapshot.checksum_present) {
             const uint32_t local_checksum = compute_snapshot_checksum(snapshot);
             if (local_checksum != snapshot.checksum) {
-                LOG_ERROR("Snapshot checksum mismatch", "symbol", symbol_.c_str(), "local",
+                LOG_ERROR("[OrderBook] Snapshot checksum mismatch", "symbol", symbol_.c_str(), "local",
                           local_checksum, "remote", snapshot.checksum);
                 return Result::ERROR_BOOK_CORRUPTED;
             }
@@ -52,26 +52,20 @@ class OrderBook {
         double new_base = best_bid - static_cast<double>(max_levels_ / 2) * tick_size_;
 
         if (new_base <= 0.0) {
-            LOG_ERROR("Snapshot rejected: base_price would be non-positive", "symbol",
+            LOG_ERROR("[OrderBook] Snapshot rejected: base_price would be non-positive", "symbol",
                       symbol_.c_str(), "base_price", new_base, "best_bid", best_bid, "tick_size",
                       tick_size_, "max_levels", max_levels_);
             return Result::ERROR_INVALID_PRICE;
         }
-
-        // Reset state — mark uninitialized first so concurrent readers see a clean boundary
-        // (either fully old book or fully new book, never a half-cleared one).
-        // base_price_ and initialized_ are then updated together before repopulating,
-        // because price_to_index() requires initialized_ == true to map levels.
         initialized_.store(false, std::memory_order_release);
         std::fill(bid_sizes_.begin(), bid_sizes_.end(), 0.0);
         std::fill(ask_sizes_.begin(), ask_sizes_.end(), 0.0);
         base_price_.store(new_base, std::memory_order_release);
         sequence_.store(snapshot.sequence, std::memory_order_release);
         out_of_range_streak_ = 0;
-        // Re-enable after base_price_ is committed so price_to_index() works during populate.
         initialized_.store(true, std::memory_order_release);
 
-        LOG_INFO("Grid bounds", "symbol", symbol_.c_str(), "exchange",
+        LOG_INFO("[OrderBook] Grid bounds", "symbol", symbol_.c_str(), "exchange",
                  exchange_to_string(exchange_), "tick_size", tick_size_, "max_levels", max_levels_,
                  "base", new_base, "top", new_base + static_cast<double>(max_levels_) * tick_size_);
 
@@ -95,7 +89,7 @@ class OrderBook {
 
         const size_t total = snapshot.bids.size() + snapshot.asks.size();
         if (skipped * 2 > total) {
-            LOG_ERROR("Snapshot rejected: majority of levels out of grid range", "symbol",
+            LOG_ERROR("[OrderBook] Snapshot rejected: majority of levels out of grid range", "symbol",
                       symbol_.c_str(), "exchange", exchange_to_string(exchange_), "skipped",
                       skipped, "total", total, "tick_size", tick_size_, "max_levels", max_levels_,
                       "base", new_base,
@@ -105,11 +99,11 @@ class OrderBook {
         }
 
         if (skipped > 0) {
-            LOG_WARN("Snapshot levels out of grid range", "symbol", symbol_.c_str(), "skipped",
+            LOG_WARN("[OrderBook] Snapshot levels out of grid range", "symbol", symbol_.c_str(), "skipped",
                      skipped, "total", total);
         }
 
-        LOG_INFO("Snapshot applied", "symbol", symbol_.c_str(), "sequence", snapshot.sequence,
+        LOG_INFO("[OrderBook] Snapshot applied", "symbol", symbol_.c_str(), "sequence", snapshot.sequence,
                  "base_price", new_base, "bids", snapshot.bids.size(), "asks",
                  snapshot.asks.size());
         return Result::SUCCESS;
@@ -133,12 +127,12 @@ class OrderBook {
             if (should_recenter(delta.price)) {
                 recenter_grid(delta.price);
                 if (!price_to_index(delta.price, idx)) {
-                    LOG_WARN("Delta price still out of recentered grid", "price", delta.price,
+                    LOG_WARN("[OrderBook] Delta price still out of recentered grid", "price", delta.price,
                              "base", base_price_.load(), "range", max_levels_ * tick_size_);
                     return Result::ERROR_INVALID_PRICE;
                 }
             } else {
-                LOG_WARN("Delta price out of grid range", "price", delta.price, "base",
+                LOG_WARN("[OrderBook] Delta price out of grid range", "price", delta.price, "base",
                          base_price_.load(), "range", max_levels_ * tick_size_, "streak",
                          out_of_range_streak_);
                 return Result::ERROR_INVALID_PRICE;
@@ -305,12 +299,11 @@ class OrderBook {
         base_price_.store(new_base, std::memory_order_release);
         out_of_range_streak_ = 0;
 
-        LOG_WARN("Order book grid recentered", "symbol", symbol_.c_str(), "anchor_price",
+        LOG_WARN("[OrderBook] grid recentered", "symbol", symbol_.c_str(), "anchor_price",
                  anchor_price, "old_base", old_base, "new_base", new_base, "shift_ticks",
                  shift_ticks);
     }
 
-    // Maps price → flat-array index. Returns false if uninitialized or out of range.
     bool price_to_index(double price, size_t& out_idx) const {
         if (!initialized_.load(std::memory_order_acquire))
             return false;

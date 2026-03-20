@@ -29,7 +29,6 @@ class json {
     using array_t = std::vector<json>;
     using object_t = std::vector<std::pair<std::string, json>>;
 
-    // ── Constructors ────────────────────────────────────────────────────────
     json() : type_(value_t::null) {}
     json(std::nullptr_t) : type_(value_t::null) {}
     json(bool v) : type_(value_t::boolean) { b_ = v; }
@@ -38,10 +37,6 @@ class json {
     json(double v) : type_(value_t::number_float) { d_ = v; }
     json(const std::string& v) : type_(value_t::string), s_(v) {}
     json(std::string&& v) : type_(value_t::string), s_(std::move(v)) {}
-
-    // Initializer-list constructor: mirrors nlohmann behaviour.
-    // If every element is a 2-element array whose first item is a string,
-    // the result is an object; otherwise it is an array.
     json(std::initializer_list<json> init) {
         bool all_pairs = true;
         for (const auto& elem : init) {
@@ -101,7 +96,6 @@ class json {
         return j;
     }
 
-    // ── Type checks ─────────────────────────────────────────────────────────
     bool is_null() const noexcept { return type_ == value_t::null; }
     bool is_boolean() const noexcept { return type_ == value_t::boolean; }
     bool is_number_integer() const noexcept { return type_ == value_t::number_integer; }
@@ -125,25 +119,21 @@ class json {
     }
     bool empty() const noexcept { return size() == 0; }
 
-    // ── get<T> ──────────────────────────────────────────────────────────────
     template <typename T> T get() const;
 
-    // ── Array index ─────────────────────────────────────────────────────────
     const json& operator[](size_t idx) const {
         static const json null_j;
         if (!is_array() || !arr_ || idx >= arr_->size())
             return null_j;
         return (*arr_)[idx];
     }
-    // Disambiguate int literals (e.g. arr[0]) from string keys.
     const json& operator[](int idx) const { return operator[](static_cast<size_t>(idx)); }
-
     const json& operator[](const char* key) const { return at_key(key); }
     const json& operator[](const std::string& key) const { return at_key(key); }
+
     json& operator[](const char* key) { return at_key_mut(std::string(key)); }
     json& operator[](const std::string& key) { return at_key_mut(key); }
 
-    // ── Iterator ────────────────────────────────────────────────────────────
     class iterator {
       public:
         iterator() = default;
@@ -639,8 +629,6 @@ class json {
         }
     };
 };
-
-// ── get<T> specializations ──────────────────────────────────────────────────
 
 template <> inline std::string json::get<std::string>() const {
     if (is_string())

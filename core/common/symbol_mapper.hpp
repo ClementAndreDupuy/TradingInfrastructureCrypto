@@ -18,8 +18,6 @@ struct VenueSymbols {
     std::string kraken_ws;
     std::string kraken_rest;
 
-    // Returns the venue-specific symbol string for the given exchange.
-    // Kraken uses the REST format (slash-separated) for order submission.
     [[nodiscard]] const std::string& for_exchange(Exchange ex) const noexcept {
         switch (ex) {
         case Exchange::BINANCE:
@@ -36,10 +34,6 @@ struct VenueSymbols {
     }
 };
 
-// Converts a canonical symbol string (e.g. "BTCUSDT", "BTC-USDT", "BTC/USDT")
-// into venue-specific formats for all supported exchanges.
-//
-// Throws std::invalid_argument if the symbol is empty.
 class SymbolMapper {
   public:
     [[nodiscard]] static VenueSymbols map_all(std::string symbol) {
@@ -54,7 +48,6 @@ class SymbolMapper {
         return out;
     }
 
-    // Convenience: map a canonical symbol to a single venue's format.
     [[nodiscard]] static std::string map_for_exchange(Exchange ex, std::string symbol) {
         return map_all(std::move(symbol)).for_exchange(ex);
     }
@@ -73,7 +66,6 @@ class SymbolMapper {
         std::transform(symbol.begin(), symbol.end(), symbol.begin(),
                        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
 
-        // 1. Try explicit separators (-, /, _).
         constexpr std::array<char, 3> separators = {'-', '/', '_'};
         for (const char sep : separators) {
             const size_t pos = symbol.find(sep);
@@ -82,8 +74,6 @@ class SymbolMapper {
             }
         }
 
-        // 2. Try well-known quote suffixes, longest first to avoid mis-splits
-        //    (e.g. "FDUSD" before "USD", "USDT" before "USD").
         static constexpr std::array<std::string_view, 17> quote_suffixes = {
             "FDUSD", "USDT", "USDC", "USDK", "TUSD", "BUSD", "DAI", "USD",
             "EUR",   "GBP",  "JPY",  "TRY",  "AUD",  "CAD",  "CHF", "BTC", "ETH",
@@ -96,12 +86,10 @@ class SymbolMapper {
             }
         }
 
-        // 3. Last resort: treat the final 3 characters as the quote currency.
         if (symbol.size() > 3) {
             return {symbol.substr(0, symbol.size() - 3), symbol.substr(symbol.size() - 3)};
         }
 
-        // Symbol too short to split — return it as base with no quote.
         return {symbol, ""};
     }
 };

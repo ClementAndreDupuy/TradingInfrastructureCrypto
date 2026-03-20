@@ -1,9 +1,5 @@
 #pragma once
 
-// Shared HTTP utilities for all feed handlers and connectors.
-// HTTP via libcurl C API with connection reuse (thread-local handle).
-// JSON parsing is done by callers via nlohmann/json directly.
-
 #include <chrono>
 #include <cstdlib>
 #if defined(TRT_ENABLE_HTTP_MOCK_TRANSPORT)
