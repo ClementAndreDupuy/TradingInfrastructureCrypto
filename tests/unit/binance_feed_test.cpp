@@ -90,6 +90,19 @@ TEST_F(BinanceFeedHandlerTest, ApplyBufferedDeltasSkipsStaleAndBridgesSnapshot) 
     EXPECT_EQ(stats.buffer_high_water_mark, 0u);
 }
 
+
+TEST_F(BinanceFeedHandlerTest, AllBufferedDeltasOlderThanSnapshotAreIgnored) {
+    handler_->delta_buffer_.push_back(make_delta(95, 99));
+    handler_->delta_buffer_.push_back(make_delta(98, 99, 50000.5, 50001.5));
+    handler_->last_sequence_.store(100, std::memory_order_release);
+
+    ASSERT_EQ(handler_->apply_buffered_deltas(100), Result::SUCCESS);
+    EXPECT_TRUE(handler_->delta_buffer_.empty());
+    EXPECT_TRUE(deltas_.empty());
+    auto stats = handler_->sync_stats();
+    EXPECT_EQ(stats.buffered_skipped, 2u);
+}
+
 TEST_F(BinanceFeedHandlerTest, MissingBridgeDeltaTriggersResync) {
     handler_->delta_buffer_.push_back(make_delta(105, 106));
     handler_->last_sequence_.store(99, std::memory_order_release);
@@ -99,6 +112,18 @@ TEST_F(BinanceFeedHandlerTest, MissingBridgeDeltaTriggersResync) {
     EXPECT_EQ(stats.resync_count, 1u);
     EXPECT_EQ(stats.last_resync_reason, "snapshot_handoff_gap");
     EXPECT_NE(last_error_.find("snapshot_handoff_gap"), std::string::npos);
+}
+
+
+TEST_F(BinanceFeedHandlerTest, StaleStreamingDeltaIsIgnoredPerBinanceContract) {
+    handler_->state_.store(BinanceFeedHandler::State::STREAMING, std::memory_order_release);
+    handler_->last_sequence_.store(105, std::memory_order_release);
+
+    std::string msg = R"({"e":"depthUpdate","s":"BTCUSDT","U":100,"u":104,"b":[["50000.00","1.0"]],"a":[]})";
+    EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
+    EXPECT_TRUE(deltas_.empty());
+    EXPECT_EQ(handler_->get_sequence(), 105u);
+    EXPECT_EQ(handler_->sync_stats().resync_count, 0u);
 }
 
 TEST_F(BinanceFeedHandlerTest, StreamingSequenceGapTriggersResync) {

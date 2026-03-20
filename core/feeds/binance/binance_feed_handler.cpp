@@ -311,7 +311,35 @@ void BinanceFeedHandler::ws_event_loop() {
         state_.store(State::BUFFERING, std::memory_order_release);
         delta_buffer_.clear();
 
-        if (process_snapshot() != Result::SUCCESS) {
+        bool snapshot_ready = false;
+        while (running_.load(std::memory_order_acquire)) {
+            if (process_snapshot() != Result::SUCCESS) {
+                break;
+            }
+            if (delta_buffer_.empty()) {
+                snapshot_ready = true;
+                break;
+            }
+
+            const uint64_t snapshot_sequence = last_sequence_.load(std::memory_order_acquire);
+            const uint64_t first_buffered_update_id = delta_buffer_.front().first_update_id;
+            if (snapshot_sequence >= first_buffered_update_id) {
+                snapshot_ready = true;
+                break;
+            }
+
+            LOG_WARN("[Binance] Snapshot older than buffered stream head", "symbol", symbol_.c_str(),
+                     "snapshot_sequence", snapshot_sequence, "first_buffered_U", first_buffered_update_id,
+                     "buffer_size", delta_buffer_.size());
+        }
+
+        if (!running_.load(std::memory_order_acquire)) {
+            lws_context_destroy(ctx);
+            lws_ctx_.store(nullptr, std::memory_order_release);
+            continue;
+        }
+
+        if (!snapshot_ready) {
             lws_context_destroy(ctx);
             lws_ctx_.store(nullptr, std::memory_order_release);
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
@@ -376,7 +404,7 @@ auto BinanceFeedHandler::process_snapshot() -> Result {
     }
     last_snapshot_time_ = clock::now();
 
-    const std::string url = api_url_ + "/api/v3/depth?symbol=" + venue_symbols_.binance + "&limit=1000";
+    const std::string url = api_url_ + "/api/v3/depth?symbol=" + venue_symbols_.binance + "&limit=5000";
     LOG_INFO("[Binance] Fetching snapshot", "symbol", symbol_.c_str());
 
     auto request_started = clock::now();
@@ -534,9 +562,14 @@ auto BinanceFeedHandler::process_message(const std::string& message) -> Result {
         return Result::SUCCESS;
     }
 
+    const uint64_t current_sequence = last_sequence_.load(std::memory_order_acquire);
+    if (delta.last_update_id <= current_sequence) {
+        return Result::SUCCESS;
+    }
+
     if (!validate_delta_sequence(delta.first_update_id, delta.last_update_id)) {
-        LOG_ERROR("[Binance] Sequence gap", "expected", last_sequence_.load(std::memory_order_acquire) + 1,
-                  "U", delta.first_update_id, "u", delta.last_update_id);
+        LOG_ERROR("[Binance] Sequence gap", "expected", current_sequence + 1, "U", delta.first_update_id,
+                  "u", delta.last_update_id);
         trigger_resnapshot("sequence_gap");
         return Result::ERROR_SEQUENCE_GAP;
     }
@@ -592,8 +625,11 @@ auto BinanceFeedHandler::apply_buffered_deltas(uint64_t snapshot_sequence) -> Re
     }
 
     if (start_index == delta_buffer_.size()) {
-        if (delta_buffer_.empty()) {
-            LOG_INFO("[Binance] No buffered deltas pending after snapshot", "sequence", snapshot_sequence);
+        if (delta_buffer_.empty() || skipped == delta_buffer_.size()) {
+            buffered_skipped_ += static_cast<uint64_t>(skipped);
+            LOG_INFO("[Binance] No buffered bridge delta required", "sequence", snapshot_sequence,
+                     "skipped", skipped);
+            delta_buffer_.clear();
             return Result::SUCCESS;
         }
         trigger_resnapshot("snapshot_handoff_missing_bridge");
