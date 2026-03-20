@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import numpy as np
 
-from research.neural_alpha.governance import ChampionChallengerRegistry, DriftGuard
+ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(ROOT))
+
+from research.neural_alpha.operations.governance import ChampionChallengerRegistry, DriftGuard
 
 
 def test_registry_register_and_promote(tmp_path: Path) -> None:

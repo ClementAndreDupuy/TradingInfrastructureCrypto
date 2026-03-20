@@ -1,5 +1,5 @@
 """
-Unit tests for research.neural_alpha.data_quality.
+Unit tests for research.neural_alpha.operations.data_quality.
 
 Covers all five quality gates:
     1. schema_validation
@@ -8,6 +8,7 @@ Covers all five quality gates:
     4. timestamp_skew
     5. duplicate_detection
 """
+
 from __future__ import annotations
 
 import json
@@ -21,7 +22,7 @@ import pytest
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from research.neural_alpha.data_quality import (
+from research.neural_alpha.operations.data_quality import (
     DataQualityConfig,
     DataQualityError,
     QualityReport,
@@ -81,6 +82,7 @@ _CFG_PERMISSIVE = DataQualityConfig(
 
 # ── Schema validation ──────────────────────────────────────────────────────────
 
+
 def test_schema_passes_on_valid_df():
     df = _make_df()
     report = run_quality_gates(df, _CFG_PERMISSIVE)
@@ -105,6 +107,7 @@ def test_schema_fails_on_wrong_dtype():
 
 
 # ── Null-rate bounds ───────────────────────────────────────────────────────────
+
 
 def test_null_rate_passes_on_clean_df():
     df = _make_df()
@@ -139,6 +142,7 @@ def test_null_rate_passes_below_threshold():
 
 # ── Sequence-gap check ─────────────────────────────────────────────────────────
 
+
 def test_gap_check_passes_on_regular_ticks():
     df = _make_df(gap_ns=1_000_000_000)  # 1-second gaps
     report = run_quality_gates(df, _CFG_PERMISSIVE)
@@ -152,17 +156,17 @@ def test_gap_check_fails_on_large_gap():
     for i in range(30):
         gap = 1_000_000_000 if i != 15 else 600 * 1_000_000_000  # 10-min gap at tick 15
         ts = base + i * 1_000_000_000 + (0 if i <= 15 else (600 - 1) * 1_000_000_000)
-        rows.append({
-            "timestamp_ns": base + sum(
-                (600 * 1_000_000_000 if j == 15 else 1_000_000_000)
-                for j in range(i)
-            ),
-            "exchange": "BINANCE",
-            "symbol": "SOLUSDT",
-            "best_bid": 99.99,
-            "best_ask": 100.01,
-            **_lob_columns(),
-        })
+        rows.append(
+            {
+                "timestamp_ns": base
+                + sum((600 * 1_000_000_000 if j == 15 else 1_000_000_000) for j in range(i)),
+                "exchange": "BINANCE",
+                "symbol": "SOLUSDT",
+                "best_bid": 99.99,
+                "best_ask": 100.01,
+                **_lob_columns(),
+            }
+        )
     df = pl.DataFrame(rows)
     cfg = DataQualityConfig(max_gap_ns=300 * 1_000_000_000)  # 5-min limit
     report = run_quality_gates(df, cfg)
@@ -179,6 +183,7 @@ def test_gap_check_skipped_if_single_tick():
 
 
 # ── Timestamp skew ─────────────────────────────────────────────────────────────
+
 
 def test_timestamp_skew_passes_on_fresh_ticks():
     df = _make_df()  # timestamps close to now
@@ -218,6 +223,7 @@ def test_timestamp_skew_allows_future_when_configured():
 
 # ── Duplicate detection ────────────────────────────────────────────────────────
 
+
 def test_duplicate_check_passes_on_unique_rows():
     df = _make_df()
     report = run_quality_gates(df, _CFG_PERMISSIVE)
@@ -238,6 +244,7 @@ def test_duplicate_check_fails_on_duplicate_rows():
 
 # ── assert_quality_passed / DataQualityError ──────────────────────────────────
 
+
 def test_assert_passes_on_clean_df():
     df = _make_df()
     report = run_quality_gates(df, _CFG_PERMISSIVE)
@@ -253,6 +260,7 @@ def test_assert_raises_data_quality_error_on_breach():
 
 
 # ── write_quality_report ───────────────────────────────────────────────────────
+
 
 def test_write_quality_report_produces_valid_json(tmp_path):
     df = _make_df()

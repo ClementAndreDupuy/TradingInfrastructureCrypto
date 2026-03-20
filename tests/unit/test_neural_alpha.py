@@ -24,21 +24,21 @@ import torch
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from research.neural_alpha.alpha_regression import (
+from research.neural_alpha.evaluation.alpha_regression import (
     analyse_alpha,
     compute_hit_rate,
     compute_ic,
     compute_turnover,
     ols_regression,
 )
-from research.neural_alpha.backtest import BacktestConfig, NeuralAlphaBacktest
-from research.neural_alpha.dataset import (
+from research.neural_alpha.evaluation.backtest import BacktestConfig, NeuralAlphaBacktest
+from research.neural_alpha.data.dataset import (
     DatasetConfig,
     LOBDataset,
     rolling_normalise,
     split_walk_forward,
 )
-from research.neural_alpha.features import (
+from research.neural_alpha.data.features import (
     compute_labels,
     compute_lob_tensor,
     compute_scalar_features,
@@ -46,13 +46,13 @@ from research.neural_alpha.features import (
     D_SCALAR,
     N_LEVELS,
 )
-from research.neural_alpha.model import (
+from research.neural_alpha.models.model import (
     CryptoAlphaNet,
     LOBSpatialEncoder,
     MultiTaskLoss,
     TemporalEncoder,
 )
-from research.neural_alpha.shadow_session import (
+from research.neural_alpha.runtime.shadow_session import (
     NeuralAlphaShadowSession,
     ShadowSessionConfig,
     _symbol_model_path,
@@ -421,7 +421,9 @@ class TestAlphaRegression:
 class TestShadowSessionTraining:
     def test_symbol_model_path_uses_symbol_specific_name(self) -> None:
         assert _symbol_model_path("BTCUSDT") == Path("models/neural_alpha_btcusdt_latest.pt")
-        assert _symbol_model_path("ETHUSDT", "secondary") == Path("models/neural_alpha_ethusdt_secondary.pt")
+        assert _symbol_model_path("ETHUSDT", "secondary") == Path(
+            "models/neural_alpha_ethusdt_secondary.pt"
+        )
 
     def test_train_on_recent_persists_model_weights(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -479,10 +481,10 @@ class TestShadowSessionTraining:
             return [{"metrics": {"loss_total": 0.1234}, "model_state": model.state_dict()}]
 
         monkeypatch.setattr(
-            "research.neural_alpha.shadow_session._fetch_binance_l5", _fake_fetch
+            "research.neural_alpha.runtime.shadow_session._fetch_binance_l5", _fake_fetch
         )
         monkeypatch.setattr(
-            "research.neural_alpha.shadow_session.walk_forward_train",
+            "research.neural_alpha.runtime.shadow_session.walk_forward_train",
             _fake_walk_forward_train,
         )
 
@@ -504,8 +506,8 @@ class TestShadowSessionTraining:
         """After train_on_recent, main() must attempt to load the secondary model
         before calling _validate_production_stack, mirroring the primary-model-exists branch."""
         import sys
-        from research.neural_alpha.shadow_session import main, _symbol_model_path
-        from research.neural_alpha.model import CryptoAlphaNet
+        from research.neural_alpha.runtime.shadow_session import main, _symbol_model_path
+        from research.neural_alpha.models.model import CryptoAlphaNet
 
         primary_path = tmp_path / "neural_alpha_btcusdt_latest.pt"
         secondary_path = tmp_path / "neural_alpha_btcusdt_secondary.pt"
@@ -517,37 +519,59 @@ class TestShadowSessionTraining:
         torch.save(secondary_model.state_dict(), secondary_path)
 
         monkeypatch.setattr(
-            sys, "argv",
+            sys,
+            "argv",
             [
                 "shadow_session",
-                "--train-ticks", "4",
-                "--train-epochs", "1",
-                "--seq-len", "8",
-                "--d-spatial", "16",
-                "--d-temporal", "32",
-                "--model-path", str(primary_path),
-                "--secondary-model-path", str(secondary_path),
-                "--log-path", str(log_path),
-                "--signal-file", str(signal_path),
+                "--train-ticks",
+                "4",
+                "--train-epochs",
+                "1",
+                "--seq-len",
+                "8",
+                "--d-spatial",
+                "16",
+                "--d-temporal",
+                "32",
+                "--model-path",
+                str(primary_path),
+                "--secondary-model-path",
+                str(secondary_path),
+                "--log-path",
+                str(log_path),
+                "--signal-file",
+                str(signal_path),
                 "--no-require-full-model-stack",
-                "--duration", "0",
+                "--duration",
+                "0",
             ],
         )
 
         tick_base = {
             "timestamp_ns": 1,
             "exchange": "BINANCE",
-            "best_bid": 100.0, "best_ask": 100.1,
-            "bid_price_1": 100.0, "ask_price_1": 100.1,
-            "bid_size_1": 1.0,   "ask_size_1": 1.0,
-            "bid_price_2": 99.9, "ask_price_2": 100.2,
-            "bid_size_2": 1.0,   "ask_size_2": 1.0,
-            "bid_price_3": 99.8, "ask_price_3": 100.3,
-            "bid_size_3": 1.0,   "ask_size_3": 1.0,
-            "bid_price_4": 99.7, "ask_price_4": 100.4,
-            "bid_size_4": 1.0,   "ask_size_4": 1.0,
-            "bid_price_5": 99.6, "ask_price_5": 100.5,
-            "bid_size_5": 1.0,   "ask_size_5": 1.0,
+            "best_bid": 100.0,
+            "best_ask": 100.1,
+            "bid_price_1": 100.0,
+            "ask_price_1": 100.1,
+            "bid_size_1": 1.0,
+            "ask_size_1": 1.0,
+            "bid_price_2": 99.9,
+            "ask_price_2": 100.2,
+            "bid_size_2": 1.0,
+            "ask_size_2": 1.0,
+            "bid_price_3": 99.8,
+            "ask_price_3": 100.3,
+            "bid_size_3": 1.0,
+            "ask_size_3": 1.0,
+            "bid_price_4": 99.7,
+            "ask_price_4": 100.4,
+            "bid_size_4": 1.0,
+            "ask_size_4": 1.0,
+            "bid_price_5": 99.6,
+            "ask_price_5": 100.5,
+            "bid_size_5": 1.0,
+            "ask_size_5": 1.0,
         }
         counter = {"t": 0}
 
@@ -569,14 +593,19 @@ class TestShadowSessionTraining:
             m.load_state_dict(state)
             self_session._secondary_model = m
 
-        monkeypatch.setattr("research.neural_alpha.shadow_session._fetch_binance_l5", _fake_fetch)
-        monkeypatch.setattr("research.neural_alpha.shadow_session.walk_forward_train", _fake_walk_forward_train)
         monkeypatch.setattr(
-            "research.neural_alpha.shadow_session.NeuralAlphaShadowSession.load_secondary_model",
+            "research.neural_alpha.runtime.shadow_session._fetch_binance_l5", _fake_fetch
+        )
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session.walk_forward_train",
+            _fake_walk_forward_train,
+        )
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session.NeuralAlphaShadowSession.load_secondary_model",
             _fake_load_secondary,
         )
         monkeypatch.setattr(
-            "research.neural_alpha.shadow_session.NeuralAlphaShadowSession.run",
+            "research.neural_alpha.runtime.shadow_session.NeuralAlphaShadowSession.run",
             lambda self_session: None,
         )
 

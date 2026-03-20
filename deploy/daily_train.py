@@ -23,6 +23,7 @@ Environment variables:
     DQ_MAX_GAP_S     Max inter-tick gap per venue in seconds (default: 300)
     DQ_MAX_AGE_H     Max age of oldest tick in hours (default: 26)
 """
+
 from __future__ import annotations
 
 import json
@@ -39,20 +40,24 @@ import torch
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from research.neural_alpha.alpha_regression import analyse_alpha
-from research.neural_alpha.backtest import BacktestConfig, NeuralAlphaBacktest
-from research.neural_alpha.data_quality import (
+from research.neural_alpha.evaluation.alpha_regression import analyse_alpha
+from research.neural_alpha.evaluation.backtest import BacktestConfig, NeuralAlphaBacktest
+from research.neural_alpha.operations.data_quality import (
     DataQualityConfig,
     DataQualityError,
     assert_quality_passed,
     run_quality_gates,
     write_quality_report,
 )
-from research.neural_alpha.features import compute_lob_tensor, compute_scalar_features, normalise_scalar
-from research.neural_alpha.governance import ChampionChallengerRegistry
-from research.neural_alpha.model import CryptoAlphaNet
+from research.neural_alpha.data.features import (
+    compute_lob_tensor,
+    compute_scalar_features,
+    normalise_scalar,
+)
+from research.neural_alpha.operations.governance import ChampionChallengerRegistry
+from research.neural_alpha.models.model import CryptoAlphaNet
 from research.neural_alpha.pipeline import _blend_fold_results, collect_l5_ticks
-from research.neural_alpha.trainer import TrainerConfig, walk_forward_train
+from research.neural_alpha.models.trainer import TrainerConfig, walk_forward_train
 
 logging.basicConfig(
     level=logging.INFO,
@@ -116,8 +121,8 @@ def _compute_holdout_ic(model_path: Path, holdout_df, cfg: "TrainerConfig") -> f
     if not model_path.exists():
         return -1.0
 
-    from research.neural_alpha.dataset import DatasetConfig, LOBDataset
-    from research.neural_alpha.model import CryptoAlphaNet
+    from research.neural_alpha.data.dataset import DatasetConfig, LOBDataset
+    from research.neural_alpha.models.model import CryptoAlphaNet
     from torch.utils.data import DataLoader
 
     ds_cfg = DatasetConfig(seq_len=cfg.seq_len)
@@ -158,6 +163,7 @@ def _compute_holdout_ic(model_path: Path, holdout_df, cfg: "TrainerConfig") -> f
     if preds.std() < 1e-9 or labels.std() < 1e-9:
         return -1.0
     from scipy.stats import spearmanr
+
     ic, _ = spearmanr(preds, labels)
     return float(ic) if np.isfinite(ic) else -1.0
 
@@ -256,10 +262,16 @@ def run() -> dict:
     cached = DATA_DIR / f"ticks_{_SYMBOL_TAG}_{date_str}.parquet"
     if cached.exists():
         import polars as pl
+
         log.info("Loading cached ticks from %s", cached)
         df = pl.read_parquet(cached)
     else:
-        df = collect_l5_ticks(TRAIN_TICKS, TRAIN_INTERVAL_MS, exchanges=["BINANCE", "KRAKEN", "OKX", "COINBASE"], symbol=TRAIN_SYMBOL)
+        df = collect_l5_ticks(
+            TRAIN_TICKS,
+            TRAIN_INTERVAL_MS,
+            exchanges=["BINANCE", "KRAKEN", "OKX", "COINBASE"],
+            symbol=TRAIN_SYMBOL,
+        )
         df.write_parquet(cached)
         log.info("Tick data cached → %s  rows=%d", cached, len(df))
 
@@ -268,11 +280,14 @@ def run() -> dict:
         _run_data_quality_gates(df, date_str)
     except DataQualityError as dqe:
         log.error("Data quality gates FAILED — aborting training: %s", dqe)
-        _publish_ops_event("data_quality_failed", {
-            "date": date_str,
-            "breaches": [c["check"] for c in dqe.report.to_dict()["checks"] if not c["passed"]],
-            "quality_report_path": str(_quality_report_path(date_str)),
-        })
+        _publish_ops_event(
+            "data_quality_failed",
+            {
+                "date": date_str,
+                "breaches": [c["check"] for c in dqe.report.to_dict()["checks"] if not c["passed"]],
+                "quality_report_path": str(_quality_report_path(date_str)),
+            },
+        )
         return {
             "error": "data_quality_failed",
             "date": date_str,
@@ -303,8 +318,12 @@ def run() -> dict:
 
     # 4. Alpha regression
     alpha_metrics = analyse_alpha(fold_results, horizon_idx=2)
-    log.info("Alpha: IC=%.4f  ICIR=%.4f  HitRate=%.3f",
-             alpha_metrics.ic_mean, alpha_metrics.icir, alpha_metrics.hit_rate)
+    log.info(
+        "Alpha: IC=%.4f  ICIR=%.4f  HitRate=%.3f",
+        alpha_metrics.ic_mean,
+        alpha_metrics.icir,
+        alpha_metrics.hit_rate,
+    )
 
     # 5. Backtest on held-out fold
     bt_cfg = BacktestConfig(entry_threshold_bps=5.0, taker_fee_bps=5.0)
@@ -312,6 +331,7 @@ def run() -> dict:
     bt = NeuralAlphaBacktest(bt_cfg)
     signals = last_fold["predictions"][:, 2]  # mid-horizon = index 2 (100t)
     import polars as pl
+
     fold_size = len(df) // cfg.n_folds
     test_start = len(df) - fold_size
     test_df = df[test_start:]
@@ -323,10 +343,12 @@ def run() -> dict:
     bt_result = bt.run(test_df, tick_signals)
     bt_metrics = bt_result["metrics"]
     sharpe = bt_metrics.get("sharpe_annualised", 0.0) if "error" not in bt_metrics else 0.0
-    log.info("Backtest: trades=%s  PnL=%.4f  Sharpe=%.3f",
-             bt_metrics.get("total_trades", 0),
-             bt_metrics.get("total_net_pnl", 0.0),
-             sharpe)
+    log.info(
+        "Backtest: trades=%s  PnL=%.4f  Sharpe=%.3f",
+        bt_metrics.get("total_trades", 0),
+        bt_metrics.get("total_net_pnl", 0.0),
+        sharpe,
+    )
 
     # 6. Save candidate
     best_fold = min(fold_results, key=lambda f: f["metrics"].get("loss_total", 1e9))
@@ -368,7 +390,9 @@ def run() -> dict:
                 ensemble_icir,
                 ensemble_alpha.hit_rate,
             )
-            ensemble_promoted = ensemble_ic_mean >= PROMOTE_IC_MIN and ensemble_ic_mean > alpha_metrics.ic_mean
+            ensemble_promoted = (
+                ensemble_ic_mean >= PROMOTE_IC_MIN and ensemble_ic_mean > alpha_metrics.ic_mean
+            )
             if ensemble_promoted:
                 log.info(
                     "Ensemble IC %.4f beats primary IC %.4f — ensemble is production candidate",
@@ -402,18 +426,26 @@ def run() -> dict:
 
     if registry.current_champion() is None and PROD_MODEL_PATH.exists():
         baseline_ic = champion_holdout_ic if champion_holdout_ic != -1.0 else _load_prod_model_ic()
-        bootstrap_meta = {"ic_mean": baseline_ic, "challenger_holdout_ic": baseline_ic, "bootstrapped": True}
+        bootstrap_meta = {
+            "ic_mean": baseline_ic,
+            "challenger_holdout_ic": baseline_ic,
+            "bootstrapped": True,
+        }
         bootstrap_id = registry.register_challenger(PROD_MODEL_PATH, bootstrap_meta)
         registry.promote(bootstrap_id, reason="bootstrap_existing_model")
         log.info(
             "Bootstrapped existing model as champion in registry (holdout IC=%.4f): %s",
-            baseline_ic, PROD_MODEL_PATH,
+            baseline_ic,
+            PROD_MODEL_PATH,
         )
-        _publish_ops_event("model_bootstrapped", {
-            "model_path": str(PROD_MODEL_PATH),
-            "holdout_ic": baseline_ic,
-            "date": date_str,
-        })
+        _publish_ops_event(
+            "model_bootstrapped",
+            {
+                "model_path": str(PROD_MODEL_PATH),
+                "holdout_ic": baseline_ic,
+                "date": date_str,
+            },
+        )
 
     challenger_id = registry.register_challenger(CANDIDATE_MODEL_PATH, train_metrics)
 
@@ -430,16 +462,22 @@ def run() -> dict:
     champion_holdout_ic = _compute_holdout_ic(PROD_MODEL_PATH, holdout_df, cfg)
     log.info(
         "Holdout IC — challenger=%.4f  champion=%.4f  (same %d-tick slice)",
-        challenger_holdout_ic, champion_holdout_ic, len(holdout_df),
+        challenger_holdout_ic,
+        champion_holdout_ic,
+        len(holdout_df),
     )
 
     # Fall back to the stored cross-fold IC when the holdout is too thin or the
     # production model file is missing (e.g. very first run).
     if champion_holdout_ic == -1.0:
         champion_holdout_ic = _load_prod_model_ic()
-        log.info("Production model not evaluable on holdout; using stored IC %.4f", champion_holdout_ic)
+        log.info(
+            "Production model not evaluable on holdout; using stored IC %.4f", champion_holdout_ic
+        )
 
-    promoted = challenger_holdout_ic >= PROMOTE_IC_MIN and challenger_holdout_ic > champion_holdout_ic
+    promoted = (
+        challenger_holdout_ic >= PROMOTE_IC_MIN and challenger_holdout_ic > champion_holdout_ic
+    )
 
     train_metrics["challenger_id"] = challenger_id
     train_metrics["registry_path"] = str(REGISTRY_PATH)
@@ -454,20 +492,24 @@ def run() -> dict:
     if promoted:
         log.info(
             "Promoting candidate (holdout IC %.4f > champion holdout IC %.4f)",
-            challenger_holdout_ic, champion_holdout_ic,
+            challenger_holdout_ic,
+            champion_holdout_ic,
         )
         _promote_candidate()
         registry.promote(challenger_id, reason="candidate_outperformed_champion")
-        _publish_ops_event("model_promoted", {
-            "challenger_id": challenger_id,
-            "ic_mean": alpha_metrics.ic_mean,
-            "challenger_holdout_ic": challenger_holdout_ic,
-            "champion_holdout_ic": champion_holdout_ic,
-            "ensemble_ic_mean": ensemble_ic_mean,
-            "ensemble_icir": ensemble_icir,
-            "ensemble_promoted": ensemble_promoted,
-            "date": date_str,
-        })
+        _publish_ops_event(
+            "model_promoted",
+            {
+                "challenger_id": challenger_id,
+                "ic_mean": alpha_metrics.ic_mean,
+                "challenger_holdout_ic": challenger_holdout_ic,
+                "champion_holdout_ic": champion_holdout_ic,
+                "ensemble_ic_mean": ensemble_ic_mean,
+                "ensemble_icir": ensemble_icir,
+                "ensemble_promoted": ensemble_promoted,
+                "date": date_str,
+            },
+        )
     else:
         reason = (
             f"holdout IC {challenger_holdout_ic:.4f} < threshold {PROMOTE_IC_MIN}"
@@ -475,15 +517,18 @@ def run() -> dict:
             else f"holdout IC {challenger_holdout_ic:.4f} <= champion holdout IC {champion_holdout_ic:.4f}"
         )
         log.info("Candidate not promoted: %s", reason)
-        _publish_ops_event("model_rejected", {
-            "challenger_id": challenger_id,
-            "reason": reason,
-            "ic_mean": alpha_metrics.ic_mean,
-            "challenger_holdout_ic": challenger_holdout_ic,
-            "champion_holdout_ic": champion_holdout_ic,
-            "ensemble_ic_mean": ensemble_ic_mean,
-            "date": date_str,
-        })
+        _publish_ops_event(
+            "model_rejected",
+            {
+                "challenger_id": challenger_id,
+                "reason": reason,
+                "ic_mean": alpha_metrics.ic_mean,
+                "challenger_holdout_ic": challenger_holdout_ic,
+                "champion_holdout_ic": champion_holdout_ic,
+                "ensemble_ic_mean": ensemble_ic_mean,
+                "date": date_str,
+            },
+        )
 
     _write_train_log(date_str, train_metrics)
 

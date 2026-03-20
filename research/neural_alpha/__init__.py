@@ -1,11 +1,9 @@
-"""Neural alpha pipeline: LOB + tick data → GNN/Transformer → multi-task alpha."""
-
 __all__ = ["NeuralAlphaShadowSession", "ShadowSessionConfig"]
 
 
 def __getattr__(name: str):
     if name in {"NeuralAlphaShadowSession", "ShadowSessionConfig"}:
-        from .shadow_session import NeuralAlphaShadowSession, ShadowSessionConfig
+        from .runtime.shadow_session import NeuralAlphaShadowSession, ShadowSessionConfig
 
         return {
             "NeuralAlphaShadowSession": NeuralAlphaShadowSession,
