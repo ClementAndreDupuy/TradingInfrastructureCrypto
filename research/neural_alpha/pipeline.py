@@ -30,7 +30,7 @@ except ImportError:
 from .runtime.core_bridge import CoreBridge
 
 if TYPE_CHECKING:
-    from .trainer import TrainerConfig
+    from .models.trainer import TrainerConfig
 BINANCE_DEPTH_URL = "https://fapi.binance.com/fapi/v1/depth"
 KRAKEN_DEPTH_URL = "https://api.kraken.com/0/public/Depth"
 OKX_DEPTH_URL = "https://www.okx.com/api/v5/market/books"
