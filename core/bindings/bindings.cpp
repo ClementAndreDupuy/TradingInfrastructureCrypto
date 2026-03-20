@@ -313,10 +313,8 @@ PYBIND11_MODULE(trading_core, m) {
     bind_feed_handler<BinanceFeedHandler>(
         m, "BinanceFeedHandler",
         "Binance spot order book feed handler using the diff-depth WebSocket stream.")
-        .def(py::init<const std::string&, const std::string&, const std::string&,
-                      const std::string&, const std::string&>(),
-             py::arg("symbol"), py::arg("api_key") = "", py::arg("api_secret") = "",
-             py::arg("api_url") = "https://api.binance.com",
+        .def(py::init<const std::string&, const std::string&, const std::string&>(),
+             py::arg("symbol"), py::arg("api_url") = "https://api.binance.com",
              py::arg("ws_url") = "wss://stream.binance.com:9443/ws");
 
     // ── KrakenFeedHandler ─────────────────────────────────────────────────────
