@@ -1,18 +1,3 @@
-"""
-Alpha regression and signal quality analysis.
-
-Metrics computed:
-    IC          — Spearman rank correlation between signal and realised return
-    ICIR        — IC / rolling_std(IC)   (information ratio of the IC)
-    Hit rate    — fraction of ticks where sign(signal) == sign(return)
-    OLS alpha   — intercept of signal ~ constant + return regression (statistically tested)
-    Beta        — slope of signal ~ return
-    t-stat      — t-statistic of the alpha
-    Turnover    — mean absolute change in signal per tick
-
-All metrics are computed over out-of-sample fold predictions.
-"""
-
 from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np

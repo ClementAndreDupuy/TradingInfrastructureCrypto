@@ -1,18 +1,3 @@
-"""
-Data quality gates for neural alpha training pipeline.
-
-Validates a LOB snapshot DataFrame before training and model promotion.
-All checks are configurable via DataQualityConfig. The job fails closed:
-any breach raises DataQualityError, which the caller must explicitly handle.
-
-Gates:
-    1. Schema validation   — required columns present with correct dtype families
-    2. Null-rate bounds    — per-column null fraction ≤ max_null_rate
-    3. Sequence-gap check  — inter-tick timestamp gaps ≤ max_gap_ns per venue
-    4. Timestamp skew      — no tick in the future, no tick older than max_age_ns
-    5. Duplicate detection — no (timestamp_ns, exchange) duplicates
-"""
-
 from __future__ import annotations
 import json
 import logging

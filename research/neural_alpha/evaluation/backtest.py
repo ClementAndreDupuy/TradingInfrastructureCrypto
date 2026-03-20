@@ -1,24 +1,3 @@
-"""
-Event-driven backtest for the neural alpha signal.
-
-Signal logic:
-    - Use the model's mid-horizon return prediction as the signal
-    - Long when signal > entry_threshold (after cost)
-    - Short when signal < -entry_threshold (after cost)
-    - Exit when signal reverses past exit_threshold
-
-Fill simulation:
-    - Buys fill at best_ask (taker)
-    - Sells fill at best_bid (taker)
-    - Fees applied at taker rate
-    - Latency simulated by skipping one tick before execution
-
-Output:
-    - Trade log (Polars DataFrame)
-    - Equity curve
-    - Performance metrics: Sharpe, ICIR, max drawdown, hit rate, slippage
-"""
-
 from __future__ import annotations
 import math
 from dataclasses import dataclass

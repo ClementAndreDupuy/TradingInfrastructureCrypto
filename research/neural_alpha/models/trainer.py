@@ -1,17 +1,3 @@
-"""
-Walk-forward trainer for CryptoAlphaNet.
-
-One fold:
-    1. Train on training split (multi-task loss)
-    2. Evaluate on test split (collect predictions + metrics)
-    3. Return per-tick predictions for downstream backtest and alpha regression
-
-Contrastive pre-training:
-    Before supervised training, optionally run self-supervised contrastive
-    pre-training on the LOB encoder using augmented LOB views (random level
-    dropout + Gaussian noise).
-"""
-
 from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
