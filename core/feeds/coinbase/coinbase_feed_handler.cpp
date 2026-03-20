@@ -266,7 +266,7 @@ auto CoinbaseFeedHandler::generate_jwt(const std::string& api_key, const std::st
     }
 
     const int64_t now_s = http::now_ns() / 1'000'000'000LL;
-    nlohmann::json header = {{"alg", "ES256"}, {"kid", api_key}, {"nonce", random_hex(16)}};
+    nlohmann::json header = {{"typ", "JWT"}, {"alg", "ES256"}, {"kid", api_key}, {"nonce", random_hex(16)}};
     nlohmann::json payload = {
         {"iss", "cdp"},
         {"nbf", now_s},
@@ -277,7 +277,19 @@ auto CoinbaseFeedHandler::generate_jwt(const std::string& api_key, const std::st
     const std::string signing_input = base64url_encode(header.dump()) + "." +
                                       base64url_encode(payload.dump());
 
-    BIO* bio = BIO_new_mem_buf(api_secret.data(), static_cast<int>(api_secret.size()));
+    // Normalize literal \n escape sequences to actual newlines so that PEM keys
+    // stored in environment variables (e.g. "-----BEGIN...-----\nMHc...\n-----END...-----\n")
+    // are parsed correctly by OpenSSL.
+    std::string pem_secret = api_secret;
+    {
+        size_t pos = 0;
+        while ((pos = pem_secret.find("\\n", pos)) != std::string::npos) {
+            pem_secret.replace(pos, 2, "\n");
+            ++pos;
+        }
+    }
+
+    BIO* bio = BIO_new_mem_buf(pem_secret.data(), static_cast<int>(pem_secret.size()));
     if (bio == nullptr) {
         return std::string();
     }
