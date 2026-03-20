@@ -584,12 +584,57 @@ class NeuralAlphaShadowSession:
         mean_sig = float(np.mean(sigs)) * 10000.0
         std_sig = float(np.std(sigs)) * 10000.0
         ic = 0.0
+        icir = 0.0
         if len(self._outcomes) >= 10:
             outs = np.array(self._outcomes[: len(self._signals)])
-            if outs.std() > 0 and sigs.std() > 0:
-                ic = float(np.corrcoef(sigs[: len(outs)], outs)[0, 1])
+            aligned = min(len(outs), n)
+            sig_aligned = sigs[:aligned]
+            out_aligned = outs[:aligned]
+            if out_aligned.std() > 0 and sig_aligned.std() > 0:
+                ic = float(np.corrcoef(sig_aligned, out_aligned)[0, 1])
+            # Rolling ICIR: IC mean / IC std across 4 equal chunks × √252
+            if aligned >= 40:
+                chunk = aligned // 4
+                ic_chunks = []
+                for i in range(4):
+                    s_c = sig_aligned[i * chunk : (i + 1) * chunk]
+                    o_c = out_aligned[i * chunk : (i + 1) * chunk]
+                    if s_c.std() > 1e-9 and o_c.std() > 1e-9:
+                        ic_chunks.append(float(np.corrcoef(s_c, o_c)[0, 1]))
+                if len(ic_chunks) >= 2:
+                    ic_arr = np.array(ic_chunks)
+                    if ic_arr.std() > 1e-9:
+                        icir = float(ic_arr.mean() / ic_arr.std() * np.sqrt(252))
+        safe_pct = 0.0
+        gated_pct = 0.0
+        # Count safe/gated directly from the log file rather than keeping separate counters
+        try:
+            import json as _json
+            safe_c = gated_c = 0
+            total_c = 0
+            with open(self._log_fp.name) as _lf:
+                for _line in _lf:
+                    _line = _line.strip()
+                    if not _line:
+                        continue
+                    try:
+                        _ev = _json.loads(_line)
+                        total_c += 1
+                        if _ev.get("safe_mode"):
+                            safe_c += 1
+                        if _ev.get("gated"):
+                            gated_c += 1
+                    except Exception:
+                        pass
+            if total_c:
+                safe_pct = 100.0 * safe_c / total_c
+                gated_pct = 100.0 * gated_c / total_c
+        except Exception:
+            pass
         print(
-            f"  [shadow] ticks={n}  signal_mean={mean_sig:.2f}bps  signal_std={std_sig:.2f}bps  IC={ic:.3f}"
+            f"  [shadow] ticks={n}  mean={mean_sig:.2f}bps  std={std_sig:.2f}bps"
+            f"  IC={ic:.4f}  ICIR={icir:.3f}"
+            f"  safe_mode={safe_pct:.1f}%  gated={gated_pct:.1f}%"
         )
 
     def _maybe_continuous_train(self) -> None:

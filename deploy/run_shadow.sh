@@ -60,6 +60,8 @@ apply_config_defaults() {
     local train_ticks_from_cfg train_epochs_from_cfg report_interval_from_cfg
     local alpha_seq_len_from_cfg alpha_log_path_from_cfg
     local continuous_train_every_ticks_from_cfg continuous_train_window_ticks_from_cfg
+    local continuous_train_min_interval_s_from_cfg
+    local safe_mode_ticks_from_cfg drift_min_samples_from_cfg drift_ic_floor_from_cfg
     local fallback_key_from_cfg fallback_secret_from_cfg
 
     symbol_from_cfg="$(read_yaml_value "$CONFIG_FILE" "symbol")"
@@ -79,6 +81,10 @@ apply_config_defaults() {
     alpha_log_path_from_cfg="$(read_yaml_value "$CONFIG_FILE" "alpha_log_path")"
     continuous_train_every_ticks_from_cfg="$(read_yaml_value "$CONFIG_FILE" "continuous_train_every_ticks")"
     continuous_train_window_ticks_from_cfg="$(read_yaml_value "$CONFIG_FILE" "continuous_train_window_ticks")"
+    continuous_train_min_interval_s_from_cfg="$(read_yaml_value "$CONFIG_FILE" "continuous_train_min_interval_s")"
+    safe_mode_ticks_from_cfg="$(read_yaml_value "$CONFIG_FILE" "safe_mode_ticks")"
+    drift_min_samples_from_cfg="$(read_yaml_value "$CONFIG_FILE" "drift_min_samples")"
+    drift_ic_floor_from_cfg="$(read_yaml_value "$CONFIG_FILE" "drift_ic_floor")"
     fallback_key_from_cfg="$(read_yaml_value "$CONFIG_FILE" "shadow_fallback_api_key")"
     fallback_secret_from_cfg="$(read_yaml_value "$CONFIG_FILE" "shadow_fallback_api_secret")"
 
@@ -99,8 +105,14 @@ apply_config_defaults() {
     [[ -n "$alpha_log_path_from_cfg" ]] && ALPHA_LOG_PATH="$(resolve_config_path "$alpha_log_path_from_cfg")"
     [[ -n "$continuous_train_every_ticks_from_cfg" ]] && CONTINUOUS_TRAIN_EVERY_TICKS="$continuous_train_every_ticks_from_cfg"
     [[ -n "$continuous_train_window_ticks_from_cfg" ]] && CONTINUOUS_TRAIN_WINDOW_TICKS="$continuous_train_window_ticks_from_cfg"
-    [[ -n "$fallback_key_from_cfg" ]] && SHADOW_FALLBACK_API_KEY="$fallback_key_from_cfg"
-    [[ -n "$fallback_secret_from_cfg" ]] && SHADOW_FALLBACK_API_SECRET="$fallback_secret_from_cfg"
+    [[ -n "$continuous_train_min_interval_s_from_cfg" ]] && CONTINUOUS_TRAIN_MIN_INTERVAL_S="$continuous_train_min_interval_s_from_cfg"
+    [[ -n "$safe_mode_ticks_from_cfg" ]] && SAFE_MODE_TICKS="$safe_mode_ticks_from_cfg"
+    [[ -n "$drift_min_samples_from_cfg" ]] && DRIFT_MIN_SAMPLES="$drift_min_samples_from_cfg"
+    [[ -n "$drift_ic_floor_from_cfg" ]] && DRIFT_IC_FLOOR="$drift_ic_floor_from_cfg"
+    # Intentionally allow empty-string override for fallback credentials so the
+    # YAML entry shadow_fallback_api_key: "" clears the default placeholder keys.
+    SHADOW_FALLBACK_API_KEY="${fallback_key_from_cfg}"
+    SHADOW_FALLBACK_API_SECRET="${fallback_secret_from_cfg}"
 }
 
 usage() {
@@ -119,23 +131,35 @@ Options:
   --lob-feed-path <PATH>        LOB ring-buffer mmap (C++→Python bridge)
                                 (default: /tmp/trt_ipc/trt_lob_feed.bin)
   --model-path <PATH>           Primary model checkpoint path
-                                (default: models/neural_alpha_latest.pt)
+                                (default: models/neural_alpha_<symbol>_latest.pt)
   --secondary-model-path <PATH> Secondary model checkpoint path
-                                (default: models/neural_alpha_secondary.pt)
+                                (default: models/neural_alpha_<symbol>_secondary.pt)
   --regime-model-path <PATH>    Regime model artifact path
-                                (default: models/r2_regime_model.json)
-  --train-ticks <N>             Train if model missing (default: 400)
-  --train-epochs <N>            Train epochs when bootstrap training (default: 5)
+                                (default: models/r2_regime_model_<symbol>.json)
+  --train-ticks <N>             Bootstrap-train if any model is missing (default: 1000)
+  --train-epochs <N>            Epochs for bootstrap and continuous training (default: 10)
   --report-interval <SEC>       Python shadow summary cadence (default: 60)
-  --continuous-train-every-ticks <N>  Ticks between incremental retrains (default: 5000)
-  --continuous-train-window-ticks <N> Tick window used for each retrain (default: 2000)
+  --continuous-train-every-ticks <N>  Ticks between incremental retrains (default: 400)
+  --continuous-train-window-ticks <N> Tick window used for each retrain (default: 1000)
+  --continuous-train-min-interval-s <SEC>
+                                Minimum wall-clock seconds between retrains (default: 300)
+  --safe-mode-ticks <N>         Ticks of zeroed signal after a drift/canary event (default: 30)
+  --drift-min-samples <N>       Minimum outcomes before DriftGuard can fire (default: 100)
+  --drift-ic-floor <FLOAT>      IC floor below which DriftGuard fires (default: -0.08)
   --skip-alpha                  Do not launch Python shadow session
   --once                        Run one engine loop window and exit
   -h, --help                    Show this help
 
 Credential resolution per venue (first non-empty wins):
-  SHADOW_<VENUE>_API_KEY, <VENUE>_API_KEY, fallback=local-shadow-key
-  SHADOW_<VENUE>_API_SECRET, <VENUE>_API_SECRET, fallback=local-shadow-secret
+  SHADOW_<VENUE>_API_KEY, <VENUE>_API_KEY, fallback=<empty>
+  SHADOW_<VENUE>_API_SECRET, <VENUE>_API_SECRET, fallback=<empty>
+
+  Coinbase Advanced Trade requires a valid EC private-key PEM for the level2
+  WebSocket channel.  Set COINBASE_API_KEY and COINBASE_API_SECRET (or the
+  SHADOW_ prefixed variants) to real credentials; without them the C++ feed
+  handler will fast-fail after one attempt.  The Python REST fallback for
+  training data (_fetch_coinbase_l5) uses the public product_book endpoint
+  and works without credentials.
 USAGE
 }
 
@@ -152,15 +176,24 @@ SECONDARY_MODEL_PATH="$REPO_ROOT/models/neural_alpha_secondary.pt"
 REGIME_MODEL_PATH="$REPO_ROOT/models/r2_regime_model.json"
 MODEL_PATH_SET=0
 SECONDARY_MODEL_PATH_SET=0
-TRAIN_TICKS=400
-TRAIN_EPOCHS=5
+TRAIN_TICKS=1000
+TRAIN_EPOCHS=10
 REPORT_INTERVAL=60
-CONTINUOUS_TRAIN_EVERY_TICKS=10000
-CONTINUOUS_TRAIN_WINDOW_TICKS=2000
+# Trigger continuous retrains frequently enough to fire in a 15-min session.
+CONTINUOUS_TRAIN_EVERY_TICKS=400
+CONTINUOUS_TRAIN_WINDOW_TICKS=1000
+# Must be < DURATION_SECS (900) so at least one retrain can occur per session.
+CONTINUOUS_TRAIN_MIN_INTERVAL_S=300
+# Brief safe-mode window — 30 ticks avoids crippling the entire session.
+SAFE_MODE_TICKS=30
+DRIFT_MIN_SAMPLES=100
+DRIFT_IC_FLOOR=-0.08
 ALPHA_SEQ_LEN=64
 ALPHA_LOG_PATH="$REPO_ROOT/logs/neural_alpha_shadow.jsonl"
-SHADOW_FALLBACK_API_KEY="local-shadow-key"
-SHADOW_FALLBACK_API_SECRET="local-shadow-secret"
+# Empty fallback: venues that need auth (Coinbase) will fast-fail cleanly
+# instead of burning 3×15 s on unauthenticated snapshot attempts.
+SHADOW_FALLBACK_API_KEY=""
+SHADOW_FALLBACK_API_SECRET=""
 SKIP_ALPHA=0
 CONFIG_FILE="$CONFIG_FILE_DEFAULT"
 EXTRA_ARGS=()
@@ -193,6 +226,10 @@ while [[ $# -gt 0 ]]; do
         --report-interval) REPORT_INTERVAL="$2"; shift 2 ;;
         --continuous-train-every-ticks) CONTINUOUS_TRAIN_EVERY_TICKS="$2"; shift 2 ;;
         --continuous-train-window-ticks) CONTINUOUS_TRAIN_WINDOW_TICKS="$2"; shift 2 ;;
+        --continuous-train-min-interval-s) CONTINUOUS_TRAIN_MIN_INTERVAL_S="$2"; shift 2 ;;
+        --safe-mode-ticks) SAFE_MODE_TICKS="$2"; shift 2 ;;
+        --drift-min-samples) DRIFT_MIN_SAMPLES="$2"; shift 2 ;;
+        --drift-ic-floor) DRIFT_IC_FLOOR="$2"; shift 2 ;;
         --skip-alpha) SKIP_ALPHA=1; shift ;;
         --once) RUN_ONCE=1; shift ;;
         -h|--help) usage; exit 0 ;;
@@ -286,7 +323,14 @@ import sys
 path = sys.argv[1]
 signals: list[float] = []
 mid_prices: list[float] = []
+risk_scores: list[float] = []
 safe_mode_events = 0
+gated_events = 0
+timestamps: list[int] = []
+p_calm_vals: list[float] = []
+p_trending_vals: list[float] = []
+p_shock_vals: list[float] = []
+p_illiquid_vals: list[float] = []
 
 with open(path, "r", encoding="utf-8") as fp:
     for line in fp:
@@ -299,29 +343,48 @@ with open(path, "r", encoding="utf-8") as fp:
             continue
         signal = event.get("signal")
         mid = event.get("mid_price")
+        risk = event.get("risk_score")
+        ts = event.get("timestamp_ns")
         if isinstance(signal, (int, float)):
             signals.append(float(signal))
         if isinstance(mid, (int, float)):
             mid_prices.append(float(mid))
+        if isinstance(risk, (int, float)):
+            risk_scores.append(float(risk))
+        if isinstance(ts, int):
+            timestamps.append(ts)
         if event.get("safe_mode"):
             safe_mode_events += 1
+        if event.get("gated"):
+            gated_events += 1
+        for k, lst in (("p_calm", p_calm_vals), ("p_trending", p_trending_vals),
+                       ("p_shock", p_shock_vals), ("p_illiquid", p_illiquid_vals)):
+            v = event.get(k)
+            if isinstance(v, (int, float)):
+                lst.append(float(v))
 
 if not signals:
     print("  [summary] no valid signal records found")
     raise SystemExit(0)
 
+n = len(signals)
 mean_sig = statistics.fmean(signals) * 1e4
-std_sig = statistics.pstdev(signals) * 1e4 if len(signals) > 1 else 0.0
+std_sig = statistics.pstdev(signals) * 1e4 if n > 1 else 0.0
 max_abs_sig = max(abs(s) for s in signals) * 1e4
+safe_pct = 100.0 * safe_mode_events / n if n else 0.0
+gated_pct = 100.0 * gated_events / n if n else 0.0
+avg_risk = statistics.fmean(risk_scores) if risk_scores else 0.0
+duration_min = (timestamps[-1] - timestamps[0]) / 1e9 / 60.0 if len(timestamps) > 1 else 0.0
 
 returns: list[float] = []
 for prev, cur in zip(mid_prices, mid_prices[1:]):
     if prev > 0:
         returns.append((cur - prev) / prev)
 
+# Overall IC
 ic = 0.0
-if returns and len(signals) > 1:
-    aligned = min(len(returns), len(signals) - 1)
+if returns and n > 1:
+    aligned = min(len(returns), n - 1)
     x = signals[:aligned]
     y = returns[:aligned]
     mx = statistics.fmean(x)
@@ -332,14 +395,71 @@ if returns and len(signals) > 1:
     if vx > 0 and vy > 0:
         ic = cov / math.sqrt(vx * vy)
 
-print(f"  [summary] signal_count={len(signals)}")
-print(f"  [summary] signal_mean_bps={mean_sig:.3f}")
-print(f"  [summary] signal_std_bps={std_sig:.3f}")
-print(f"  [summary] max_abs_signal_bps={max_abs_sig:.3f}")
-print(f"  [summary] observed_return_count={len(returns)}")
-print(f"  [summary] realised_ic={ic:.4f}")
-print(f"  [summary] safe_mode_events={safe_mode_events}")
+# Rolling IC-IR: compute IC in 4 equal chunks then annualise
+icir = 0.0
+aligned_n = min(len(returns), n - 1)
+if aligned_n >= 40:
+    chunk = aligned_n // 4
+    ic_chunks: list[float] = []
+    for i in range(4):
+        xs = signals[i * chunk:(i + 1) * chunk]
+        ys = returns[i * chunk:(i + 1) * chunk]
+        mx2, my2 = statistics.fmean(xs), statistics.fmean(ys)
+        cov2 = sum((a - mx2) * (b - my2) for a, b in zip(xs, ys)) / chunk
+        vx2 = sum((a - mx2) ** 2 for a in xs) / chunk
+        vy2 = sum((b - my2) ** 2 for b in ys) / chunk
+        if vx2 > 1e-18 and vy2 > 1e-18:
+            ic_chunks.append(cov2 / math.sqrt(vx2 * vy2))
+    if len(ic_chunks) >= 2:
+        ic_mean = statistics.fmean(ic_chunks)
+        ic_std = statistics.pstdev(ic_chunks)
+        if ic_std > 1e-9:
+            icir = ic_mean / ic_std * math.sqrt(252)
+
+SEP = "=" * 60
+print(SEP)
+print("  Shadow Session Report")
+print(SEP)
+print()
+print("── Signal statistics ────────────────────────────────────────")
+print(f"  Signals generated   : {n}")
+print(f"  Session duration    : {duration_min:.1f} min")
+print(f"  Mean signal         : {mean_sig:.4f} bps")
+print(f"  Signal std          : {std_sig:.4f} bps")
+print(f"  Max |signal|        : {max_abs_sig:.4f} bps")
+print(f"  Avg risk score      : {avg_risk:.4f}")
+print()
+print("── Alpha quality ────────────────────────────────────────────")
+print(f"  Realised IC         : {ic:.4f}")
+print(f"  ICIR (annualised)   : {icir:.4f}")
+print(f"  Safe-mode events    : {safe_mode_events}  ({safe_pct:.1f}% of ticks)")
+print(f"  Gated events        : {gated_events}  ({gated_pct:.1f}% of ticks)")
+print()
+if p_calm_vals:
+    print("── Regime distribution (session avg) ────────────────────────")
+    print(f"  p_calm              : {statistics.fmean(p_calm_vals):.3f}")
+    print(f"  p_trending          : {statistics.fmean(p_trending_vals):.3f}")
+    print(f"  p_shock             : {statistics.fmean(p_shock_vals):.3f}")
+    print(f"  p_illiquid          : {statistics.fmean(p_illiquid_vals):.3f}")
+    print()
+print("── Readiness check ──────────────────────────────────────────")
+print("  Run >= 2 weeks before promoting to live.")
+print("  IC should be consistently positive (> 0.02).")
+print("  Safe-mode rate should remain below 10%.")
+print("  ICIR (annualised) target: > 0.5.")
+print()
+print(SEP)
 PY
+
+    # If shadow_metrics.py and the decisions log are both present, run the full
+    # structured report so fill-rate / P&L stats also appear in the output.
+    local decisions_log="$REPO_ROOT/logs/shadow_decisions.jsonl"
+    if [[ -f "$decisions_log" ]]; then
+        log_info "Running full shadow metrics report..."
+        (cd "$REPO_ROOT" && "$PYTHON_BIN" -m research.backtest.shadow_metrics \
+            --signals "$ALPHA_LOG_PATH" \
+            --decisions "$decisions_log") || true
+    fi
 }
 
 VENUES="$(normalize_csv_upper "$VENUES")"
@@ -349,6 +469,19 @@ IFS=',' read -r -a VENUE_LIST <<< "$VENUES"
 for venue in "${VENUE_LIST[@]}"; do
     set_shadow_creds "$venue"
 done
+
+# Warn when Coinbase credentials are absent.  Without a valid EC-key PEM the
+# C++ level2 WebSocket feed cannot authenticate and will fast-fail.  The Python
+# REST fallback still collects Coinbase order-book data for training.
+if [[ " ${VENUE_LIST[*]} " == *" COINBASE "* ]]; then
+    _cb_key="${COINBASE_API_KEY:-}"
+    _cb_secret="${COINBASE_API_SECRET:-}"
+    if [[ -z "$_cb_key" || -z "$_cb_secret" ]]; then
+        log_warn "Coinbase credentials not configured (COINBASE_API_KEY / COINBASE_API_SECRET unset)."
+        log_warn "The C++ Coinbase WebSocket feed will be skipped; training data uses REST fallback."
+    fi
+    unset _cb_key _cb_secret
+fi
 
 engine_args=(--mode shadow --venues "$VENUES" --symbol "$SYMBOL" --loop-interval-ms "$INTERVAL_MS")
 if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
@@ -409,6 +542,11 @@ if [[ "$SKIP_ALPHA" -eq 0 ]]; then
         --train-epochs "$TRAIN_EPOCHS"
         --continuous-train-every-ticks "$CONTINUOUS_TRAIN_EVERY_TICKS"
         --continuous-train-window-ticks "$CONTINUOUS_TRAIN_WINDOW_TICKS"
+        --continuous-train-min-interval-s "$CONTINUOUS_TRAIN_MIN_INTERVAL_S"
+        --safe-mode-ticks "$SAFE_MODE_TICKS"
+        --drift-min-samples "$DRIFT_MIN_SAMPLES"
+        --drift-ic-floor "$DRIFT_IC_FLOOR"
+        --no-require-full-model-stack
         --log-path "$ALPHA_LOG_PATH"
     )
 
