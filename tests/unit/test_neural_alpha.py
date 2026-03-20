@@ -55,8 +55,11 @@ from research.neural_alpha.models.model import (
 from research.neural_alpha.runtime.shadow_session import (
     NeuralAlphaShadowSession,
     ShadowSessionConfig,
+    _build_signal_alignment,
+    _summarise_timestamp_quality,
     _symbol_model_path,
 )
+from research.backtest.shadow_metrics import analyse_signals
 
 
 # ── Test data helpers ─────────────────────────────────────────────────────────
@@ -612,3 +615,73 @@ class TestShadowSessionTraining:
         main()
 
         assert loaded_secondary, "load_secondary_model was not called after train_on_recent"
+
+
+class TestShadowTimestampMetrics:
+    def test_signal_alignment_uses_event_order(self) -> None:
+        records = [
+            {"event_index": 2, "session_elapsed_ns": 2, "mid_price": 101.0, "signal": 0.2},
+            {"event_index": 1, "session_elapsed_ns": 1, "mid_price": 100.0, "signal": 0.1},
+            {"event_index": 3, "session_elapsed_ns": 3, "mid_price": 102.0, "signal": 0.3},
+        ]
+
+        (signals, outcomes) = _build_signal_alignment(records)
+
+        assert signals.tolist() == pytest.approx([0.1, 0.2])
+        assert outcomes.tolist() == pytest.approx([0.01, 1.0 / 101.0], rel=1e-6)
+
+    def test_timestamp_quality_flags_non_monotonic_records(self) -> None:
+        records = [
+            {
+                "event_index": 1,
+                "session_elapsed_ns": 1,
+                "timestamp_exchange_ns": 10,
+                "timestamp_local_ns": 100,
+                "exchange": "BINANCE",
+            },
+            {
+                "event_index": 2,
+                "session_elapsed_ns": 2,
+                "timestamp_exchange_ns": 9,
+                "timestamp_local_ns": 99,
+                "exchange": "BINANCE",
+            },
+        ]
+
+        diagnostics = _summarise_timestamp_quality(records)
+
+        assert diagnostics["has_timestamp_issues"] is True
+        assert diagnostics["exchange_non_monotonic"] == 1
+        assert diagnostics["local_non_monotonic"] == 1
+
+    def test_shadow_metrics_uses_session_elapsed_for_duration_and_blocks_bad_timestamps(self) -> None:
+        rows = [
+            {
+                "event_index": 1,
+                "session_elapsed_ns": 0,
+                "timestamp_ns": 1_000,
+                "timestamp_exchange_ns": 1_000,
+                "timestamp_local_ns": 1_000,
+                "mid_price": 100.0,
+                "signal": 0.1,
+                "risk_score": 0.2,
+                "exchange": "BINANCE",
+            },
+            {
+                "event_index": 2,
+                "session_elapsed_ns": 30_000_000_000,
+                "timestamp_ns": 999,
+                "timestamp_exchange_ns": 999,
+                "timestamp_local_ns": 999,
+                "mid_price": 101.0,
+                "signal": 0.2,
+                "risk_score": 0.3,
+                "exchange": "BINANCE",
+            },
+        ]
+
+        metrics = analyse_signals(rows)
+
+        assert metrics["duration_min"] == pytest.approx(0.5)
+        assert metrics["timestamp_quality"]["has_timestamp_issues"] is True
+        assert metrics["ic"] == 0.0
