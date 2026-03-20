@@ -386,8 +386,6 @@ class BinanceFeedHandler(_FeedHandlerBase):
     def __init__(
         self,
         symbol: str,
-        api_key: str = "",
-        api_secret: str = "",
         api_url: str = "https://api.binance.com",
         ws_url: str = "wss://stream.binance.com:9443/ws",
     ) -> None: ...
