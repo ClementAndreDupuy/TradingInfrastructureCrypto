@@ -41,7 +41,7 @@ struct KrakenWsSession {
     size_t frag_len{0};
 };
 
-static auto kraken_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* unused,
+static auto kraken_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void*,
                           void* input, size_t len) -> int {
     auto* session = static_cast<KrakenWsSession*>(lws_context_user(lws_get_context(wsi)));
     if (session == nullptr) {
@@ -246,28 +246,35 @@ void KrakenFeedHandler::ws_event_loop() {
     const std::string ws_sym = venue_symbols_.kraken_ws;
     const std::string subscribe_msg =
         R"({"method":"subscribe","params":{"channel":"book","symbol":[")" + ws_sym +
-        R"("],"depth":500,"snapshot":true}})";
+        R"("],"depth":100,"snapshot":true}})";
+
+    KrakenWsSession session;
+    session.handler = this;
+
+    lws_context_creation_info ctx_info = {};
+    ctx_info.port = CONTEXT_PORT_NO_LISTEN;
+    ctx_info.protocols = k_kraken_protocols;
+    ctx_info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+    ctx_info.user = &session;
+
+    auto* ctx = lws_create_context(&ctx_info);
+    if (ctx == nullptr) {
+        LOG_ERROR("[Kraken] lws_create_context failed", "symbol", symbol_.c_str());
+        running_.store(false, std::memory_order_release);
+        ws_cv_.notify_all();
+        return;
+    }
+    lws_ctx_.store(ctx, std::memory_order_release);
 
     while (running_.load(std::memory_order_acquire)) {
-        KrakenWsSession session;
-        session.handler = this;
+        session.wsi = nullptr;
+        session.established = false;
+        session.closed = false;
+        session.send_ping = false;
         session.send_subscribe = true;
+        session.last_ping_ns = 0;
         session.subscribe_msg = subscribe_msg;
-
-        lws_context_creation_info ctx_info = {};
-        ctx_info.port = CONTEXT_PORT_NO_LISTEN;
-        ctx_info.protocols = k_kraken_protocols;
-        ctx_info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
-        ctx_info.user = &session;
-
-        auto* ctx = lws_create_context(&ctx_info);
-        if (ctx == nullptr) {
-            LOG_ERROR("[Kraken] lws_create_context failed", "symbol", symbol_.c_str());
-            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-            delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
-            continue;
-        }
-        lws_ctx_.store(ctx, std::memory_order_release);
+        session.frag_len = 0;
 
         lws_client_connect_info connect_info = {};
         connect_info.context = ctx;
@@ -281,8 +288,9 @@ void KrakenFeedHandler::ws_event_loop() {
 
         if (lws_client_connect_via_info(&connect_info) == nullptr) {
             LOG_ERROR("[Kraken] WebSocket connect failed", "symbol", symbol_.c_str());
-            lws_context_destroy(ctx);
-            lws_ctx_.store(nullptr, std::memory_order_release);
+            if (!running_.load(std::memory_order_acquire)) {
+                break;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
             continue;
@@ -292,25 +300,25 @@ void KrakenFeedHandler::ws_event_loop() {
             lws_service(ctx, 50);
         }
 
-        if (!running_.load() || session.closed) {
-            lws_context_destroy(ctx);
-            lws_ctx_.store(nullptr, std::memory_order_release);
-            if (running_.load()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-                delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
-            }
+        if (!running_.load()) {
+            break;
+        }
+        if (session.closed) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+            delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
             continue;
         }
 
         LOG_INFO("[Kraken] WebSocket established, waiting for snapshot", "symbol", symbol_.c_str());
         state_.store(State::BUFFERING, std::memory_order_release);
         delta_buffer_.clear();
-        last_sequence_.store(0, std::memory_order_release);
         bids_.clear();
         asks_.clear();
+        last_sequence_.store(0, std::memory_order_release);
+        force_reconnect_.store(false, std::memory_order_release);
         delay_ms = 100;
 
-        while (running_.load() && !session.closed) {
+        while (running_.load() && !session.closed && !force_reconnect_.load(std::memory_order_acquire)) {
             lws_service(ctx, 1000);
 
             if (!session.closed && (session.wsi != nullptr)) {
@@ -323,17 +331,19 @@ void KrakenFeedHandler::ws_event_loop() {
             }
         }
 
-        lws_context_destroy(ctx);
-        lws_ctx_.store(nullptr, std::memory_order_release);
+        force_reconnect_.store(false, std::memory_order_release);
 
-        if (running_.load()) {
+        if (running_.load(std::memory_order_acquire)) {
             LOG_WARN("[Kraken] WebSocket disconnected, reconnecting", "symbol", symbol_.c_str(),
                      "delay_ms", delay_ms);
-            trigger_resnapshot("WebSocket disconnected");
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
         }
     }
+
+    lws_context_destroy(ctx);
+    lws_ctx_.store(nullptr, std::memory_order_release);
+    ws_cv_.notify_all();
 }
 
 auto KrakenFeedHandler::process_message(const std::string& message) -> Result {
@@ -705,6 +715,10 @@ void KrakenFeedHandler::trigger_resnapshot(const std::string& reason) {
     asks_.clear();
     last_sequence_.store(0, std::memory_order_release);
     state_.store(State::BUFFERING, std::memory_order_release);
+    force_reconnect_.store(true, std::memory_order_release);
+    if (auto* ctx = static_cast<struct lws_context*>(lws_ctx_.load(std::memory_order_acquire))) {
+        lws_cancel_service(ctx);
+    }
 }
 
 }

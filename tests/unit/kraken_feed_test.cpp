@@ -202,8 +202,8 @@ TEST_F(KrakenFeedHandlerTest, LocalBookTruncatesToSubscribedDepth) {
     handler_->set_streaming_state_for_test(0);
 
     std::vector<std::pair<std::string, std::string>> asks;
-    asks.reserve(501);
-    for (int i = 0; i < 501; ++i) {
+    asks.reserve(101);
+    for (int i = 0; i < 101; ++i) {
         asks.emplace_back(std::to_string(50001 + i) + ".0", "1.00000000");
     }
     std::vector<std::pair<std::string, std::string>> bids = {{"50000.0", "1.00000000"}};
@@ -224,7 +224,7 @@ TEST_F(KrakenFeedHandlerTest, LocalBookTruncatesToSubscribedDepth) {
                       R"(,"timestamp":"2024-01-01T00:00:01Z"}]})";
 
     EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
-    EXPECT_EQ(handler_->ask_depth_for_test(), 500u);
+    EXPECT_EQ(handler_->ask_depth_for_test(), 100u);
     EXPECT_EQ(handler_->bid_depth_for_test(), 1u);
 }
 
