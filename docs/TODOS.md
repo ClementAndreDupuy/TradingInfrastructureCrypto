@@ -79,6 +79,28 @@
 
 ### HIGH
 
+#### [ ] 4. Feed bootstrap ordering and bridge wiring correctness
+**Problem**
+- `trading_engine_main.cpp` previously started feed handlers before registering `BookManager` snapshot/delta callbacks.
+- That startup ordering can drop the initial synchronized snapshot and early deltas, producing the exact failure mode where WebSocket connections are healthy but the bridge sees no book updates.
+- The same bootstrap path also initialized `BookManager` grids from fallback tick sizes before any venue tick-size refresh had run.
+
+**Why this matters**
+- The bridge and downstream strategy stack depend on receiving the first valid snapshot immediately.
+- Losing the bootstrap snapshot can make venue health logic classify a working feed as dead.
+- Incorrect initial grid sizing weakens venue-native book fidelity.
+
+**Required work**
+- Keep callback registration strictly ahead of feed startup in every engine/bootstrap path.
+- Add regression coverage for feed start -> snapshot callback -> bridge publish ordering.
+- Ensure venue tick sizes are refreshed before constructing `BookManager` grids.
+- Audit any alternate startup surfaces to ensure they follow the same ordering.
+
+**Acceptance criteria**
+- A started feed publishes its first synchronized snapshot into `BookManager`/LOB bridge without requiring a later delta.
+- Engine startup tests fail if callbacks are registered after `start()`.
+- Book grids use exchange-derived tick sizes when public metadata fetch succeeds.
+
 #### [ ] 4. Stronger bootstrap training and realistic continuous retraining cadence
 **Problem**
 - Current shadow defaults bootstrap from only 1000 ticks and 3 epochs, while continuous retraining is configured to wait 4000 ticks.

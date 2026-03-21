@@ -45,6 +45,7 @@ class OkxFeedHandler {
     void set_delta_callback(DeltaCallback cb) { delta_callback_ = std::move(cb); }
     void set_error_callback(ErrorCallback cb) { error_callback_ = std::move(cb); }
 
+    Result refresh_tick_size() { return fetch_tick_size(); }
     Result start();
     void stop();
 

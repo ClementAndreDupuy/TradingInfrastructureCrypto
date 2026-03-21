@@ -386,26 +386,15 @@ auto CoinbaseFeedHandler::start() -> Result {
 
     LOG_INFO("[Coinbase] Starting feed handler", "symbol", symbol_.c_str());
 
-    {
-        const std::string api_key = coinbase_api_key_from_env();
-        const std::string api_secret = coinbase_api_secret_from_env();
-        if (api_key.empty() || api_secret.empty()) {
-            LOG_ERROR("[Coinbase] No credentials configured — set COINBASE_API_KEY and "
-                      "COINBASE_API_SECRET (EC private-key PEM) to enable the level2 "
-                      "WebSocket feed.  Python REST fallback remains available for "
-                      "training data collection.",
-                      "symbol", symbol_.c_str());
-            emit_ops_event();
-            return Result::ERROR_CONNECTION_LOST;
-        }
+    const std::string api_key = coinbase_api_key_from_env();
+    const std::string api_secret = coinbase_api_secret_from_env();
+    if (api_key.empty() || api_secret.empty()) {
+        LOG_WARN("[Coinbase] Starting unauthenticated level2 session", "symbol", symbol_.c_str());
+    } else {
         const std::string test_jwt = generate_jwt(api_key, api_secret);
         if (test_jwt.empty()) {
-            LOG_ERROR("[Coinbase] JWT generation failed — COINBASE_API_SECRET must be a "
-                      "valid EC private-key PEM (e.g. from Coinbase CDP).  The level2 "
-                      "WebSocket feed cannot authenticate without it.",
-                      "symbol", symbol_.c_str());
-            emit_ops_event();
-            return Result::ERROR_CONNECTION_LOST;
+            LOG_WARN("[Coinbase] JWT generation failed — falling back to unauthenticated level2 session",
+                     "symbol", symbol_.c_str());
         }
     }
 
