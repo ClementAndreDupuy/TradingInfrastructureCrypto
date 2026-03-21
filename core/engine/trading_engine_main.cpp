@@ -5,6 +5,7 @@
 #include "../execution/okx/okx_connector.hpp"
 #include "../execution/common/reconciliation_service.hpp"
 #include "../execution/router/smart_order_router.hpp"
+#include "feed_bootstrap.hpp"
 #include "../feeds/binance/binance_feed_handler.hpp"
 #include "../feeds/coinbase/coinbase_feed_handler.hpp"
 #include "../feeds/common/book_manager.hpp"
@@ -148,30 +149,19 @@ auto main(int argc, char** argv) -> int {
         OkxFeedHandler okx_feed(opts.symbol);
         CoinbaseFeedHandler coinbase_feed(opts.symbol);
 
-        if (run_binance && binance_feed.refresh_tick_size() != Result::SUCCESS) {
-            LOG_WARN("Binance tick size fetch failed before book init", "symbol", opts.symbol.c_str());
-        }
-        if (run_kraken && kraken_feed.refresh_tick_size() != Result::SUCCESS) {
-            LOG_WARN("Kraken tick size fetch failed before book init", "symbol", opts.symbol.c_str());
-        }
-        if (run_okx && okx_feed.refresh_tick_size() != Result::SUCCESS) {
-            LOG_WARN("OKX tick size fetch failed before book init", "symbol", opts.symbol.c_str());
-        }
-        if (run_coinbase && coinbase_feed.refresh_tick_size() != Result::SUCCESS) {
-            LOG_WARN("Coinbase tick size fetch failed before book init", "symbol", opts.symbol.c_str());
-        }
-
         constexpr double k_target_range_usd  = 2'000.0;
-        constexpr double k_fallback_tick_size = 1.0;
-        auto effective_tick   = [](double ts) { return ts > 0.0 ? ts : k_fallback_tick_size; };
         auto levels_for_tick  = [](double tick) -> size_t {
             return static_cast<size_t>(k_target_range_usd / tick);
         };
 
-        const double binance_tick  = effective_tick(binance_feed.tick_size());
-        const double kraken_tick   = effective_tick(kraken_feed.tick_size());
-        const double okx_tick      = effective_tick(okx_feed.tick_size());
-        const double coinbase_tick = effective_tick(coinbase_feed.tick_size());
+        const double binance_tick = engine::refresh_tick_size_for_book_init(
+            binance_feed, run_binance, "BINANCE", opts.symbol);
+        const double kraken_tick = engine::refresh_tick_size_for_book_init(
+            kraken_feed, run_kraken, "KRAKEN", opts.symbol);
+        const double okx_tick =
+            engine::refresh_tick_size_for_book_init(okx_feed, run_okx, "OKX", opts.symbol);
+        const double coinbase_tick = engine::refresh_tick_size_for_book_init(
+            coinbase_feed, run_coinbase, "COINBASE", opts.symbol);
 
         const size_t binance_levels  = levels_for_tick(binance_tick);
         const size_t kraken_levels   = levels_for_tick(kraken_tick);
@@ -196,32 +186,15 @@ auto main(int argc, char** argv) -> int {
         }
 
         LobPublisher* pub = lob_publisher.is_open() ? &lob_publisher : nullptr;
-        binance_book.set_publisher(pub);
-        kraken_book.set_publisher(pub);
-        okx_book.set_publisher(pub);
-        coinbase_book.set_publisher(pub);
+        engine::wire_book_bridge_and_callbacks(binance_feed, binance_book, pub);
+        engine::wire_book_bridge_and_callbacks(kraken_feed, kraken_book, pub);
+        engine::wire_book_bridge_and_callbacks(okx_feed, okx_book, pub);
+        engine::wire_book_bridge_and_callbacks(coinbase_feed, coinbase_book, pub);
 
-        binance_feed.set_snapshot_callback(binance_book.snapshot_handler());
-        binance_feed.set_delta_callback(binance_book.delta_handler());
-        kraken_feed.set_snapshot_callback(kraken_book.snapshot_handler());
-        kraken_feed.set_delta_callback(kraken_book.delta_handler());
-        okx_feed.set_snapshot_callback(okx_book.snapshot_handler());
-        okx_feed.set_delta_callback(okx_book.delta_handler());
-        coinbase_feed.set_snapshot_callback(coinbase_book.snapshot_handler());
-        coinbase_feed.set_delta_callback(coinbase_book.delta_handler());
-
-        if (run_binance && binance_feed.start() != Result::SUCCESS) {
-            LOG_WARN("Binance feed failed to start", "symbol", opts.symbol.c_str());
-        }
-        if (run_kraken && kraken_feed.start() != Result::SUCCESS) {
-            LOG_WARN("Kraken feed failed to start", "symbol", opts.symbol.c_str());
-        }
-        if (run_okx && okx_feed.start() != Result::SUCCESS) {
-            LOG_WARN("OKX feed failed to start", "symbol", opts.symbol.c_str());
-        }
-        if (run_coinbase && coinbase_feed.start() != Result::SUCCESS) {
-            LOG_WARN("Coinbase feed failed to start", "symbol", opts.symbol.c_str());
-        }
+        engine::start_feed_after_wiring(binance_feed, run_binance, "BINANCE", opts.symbol);
+        engine::start_feed_after_wiring(kraken_feed, run_kraken, "KRAKEN", opts.symbol);
+        engine::start_feed_after_wiring(okx_feed, run_okx, "OKX", opts.symbol);
+        engine::start_feed_after_wiring(coinbase_feed, run_coinbase, "COINBASE", opts.symbol);
 
         BinanceConnector binance(
             http::env_var("BINANCE_API_KEY"), http::env_var("BINANCE_API_SECRET"),

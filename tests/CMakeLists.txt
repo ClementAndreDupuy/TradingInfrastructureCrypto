@@ -469,3 +469,24 @@ set_tests_properties(IpcTest PROPERTIES
     TIMEOUT 15
     LABELS "unit;ipc"
 )
+
+# Engine/bootstrap ordering tests
+add_executable(feed_bootstrap_test
+    unit/feed_bootstrap_test.cpp
+)
+
+target_link_libraries(feed_bootstrap_test
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(feed_bootstrap_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME FeedBootstrapTest COMMAND feed_bootstrap_test)
+set_tests_properties(FeedBootstrapTest PROPERTIES
+    TIMEOUT 15
+    LABELS "unit;feeds;ipc"
+)

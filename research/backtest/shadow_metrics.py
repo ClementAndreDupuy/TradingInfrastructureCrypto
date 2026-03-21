@@ -203,16 +203,12 @@ def analyse_ops_events(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "missing_venue_incidents": 0,
                 "rest_fallback_usage": 0,
                 "resnapshot_count": 0,
-                "feed_startup_failures": 0,
             }
         event = row.get("event")
         if event == "venue_rest_fallback_used":
             per_venue[venue]["rest_fallback_usage"] += 1
         elif event == "venue_resnapshot_detected":
             per_venue[venue]["resnapshot_count"] += 1
-            per_venue[venue]["missing_venue_incidents"] += 1
-        elif event == "venue_feed_startup_failure":
-            per_venue[venue]["feed_startup_failures"] += 1
             per_venue[venue]["missing_venue_incidents"] += 1
     health_events = [row for row in rows if row.get("event") == "shadow_health_summary"]
     health = health_events[-1] if health_events else {}
@@ -313,7 +309,7 @@ def print_report(dec: dict[str, Any], sig: dict[str, Any], ops: dict[str, Any], 
             lines.append(
                 f"  {venue:10s}  received={stats.get('ticks_received', 0)}  used={stats.get('ticks_used', 0)}"
                 f"  missing={stats.get('missing_venue_incidents', 0)}  rest_fallback={stats.get('rest_fallback_usage', 0)}"
-                f"  resnapshot={stats.get('resnapshot_count', 0)}  startup_fail={stats.get('feed_startup_failures', 0)}"
+                f"  resnapshot={stats.get('resnapshot_count', 0)}"
             )
         lines.append("")
     lines += [
