@@ -265,8 +265,19 @@ def run_backtest_on_fold(
     Convenience wrapper: aligns fold predictions with the test slice of df.
     """
     test_df = df[test_slice_start:test_slice_end]
-    preds = fold_result["predictions"][:, 2]
-    from .dataset import DatasetConfig
+    preds = np.asarray(fold_result["predictions"][:, 2], dtype=np.float32)
+    direction_probs = fold_result.get("direction_probs")
+    risk_scores = fold_result.get("risk_scores")
+    if direction_probs is not None:
+        direction_probs = np.asarray(direction_probs, dtype=np.float32)
+        long_conf = direction_probs[:, 2]
+        short_conf = direction_probs[:, 0]
+        preds[((preds > 0.0) & (long_conf < 0.55)) | ((preds < 0.0) & (short_conf < 0.55))] = 0.0
+    if risk_scores is not None:
+        risk_scores = np.asarray(risk_scores, dtype=np.float32)
+        preds *= np.clip(1.0 - risk_scores, 0.0, 1.0)
+        preds[risk_scores > 0.60] = 0.0
+    from ..data.dataset import DatasetConfig
 
     ds_cfg = DatasetConfig()
     seq_len = ds_cfg.seq_len

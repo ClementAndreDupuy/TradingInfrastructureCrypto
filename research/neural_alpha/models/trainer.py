@@ -33,6 +33,10 @@ class TrainerConfig:
     w_direction: float = 0.5
     w_risk: float = 0.3
     w_tc: float = 0.1
+    selection_w_return: float | None = None
+    selection_w_direction: float | None = None
+    selection_w_risk: float | None = None
+    selection_w_tc: float | None = None
     tc_bps: float = 7.0
     adv_noise_std: float = 0.02
     resume_state_dict: dict[str, torch.Tensor] | None = None
@@ -148,17 +152,20 @@ def train_epoch(
 @torch.no_grad()
 def eval_epoch(
     model: CryptoAlphaNet, loader: DataLoader, criterion: MultiTaskLoss, device: torch.device
-) -> tuple[dict[str, float], np.ndarray, np.ndarray]:
+) -> tuple[dict[str, float], dict[str, np.ndarray], np.ndarray]:
     """
     Returns:
         metrics     — loss breakdown
-        all_preds   — (N_ticks, 3) return predictions for the mid-horizon
-        all_labels  — (N_ticks, 5) ground truth
+        outputs     — last-timestep task outputs for returns / direction / risk
+        all_labels  — (N_ticks, 6) ground truth
     """
     model.eval()
     totals: dict[str, float] = {}
     n = 0
-    pred_list: list[np.ndarray] = []
+    ret_pred_list: list[np.ndarray] = []
+    dir_logit_list: list[np.ndarray] = []
+    dir_prob_list: list[np.ndarray] = []
+    risk_pred_list: list[np.ndarray] = []
     label_list: list[np.ndarray] = []
     for batch in loader:
         lob = batch["lob"].to(device)
@@ -170,11 +177,35 @@ def eval_epoch(
         for k, v in breakdown.items():
             totals[k] = totals.get(k, 0.0) + v
         n += 1
-        pred_list.append(preds["returns"][:, -1, :].cpu().numpy())
+        ret_pred_list.append(preds["returns"][:, -1, :].cpu().numpy())
+        dir_logits = preds["direction"][:, -1, :].cpu().numpy()
+        dir_logit_list.append(dir_logits)
+        dir_prob_list.append(torch.softmax(preds["direction"][:, -1, :], dim=-1).cpu().numpy())
+        risk_pred_list.append(preds["risk"][:, -1].cpu().numpy())
         label_list.append(labels[:, -1, :].cpu().numpy())
-    all_preds = np.concatenate(pred_list, axis=0)
+    all_outputs = {
+        "returns": np.concatenate(ret_pred_list, axis=0),
+        "direction_logits": np.concatenate(dir_logit_list, axis=0),
+        "direction_probs": np.concatenate(dir_prob_list, axis=0),
+        "risk": np.concatenate(risk_pred_list, axis=0),
+    }
     all_labels = np.concatenate(label_list, axis=0)
-    return ({k: v / max(n, 1) for (k, v) in totals.items()}, all_preds, all_labels)
+    return ({k: v / max(n, 1) for (k, v) in totals.items()}, all_outputs, all_labels)
+
+
+def selection_score(metrics: dict[str, float], cfg: TrainerConfig) -> float:
+    w_return = cfg.selection_w_return if cfg.selection_w_return is not None else cfg.w_return
+    w_direction = (
+        cfg.selection_w_direction if cfg.selection_w_direction is not None else cfg.w_direction
+    )
+    w_risk = cfg.selection_w_risk if cfg.selection_w_risk is not None else cfg.w_risk
+    w_tc = cfg.selection_w_tc if cfg.selection_w_tc is not None else cfg.w_tc
+    return (
+        w_return * metrics.get("loss_return", 0.0)
+        + w_direction * metrics.get("loss_direction", 0.0)
+        + w_risk * metrics.get("loss_risk", 0.0)
+        + w_tc * metrics.get("loss_tc", 0.0)
+    )
 
 
 def _make_warmup_cosine_scheduler(
@@ -253,9 +284,10 @@ def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
         scheduler = _make_warmup_cosine_scheduler(
             optimizer, warmup_epochs=cfg.lr_warmup_epochs, total_epochs=cfg.epochs
         )
-        best_val_loss = float("inf")
+        best_selection_score = float("inf")
         best_state = None
         epochs_no_improve = 0
+        best_metrics: dict[str, float] | None = None
         log_every = max(1, cfg.log_every_epochs)
         for epoch in range(cfg.epochs):
             train_metrics = train_epoch(
@@ -270,16 +302,17 @@ def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
             scheduler.step()
             should_log = (epoch + 1) % log_every == 0 or epoch == cfg.epochs - 1
             if should_log:
-                (val_metrics, preds, labels) = eval_epoch(model, test_loader, criterion, device)
-                val_loss = val_metrics["loss_total"]
+                (val_metrics, outputs, labels) = eval_epoch(model, test_loader, criterion, device)
+                selection_loss = selection_score(val_metrics, cfg)
                 print(
-                    f"  epoch {epoch + 1:3d}/{cfg.epochs}  train={train_metrics['loss_total']:.4f}  val={val_loss:.4f}"
+                    f"  epoch {epoch + 1:3d}/{cfg.epochs}  train={train_metrics['loss_total']:.4f}  val={val_metrics['loss_total']:.4f}  sel={selection_loss:.4f}"
                 )
                 if cfg.event_callback is not None:
-                    cfg.event_callback({"fold": fold_idx + 1, "epoch": epoch + 1, "total_epochs": cfg.epochs, "train_loss": float(train_metrics["loss_total"]), "val_loss": float(val_loss)})
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
+                    cfg.event_callback({"fold": fold_idx + 1, "epoch": epoch + 1, "total_epochs": cfg.epochs, "train_loss": float(train_metrics["loss_total"]), "val_loss": float(val_metrics["loss_total"]), "selection_loss": float(selection_loss)})
+                if selection_loss < best_selection_score:
+                    best_selection_score = selection_loss
                     best_state = {k: v.cpu().clone() for (k, v) in model.state_dict().items()}
+                    best_metrics = dict(val_metrics)
                     epochs_no_improve = 0
                 else:
                     epochs_no_improve += log_every
@@ -290,15 +323,21 @@ def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
                         break
         if best_state is not None:
             model.load_state_dict(best_state)
-        (val_metrics, preds, labels) = eval_epoch(model, test_loader, criterion, device)
+        (val_metrics, outputs, labels) = eval_epoch(model, test_loader, criterion, device)
         results.append(
             {
                 "fold": fold_idx + 1,
                 "metrics": val_metrics,
-                "predictions": preds,
+                "selection_score": selection_score(val_metrics, cfg),
+                "best_selection_score": best_selection_score,
+                "best_metrics": best_metrics if best_metrics is not None else dict(val_metrics),
+                "predictions": outputs["returns"],
+                "direction_logits": outputs["direction_logits"],
+                "direction_probs": outputs["direction_probs"],
+                "risk_scores": outputs["risk"],
                 "labels": labels,
                 "model_state": best_state,
             }
         )
-        print(f"  Fold {fold_idx + 1} best val loss: {best_val_loss:.4f}")
+        print(f"  Fold {fold_idx + 1} best selection score: {best_selection_score:.4f}")
     return results

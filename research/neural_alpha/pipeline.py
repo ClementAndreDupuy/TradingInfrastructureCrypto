@@ -343,6 +343,7 @@ def _evaluate_state_on_holdout(df: pl.DataFrame, state_dict: dict, cfg: TrainerC
     from torch.utils.data import DataLoader
     from .data.dataset import DatasetConfig, LOBDataset
     from .models.model import CryptoAlphaNet
+    from .models.trainer import selection_score
 
     dataset = LOBDataset(df, DatasetConfig(seq_len=cfg.seq_len))
     if len(dataset) == 0:
@@ -364,18 +365,39 @@ def _evaluate_state_on_holdout(df: pl.DataFrame, state_dict: dict, cfg: TrainerC
         .eval()
     )
     model.load_state_dict(state_dict, strict=False)
-    sqerr = 0.0
-    n = 0
+    totals: dict[str, float] = {
+        "loss_return": 0.0,
+        "loss_direction": 0.0,
+        "loss_risk": 0.0,
+        "loss_tc": 0.0,
+    }
+    n_batches = 0
     with torch.no_grad():
         for batch in loader:
             lob = batch["lob"].to(device)
             scalar = batch["scalar"].to(device)
-            pred_mid = model(lob, scalar)["returns"][:, -1, 2]
-            true_mid = batch["labels"][:, -1, 2].to(device)
-            diff = pred_mid - true_mid
-            sqerr += float((diff * diff).sum().item())
-            n += int(diff.numel())
-    return sqerr / max(n, 1)
+            labels = batch["labels"].to(device)
+            preds = model(lob, scalar)
+            ret_diff = preds["returns"][:, -1, :] - labels[:, -1, :4]
+            totals["loss_return"] += float((ret_diff * ret_diff).mean().item())
+            dir_logits = preds["direction"][:, -1, :]
+            dir_targets = labels[:, -1, 4].long()
+            totals["loss_direction"] += float(
+                torch.nn.functional.cross_entropy(dir_logits, dir_targets).item()
+            )
+            risk_pred = preds["risk"][:, -1]
+            risk_targets = labels[:, -1, 5]
+            totals["loss_risk"] += float(
+                torch.nn.functional.binary_cross_entropy(risk_pred, risk_targets).item()
+            )
+            pred_ret_mid = preds["returns"][:, -1, 2]
+            tc_threshold = cfg.tc_bps * 0.0001
+            totals["loss_tc"] += float(
+                torch.nn.functional.relu(tc_threshold - pred_ret_mid.abs()).mean().item()
+            )
+            n_batches += 1
+    avg_metrics = {k: v / max(n_batches, 1) for (k, v) in totals.items()}
+    return selection_score(avg_metrics, cfg)
 
 
 def _atomic_torch_save(state_dict: dict, output_path: Path) -> None:
@@ -395,21 +417,71 @@ def _blend_fold_results(primary_folds: list[dict], secondary_folds: list[dict]) 
     for primary, secondary in zip(primary_folds, secondary_folds):
         p_pred = primary.get("predictions")
         s_pred = secondary.get("predictions")
+        p_dir = primary.get("direction_probs")
+        s_dir = secondary.get("direction_probs")
+        p_risk = primary.get("risk_scores")
+        s_risk = secondary.get("risk_scores")
         p_lbl = primary.get("labels")
         s_lbl = secondary.get("labels")
-        if p_pred is None or s_pred is None or p_lbl is None or (s_lbl is None):
+        if (
+            p_pred is None
+            or s_pred is None
+            or p_dir is None
+            or s_dir is None
+            or p_risk is None
+            or s_risk is None
+            or p_lbl is None
+            or (s_lbl is None)
+        ):
             raise ValueError("Missing predictions/labels while building fold ensemble.")
-        if p_pred.shape != s_pred.shape or p_lbl.shape != s_lbl.shape:
+        if (
+            p_pred.shape != s_pred.shape
+            or p_dir.shape != s_dir.shape
+            or p_risk.shape != s_risk.shape
+            or p_lbl.shape != s_lbl.shape
+        ):
             raise ValueError("Primary/secondary fold tensor shapes do not match.")
         blended.append(
             {
                 **primary,
                 "predictions": ((p_pred + s_pred) / 2.0).astype(np.float32),
+                "direction_probs": ((p_dir + s_dir) / 2.0).astype(np.float32),
+                "risk_scores": ((p_risk + s_risk) / 2.0).astype(np.float32),
                 "labels": p_lbl,
                 "ensemble": True,
             }
         )
     return blended
+
+
+def _signal_from_fold_outputs(
+    fold: dict,
+    *,
+    horizon_idx: int = 2,
+    direction_confidence_floor: float = 0.50,
+    risk_ceiling: float = 0.55,
+) -> np.ndarray:
+    returns = np.asarray(fold["predictions"][:, horizon_idx], dtype=np.float32)
+    direction_probs = fold.get("direction_probs")
+    risk_scores = fold.get("risk_scores")
+    signal = returns.copy()
+
+    if direction_probs is not None:
+        direction_probs = np.asarray(direction_probs, dtype=np.float32)
+        if direction_probs.ndim == 2 and direction_probs.shape[1] >= 3:
+            long_conf = direction_probs[:, 2]
+            short_conf = direction_probs[:, 0]
+            sign_mismatch = (signal > 0.0) & (long_conf < direction_confidence_floor)
+            sign_mismatch |= (signal < 0.0) & (short_conf < direction_confidence_floor)
+            signal[sign_mismatch] = 0.0
+
+    if risk_scores is not None:
+        risk_scores = np.asarray(risk_scores, dtype=np.float32)
+        safe_scale = np.clip(1.0 - risk_scores, 0.0, 1.0)
+        signal *= safe_scale
+        signal[risk_scores > risk_ceiling] = 0.0
+
+    return signal.astype(np.float32)
 
 
 def run_pipeline(args: argparse.Namespace) -> None:
@@ -445,6 +517,14 @@ def run_pipeline(args: argparse.Namespace) -> None:
         seq_len=args.seq_len,
         batch_size=args.batch_size,
         lr=args.lr,
+        w_return=args.primary_w_return,
+        w_direction=args.primary_w_direction,
+        w_risk=args.primary_w_risk,
+        w_tc=args.primary_w_tc,
+        selection_w_return=args.primary_selection_w_return,
+        selection_w_direction=args.primary_selection_w_direction,
+        selection_w_risk=args.primary_selection_w_risk,
+        selection_w_tc=args.primary_selection_w_tc,
     )
     fold_results = walk_forward_train(df, trainer_cfg)
     if not fold_results:
@@ -465,6 +545,14 @@ def run_pipeline(args: argparse.Namespace) -> None:
             seq_len=args.seq_len,
             batch_size=args.batch_size,
             lr=args.lr,
+            w_return=args.secondary_w_return,
+            w_direction=args.secondary_w_direction,
+            w_risk=args.secondary_w_risk,
+            w_tc=args.secondary_w_tc,
+            selection_w_return=args.secondary_selection_w_return,
+            selection_w_direction=args.secondary_selection_w_direction,
+            selection_w_risk=args.secondary_selection_w_risk,
+            selection_w_tc=args.secondary_selection_w_tc,
         )
         secondary_fold_results = walk_forward_train(df, secondary_cfg)
         if not secondary_fold_results:
@@ -476,7 +564,12 @@ def run_pipeline(args: argparse.Namespace) -> None:
     all_bt_metrics: list[dict] = []
     for fold, (start, end) in zip(effective_folds, test_slices):
         test_df = df[start:end]
-        signals = fold["predictions"][:, 2]
+        signals = _signal_from_fold_outputs(
+            fold,
+            horizon_idx=args.signal_horizon_idx,
+            direction_confidence_floor=args.direction_confidence_floor,
+            risk_ceiling=args.risk_ceiling,
+        )
         T_test = len(test_df)
         tick_signals = np.zeros(T_test, dtype=np.float32)
         for i, sig in enumerate(signals):
@@ -507,7 +600,9 @@ def run_pipeline(args: argparse.Namespace) -> None:
     if args.save_model:
         import torch
 
-        best_fold = min(fold_results, key=lambda f: f["metrics"].get("loss_total", 1000000000.0))
+        best_fold = min(
+            fold_results, key=lambda f: f.get("best_selection_score", 1000000000.0)
+        )
         challenger_state = best_fold["model_state"]
         selected_state = challenger_state
         holdout_start = int(len(df) * 0.8)
@@ -548,9 +643,17 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 seq_len=args.seq_len,
                 batch_size=args.batch_size,
                 lr=args.lr,
+                w_return=args.secondary_w_return,
+                w_direction=args.secondary_w_direction,
+                w_risk=args.secondary_w_risk,
+                w_tc=args.secondary_w_tc,
+                selection_w_return=args.secondary_selection_w_return,
+                selection_w_direction=args.secondary_selection_w_direction,
+                selection_w_risk=args.secondary_selection_w_risk,
+                selection_w_tc=args.secondary_selection_w_tc,
             )
             best_secondary = min(
-                secondary_fold_results, key=lambda f: f["metrics"].get("loss_total", 1000000000.0)
+                secondary_fold_results, key=lambda f: f.get("best_selection_score", 1000000000.0)
             )
             secondary_path = primary_path.with_name(
                 f"{primary_path.stem}_secondary{primary_path.suffix}"
@@ -612,6 +715,76 @@ def main() -> None:
     ap.add_argument("--pretrain-epochs", type=int, default=5, dest="pretrain_epochs")
     ap.add_argument("--entry-bps", type=float, default=5.0, dest="entry_bps")
     ap.add_argument("--fee-bps", type=float, default=5.0, dest="fee_bps")
+    ap.add_argument("--signal-horizon-idx", type=int, default=2, dest="signal_horizon_idx")
+    ap.add_argument(
+        "--direction-confidence-floor",
+        type=float,
+        default=0.55,
+        dest="direction_confidence_floor",
+        help="Minimum sign-aligned direction probability required to keep a signal.",
+    )
+    ap.add_argument(
+        "--risk-ceiling",
+        type=float,
+        default=0.60,
+        dest="risk_ceiling",
+        help="Risk score above which backtest signals are zeroed.",
+    )
+    ap.add_argument("--primary-w-return", type=float, default=1.0, dest="primary_w_return")
+    ap.add_argument("--primary-w-direction", type=float, default=0.7, dest="primary_w_direction")
+    ap.add_argument("--primary-w-risk", type=float, default=0.5, dest="primary_w_risk")
+    ap.add_argument("--primary-w-tc", type=float, default=0.1, dest="primary_w_tc")
+    ap.add_argument(
+        "--primary-selection-w-return",
+        type=float,
+        default=1.0,
+        dest="primary_selection_w_return",
+    )
+    ap.add_argument(
+        "--primary-selection-w-direction",
+        type=float,
+        default=0.9,
+        dest="primary_selection_w_direction",
+    )
+    ap.add_argument(
+        "--primary-selection-w-risk",
+        type=float,
+        default=0.7,
+        dest="primary_selection_w_risk",
+    )
+    ap.add_argument(
+        "--primary-selection-w-tc", type=float, default=0.1, dest="primary_selection_w_tc"
+    )
+    ap.add_argument("--secondary-w-return", type=float, default=0.2, dest="secondary_w_return")
+    ap.add_argument(
+        "--secondary-w-direction", type=float, default=1.0, dest="secondary_w_direction"
+    )
+    ap.add_argument("--secondary-w-risk", type=float, default=0.7, dest="secondary_w_risk")
+    ap.add_argument("--secondary-w-tc", type=float, default=0.1, dest="secondary_w_tc")
+    ap.add_argument(
+        "--secondary-selection-w-return",
+        type=float,
+        default=0.25,
+        dest="secondary_selection_w_return",
+    )
+    ap.add_argument(
+        "--secondary-selection-w-direction",
+        type=float,
+        default=1.0,
+        dest="secondary_selection_w_direction",
+    )
+    ap.add_argument(
+        "--secondary-selection-w-risk",
+        type=float,
+        default=0.8,
+        dest="secondary_selection_w_risk",
+    )
+    ap.add_argument(
+        "--secondary-selection-w-tc",
+        type=float,
+        default=0.1,
+        dest="secondary_selection_w_tc",
+    )
     ap.add_argument(
         "--enable-secondary-model",
         action=argparse.BooleanOptionalAction,
