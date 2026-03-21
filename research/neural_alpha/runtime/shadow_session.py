@@ -86,6 +86,18 @@ _LEGACY_ALPHA_OPTIONAL_KEYS = frozenset({
     "fusion.3.weight",
     "fusion.3.bias",
 })
+_LEGACY_ALPHA_KEY_RENAMES = {
+    "spatial_enc.pool.weight": "spatial_enc.pool.1.weight",
+    "spatial_enc.pool.bias": "spatial_enc.pool.1.bias",
+}
+
+
+def _normalise_legacy_checkpoint_keys(state: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    normalised = dict(state)
+    for legacy_key, new_key in _LEGACY_ALPHA_KEY_RENAMES.items():
+        if legacy_key in normalised and new_key not in normalised:
+            normalised[new_key] = normalised.pop(legacy_key)
+    return normalised
 
 
 def _load_model_state_with_compat(
@@ -95,6 +107,7 @@ def _load_model_state_with_compat(
     checkpoint_path: str,
     allow_legacy_missing: bool = False,
 ) -> None:
+    state = _normalise_legacy_checkpoint_keys(state)
     incompatible = model.load_state_dict(state, strict=False)
     missing = set(incompatible.missing_keys)
     unexpected = set(incompatible.unexpected_keys)
