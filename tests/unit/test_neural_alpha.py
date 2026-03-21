@@ -56,6 +56,7 @@ from research.neural_alpha.runtime.shadow_session import (
     NeuralAlphaShadowSession,
     ShadowSessionConfig,
     _build_signal_alignment,
+    _load_model_state_with_compat,
     _summarise_timestamp_quality,
     _symbol_model_path,
 )
@@ -519,6 +520,31 @@ class TestShadowSessionTraining:
 
         session._log_fp.close()
         session._publisher.close()
+
+    def test_secondary_checkpoint_loader_accepts_legacy_missing_layers(self) -> None:
+        model = CryptoAlphaNet(d_spatial=32, d_temporal=64, n_temp_layers=1, seq_len=8)
+        legacy_state = {
+            key: value
+            for (key, value) in model.state_dict().items()
+            if key
+            not in {
+                "spatial_enc.pool.0.weight",
+                "spatial_enc.pool.0.bias",
+                "spatial_enc.pool.1.weight",
+                "spatial_enc.pool.1.bias",
+                "fusion.3.weight",
+                "fusion.3.bias",
+            }
+        }
+
+        compat_model = CryptoAlphaNet(d_spatial=32, d_temporal=64, n_temp_layers=1, seq_len=8)
+        with pytest.warns(RuntimeWarning, match="Loaded legacy checkpoint"):
+            _load_model_state_with_compat(
+                compat_model,
+                legacy_state,
+                checkpoint_path="legacy_secondary.pt",
+                allow_legacy_missing=True,
+            )
 
     def test_main_loads_secondary_model_after_train_on_recent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
