@@ -187,7 +187,12 @@ class OrderBook:
 
     @property
     def max_levels(self) -> int:
-        """Number of price slots in the flat array."""
+        """Total preallocated capacity of the flat price grid."""
+        ...
+
+    @property
+    def active_levels(self) -> int:
+        """Currently active grid window chosen from the latest snapshot."""
         ...
 
     @property

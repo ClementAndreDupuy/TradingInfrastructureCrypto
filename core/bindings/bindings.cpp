@@ -289,6 +289,7 @@ PYBIND11_MODULE(trading_core, m) {
             "in research loops — avoids per-level Python object allocation.")
         .def_property_readonly("tick_size", &OrderBook::tick_size)
         .def_property_readonly("max_levels", &OrderBook::max_levels)
+        .def_property_readonly("active_levels", &OrderBook::active_levels)
         .def_property_readonly("base_price", &OrderBook::base_price)
         .def_property_readonly("symbol", &OrderBook::symbol)
         .def_property_readonly("exchange", &OrderBook::exchange);
