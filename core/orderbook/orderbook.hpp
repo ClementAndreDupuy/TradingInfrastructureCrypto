@@ -130,10 +130,10 @@ class OrderBook {
                     return Result::ERROR_INVALID_PRICE;
                 }
             } else {
-                LOG_WARN("[OrderBook] Delta price out of grid range", "price", delta.price, "base",
-                         base_price_.load(), "range", active_price_range(), "streak",
-                         out_of_range_streak_);
-                return Result::ERROR_INVALID_PRICE;
+                if (delta.sequence > 0) {
+                    sequence_.store(delta.sequence, std::memory_order_release);
+                }
+                return Result::SUCCESS;
             }
         }
 

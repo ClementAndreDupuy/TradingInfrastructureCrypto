@@ -295,13 +295,13 @@ TEST(OrderBook, IgnoresFarPassiveLiquidityWithoutRecentering) {
 
     const double initial_base = book.base_price();
 
-    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 85000.0, 5.0, 101)), Result::ERROR_INVALID_PRICE);
-    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 15000.0, 5.0, 102)), Result::ERROR_INVALID_PRICE);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 85000.0, 5.0, 101)), Result::SUCCESS);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 15000.0, 5.0, 102)), Result::SUCCESS);
 
     EXPECT_DOUBLE_EQ(book.base_price(), initial_base);
     EXPECT_DOUBLE_EQ(book.get_best_bid(), 50000.0);
     EXPECT_DOUBLE_EQ(book.get_best_ask(), 50001.0);
-    EXPECT_EQ(book.get_sequence(), 100u);
+    EXPECT_EQ(book.get_sequence(), 102u);
 }
 
 TEST(OrderBook, GetBestBidAsk) {
