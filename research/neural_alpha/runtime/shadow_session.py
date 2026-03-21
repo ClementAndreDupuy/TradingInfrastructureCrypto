@@ -76,7 +76,6 @@ _SEQ_OFFSET = 0
 _DATA_FMT = "=ddq"
 _DATA_OFFSET = 8
 _REGIME_SIGNAL_FILE = "/tmp/trt_ipc/regime_signal.bin"
-_OPS_EVENTS_LOG = "logs/ops_events.jsonl"
 _MAX_EXCHANGE_JUMP_NS = 60 * 1000000000
 
 
@@ -87,25 +86,9 @@ class VenueRuntimeStats:
     missing_venue_incidents: int = 0
     rest_fallback_usage: int = 0
     resnapshot_count: int = 0
-    feed_startup_failures: int = 0
     startup_confirmed: bool = False
     consecutive_missing_polls: int = 0
     last_source: str = "none"
-
-
-@dataclass
-class TrainingRunSummary:
-    stage: str
-    status: str
-    n_ticks: int
-    folds_requested: int
-    folds_completed: int
-    selected_checkpoint: str | None = None
-    selected_metrics: dict[str, float] = field(default_factory=dict)
-    incumbent_holdout_mse: float | None = None
-    challenger_holdout_mse: float | None = None
-    selected_model: str | None = None
-    error: str | None = None
 
 
 @dataclass
@@ -279,8 +262,6 @@ class NeuralAlphaShadowSession:
         self._max_ring = max(500, cfg.seq_len * 2)
         _ensure_parent_dir(cfg.log_path)
         self._log_fp = open(cfg.log_path, "a", encoding="utf-8")
-        self._ops_log_path = Path(_OPS_EVENTS_LOG)
-        _ensure_parent_dir(self._ops_log_path)
         self._publisher = _SignalPublisher(cfg.signal_file)
         _ensure_parent_dir(cfg.regime_signal_file)
         self._regime_publisher = RegimeSignalPublisher(cfg.regime_signal_file)
@@ -288,9 +269,8 @@ class NeuralAlphaShadowSession:
         if Path(cfg.regime_model_path).exists():
             try:
                 self._regime_artifact = load_regime_artifact(cfg.regime_model_path)
-                self._emit_ops_event("regime_model_loaded", {"path": cfg.regime_model_path})
-            except Exception as exc:
-                self._emit_ops_event("regime_model_load_failed", {"path": cfg.regime_model_path, "error": str(exc)})
+            except Exception:
+                self._regime_artifact = None
         self._running = False
         self._signal_records: list[dict[str, Any]] = []
         self._registry = ChampionChallengerRegistry(cfg.registry_path)
@@ -309,19 +289,6 @@ class NeuralAlphaShadowSession:
         self._prev_ensemble_signal: float | None = None
         self._venue_stats = {exchange.upper(): VenueRuntimeStats() for exchange in cfg.exchanges}
         self._gating_reason_counts = {"confidence_gate": 0, "horizon_disagreement_gate": 0, "safe_mode_gate": 0}
-        self._training_runs: list[TrainingRunSummary] = []
-        self._emit_ops_event(
-            "shadow_session_started",
-            {
-                "symbol": cfg.symbol,
-                "exchanges": [exchange.upper() for exchange in cfg.exchanges],
-                "duration_s": cfg.duration_s,
-                "interval_ms": cfg.interval_ms,
-                "continuous_train_every_ticks": cfg.continuous_train_every_ticks,
-                "continuous_train_window_ticks": cfg.continuous_train_window_ticks,
-                "safe_mode_ticks": cfg.safe_mode_ticks,
-            },
-        )
 
     def _build_model(self, d_spatial: int = 64, d_temporal: int = 128, n_temp_layers: int = 3) -> CryptoAlphaNet:
         return CryptoAlphaNet(
@@ -336,7 +303,6 @@ class NeuralAlphaShadowSession:
         state = torch.load(path, map_location=self._device, weights_only=True)
         model.load_state_dict(state)
         self._model = model
-        self._emit_ops_event("primary_model_loaded", {"path": path})
 
     def load_secondary_model(self, path: str) -> None:
         model = self._build_model(d_spatial=32, d_temporal=64, n_temp_layers=1)
@@ -351,7 +317,6 @@ class NeuralAlphaShadowSession:
         )
         self._prev_primary_signal = None
         self._prev_ensemble_signal = None
-        self._emit_ops_event("secondary_model_loaded", {"path": path})
 
     def _validate_production_stack(self) -> None:
         missing: list[str] = []
@@ -374,27 +339,11 @@ class NeuralAlphaShadowSession:
         self._prev_primary_signal = None
         self._prev_ensemble_signal = None
         self._trigger_safe_mode(reason=f"ensemble_canary: {reason}")
-        self._emit_ops_event("ensemble_canary_rollback", {"reason": reason})
-
-    def _record_training_epoch(self, stage: str, fold: int, epoch: int, total_epochs: int, train_loss: float, val_loss: float) -> None:
-        self._emit_ops_event(
-            "training_epoch",
-            {
-                "stage": stage,
-                "fold": fold,
-                "epoch": epoch,
-                "total_epochs": total_epochs,
-                "train_loss": train_loss,
-                "val_loss": val_loss,
-            },
-        )
 
     def _collect_training_ticks(self, n_ticks: int) -> pl.DataFrame:
         df = collect_from_core_bridge(n_ticks=n_ticks, interval_ms=self.cfg.interval_ms)
         if df is not None and len(df) > 0:
-            self._emit_ops_event("training_data_collected", {"stage": "bridge", "ticks": len(df)})
             return df
-        self._emit_ops_event("training_data_bridge_unavailable", {"ticks_requested": n_ticks})
         interval_s = self.cfg.interval_ms / 1000.0
         rows: list[dict[str, Any]] = []
         while len(rows) < n_ticks:
@@ -404,7 +353,6 @@ class NeuralAlphaShadowSession:
             time.sleep(interval_s)
         if not rows:
             raise RuntimeError("No data collected for training — core bridge and collectors unavailable.")
-        self._emit_ops_event("training_data_collected", {"stage": "session_collectors", "ticks": n_ticks})
         return pl.DataFrame(rows[:n_ticks]).sort("timestamp_ns")
 
     def train_on_recent(self, n_ticks: int) -> None:
@@ -414,10 +362,6 @@ class NeuralAlphaShadowSession:
             resume_state = {k: v.detach().cpu().clone() for (k, v) in self._model.state_dict().items()}
         max_folds = max(1, len(df) // (4 * self.cfg.seq_len))
         n_folds = min(2, max_folds)
-        self._emit_ops_event(
-            "bootstrap_training_started",
-            {"stage": "primary", "ticks": len(df), "folds_requested": n_folds, "epochs": self.cfg.train_epochs},
-        )
         tcfg = TrainerConfig(
             epochs=self.cfg.train_epochs,
             n_folds=n_folds,
@@ -428,23 +372,9 @@ class NeuralAlphaShadowSession:
             lr_warmup_epochs=min(3, self.cfg.train_epochs // 4),
             early_stop_patience=4,
             log_every_epochs=1,
-            event_callback=lambda payload: self._record_training_epoch(
-                "primary",
-                int(payload["fold"]),
-                int(payload["epoch"]),
-                int(payload["total_epochs"]),
-                float(payload["train_loss"]),
-                float(payload["val_loss"]),
-            ),
         )
         fold_results = walk_forward_train(df, tcfg)
         if not fold_results:
-            summary = TrainingRunSummary(stage="primary", status="skipped", n_ticks=len(df), folds_requested=n_folds, folds_completed=0)
-            self._training_runs.append(summary)
-            self._emit_ops_event(
-                "bootstrap_training_completed",
-                {"stage": "primary", "status": "skipped", "ticks": len(df), "folds_requested": n_folds, "folds_completed": 0},
-            )
             return
         best = min(fold_results, key=lambda f: f["metrics"].get("loss_total", 1000000000.0))
         candidate_state = best["model_state"]
@@ -485,51 +415,19 @@ class NeuralAlphaShadowSession:
         }
         out_meta = out_path.with_suffix(".json")
         out_meta.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-        summary = TrainingRunSummary(
-            stage="primary",
-            status="completed",
-            n_ticks=len(df),
-            folds_requested=n_folds,
-            folds_completed=len(fold_results),
-            selected_checkpoint=str(out_path),
-            selected_metrics=selected_metrics,
-            incumbent_holdout_mse=incumbent_oos_mse,
-            challenger_holdout_mse=challenger_oos_mse,
-            selected_model="challenger" if keep_challenger else "incumbent",
-        )
-        self._training_runs.append(summary)
-        self._emit_ops_event(
-            "bootstrap_training_completed",
-            {
-                "stage": "primary",
-                "status": "completed",
-                "ticks": len(df),
-                "folds_requested": n_folds,
-                "folds_completed": len(fold_results),
-                "selected_checkpoint": str(out_path),
-                "selected_metrics": selected_metrics,
-                "selected_model": summary.selected_model,
-                "incumbent_holdout_mse": incumbent_oos_mse,
-                "challenger_holdout_mse": challenger_oos_mse,
-            },
-        )
         secondary_path = Path(self.cfg.secondary_model_path) if self.cfg.secondary_model_path else _symbol_model_path(self.cfg.symbol, "secondary")
         try:
             self._train_secondary_on_data(df, secondary_path)
-        except Exception as exc:
-            self._emit_ops_event("secondary_training_failed", {"error": str(exc)})
+        except Exception:
+            pass
         try:
             self._train_regime_on_data(df)
-        except Exception as exc:
-            self._emit_ops_event("regime_training_failed", {"error": str(exc)})
+        except Exception:
+            pass
 
     def _train_secondary_on_data(self, df: pl.DataFrame, out_path: Path) -> None:
         max_folds = max(1, len(df) // (4 * self.cfg.seq_len))
         n_folds = min(2, max_folds)
-        self._emit_ops_event(
-            "bootstrap_training_started",
-            {"stage": "secondary", "ticks": len(df), "folds_requested": n_folds, "epochs": self.cfg.train_epochs},
-        )
         tcfg = TrainerConfig(
             epochs=self.cfg.train_epochs,
             n_folds=n_folds,
@@ -546,22 +444,9 @@ class NeuralAlphaShadowSession:
             lr_warmup_epochs=min(3, self.cfg.train_epochs // 4),
             early_stop_patience=4,
             log_every_epochs=1,
-            event_callback=lambda payload: self._record_training_epoch(
-                "secondary",
-                int(payload["fold"]),
-                int(payload["epoch"]),
-                int(payload["total_epochs"]),
-                float(payload["train_loss"]),
-                float(payload["val_loss"]),
-            ),
         )
         fold_results = walk_forward_train(df, tcfg)
         if not fold_results:
-            self._training_runs.append(TrainingRunSummary(stage="secondary", status="skipped", n_ticks=len(df), folds_requested=n_folds, folds_completed=0))
-            self._emit_ops_event(
-                "bootstrap_training_completed",
-                {"stage": "secondary", "status": "skipped", "ticks": len(df), "folds_requested": n_folds, "folds_completed": 0},
-            )
             return
         best = min(fold_results, key=lambda f: f["metrics"].get("loss_total", 1000000000.0))
         state = best["model_state"]
@@ -581,66 +466,16 @@ class NeuralAlphaShadowSession:
         self._prev_primary_signal = None
         self._prev_ensemble_signal = None
         selected_metrics = dict(best.get("metrics", {}))
-        self._training_runs.append(
-            TrainingRunSummary(
-                stage="secondary",
-                status="completed",
-                n_ticks=len(df),
-                folds_requested=n_folds,
-                folds_completed=len(fold_results),
-                selected_checkpoint=str(out_path),
-                selected_metrics=selected_metrics,
-                selected_model="challenger",
-            )
-        )
-        self._emit_ops_event(
-            "bootstrap_training_completed",
-            {
-                "stage": "secondary",
-                "status": "completed",
-                "ticks": len(df),
-                "folds_requested": n_folds,
-                "folds_completed": len(fold_results),
-                "selected_checkpoint": str(out_path),
-                "selected_metrics": selected_metrics,
-                "selected_model": "challenger",
-            },
-        )
 
     def _train_regime_on_data(self, df: pl.DataFrame) -> None:
         regime_path = Path(self.cfg.regime_model_path)
-        self._emit_ops_event("bootstrap_training_started", {"stage": "regime", "ticks": len(df), "folds_requested": 1, "epochs": 1})
         (artifact, distribution) = train_regime_model_from_df(df, RegimeConfig())
         regime_path.parent.mkdir(parents=True, exist_ok=True)
         save_regime_artifact(artifact, str(regime_path))
         self._regime_artifact = artifact
-        self._training_runs.append(
-            TrainingRunSummary(
-                stage="regime",
-                status="completed",
-                n_ticks=len(df),
-                folds_requested=1,
-                folds_completed=1,
-                selected_checkpoint=str(regime_path),
-                selected_metrics={k: float(v) for (k, v) in distribution.items()},
-                selected_model="challenger",
-            )
-        )
-        self._emit_ops_event(
-            "bootstrap_training_completed",
-            {
-                "stage": "regime",
-                "status": "completed",
-                "ticks": len(df),
-                "folds_requested": 1,
-                "folds_completed": 1,
-                "selected_checkpoint": str(regime_path),
-                "selected_metrics": {k: float(v) for (k, v) in distribution.items()},
-                "selected_model": "challenger",
-            },
-        )
-
-    def _evaluate_state_on_holdout(self, state_dict: dict[str, torch.Tensor], holdout_df: pl.DataFrame) -> float:
+    def _evaluate_state_on_holdout(
+        self, state_dict: dict[str, torch.Tensor], holdout_df: pl.DataFrame
+    ) -> float:
         dataset = LOBDataset(holdout_df, DatasetConfig(seq_len=self.cfg.seq_len))
         if len(dataset) == 0:
             return float("inf")
@@ -663,42 +498,6 @@ class NeuralAlphaShadowSession:
                 sqerr += float((diff * diff).sum().item())
                 n += int(diff.numel())
         return sqerr / max(n, 1)
-
-    def _summarise_training(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "stage": run.stage,
-                "status": run.status,
-                "ticks": run.n_ticks,
-                "folds_requested": run.folds_requested,
-                "folds_completed": run.folds_completed,
-                "selected_checkpoint": run.selected_checkpoint,
-                "selected_metrics": run.selected_metrics,
-                "incumbent_holdout_mse": run.incumbent_holdout_mse,
-                "challenger_holdout_mse": run.challenger_holdout_mse,
-                "selected_model": run.selected_model,
-                "error": run.error,
-            }
-            for run in self._training_runs
-        ]
-
-    def _build_health_snapshot(self) -> dict[str, Any]:
-        diagnostics = _summarise_timestamp_quality(self._signal_records)
-        signal_count = len(self._signal_records)
-        gated_total = sum(self._gating_reason_counts.values())
-        safe_mode_total = self._gating_reason_counts["safe_mode_gate"]
-        data_quality = {
-            "timestamp_quality": diagnostics,
-            "per_venue": {venue: vars(stats) for (venue, stats) in self._venue_stats.items()},
-            "signals_logged": signal_count,
-        }
-        model_quality = {
-            "gating_reason_counts": dict(self._gating_reason_counts),
-            "gating_rate": gated_total / signal_count if signal_count else 0.0,
-            "safe_mode_rate": safe_mode_total / signal_count if signal_count else 0.0,
-            "training_runs": self._summarise_training(),
-        }
-        return {"data_quality": data_quality, "model_quality": model_quality}
 
     def _infer(self) -> dict[str, Any] | None:
         if self._model is None or len(self._ring) < self.cfg.seq_len:
@@ -751,8 +550,8 @@ class NeuralAlphaShadowSession:
         if self._regime_artifact is not None:
             try:
                 regime_probs = infer_regime_probabilities(df_ring, self._regime_artifact)
-            except Exception as exc:
-                self._emit_ops_event("regime_inference_failed", {"error": str(exc)})
+            except Exception:
+                pass
         self._regime_publisher.publish(
             regime_probs["p_calm"],
             regime_probs["p_trending"],
@@ -797,22 +596,11 @@ class NeuralAlphaShadowSession:
         self._safe_mode_ticks_remaining = max(self._safe_mode_ticks_remaining, self.cfg.safe_mode_ticks)
         self._safe_mode_reason = reason
         rollback_path = self._registry.rollback_to_previous_champion(reason=reason)
-        rollback_loaded = False
         if rollback_path and Path(rollback_path).exists():
             try:
                 self.load_model(rollback_path)
-                rollback_loaded = True
-            except Exception as exc:
-                self._emit_ops_event("safe_mode_rollback_load_failed", {"reason": reason, "rollback_path": rollback_path, "error": str(exc)})
-        self._emit_ops_event(
-            "safe_mode_activated",
-            {
-                "reason": reason,
-                "ticks_remaining": self._safe_mode_ticks_remaining,
-                "rollback_path": rollback_path,
-                "rollback_loaded": rollback_loaded,
-            },
-        )
+            except Exception:
+                pass
 
     def _fetch_tick(self) -> list[dict[str, Any]]:
         bridge_ticks = self._bridge.read_new_ticks()
@@ -839,11 +627,10 @@ class NeuralAlphaShadowSession:
             stats.missing_venue_incidents += 1
             stats.consecutive_missing_polls += 1
             if not stats.startup_confirmed:
-                stats.feed_startup_failures += 1
-                self._emit_ops_event("venue_feed_startup_failure", {"venue": exchange, "count": stats.feed_startup_failures})
+                stats.last_source = "bridge_unavailable"
             else:
                 stats.resnapshot_count += 1
-                self._emit_ops_event("venue_resnapshot_detected", {"venue": exchange, "count": stats.resnapshot_count})
+                stats.last_source = "bridge_resnapshot"
             fetcher = fetchers.get(exchange)
             if fetcher is None:
                 continue
@@ -853,7 +640,6 @@ class NeuralAlphaShadowSession:
                 stats.rest_fallback_usage += 1
                 stats.last_source = "rest_fallback"
                 rest_ticks.append(row)
-                self._emit_ops_event("venue_rest_fallback_used", {"venue": exchange, "count": stats.rest_fallback_usage})
         if bridge_ticks or rest_ticks:
             return bridge_ticks + rest_ticks
         for exchange in self._venue_stats:
@@ -867,23 +653,7 @@ class NeuralAlphaShadowSession:
                 stats.rest_fallback_usage += 1
                 stats.last_source = "rest_fallback"
                 rest_ticks.append(row)
-                self._emit_ops_event("venue_rest_fallback_used", {"venue": exchange, "count": stats.rest_fallback_usage})
         return rest_ticks
-
-    def _emit_ops_event(self, event_type: str, details: dict[str, Any]) -> None:
-        event = {
-            "event": event_type,
-            "timestamp_ns": time.time_ns(),
-            "session_elapsed_ns": time.monotonic_ns() - self._session_steady_start_ns if hasattr(self, "_session_steady_start_ns") else 0,
-            **details,
-        }
-        try:
-            self._ops_log_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self._ops_log_path, "a", encoding="utf-8") as handle:
-                handle.write(json.dumps(event) + "\n")
-        except OSError:
-            pass
-        print(f"[OPS_EVENT] {event_type}: {details}")
 
     def _log(self, signal_info: dict[str, Any]) -> None:
         exchange = str(signal_info.get("exchange", "UNKNOWN")).upper()
@@ -920,8 +690,7 @@ class NeuralAlphaShadowSession:
                     if ic_arr.std() > 1e-9:
                         icir = float(ic_arr.mean() / ic_arr.std() * np.sqrt(252))
         diagnostics = _summarise_timestamp_quality(self._signal_records)
-        health = self._build_health_snapshot()
-        gating = health["model_quality"]["gating_reason_counts"]
+        gating = self._gating_reason_counts
         print(
             f"[Shadow] ticks={n}  mean={mean_sig:.2f}bps  std={std_sig:.2f}bps"
             f"  IC={ic:.4f}  ICIR={icir:.3f}"
@@ -938,16 +707,11 @@ class NeuralAlphaShadowSession:
         if ticks_since_train < self.cfg.continuous_train_every_ticks:
             return
         train_window = max(self.cfg.seq_len * 4, self.cfg.continuous_train_window_ticks)
-        self._emit_ops_event(
-            "continuous_retrain_triggered",
-            {"tick": self._processed_ticks, "ticks_since_last_train": ticks_since_train, "train_window": train_window},
-        )
         try:
             self.train_on_recent(train_window)
             self._last_continuous_train_tick = self._processed_ticks
-            self._emit_ops_event("continuous_retrain_completed", {"tick": self._processed_ticks, "train_window": train_window})
-        except Exception as exc:
-            self._emit_ops_event("continuous_retrain_failed", {"tick": self._processed_ticks, "train_window": train_window, "error": str(exc)})
+        except Exception:
+            pass
 
     def run(self) -> None:
         self._running = True
@@ -978,7 +742,6 @@ class NeuralAlphaShadowSession:
                             if drift_triggered:
                                 ic = self._drift_guard.current_ic()
                                 reason = f"drift_ic_breach ic={ic:.4f} floor={self.cfg.drift_ic_floor:.4f}"
-                                self._emit_ops_event("drift_breach", {"ic": ic, "ic_floor": self.cfg.drift_ic_floor, "reason": reason})
                                 self._trigger_safe_mode(reason=reason)
                             if self._canary is not None and self._prev_primary_signal is not None and self._prev_ensemble_signal is not None:
                                 canary_triggered = self._canary.update(self._prev_primary_signal, self._prev_ensemble_signal, realised)
@@ -997,15 +760,6 @@ class NeuralAlphaShadowSession:
                 time.sleep(max(0.0, interval_s - (time.time() - tick_start)))
         finally:
             self._print_summary()
-            self._emit_ops_event("shadow_health_summary", self._build_health_snapshot())
-            self._emit_ops_event(
-                "shadow_session_completed",
-                {
-                    "processed_ticks": self._processed_ticks,
-                    "signal_records": len(self._signal_records),
-                    "health": self._build_health_snapshot(),
-                },
-            )
             self._log_fp.close()
             self._bridge.close()
             self._publisher.close()
@@ -1110,7 +864,6 @@ def main() -> None:
             raise RuntimeError(
                 "Research production stack requires a trained model. Collect more ticks before starting, set --train-ticks, or use --no-require-full-model-stack for non-production debugging."
             )
-        session._emit_ops_event("incomplete_model_stack", {"missing": missing})
     session.run()
 
 

@@ -446,7 +446,6 @@ class TestShadowSessionTraining:
             d_temporal=32,
         )
         session = NeuralAlphaShadowSession(cfg)
-        session._ops_log_path = tmp_path / "ops.jsonl"
 
         tick = {
             "timestamp_ns": 1,
@@ -664,7 +663,6 @@ class TestShadowTimestampMetrics:
                             "missing_venue_incidents": 2,
                             "rest_fallback_usage": 1,
                             "resnapshot_count": 1,
-                            "feed_startup_failures": 0,
                         }
                     }
                 },
@@ -678,7 +676,9 @@ class TestShadowTimestampMetrics:
         assert ops["continuous_retrain_completions"] == 1
         assert ops["health"]["data_quality"]["per_venue"]["BINANCE"]["ticks_received"] == 10
 
-    def test_fetch_tick_records_rest_fallback_and_startup_failures(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_fetch_tick_records_rest_fallback_without_ops_startup_counters(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         signal_path = tmp_path / "alpha_signal.bin"
         log_path = tmp_path / "shadow.jsonl"
         cfg = ShadowSessionConfig(
@@ -688,7 +688,6 @@ class TestShadowTimestampMetrics:
             seq_len=8,
         )
         session = NeuralAlphaShadowSession(cfg)
-        session._ops_log_path = tmp_path / "ops.jsonl"
 
         monkeypatch.setattr(session._bridge, "read_new_ticks", lambda: [])
         monkeypatch.setattr(
@@ -725,16 +724,17 @@ class TestShadowTimestampMetrics:
 
         assert len(ticks) == 1
         stats = session._venue_stats["BINANCE"]
-        assert stats.feed_startup_failures == 1
+        assert stats.missing_venue_incidents == 1
         assert stats.rest_fallback_usage >= 1
         assert not stats.startup_confirmed
+        assert stats.last_source == "rest_fallback"
         assert ticks[0]["tick_source"] == "rest_fallback"
 
         ticks = session._fetch_tick()
 
         stats = session._venue_stats["BINANCE"]
         assert len(ticks) == 1
-        assert stats.feed_startup_failures == 2
+        assert stats.missing_venue_incidents == 2
         assert stats.resnapshot_count == 0
         assert not stats.startup_confirmed
 
