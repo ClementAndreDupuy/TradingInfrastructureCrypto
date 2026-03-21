@@ -851,7 +851,6 @@ class NeuralAlphaShadowSession:
             if row:
                 row = {**row, "exchange": exchange, "tick_source": "rest_fallback"}
                 stats.rest_fallback_usage += 1
-                stats.startup_confirmed = True
                 stats.last_source = "rest_fallback"
                 rest_ticks.append(row)
                 self._emit_ops_event("venue_rest_fallback_used", {"venue": exchange, "count": stats.rest_fallback_usage})
