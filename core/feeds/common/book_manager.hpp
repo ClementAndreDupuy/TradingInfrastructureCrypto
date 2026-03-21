@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <cstdint>
 #include <vector>
 
 namespace trading {
@@ -15,7 +16,8 @@ class BookManager {
     BookManager(const std::string& symbol, Exchange exchange, double tick_size = 1.0,
                 size_t max_levels = 20000)
         : book_(symbol, exchange, tick_size, max_levels), last_update_steady_ns_(0),
-          publisher_(nullptr) {
+          publisher_(nullptr), last_publish_local_ts_ns_(0), last_publish_exchange_ts_ns_(0),
+          timestamp_issue_count_(0) {
         pub_bids_.reserve(5);
         pub_asks_.reserve(5);
     }
@@ -31,6 +33,7 @@ class BookManager {
             } else {
                 const int64_t wall_ts_ns =
                     (s.timestamp_local_ns > 0) ? s.timestamp_local_ns : wall_now_ns();
+                inspect_timestamp("snapshot", wall_ts_ns, s.timestamp_exchange_ns);
                 last_update_steady_ns_.store(steady_now_ns(), std::memory_order_release);
                 publish_lob(wall_ts_ns);
             }
@@ -46,6 +49,7 @@ class BookManager {
             } else if (result == Result::SUCCESS) {
                 const int64_t wall_ts_ns =
                     (d.timestamp_local_ns > 0) ? d.timestamp_local_ns : wall_now_ns();
+                inspect_timestamp("delta", wall_ts_ns, d.timestamp_exchange_ns);
                 last_update_steady_ns_.store(steady_now_ns(), std::memory_order_release);
                 publish_lob(wall_ts_ns);
             }
@@ -76,6 +80,9 @@ class BookManager {
     OrderBook book_;
     std::atomic<int64_t> last_update_steady_ns_;
     LobPublisher* publisher_;
+    std::atomic<int64_t> last_publish_local_ts_ns_;
+    std::atomic<int64_t> last_publish_exchange_ts_ns_;
+    std::atomic<uint64_t> timestamp_issue_count_;
     std::vector<PriceLevel> pub_bids_;
     std::vector<PriceLevel> pub_asks_;
 
@@ -99,6 +106,48 @@ class BookManager {
     static int64_t steady_now_ns() noexcept {
         using namespace std::chrono;
         return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+    }
+
+    void inspect_timestamp(const char* source, int64_t local_ts_ns, int64_t exchange_ts_ns) noexcept {
+        constexpr int64_t k_max_local_gap_ns = 60LL * 1000LL * 1000LL * 1000LL;
+        const int64_t prev_local = last_publish_local_ts_ns_.load(std::memory_order_acquire);
+        const int64_t prev_exchange = last_publish_exchange_ts_ns_.load(std::memory_order_acquire);
+        bool issue = false;
+        const char* issue_kind = "none";
+        int64_t reference_ns = 0;
+
+        if (local_ts_ns <= 0) {
+            issue = true;
+            issue_kind = "local_missing";
+        } else if (prev_local > 0 && local_ts_ns < prev_local) {
+            issue = true;
+            issue_kind = "local_non_monotonic";
+            reference_ns = prev_local;
+        } else if (prev_local > 0 && (local_ts_ns - prev_local) > k_max_local_gap_ns) {
+            issue = true;
+            issue_kind = "local_gap";
+            reference_ns = local_ts_ns - prev_local;
+        } else if (exchange_ts_ns > 0 && prev_exchange > 0 && exchange_ts_ns < prev_exchange) {
+            issue = true;
+            issue_kind = "exchange_non_monotonic";
+            reference_ns = prev_exchange;
+        }
+
+        if (issue) {
+            const uint64_t issue_count =
+                timestamp_issue_count_.fetch_add(1, std::memory_order_acq_rel) + 1;
+            LOG_WARN("BookManager timestamp anomaly", "symbol", book_.symbol().c_str(), "exchange",
+                     exchange_to_string(book_.exchange()), "source", source, "issue", issue_kind,
+                     "local_ts_ns", local_ts_ns, "exchange_ts_ns", exchange_ts_ns, "reference_ns",
+                     reference_ns, "issue_count", issue_count);
+        }
+
+        if (local_ts_ns > 0) {
+            last_publish_local_ts_ns_.store(local_ts_ns, std::memory_order_release);
+        }
+        if (exchange_ts_ns > 0) {
+            last_publish_exchange_ts_ns_.store(exchange_ts_ns, std::memory_order_release);
+        }
     }
 };
 

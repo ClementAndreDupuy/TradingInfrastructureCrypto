@@ -305,11 +305,12 @@ import sys
 
 path = sys.argv[1]
 signals: list[float] = []
+effective_signals_bps: list[float] = []
 mid_prices: list[float] = []
 risk_scores: list[float] = []
 safe_mode_events = 0
 gated_events = 0
-timestamps: list[int] = []
+elapsed_samples: list[int] = []
 p_calm_vals: list[float] = []
 p_trending_vals: list[float] = []
 p_shock_vals: list[float] = []
@@ -325,17 +326,20 @@ with open(path, "r", encoding="utf-8") as fp:
         except json.JSONDecodeError:
             continue
         signal = event.get("signal")
+        effective_signal_bps = event.get("ret_mid_bps")
         mid = event.get("mid_price")
         risk = event.get("risk_score")
-        ts = event.get("timestamp_ns")
+        elapsed_ns = event.get("session_elapsed_ns")
         if isinstance(signal, (int, float)):
             signals.append(float(signal))
+        if isinstance(effective_signal_bps, (int, float)):
+            effective_signals_bps.append(float(effective_signal_bps))
         if isinstance(mid, (int, float)):
             mid_prices.append(float(mid))
         if isinstance(risk, (int, float)):
             risk_scores.append(float(risk))
-        if isinstance(ts, int):
-            timestamps.append(ts)
+        if isinstance(elapsed_ns, int):
+            elapsed_samples.append(elapsed_ns)
         if event.get("safe_mode"):
             safe_mode_events += 1
         if event.get("gated"):
@@ -351,13 +355,15 @@ if not signals:
     raise SystemExit(0)
 
 n = len(signals)
-mean_sig = statistics.fmean(signals) * 1e4
-std_sig = statistics.pstdev(signals) * 1e4 if n > 1 else 0.0
-max_abs_sig = max(abs(s) for s in signals) * 1e4
+mean_sig = statistics.fmean(effective_signals_bps) if effective_signals_bps else 0.0
+std_sig = statistics.pstdev(effective_signals_bps) if len(effective_signals_bps) > 1 else 0.0
+max_abs_sig = max((abs(s) for s in effective_signals_bps), default=0.0)
+raw_mean_sig = statistics.fmean(signals) * 1e4
+raw_std_sig = statistics.pstdev(signals) * 1e4 if n > 1 else 0.0
 safe_pct = 100.0 * safe_mode_events / n if n else 0.0
 gated_pct = 100.0 * gated_events / n if n else 0.0
 avg_risk = statistics.fmean(risk_scores) if risk_scores else 0.0
-duration_min = (timestamps[-1] - timestamps[0]) / 1e9 / 60.0 if len(timestamps) > 1 else 0.0
+duration_min = (elapsed_samples[-1] - elapsed_samples[0]) / 1e9 / 60.0 if len(elapsed_samples) > 1 else 0.0
 
 returns: list[float] = []
 for prev, cur in zip(mid_prices, mid_prices[1:]):
@@ -408,6 +414,8 @@ print(f"  Session duration    : {duration_min:.1f} min")
 print(f"  Mean signal         : {mean_sig:.4f} bps")
 print(f"  Signal std          : {std_sig:.4f} bps")
 print(f"  Max |signal|        : {max_abs_sig:.4f} bps")
+print(f"  Mean raw signal     : {raw_mean_sig:.4f} bps")
+print(f"  Raw signal std      : {raw_std_sig:.4f} bps")
 print(f"  Avg risk score      : {avg_risk:.4f}")
 print()
 print("── Alpha quality ────────────────────────────────────────────")

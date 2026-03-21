@@ -141,7 +141,8 @@ def analyse_signals(rows: list[dict[str, Any]]) -> dict[str, Any]:
     if not rows:
         return {}
     ordered = sorted(rows, key=lambda r: (int(r.get("event_index", 0)), int(r.get("session_elapsed_ns", 0))))
-    sigs = np.nan_to_num(np.array([r.get("signal", 0.0) for r in ordered], dtype=np.float64))
+    raw_sigs = np.nan_to_num(np.array([r.get("signal", 0.0) for r in ordered], dtype=np.float64))
+    effective_sigs_bps = np.nan_to_num(np.array([r.get("ret_mid_bps", 0.0) for r in ordered], dtype=np.float64))
     risk = np.nan_to_num(np.array([r.get("risk_score", 0.0) for r in ordered], dtype=np.float64))
     mids = np.nan_to_num(np.array([r.get("mid_price", 0.0) for r in ordered], dtype=np.float64))
     elapsed = np.array([r.get("session_elapsed_ns", 0) for r in ordered], dtype=np.int64)
@@ -178,8 +179,10 @@ def analyse_signals(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "total_signals": len(ordered),
         "duration_min": round(duration_min, 2),
-        "signal_mean_bps": round(float(np.mean(sigs)) * 10000.0, 4),
-        "signal_std_bps": round(float(np.std(sigs)) * 10000.0, 4),
+        "signal_mean_bps": round(float(np.mean(effective_sigs_bps)), 4),
+        "signal_std_bps": round(float(np.std(effective_sigs_bps)), 4),
+        "raw_signal_mean_bps": round(float(np.mean(raw_sigs)) * 10000.0, 4),
+        "raw_signal_std_bps": round(float(np.std(raw_sigs)) * 10000.0, 4),
         "avg_risk_score": round(float(np.mean(risk)), 4),
         "ic": round(ic, 4),
         "icir_annualised": round(icir, 4),
@@ -268,8 +271,10 @@ def print_report(dec: dict[str, Any], sig: dict[str, Any], ops: dict[str, Any], 
             "── Neural alpha signal ──────────────────────────────────────",
             f"  Signals generated      : {sig.get('total_signals', 0)}",
             f"  Session duration       : {sig.get('duration_min', 0):.1f} min",
-            f"  Mean signal            : {sig.get('signal_mean_bps', 0):.4f} bps",
-            f"  Signal std             : {sig.get('signal_std_bps', 0):.4f} bps",
+            f"  Mean effective signal  : {sig.get('signal_mean_bps', 0):.4f} bps",
+            f"  Effective signal std   : {sig.get('signal_std_bps', 0):.4f} bps",
+            f"  Mean raw signal        : {sig.get('raw_signal_mean_bps', 0):.4f} bps",
+            f"  Raw signal std         : {sig.get('raw_signal_std_bps', 0):.4f} bps",
             f"  Avg risk score         : {sig.get('avg_risk_score', 0):.4f}",
             f"  IC (rolling 20)        : {sig.get('ic', 0):.4f}",
             f"  ICIR (annualised)      : {sig.get('icir_annualised', 0):.4f}",

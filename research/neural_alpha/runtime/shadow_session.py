@@ -185,6 +185,19 @@ def _build_signal_alignment(records: list[dict[str, Any]]) -> tuple[np.ndarray, 
     return (np.asarray(signals, dtype=np.float64), np.asarray(outcomes, dtype=np.float64))
 
 
+def _extract_signal_series(records: list[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray]:
+    ordered = sorted(records, key=lambda r: (int(r.get("event_index", 0)), int(r.get("session_elapsed_ns", 0))))
+    raw_signals_bps = np.array(
+        [float(record.get("signal", 0.0)) * 10000.0 for record in ordered],
+        dtype=np.float64,
+    )
+    effective_signals_bps = np.array(
+        [float(record.get("ret_mid_bps", 0.0)) for record in ordered],
+        dtype=np.float64,
+    )
+    return (raw_signals_bps, effective_signals_bps)
+
+
 def _summarise_timestamp_quality(records: list[dict[str, Any]]) -> dict[str, int | float | bool]:
     diagnostics: dict[str, int | float | bool] = {
         "records": len(records),
@@ -668,9 +681,10 @@ class NeuralAlphaShadowSession:
         if n == 0:
             print("  [shadow] No signals yet.")
             return
-        sigs = np.array([float(record.get("signal", 0.0)) for record in self._signal_records], dtype=np.float64)
-        mean_sig = float(np.mean(sigs)) * 10000.0
-        std_sig = float(np.std(sigs)) * 10000.0
+        raw_sigs_bps, effective_sigs_bps = _extract_signal_series(self._signal_records)
+        mean_sig = float(np.mean(effective_sigs_bps))
+        std_sig = float(np.std(effective_sigs_bps))
+        raw_mean_sig = float(np.mean(raw_sigs_bps))
         ic = 0.0
         icir = 0.0
         sig_aligned, out_aligned = _build_signal_alignment(self._signal_records)
@@ -692,7 +706,8 @@ class NeuralAlphaShadowSession:
         diagnostics = _summarise_timestamp_quality(self._signal_records)
         gating = self._gating_reason_counts
         print(
-            f"[Shadow] ticks={n}  mean={mean_sig:.2f}bps  std={std_sig:.2f}bps"
+            f"[Shadow] ticks={n}  mean_effective={mean_sig:.2f}bps"
+            f"  mean_raw={raw_mean_sig:.2f}bps  std_effective={std_sig:.2f}bps"
             f"  IC={ic:.4f}  ICIR={icir:.3f}"
             f"  confidence_gate={gating['confidence_gate']}"
             f"  horizon_gate={gating['horizon_disagreement_gate']}"
@@ -708,10 +723,17 @@ class NeuralAlphaShadowSession:
             return
         train_window = max(self.cfg.seq_len * 4, self.cfg.continuous_train_window_ticks)
         try:
+            print(
+                f"[Shadow] continuous retrain triggered processed_ticks={self._processed_ticks}"
+                f" window_ticks={train_window}"
+            )
             self.train_on_recent(train_window)
             self._last_continuous_train_tick = self._processed_ticks
-        except Exception:
-            pass
+            print(f"[Shadow] continuous retrain completed processed_ticks={self._processed_ticks}")
+        except Exception as exc:
+            print(
+                f"[Shadow] continuous retrain failed processed_ticks={self._processed_ticks}: {exc}"
+            )
 
     def run(self) -> None:
         self._running = True
