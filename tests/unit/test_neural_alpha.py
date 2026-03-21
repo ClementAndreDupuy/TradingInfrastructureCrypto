@@ -727,7 +727,16 @@ class TestShadowTimestampMetrics:
         stats = session._venue_stats["BINANCE"]
         assert stats.feed_startup_failures == 1
         assert stats.rest_fallback_usage >= 1
+        assert not stats.startup_confirmed
         assert ticks[0]["tick_source"] == "rest_fallback"
+
+        ticks = session._fetch_tick()
+
+        stats = session._venue_stats["BINANCE"]
+        assert len(ticks) == 1
+        assert stats.feed_startup_failures == 2
+        assert stats.resnapshot_count == 0
+        assert not stats.startup_confirmed
 
         session._log_fp.close()
         session._publisher.close()
