@@ -29,6 +29,7 @@ Usage:
 """
 
 from __future__ import annotations
+
 import argparse
 import json
 import mmap
@@ -38,10 +39,13 @@ import struct
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
+
 import numpy as np
 import polars as pl
 import torch
 from torch.utils.data import DataLoader
+
 from research.regime import (
     RegimeConfig,
     RegimeSignalPublisher,
@@ -50,11 +54,13 @@ from research.regime import (
     save_regime_artifact,
     train_regime_model_from_df,
 )
+
 from .core_bridge import RING_PATH, CoreBridge
 from ..data.dataset import DatasetConfig, LOBDataset, rolling_normalise
 from ..data.features import compute_lob_tensor, compute_scalar_features
-from ..operations.governance import ChampionChallengerRegistry, DriftGuard, EnsembleCanary
 from ..models.model import CryptoAlphaNet
+from ..models.trainer import TrainerConfig, walk_forward_train
+from ..operations.governance import ChampionChallengerRegistry, DriftGuard, EnsembleCanary
 from ..pipeline import (
     _fetch_binance_l5,
     _fetch_coinbase_l5,
@@ -62,7 +68,6 @@ from ..pipeline import (
     _fetch_okx_l5,
     collect_from_core_bridge,
 )
-from ..models.trainer import TrainerConfig, walk_forward_train
 
 _SIGNAL_FILE = "/tmp/trt_ipc/neural_alpha_signal.bin"
 _SIGNAL_SIZE = 32
@@ -71,44 +76,36 @@ _SEQ_OFFSET = 0
 _DATA_FMT = "=ddq"
 _DATA_OFFSET = 8
 _REGIME_SIGNAL_FILE = "/tmp/trt_ipc/regime_signal.bin"
+_OPS_EVENTS_LOG = "logs/ops_events.jsonl"
 _MAX_EXCHANGE_JUMP_NS = 60 * 1000000000
 
 
-def _ensure_parent_dir(path: str | Path) -> None:
-    Path(path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+@dataclass
+class VenueRuntimeStats:
+    ticks_received: int = 0
+    ticks_used: int = 0
+    missing_venue_incidents: int = 0
+    rest_fallback_usage: int = 0
+    resnapshot_count: int = 0
+    feed_startup_failures: int = 0
+    startup_confirmed: bool = False
+    consecutive_missing_polls: int = 0
+    last_source: str = "none"
 
 
-def _symbol_model_path(symbol: str, variant: str = "latest") -> Path:
-    symbol_tag = symbol.lower()
-    return Path(f"models/neural_alpha_{symbol_tag}_{variant}.pt")
-
-
-class _SignalPublisher:
-    """Writes neural alpha signal to a seqlock-protected memory-mapped file."""
-
-    def __init__(self, path: str = _SIGNAL_FILE) -> None:
-        self._path = path
-        _ensure_parent_dir(path)
-        self._f = open(path, "w+b")
-        self._f.write(b"\x00" * _SIGNAL_SIZE)
-        self._f.flush()
-        self._mm = mmap.mmap(self._f.fileno(), _SIGNAL_SIZE)
-
-    def publish(self, signal_bps: float, risk_score: float) -> None:
-        ts_ns = time.time_ns()
-        seq: int = struct.unpack_from(_SEQ_FMT, self._mm, _SEQ_OFFSET)[0]
-        struct.pack_into(_SEQ_FMT, self._mm, _SEQ_OFFSET, seq + 1)
-        struct.pack_into(_DATA_FMT, self._mm, _DATA_OFFSET, signal_bps, risk_score, ts_ns)
-        struct.pack_into(_SEQ_FMT, self._mm, _SEQ_OFFSET, seq + 2)
-        self._mm.flush()
-
-    def close(self) -> None:
-        try:
-            self._mm.close()
-            self._f.close()
-            os.unlink(self._path)
-        except OSError:
-            pass
+@dataclass
+class TrainingRunSummary:
+    stage: str
+    status: str
+    n_ticks: int
+    folds_requested: int
+    folds_completed: int
+    selected_checkpoint: str | None = None
+    selected_metrics: dict[str, float] = field(default_factory=dict)
+    incumbent_holdout_mse: float | None = None
+    challenger_holdout_mse: float | None = None
+    selected_model: str | None = None
+    error: str | None = None
 
 
 @dataclass
@@ -137,16 +134,49 @@ class ShadowSessionConfig:
     safe_mode_ticks: int = 120
     continuous_train_every_ticks: int = 1000
     continuous_train_window_ticks: int = 2000
-
     canary_ic_margin: float = 0.02
     canary_icir_floor: float = 0.0
     canary_window: int = 200
     canary_min_samples: int = 60
-    ops_events_log: str = "logs/ops_events.jsonl"
     require_full_model_stack: bool = True
 
 
-def _extract_tick_timestamps(tick: dict) -> tuple[int, int]:
+class _SignalPublisher:
+    def __init__(self, path: str = _SIGNAL_FILE) -> None:
+        self._path = path
+        _ensure_parent_dir(path)
+        self._f = open(path, "w+b")
+        self._f.write(b"\x00" * _SIGNAL_SIZE)
+        self._f.flush()
+        self._mm = mmap.mmap(self._f.fileno(), _SIGNAL_SIZE)
+
+    def publish(self, signal_bps: float, risk_score: float) -> None:
+        ts_ns = time.time_ns()
+        seq: int = struct.unpack_from(_SEQ_FMT, self._mm, _SEQ_OFFSET)[0]
+        struct.pack_into(_SEQ_FMT, self._mm, _SEQ_OFFSET, seq + 1)
+        struct.pack_into(_DATA_FMT, self._mm, _DATA_OFFSET, signal_bps, risk_score, ts_ns)
+        struct.pack_into(_SEQ_FMT, self._mm, _SEQ_OFFSET, seq + 2)
+        self._mm.flush()
+
+    def close(self) -> None:
+        try:
+            self._mm.close()
+            self._f.close()
+            os.unlink(self._path)
+        except OSError:
+            pass
+
+
+def _ensure_parent_dir(path: str | Path) -> None:
+    Path(path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+
+
+def _symbol_model_path(symbol: str, variant: str = "latest") -> Path:
+    symbol_tag = symbol.lower()
+    return Path(f"models/neural_alpha_{symbol_tag}_{variant}.pt")
+
+
+def _extract_tick_timestamps(tick: dict[str, Any]) -> tuple[int, int]:
     exchange_ts = int(
         tick.get("timestamp_exchange_ns", tick.get("exchange_timestamp_ns", tick.get("timestamp_ns", 0)))
     )
@@ -156,7 +186,7 @@ def _extract_tick_timestamps(tick: dict) -> tuple[int, int]:
     return (exchange_ts, local_ts)
 
 
-def _build_signal_alignment(records: list[dict]) -> tuple[np.ndarray, np.ndarray]:
+def _build_signal_alignment(records: list[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray]:
     ordered = sorted(records, key=lambda r: (int(r.get("event_index", 0)), int(r.get("session_elapsed_ns", 0))))
     signals: list[float] = []
     outcomes: list[float] = []
@@ -172,8 +202,8 @@ def _build_signal_alignment(records: list[dict]) -> tuple[np.ndarray, np.ndarray
     return (np.asarray(signals, dtype=np.float64), np.asarray(outcomes, dtype=np.float64))
 
 
-def _summarise_timestamp_quality(records: list[dict]) -> dict[str, int | float | bool]:
-    diagnostics = {
+def _summarise_timestamp_quality(records: list[dict[str, Any]]) -> dict[str, int | float | bool]:
+    diagnostics: dict[str, int | float | bool] = {
         "records": len(records),
         "exchange_missing": 0,
         "local_missing": 0,
@@ -191,40 +221,34 @@ def _summarise_timestamp_quality(records: list[dict]) -> dict[str, int | float |
     prev_local = None
     prev_event_index = None
     prev_venue_exchange_ts: dict[str, int] = {}
-    for record in sorted(
-        records, key=lambda r: (int(r.get("event_index", 0)), int(r.get("session_elapsed_ns", 0)))
-    ):
+    for record in sorted(records, key=lambda r: (int(r.get("event_index", 0)), int(r.get("session_elapsed_ns", 0)))):
         exchange_ts = int(record.get("timestamp_exchange_ns", 0))
         local_ts = int(record.get("timestamp_local_ns", 0))
         event_index = int(record.get("event_index", 0))
         venue = str(record.get("exchange", "UNKNOWN"))
         if exchange_ts <= 0:
-            diagnostics["exchange_missing"] += 1
+            diagnostics["exchange_missing"] = int(diagnostics["exchange_missing"]) + 1
         if local_ts <= 0:
-            diagnostics["local_missing"] += 1
+            diagnostics["local_missing"] = int(diagnostics["local_missing"]) + 1
         if prev_exchange is not None and exchange_ts > 0:
-            diagnostics["max_exchange_jump_ns"] = max(
-                int(diagnostics["max_exchange_jump_ns"]), abs(exchange_ts - prev_exchange)
-            )
+            diagnostics["max_exchange_jump_ns"] = max(int(diagnostics["max_exchange_jump_ns"]), abs(exchange_ts - prev_exchange))
             if exchange_ts < prev_exchange:
-                diagnostics["exchange_non_monotonic"] += 1
+                diagnostics["exchange_non_monotonic"] = int(diagnostics["exchange_non_monotonic"]) + 1
                 diagnostics["exchange_monotonic"] = False
         if prev_local is not None and local_ts > 0:
-            diagnostics["max_local_gap_ns"] = max(
-                int(diagnostics["max_local_gap_ns"]), abs(local_ts - prev_local)
-            )
+            diagnostics["max_local_gap_ns"] = max(int(diagnostics["max_local_gap_ns"]), abs(local_ts - prev_local))
             if local_ts < prev_local:
-                diagnostics["local_non_monotonic"] += 1
+                diagnostics["local_non_monotonic"] = int(diagnostics["local_non_monotonic"]) + 1
                 diagnostics["local_monotonic"] = False
         if prev_event_index is not None and event_index <= prev_event_index:
-            diagnostics["event_index_non_monotonic"] += 1
+            diagnostics["event_index_non_monotonic"] = int(diagnostics["event_index_non_monotonic"]) + 1
             diagnostics["event_index_monotonic"] = False
         previous_venue_ts = prev_venue_exchange_ts.get(venue)
         if previous_venue_ts is not None and exchange_ts > 0 and previous_venue_ts > 0:
             jump = abs(exchange_ts - previous_venue_ts)
             diagnostics["max_exchange_jump_ns"] = max(int(diagnostics["max_exchange_jump_ns"]), jump)
             if jump > _MAX_EXCHANGE_JUMP_NS:
-                diagnostics["cross_venue_exchange_jumps"] += 1
+                diagnostics["cross_venue_exchange_jumps"] = int(diagnostics["cross_venue_exchange_jumps"]) + 1
         if exchange_ts > 0:
             prev_venue_exchange_ts[venue] = exchange_ts
             prev_exchange = exchange_ts
@@ -246,20 +270,17 @@ def _summarise_timestamp_quality(records: list[dict]) -> dict[str, int | float |
 
 
 class NeuralAlphaShadowSession:
-    """
-    Runs live neural alpha inference and publishes signals to shared memory
-    so the C++ strategy can gate trades in real-time.
-    """
-
     def __init__(self, cfg: ShadowSessionConfig) -> None:
         self.cfg = cfg
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._model: CryptoAlphaNet | None = None
         self._secondary_model: CryptoAlphaNet | None = None
-        self._ring: list[dict] = []
+        self._ring: list[dict[str, Any]] = []
         self._max_ring = max(500, cfg.seq_len * 2)
         _ensure_parent_dir(cfg.log_path)
-        self._log_fp = open(cfg.log_path, "a")
+        self._log_fp = open(cfg.log_path, "a", encoding="utf-8")
+        self._ops_log_path = Path(_OPS_EVENTS_LOG)
+        _ensure_parent_dir(self._ops_log_path)
         self._publisher = _SignalPublisher(cfg.signal_file)
         _ensure_parent_dir(cfg.regime_signal_file)
         self._regime_publisher = RegimeSignalPublisher(cfg.regime_signal_file)
@@ -267,16 +288,15 @@ class NeuralAlphaShadowSession:
         if Path(cfg.regime_model_path).exists():
             try:
                 self._regime_artifact = load_regime_artifact(cfg.regime_model_path)
-                print(f"Regime model loaded from {cfg.regime_model_path}")
+                self._emit_ops_event("regime_model_loaded", {"path": cfg.regime_model_path})
             except Exception as exc:
-                print(f"[WARN] failed to load regime model {cfg.regime_model_path}: {exc}")
+                self._emit_ops_event("regime_model_load_failed", {"path": cfg.regime_model_path, "error": str(exc)})
         self._running = False
-        self._signal_records: list[dict[str, float | int | str | bool]] = []
+        self._signal_records: list[dict[str, Any]] = []
         self._registry = ChampionChallengerRegistry(cfg.registry_path)
-        self._drift_guard = DriftGuard(
-            window=cfg.drift_window, min_samples=cfg.drift_min_samples, ic_floor=cfg.drift_ic_floor
-        )
+        self._drift_guard = DriftGuard(window=cfg.drift_window, min_samples=cfg.drift_min_samples, ic_floor=cfg.drift_ic_floor)
         self._safe_mode_ticks_remaining = 0
+        self._safe_mode_reason: str | None = None
         self._bridge = CoreBridge(cfg.lob_feed_path)
         self._bridge.open()
         self._processed_ticks = 0
@@ -284,31 +304,39 @@ class NeuralAlphaShadowSession:
         self._session_event_index = 0
         self._session_wall_start_ns = time.time_ns()
         self._session_steady_start_ns = time.monotonic_ns()
-
         self._canary: EnsembleCanary | None = None
         self._prev_primary_signal: float | None = None
         self._prev_ensemble_signal: float | None = None
-
-    def _build_model(
-        self, d_spatial: int = 64, d_temporal: int = 128, n_temp_layers: int = 3
-    ) -> CryptoAlphaNet:
-        return (
-            CryptoAlphaNet(
-                d_spatial=d_spatial,
-                d_temporal=d_temporal,
-                n_temp_layers=n_temp_layers,
-                seq_len=self.cfg.seq_len,
-            )
-            .to(self._device)
-            .eval()
+        self._venue_stats = {exchange.upper(): VenueRuntimeStats() for exchange in cfg.exchanges}
+        self._gating_reason_counts = {"confidence_gate": 0, "horizon_disagreement_gate": 0, "safe_mode_gate": 0}
+        self._training_runs: list[TrainingRunSummary] = []
+        self._emit_ops_event(
+            "shadow_session_started",
+            {
+                "symbol": cfg.symbol,
+                "exchanges": [exchange.upper() for exchange in cfg.exchanges],
+                "duration_s": cfg.duration_s,
+                "interval_ms": cfg.interval_ms,
+                "continuous_train_every_ticks": cfg.continuous_train_every_ticks,
+                "continuous_train_window_ticks": cfg.continuous_train_window_ticks,
+                "safe_mode_ticks": cfg.safe_mode_ticks,
+            },
         )
+
+    def _build_model(self, d_spatial: int = 64, d_temporal: int = 128, n_temp_layers: int = 3) -> CryptoAlphaNet:
+        return CryptoAlphaNet(
+            d_spatial=d_spatial,
+            d_temporal=d_temporal,
+            n_temp_layers=n_temp_layers,
+            seq_len=self.cfg.seq_len,
+        ).to(self._device).eval()
 
     def load_model(self, path: str) -> None:
         model = self._build_model(self.cfg.d_spatial, self.cfg.d_temporal)
         state = torch.load(path, map_location=self._device, weights_only=True)
         model.load_state_dict(state)
         self._model = model
-        print(f"Model loaded from {path}")
+        self._emit_ops_event("primary_model_loaded", {"path": path})
 
     def load_secondary_model(self, path: str) -> None:
         model = self._build_model(d_spatial=32, d_temporal=64, n_temp_layers=1)
@@ -323,7 +351,7 @@ class NeuralAlphaShadowSession:
         )
         self._prev_primary_signal = None
         self._prev_ensemble_signal = None
-        print(f"Secondary model loaded from {path}")
+        self._emit_ops_event("secondary_model_loaded", {"path": path})
 
     def _validate_production_stack(self) -> None:
         missing: list[str] = []
@@ -341,7 +369,6 @@ class NeuralAlphaShadowSession:
             )
 
     def _unload_secondary_model(self, reason: str) -> None:
-        """Disable the secondary model after a canary failure and enter safe mode."""
         self._secondary_model = None
         self._canary = None
         self._prev_primary_signal = None
@@ -349,34 +376,48 @@ class NeuralAlphaShadowSession:
         self._trigger_safe_mode(reason=f"ensemble_canary: {reason}")
         self._emit_ops_event("ensemble_canary_rollback", {"reason": reason})
 
+    def _record_training_epoch(self, stage: str, fold: int, epoch: int, total_epochs: int, train_loss: float, val_loss: float) -> None:
+        self._emit_ops_event(
+            "training_epoch",
+            {
+                "stage": stage,
+                "fold": fold,
+                "epoch": epoch,
+                "total_epochs": total_epochs,
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+            },
+        )
+
     def _collect_training_ticks(self, n_ticks: int) -> pl.DataFrame:
         df = collect_from_core_bridge(n_ticks=n_ticks, interval_ms=self.cfg.interval_ms)
         if df is not None and len(df) > 0:
+            self._emit_ops_event("training_data_collected", {"stage": "bridge", "ticks": len(df)})
             return df
-        print("[WARN] core bridge unavailable for training; falling back to session collectors")
+        self._emit_ops_event("training_data_bridge_unavailable", {"ticks_requested": n_ticks})
         interval_s = self.cfg.interval_ms / 1000.0
-        rows: list[dict] = []
+        rows: list[dict[str, Any]] = []
         while len(rows) < n_ticks:
             rows.extend(self._fetch_tick())
             if len(rows) >= n_ticks:
                 break
             time.sleep(interval_s)
         if not rows:
-            raise RuntimeError(
-                "No data collected for training — core bridge and collectors unavailable."
-            )
+            raise RuntimeError("No data collected for training — core bridge and collectors unavailable.")
+        self._emit_ops_event("training_data_collected", {"stage": "session_collectors", "ticks": n_ticks})
         return pl.DataFrame(rows[:n_ticks]).sort("timestamp_ns")
 
     def train_on_recent(self, n_ticks: int) -> None:
-        print(f"Collecting {n_ticks} ticks for in-place training...")
         df = self._collect_training_ticks(n_ticks)
         resume_state = None
         if self._model is not None:
-            resume_state = {
-                k: v.detach().cpu().clone() for (k, v) in self._model.state_dict().items()
-            }
+            resume_state = {k: v.detach().cpu().clone() for (k, v) in self._model.state_dict().items()}
         max_folds = max(1, len(df) // (4 * self.cfg.seq_len))
         n_folds = min(2, max_folds)
+        self._emit_ops_event(
+            "bootstrap_training_started",
+            {"stage": "primary", "ticks": len(df), "folds_requested": n_folds, "epochs": self.cfg.train_epochs},
+        )
         tcfg = TrainerConfig(
             epochs=self.cfg.train_epochs,
             n_folds=n_folds,
@@ -387,14 +428,22 @@ class NeuralAlphaShadowSession:
             lr_warmup_epochs=min(3, self.cfg.train_epochs // 4),
             early_stop_patience=4,
             log_every_epochs=1,
-        )
-        print(
-            f"[PRIMARY] Starting primary model training (folds={n_folds}, epochs={self.cfg.train_epochs})"
+            event_callback=lambda payload: self._record_training_epoch(
+                "primary",
+                int(payload["fold"]),
+                int(payload["epoch"]),
+                int(payload["total_epochs"]),
+                float(payload["train_loss"]),
+                float(payload["val_loss"]),
+            ),
         )
         fold_results = walk_forward_train(df, tcfg)
         if not fold_results:
-            print(
-                f"WARNING: Training produced no fold results — dataset too small ({len(df)} ticks, seq_len={self.cfg.seq_len}). Model not updated; continuous training will retry once more ticks accumulate."
+            summary = TrainingRunSummary(stage="primary", status="skipped", n_ticks=len(df), folds_requested=n_folds, folds_completed=0)
+            self._training_runs.append(summary)
+            self._emit_ops_event(
+                "bootstrap_training_completed",
+                {"stage": "primary", "status": "skipped", "ticks": len(df), "folds_requested": n_folds, "folds_completed": 0},
             )
             return
         best = min(fold_results, key=lambda f: f["metrics"].get("loss_total", 1000000000.0))
@@ -411,21 +460,15 @@ class NeuralAlphaShadowSession:
                 keep_challenger = challenger_oos_mse <= incumbent_oos_mse
                 if not keep_challenger:
                     candidate_state = resume_state
-                    print(
-                        f"[MODEL_SELECT] challenger rejected on holdout (incumbent_mse={incumbent_oos_mse:.6e}, challenger_mse={challenger_oos_mse:.6e})"
-                    )
         model = self._build_model(self.cfg.d_spatial, self.cfg.d_temporal)
         model.load_state_dict(candidate_state)
         self._model = model
-        out_path = (
-            Path(self.cfg.model_path)
-            if self.cfg.model_path
-            else _symbol_model_path(self.cfg.symbol)
-        )
+        out_path = Path(self.cfg.model_path) if self.cfg.model_path else _symbol_model_path(self.cfg.symbol)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_out = out_path.with_suffix(out_path.suffix + ".tmp")
         torch.save(candidate_state, tmp_out)
         tmp_out.replace(out_path)
+        selected_metrics = dict(best.get("metrics", {}))
         meta = {
             "trained_at_ns": time.time_ns(),
             "train_ticks": n_ticks,
@@ -433,7 +476,7 @@ class NeuralAlphaShadowSession:
             "seq_len": self.cfg.seq_len,
             "d_spatial": self.cfg.d_spatial,
             "d_temporal": self.cfg.d_temporal,
-            "metrics": best.get("metrics", {}),
+            "metrics": selected_metrics,
             "oos_holdout_mse": {
                 "incumbent": incumbent_oos_mse,
                 "challenger": challenger_oos_mse,
@@ -441,27 +484,52 @@ class NeuralAlphaShadowSession:
             },
         }
         out_meta = out_path.with_suffix(".json")
-        out_meta.write_text(json.dumps(meta, indent=2))
-        print(
-            f"[PRIMARY] In-place training done. Val loss: {best['metrics'].get('loss_total', 'n/a'):.4f} saved={out_path}"
+        out_meta.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        summary = TrainingRunSummary(
+            stage="primary",
+            status="completed",
+            n_ticks=len(df),
+            folds_requested=n_folds,
+            folds_completed=len(fold_results),
+            selected_checkpoint=str(out_path),
+            selected_metrics=selected_metrics,
+            incumbent_holdout_mse=incumbent_oos_mse,
+            challenger_holdout_mse=challenger_oos_mse,
+            selected_model="challenger" if keep_challenger else "incumbent",
         )
-        secondary_path = (
-            Path(self.cfg.secondary_model_path)
-            if self.cfg.secondary_model_path
-            else _symbol_model_path(self.cfg.symbol, "secondary")
+        self._training_runs.append(summary)
+        self._emit_ops_event(
+            "bootstrap_training_completed",
+            {
+                "stage": "primary",
+                "status": "completed",
+                "ticks": len(df),
+                "folds_requested": n_folds,
+                "folds_completed": len(fold_results),
+                "selected_checkpoint": str(out_path),
+                "selected_metrics": selected_metrics,
+                "selected_model": summary.selected_model,
+                "incumbent_holdout_mse": incumbent_oos_mse,
+                "challenger_holdout_mse": challenger_oos_mse,
+            },
         )
+        secondary_path = Path(self.cfg.secondary_model_path) if self.cfg.secondary_model_path else _symbol_model_path(self.cfg.symbol, "secondary")
         try:
             self._train_secondary_on_data(df, secondary_path)
         except Exception as exc:
-            print(f"[WARN] secondary model training failed: {exc}")
+            self._emit_ops_event("secondary_training_failed", {"error": str(exc)})
         try:
             self._train_regime_on_data(df)
         except Exception as exc:
-            print(f"[WARN] regime model training failed: {exc}")
+            self._emit_ops_event("regime_training_failed", {"error": str(exc)})
 
     def _train_secondary_on_data(self, df: pl.DataFrame, out_path: Path) -> None:
         max_folds = max(1, len(df) // (4 * self.cfg.seq_len))
         n_folds = min(2, max_folds)
+        self._emit_ops_event(
+            "bootstrap_training_started",
+            {"stage": "secondary", "ticks": len(df), "folds_requested": n_folds, "epochs": self.cfg.train_epochs},
+        )
         tcfg = TrainerConfig(
             epochs=self.cfg.train_epochs,
             n_folds=n_folds,
@@ -478,14 +546,21 @@ class NeuralAlphaShadowSession:
             lr_warmup_epochs=min(3, self.cfg.train_epochs // 4),
             early_stop_patience=4,
             log_every_epochs=1,
-        )
-        print(
-            f"[SECONDARY] Starting secondary model training (folds={n_folds}, epochs={self.cfg.train_epochs}, d_spatial=32, d_temporal=64)"
+            event_callback=lambda payload: self._record_training_epoch(
+                "secondary",
+                int(payload["fold"]),
+                int(payload["epoch"]),
+                int(payload["total_epochs"]),
+                float(payload["train_loss"]),
+                float(payload["val_loss"]),
+            ),
         )
         fold_results = walk_forward_train(df, tcfg)
         if not fold_results:
-            print(
-                f"[SECONDARY][WARN] Secondary model training produced no fold results ({len(df)} ticks, seq_len={self.cfg.seq_len}). Secondary model not updated."
+            self._training_runs.append(TrainingRunSummary(stage="secondary", status="skipped", n_ticks=len(df), folds_requested=n_folds, folds_completed=0))
+            self._emit_ops_event(
+                "bootstrap_training_completed",
+                {"stage": "secondary", "status": "skipped", "ticks": len(df), "folds_requested": n_folds, "folds_completed": 0},
             )
             return
         best = min(fold_results, key=lambda f: f["metrics"].get("loss_total", 1000000000.0))
@@ -505,20 +580,67 @@ class NeuralAlphaShadowSession:
         )
         self._prev_primary_signal = None
         self._prev_ensemble_signal = None
-        print(f"[SECONDARY] Secondary model trained and saved to {out_path}")
+        selected_metrics = dict(best.get("metrics", {}))
+        self._training_runs.append(
+            TrainingRunSummary(
+                stage="secondary",
+                status="completed",
+                n_ticks=len(df),
+                folds_requested=n_folds,
+                folds_completed=len(fold_results),
+                selected_checkpoint=str(out_path),
+                selected_metrics=selected_metrics,
+                selected_model="challenger",
+            )
+        )
+        self._emit_ops_event(
+            "bootstrap_training_completed",
+            {
+                "stage": "secondary",
+                "status": "completed",
+                "ticks": len(df),
+                "folds_requested": n_folds,
+                "folds_completed": len(fold_results),
+                "selected_checkpoint": str(out_path),
+                "selected_metrics": selected_metrics,
+                "selected_model": "challenger",
+            },
+        )
 
     def _train_regime_on_data(self, df: pl.DataFrame) -> None:
         regime_path = Path(self.cfg.regime_model_path)
-        print(f"[REGIME] Starting regime model training on {len(df)} ticks")
+        self._emit_ops_event("bootstrap_training_started", {"stage": "regime", "ticks": len(df), "folds_requested": 1, "epochs": 1})
         (artifact, distribution) = train_regime_model_from_df(df, RegimeConfig())
         regime_path.parent.mkdir(parents=True, exist_ok=True)
         save_regime_artifact(artifact, str(regime_path))
         self._regime_artifact = artifact
-        print(f"[REGIME] Regime model trained, distribution={distribution}, saved to {regime_path}")
+        self._training_runs.append(
+            TrainingRunSummary(
+                stage="regime",
+                status="completed",
+                n_ticks=len(df),
+                folds_requested=1,
+                folds_completed=1,
+                selected_checkpoint=str(regime_path),
+                selected_metrics={k: float(v) for (k, v) in distribution.items()},
+                selected_model="challenger",
+            )
+        )
+        self._emit_ops_event(
+            "bootstrap_training_completed",
+            {
+                "stage": "regime",
+                "status": "completed",
+                "ticks": len(df),
+                "folds_requested": 1,
+                "folds_completed": 1,
+                "selected_checkpoint": str(regime_path),
+                "selected_metrics": {k: float(v) for (k, v) in distribution.items()},
+                "selected_model": "challenger",
+            },
+        )
 
-    def _evaluate_state_on_holdout(
-        self, state_dict: dict[str, torch.Tensor], holdout_df: pl.DataFrame
-    ) -> float:
+    def _evaluate_state_on_holdout(self, state_dict: dict[str, torch.Tensor], holdout_df: pl.DataFrame) -> float:
         dataset = LOBDataset(holdout_df, DatasetConfig(seq_len=self.cfg.seq_len))
         if len(dataset) == 0:
             return float("inf")
@@ -542,7 +664,43 @@ class NeuralAlphaShadowSession:
                 n += int(diff.numel())
         return sqerr / max(n, 1)
 
-    def _infer(self) -> dict | None:
+    def _summarise_training(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "stage": run.stage,
+                "status": run.status,
+                "ticks": run.n_ticks,
+                "folds_requested": run.folds_requested,
+                "folds_completed": run.folds_completed,
+                "selected_checkpoint": run.selected_checkpoint,
+                "selected_metrics": run.selected_metrics,
+                "incumbent_holdout_mse": run.incumbent_holdout_mse,
+                "challenger_holdout_mse": run.challenger_holdout_mse,
+                "selected_model": run.selected_model,
+                "error": run.error,
+            }
+            for run in self._training_runs
+        ]
+
+    def _build_health_snapshot(self) -> dict[str, Any]:
+        diagnostics = _summarise_timestamp_quality(self._signal_records)
+        signal_count = len(self._signal_records)
+        gated_total = sum(self._gating_reason_counts.values())
+        safe_mode_total = self._gating_reason_counts["safe_mode_gate"]
+        data_quality = {
+            "timestamp_quality": diagnostics,
+            "per_venue": {venue: vars(stats) for (venue, stats) in self._venue_stats.items()},
+            "signals_logged": signal_count,
+        }
+        model_quality = {
+            "gating_reason_counts": dict(self._gating_reason_counts),
+            "gating_rate": gated_total / signal_count if signal_count else 0.0,
+            "safe_mode_rate": safe_mode_total / signal_count if signal_count else 0.0,
+            "training_runs": self._summarise_training(),
+        }
+        return {"data_quality": data_quality, "model_quality": model_quality}
+
+    def _infer(self) -> dict[str, Any] | None:
         if self._model is None or len(self._ring) < self.cfg.seq_len:
             return None
         df_ring = pl.DataFrame(self._ring)
@@ -566,26 +724,35 @@ class NeuralAlphaShadowSession:
             raw_signal_bps = (raw_signal_bps + float(ret2[2]) * 10000.0) / 2.0
         ensemble_signal = raw_signal_bps * 0.0001
         signal_bps = raw_signal_bps
+        gating_reasons: list[str] = []
         dir_probs = torch.softmax(out["direction"][0, -1], dim=-1).cpu().numpy()
         if signal_bps > 0 and dir_probs[2] <= 0.55:
             signal_bps = 0.0
+            gating_reasons.append("confidence_gate")
         elif signal_bps < 0 and dir_probs[0] <= 0.55:
             signal_bps = 0.0
+            gating_reasons.append("confidence_gate")
         ret_1tick_bps = float(ret[0]) * 10000.0
         if signal_bps > 0 and ret_1tick_bps <= 0:
             signal_bps = 0.0
+            gating_reasons.append("horizon_disagreement_gate")
         elif signal_bps < 0 and ret_1tick_bps >= 0:
             signal_bps = 0.0
-        if self._safe_mode_ticks_remaining > 0:
+            gating_reasons.append("horizon_disagreement_gate")
+        safe_mode_active = self._safe_mode_ticks_remaining > 0
+        if safe_mode_active:
             signal_bps = 0.0
             self._safe_mode_ticks_remaining -= 1
+            gating_reasons.append("safe_mode_gate")
+        for reason in set(gating_reasons):
+            self._gating_reason_counts[reason] += 1
         self._publisher.publish(signal_bps, risk)
         regime_probs = {"p_calm": 1.0, "p_trending": 0.0, "p_shock": 0.0, "p_illiquid": 0.0}
         if self._regime_artifact is not None:
             try:
                 regime_probs = infer_regime_probabilities(df_ring, self._regime_artifact)
             except Exception as exc:
-                print(f"[WARN] regime inference failed: {exc}")
+                self._emit_ops_event("regime_inference_failed", {"error": str(exc)})
         self._regime_publisher.publish(
             regime_probs["p_calm"],
             regime_probs["p_trending"],
@@ -593,12 +760,9 @@ class NeuralAlphaShadowSession:
             regime_probs["p_illiquid"],
         )
         last = self._ring[-1]
-        (exchange_ts, local_ts) = _extract_tick_timestamps(last)
+        exchange_ts, local_ts = _extract_tick_timestamps(last)
         self._session_event_index += 1
-        mid = (
-            last.get("best_bid", last.get("bid_price_1", 0.0))
-            + last.get("best_ask", last.get("ask_price_1", 0.0))
-        ) / 2.0
+        mid = (last.get("best_bid", last.get("bid_price_1", 0.0)) + last.get("best_ask", last.get("ask_price_1", 0.0))) / 2.0
         return {
             "timestamp_ns": local_ts,
             "timestamp_exchange_ns": exchange_ts,
@@ -618,7 +782,9 @@ class NeuralAlphaShadowSession:
             "dir_p_flat": float(dir_probs[1]),
             "dir_p_up": float(dir_probs[2]),
             "gated": signal_bps == 0.0 and raw_signal_bps != 0.0,
-            "safe_mode": self._safe_mode_ticks_remaining > 0,
+            "safe_mode": safe_mode_active,
+            "safe_mode_reason": self._safe_mode_reason if safe_mode_active else None,
+            "gating_reasons": gating_reasons,
             "primary_signal": primary_signal,
             "ensemble_signal": ensemble_signal,
             "p_calm": regime_probs["p_calm"],
@@ -628,58 +794,102 @@ class NeuralAlphaShadowSession:
         }
 
     def _trigger_safe_mode(self, reason: str) -> None:
-        self._safe_mode_ticks_remaining = max(
-            self._safe_mode_ticks_remaining, self.cfg.safe_mode_ticks
-        )
+        self._safe_mode_ticks_remaining = max(self._safe_mode_ticks_remaining, self.cfg.safe_mode_ticks)
+        self._safe_mode_reason = reason
         rollback_path = self._registry.rollback_to_previous_champion(reason=reason)
+        rollback_loaded = False
         if rollback_path and Path(rollback_path).exists():
             try:
                 self.load_model(rollback_path)
-                print(f"[SAFE_MODE] rollback model loaded: {rollback_path}")
+                rollback_loaded = True
             except Exception as exc:
-                print(f"[SAFE_MODE] rollback load failed: {exc}")
-        else:
-            print("[SAFE_MODE] no rollback champion available; publishing neutral signal only")
+                self._emit_ops_event("safe_mode_rollback_load_failed", {"reason": reason, "rollback_path": rollback_path, "error": str(exc)})
+        self._emit_ops_event(
+            "safe_mode_activated",
+            {
+                "reason": reason,
+                "ticks_remaining": self._safe_mode_ticks_remaining,
+                "rollback_path": rollback_path,
+                "rollback_loaded": rollback_loaded,
+            },
+        )
 
-    def _fetch_tick(self) -> list[dict]:
+    def _fetch_tick(self) -> list[dict[str, Any]]:
         bridge_ticks = self._bridge.read_new_ticks()
-        _fetchers = {
+        fetchers = {
             "BINANCE": _fetch_binance_l5,
             "KRAKEN": _fetch_kraken_l5,
             "OKX": _fetch_okx_l5,
             "COINBASE": _fetch_coinbase_l5,
         }
-        bridge_exchanges = {t.get("exchange", "").upper() for t in bridge_ticks}
-        missing = [ex for ex in self.cfg.exchanges if ex.upper() not in bridge_exchanges]
-        rest_ticks: list[dict] = []
-        for ex in missing:
-            fetcher = _fetchers.get(ex)
-            if fetcher:
-                row = fetcher(self.cfg.symbol)
-                if row:
-                    rest_ticks.append(row)
+        grouped_ticks: dict[str, list[dict[str, Any]]] = {exchange: [] for exchange in self._venue_stats}
+        for tick in bridge_ticks:
+            exchange = str(tick.get("exchange", "UNKNOWN")).upper()
+            if exchange in grouped_ticks:
+                grouped_ticks[exchange].append(tick)
+        rest_ticks: list[dict[str, Any]] = []
+        for exchange, stats in self._venue_stats.items():
+            venue_bridge_ticks = grouped_ticks.get(exchange, [])
+            if venue_bridge_ticks:
+                stats.ticks_received += len(venue_bridge_ticks)
+                stats.startup_confirmed = True
+                stats.consecutive_missing_polls = 0
+                stats.last_source = "bridge"
+                continue
+            stats.missing_venue_incidents += 1
+            stats.consecutive_missing_polls += 1
+            if not stats.startup_confirmed:
+                stats.feed_startup_failures += 1
+                self._emit_ops_event("venue_feed_startup_failure", {"venue": exchange, "count": stats.feed_startup_failures})
+            else:
+                stats.resnapshot_count += 1
+                self._emit_ops_event("venue_resnapshot_detected", {"venue": exchange, "count": stats.resnapshot_count})
+            fetcher = fetchers.get(exchange)
+            if fetcher is None:
+                continue
+            row = fetcher(self.cfg.symbol)
+            if row:
+                row = {**row, "exchange": exchange, "tick_source": "rest_fallback"}
+                stats.rest_fallback_usage += 1
+                stats.startup_confirmed = True
+                stats.last_source = "rest_fallback"
+                rest_ticks.append(row)
+                self._emit_ops_event("venue_rest_fallback_used", {"venue": exchange, "count": stats.rest_fallback_usage})
         if bridge_ticks or rest_ticks:
             return bridge_ticks + rest_ticks
-        for ex in self.cfg.exchanges:
-            fetcher = _fetchers.get(ex)
-            if fetcher:
-                row = fetcher(self.cfg.symbol)
-                if row:
-                    rest_ticks.append(row)
+        for exchange in self._venue_stats:
+            fetcher = fetchers.get(exchange)
+            if fetcher is None:
+                continue
+            row = fetcher(self.cfg.symbol)
+            if row:
+                row = {**row, "exchange": exchange, "tick_source": "rest_fallback"}
+                stats = self._venue_stats[exchange]
+                stats.rest_fallback_usage += 1
+                stats.last_source = "rest_fallback"
+                rest_ticks.append(row)
+                self._emit_ops_event("venue_rest_fallback_used", {"venue": exchange, "count": stats.rest_fallback_usage})
         return rest_ticks
 
-    def _emit_ops_event(self, event_type: str, details: dict) -> None:
-        event = {"event": event_type, "timestamp_ns": time.time_ns(), **details}
-        ops_log = Path(self.cfg.ops_events_log)
+    def _emit_ops_event(self, event_type: str, details: dict[str, Any]) -> None:
+        event = {
+            "event": event_type,
+            "timestamp_ns": time.time_ns(),
+            "session_elapsed_ns": time.monotonic_ns() - self._session_steady_start_ns if hasattr(self, "_session_steady_start_ns") else 0,
+            **details,
+        }
         try:
-            ops_log.parent.mkdir(parents=True, exist_ok=True)
-            with open(ops_log, "a") as f:
-                f.write(json.dumps(event) + "\n")
+            self._ops_log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._ops_log_path, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps(event) + "\n")
         except OSError:
             pass
         print(f"[OPS_EVENT] {event_type}: {details}")
 
-    def _log(self, signal_info: dict) -> None:
+    def _log(self, signal_info: dict[str, Any]) -> None:
+        exchange = str(signal_info.get("exchange", "UNKNOWN")).upper()
+        if exchange in self._venue_stats:
+            self._venue_stats[exchange].ticks_used += 1
         self._signal_records.append(signal_info)
         self._log_fp.write(json.dumps(signal_info) + "\n")
         self._log_fp.flush()
@@ -689,12 +899,12 @@ class NeuralAlphaShadowSession:
         if n == 0:
             print("  [shadow] No signals yet.")
             return
-        sigs = np.array([float(record.get("signal", 0.0)) for record in self._signal_records])
+        sigs = np.array([float(record.get("signal", 0.0)) for record in self._signal_records], dtype=np.float64)
         mean_sig = float(np.mean(sigs)) * 10000.0
         std_sig = float(np.std(sigs)) * 10000.0
         ic = 0.0
         icir = 0.0
-        (sig_aligned, out_aligned) = _build_signal_alignment(self._signal_records)
+        sig_aligned, out_aligned = _build_signal_alignment(self._signal_records)
         if len(out_aligned) >= 10 and out_aligned.std() > 0 and sig_aligned.std() > 0:
             ic = float(np.corrcoef(sig_aligned, out_aligned)[0, 1])
             if len(out_aligned) >= 40:
@@ -711,35 +921,14 @@ class NeuralAlphaShadowSession:
                     if ic_arr.std() > 1e-9:
                         icir = float(ic_arr.mean() / ic_arr.std() * np.sqrt(252))
         diagnostics = _summarise_timestamp_quality(self._signal_records)
-        safe_pct = 0.0
-        gated_pct = 0.0
-        try:
-            import json as _json
-            safe_c = gated_c = 0
-            total_c = 0
-            with open(self._log_fp.name) as _lf:
-                for _line in _lf:
-                    _line = _line.strip()
-                    if not _line:
-                        continue
-                    try:
-                        _ev = _json.loads(_line)
-                        total_c += 1
-                        if _ev.get("safe_mode"):
-                            safe_c += 1
-                        if _ev.get("gated"):
-                            gated_c += 1
-                    except Exception:
-                        pass
-            if total_c:
-                safe_pct = 100.0 * safe_c / total_c
-                gated_pct = 100.0 * gated_c / total_c
-        except Exception:
-            pass
+        health = self._build_health_snapshot()
+        gating = health["model_quality"]["gating_reason_counts"]
         print(
             f"[Shadow] ticks={n}  mean={mean_sig:.2f}bps  std={std_sig:.2f}bps"
             f"  IC={ic:.4f}  ICIR={icir:.3f}"
-            f"  safe_mode={safe_pct:.1f}%  gated={gated_pct:.1f}%"
+            f"  confidence_gate={gating['confidence_gate']}"
+            f"  horizon_gate={gating['horizon_disagreement_gate']}"
+            f"  safe_mode_gate={gating['safe_mode_gate']}"
             f"  ts_issues={int(diagnostics['has_timestamp_issues'])}"
         )
 
@@ -750,24 +939,22 @@ class NeuralAlphaShadowSession:
         if ticks_since_train < self.cfg.continuous_train_every_ticks:
             return
         train_window = max(self.cfg.seq_len * 4, self.cfg.continuous_train_window_ticks)
-        print(
-            f"[CONTINUOUS_TRAIN] starting incremental retrain at tick={self._processed_ticks} window={train_window}"
+        self._emit_ops_event(
+            "continuous_retrain_triggered",
+            {"tick": self._processed_ticks, "ticks_since_last_train": ticks_since_train, "train_window": train_window},
         )
         try:
             self.train_on_recent(train_window)
             self._last_continuous_train_tick = self._processed_ticks
-            print("[CONTINUOUS_TRAIN] completed")
+            self._emit_ops_event("continuous_retrain_completed", {"tick": self._processed_ticks, "train_window": train_window})
         except Exception as exc:
-            print(f"[CONTINUOUS_TRAIN] failed: {exc}")
+            self._emit_ops_event("continuous_retrain_failed", {"tick": self._processed_ticks, "train_window": train_window, "error": str(exc)})
 
     def run(self) -> None:
         self._running = True
         interval_s = self.cfg.interval_ms / 1000.0
         end_time = time.time() + self.cfg.duration_s
         last_report = time.time()
-        print(
-            f"Shadow session started — duration={self.cfg.duration_s}s  interval={self.cfg.interval_ms}ms  symbol={self.cfg.symbol}  exchanges={','.join(self.cfg.exchanges)}  signal_file={self.cfg.signal_file} regime_signal_file={self.cfg.regime_signal_file}"
-        )
         try:
             while self._running and time.time() < end_time:
                 tick_start = time.time()
@@ -786,30 +973,24 @@ class NeuralAlphaShadowSession:
                         previous_record = self._signal_records[-1]
                         previous_mid = float(previous_record.get("mid_price", 0.0))
                         if previous_mid > 0:
-                            realised = (signal_info["mid_price"] - previous_mid) / previous_mid
+                            realised = (float(signal_info["mid_price"]) - previous_mid) / previous_mid
                             previous_signal = float(previous_record.get("signal", 0.0))
                             drift_triggered = self._drift_guard.update(previous_signal, realised)
                             if drift_triggered:
                                 ic = self._drift_guard.current_ic()
-                                self._trigger_safe_mode(
-                                    reason=f"drift_ic_breach ic={ic:.4f} floor={self.cfg.drift_ic_floor:.4f}"
-                                )
-                            if (
-                                self._canary is not None
-                                and self._prev_primary_signal is not None
-                                and (self._prev_ensemble_signal is not None)
-                            ):
-                                canary_triggered = self._canary.update(
-                                    self._prev_primary_signal, self._prev_ensemble_signal, realised
-                                )
+                                reason = f"drift_ic_breach ic={ic:.4f} floor={self.cfg.drift_ic_floor:.4f}"
+                                self._emit_ops_event("drift_breach", {"ic": ic, "ic_floor": self.cfg.drift_ic_floor, "reason": reason})
+                                self._trigger_safe_mode(reason=reason)
+                            if self._canary is not None and self._prev_primary_signal is not None and self._prev_ensemble_signal is not None:
+                                canary_triggered = self._canary.update(self._prev_primary_signal, self._prev_ensemble_signal, realised)
                                 if canary_triggered:
                                     e_ic = self._canary.ensemble_ic()
                                     p_ic = self._canary.primary_ic()
                                     self._unload_secondary_model(
                                         reason=f"ic_degradation ensemble_ic={e_ic:.4f} primary_ic={p_ic:.4f} margin={self.cfg.canary_ic_margin}"
                                     )
-                    self._prev_primary_signal = signal_info["primary_signal"]
-                    self._prev_ensemble_signal = signal_info["ensemble_signal"]
+                    self._prev_primary_signal = float(signal_info["primary_signal"])
+                    self._prev_ensemble_signal = float(signal_info["ensemble_signal"])
                     self._log(signal_info)
                 if time.time() - last_report >= self.cfg.report_interval_s:
                     self._print_summary()
@@ -817,6 +998,15 @@ class NeuralAlphaShadowSession:
                 time.sleep(max(0.0, interval_s - (time.time() - tick_start)))
         finally:
             self._print_summary()
+            self._emit_ops_event("shadow_health_summary", self._build_health_snapshot())
+            self._emit_ops_event(
+                "shadow_session_completed",
+                {
+                    "processed_ticks": self._processed_ticks,
+                    "signal_records": len(self._signal_records),
+                    "health": self._build_health_snapshot(),
+                },
+            )
             self._log_fp.close()
             self._bridge.close()
             self._publisher.close()
@@ -832,34 +1022,10 @@ def main() -> None:
     ap.add_argument("--model-path", type=str, default=None, dest="model_path")
     ap.add_argument("--secondary-model-path", type=str, default=None, dest="secondary_model_path")
     ap.add_argument("--log-path", type=str, default="neural_alpha_shadow.jsonl", dest="log_path")
-    ap.add_argument(
-        "--signal-file",
-        type=str,
-        default=_SIGNAL_FILE,
-        dest="signal_file",
-        help="Shared memory file path read by C++ AlphaSignalReader",
-    )
-    ap.add_argument(
-        "--lob-feed-path",
-        type=str,
-        default=RING_PATH,
-        dest="lob_feed_path",
-        help="Path to C++ LOB feed ring buffer (written by LobPublisher, read by CoreBridge)",
-    )
-    ap.add_argument(
-        "--regime-signal-file",
-        type=str,
-        default=_REGIME_SIGNAL_FILE,
-        dest="regime_signal_file",
-        help="Shared memory file path read by C++ RegimeSignalReader",
-    )
-    ap.add_argument(
-        "--regime-model-path",
-        type=str,
-        default="models/r2_regime_model.json",
-        dest="regime_model_path",
-        help="Trained R2 regime artifact JSON for live regime inference",
-    )
+    ap.add_argument("--signal-file", type=str, default=_SIGNAL_FILE, dest="signal_file", help="Shared memory file path read by C++ AlphaSignalReader")
+    ap.add_argument("--lob-feed-path", type=str, default=RING_PATH, dest="lob_feed_path", help="Path to C++ LOB feed ring buffer")
+    ap.add_argument("--regime-signal-file", type=str, default=_REGIME_SIGNAL_FILE, dest="regime_signal_file", help="Shared memory file path read by C++ RegimeSignalReader")
+    ap.add_argument("--regime-model-path", type=str, default="models/r2_regime_model.json", dest="regime_model_path", help="Trained R2 regime artifact JSON for live regime inference")
     ap.add_argument("--interval-ms", type=int, default=500, dest="interval_ms")
     ap.add_argument("--duration", type=int, default=3600)
     ap.add_argument("--report-interval", type=int, default=60, dest="report_interval_s")
@@ -870,51 +1036,18 @@ def main() -> None:
     ap.add_argument("--train-epochs", type=int, default=10, dest="train_epochs")
     ap.add_argument("--symbol", type=str, default="BTCUSDT")
     ap.add_argument("--exchanges", type=str, default="BINANCE,KRAKEN,OKX,COINBASE")
-    ap.add_argument(
-        "--registry-path", type=str, default="models/model_registry.json", dest="registry_path"
-    )
+    ap.add_argument("--registry-path", type=str, default="models/model_registry.json", dest="registry_path")
     ap.add_argument("--drift-window", type=int, default=200, dest="drift_window")
     ap.add_argument("--drift-min-samples", type=int, default=60, dest="drift_min_samples")
     ap.add_argument("--drift-ic-floor", type=float, default=-0.05, dest="drift_ic_floor")
     ap.add_argument("--safe-mode-ticks", type=int, default=120, dest="safe_mode_ticks")
-    ap.add_argument(
-        "--continuous-train-every-ticks",
-        type=int,
-        default=1000,
-        dest="continuous_train_every_ticks",
-    )
-    ap.add_argument(
-        "--continuous-train-window-ticks",
-        type=int,
-        default=2000,
-        dest="continuous_train_window_ticks",
-    )
-    ap.add_argument(
-        "--canary-ic-margin",
-        type=float,
-        default=0.02,
-        dest="canary_ic_margin",
-        help="Max IC degradation of ensemble vs primary before canary fires",
-    )
-    ap.add_argument(
-        "--canary-icir-floor",
-        type=float,
-        default=0.0,
-        dest="canary_icir_floor",
-        help="Min ensemble ICIR before canary fires",
-    )
+    ap.add_argument("--continuous-train-every-ticks", type=int, default=1000, dest="continuous_train_every_ticks")
+    ap.add_argument("--continuous-train-window-ticks", type=int, default=2000, dest="continuous_train_window_ticks")
+    ap.add_argument("--canary-ic-margin", type=float, default=0.02, dest="canary_ic_margin", help="Max IC degradation of ensemble vs primary before canary fires")
+    ap.add_argument("--canary-icir-floor", type=float, default=0.0, dest="canary_icir_floor", help="Min ensemble ICIR before canary fires")
     ap.add_argument("--canary-window", type=int, default=200, dest="canary_window")
     ap.add_argument("--canary-min-samples", type=int, default=60, dest="canary_min_samples")
-    ap.add_argument(
-        "--ops-events-log", type=str, default="logs/ops_events.jsonl", dest="ops_events_log"
-    )
-    ap.add_argument(
-        "--require-full-model-stack",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        dest="require_full_model_stack",
-        help="Require primary + secondary alpha models and regime artifact before entering production shadow mode.",
-    )
+    ap.add_argument("--require-full-model-stack", action=argparse.BooleanOptionalAction, default=True, dest="require_full_model_stack", help="Require primary + secondary alpha models and regime artifact before entering production shadow mode.")
     args = ap.parse_args()
     cfg = ShadowSessionConfig(
         model_path=args.model_path,
@@ -929,7 +1062,7 @@ def main() -> None:
         train_ticks=args.train_ticks,
         train_epochs=args.train_epochs,
         symbol=args.symbol,
-        exchanges=args.exchanges.split(","),
+        exchanges=[exchange.strip().upper() for exchange in args.exchanges.split(",") if exchange.strip()],
         signal_file=args.signal_file,
         lob_feed_path=args.lob_feed_path,
         regime_signal_file=args.regime_signal_file,
@@ -945,40 +1078,25 @@ def main() -> None:
         canary_icir_floor=args.canary_icir_floor,
         canary_window=args.canary_window,
         canary_min_samples=args.canary_min_samples,
-        ops_events_log=args.ops_events_log,
         require_full_model_stack=args.require_full_model_stack,
     )
     session = NeuralAlphaShadowSession(cfg)
 
-    def _handle_sigint(sig, frame):
+    def _handle_sigint(sig: int, frame: object) -> None:
         print("\nInterrupt received — stopping session...")
         session.stop()
 
     signal.signal(signal.SIGINT, _handle_sigint)
-    primary_model_path = (
-        Path(cfg.model_path) if cfg.model_path else _symbol_model_path(cfg.symbol, "latest")
-    )
-    secondary_model_path = (
-        Path(cfg.secondary_model_path)
-        if cfg.secondary_model_path
-        else _symbol_model_path(cfg.symbol, "secondary")
-    )
+    primary_model_path = Path(cfg.model_path) if cfg.model_path else _symbol_model_path(cfg.symbol, "latest")
+    secondary_model_path = Path(cfg.secondary_model_path) if cfg.secondary_model_path else _symbol_model_path(cfg.symbol, "secondary")
     if primary_model_path.exists():
         session.load_model(str(primary_model_path))
     if secondary_model_path.exists():
         session.load_secondary_model(str(secondary_model_path))
-    any_missing = (
-        session._model is None
-        or session._secondary_model is None
-        or session._regime_artifact is None
-    )
+    any_missing = session._model is None or session._secondary_model is None or session._regime_artifact is None
     if any_missing and cfg.train_ticks > 0:
         session.train_on_recent(cfg.train_ticks)
-    still_missing = (
-        session._model is None
-        or session._secondary_model is None
-        or session._regime_artifact is None
-    )
+    still_missing = session._model is None or session._secondary_model is None or session._regime_artifact is None
     if not still_missing:
         session._validate_production_stack()
     else:
@@ -993,9 +1111,7 @@ def main() -> None:
             raise RuntimeError(
                 "Research production stack requires a trained model. Collect more ticks before starting, set --train-ticks, or use --no-require-full-model-stack for non-production debugging."
             )
-        print(
-            f"[WARN] Incomplete model stack ({', '.join(missing)} not yet available). Continuous training will bootstrap remaining models once enough data accumulates."
-        )
+        session._emit_ops_event("incomplete_model_stack", {"missing": missing})
     session.run()
 
 

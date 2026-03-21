@@ -62,7 +62,6 @@ apply_config_defaults() {
     local continuous_train_every_ticks_from_cfg continuous_train_window_ticks_from_cfg
 
     local safe_mode_ticks_from_cfg drift_min_samples_from_cfg drift_ic_floor_from_cfg
-    local fallback_key_from_cfg fallback_secret_from_cfg
 
     symbol_from_cfg="$(read_yaml_value "$CONFIG_FILE" "symbol")"
     venues_from_cfg="$(read_yaml_value "$CONFIG_FILE" "venues")"
@@ -85,8 +84,6 @@ apply_config_defaults() {
     safe_mode_ticks_from_cfg="$(read_yaml_value "$CONFIG_FILE" "safe_mode_ticks")"
     drift_min_samples_from_cfg="$(read_yaml_value "$CONFIG_FILE" "drift_min_samples")"
     drift_ic_floor_from_cfg="$(read_yaml_value "$CONFIG_FILE" "drift_ic_floor")"
-    fallback_key_from_cfg="$(read_yaml_value "$CONFIG_FILE" "shadow_fallback_api_key")"
-    fallback_secret_from_cfg="$(read_yaml_value "$CONFIG_FILE" "shadow_fallback_api_secret")"
 
     [[ -n "$symbol_from_cfg" ]] && SYMBOL="$symbol_from_cfg"
     [[ -n "$venues_from_cfg" ]] && VENUES="$venues_from_cfg"
@@ -109,8 +106,6 @@ apply_config_defaults() {
     [[ -n "$safe_mode_ticks_from_cfg" ]] && SAFE_MODE_TICKS="$safe_mode_ticks_from_cfg"
     [[ -n "$drift_min_samples_from_cfg" ]] && DRIFT_MIN_SAMPLES="$drift_min_samples_from_cfg"
     [[ -n "$drift_ic_floor_from_cfg" ]] && DRIFT_IC_FLOOR="$drift_ic_floor_from_cfg"
-    SHADOW_FALLBACK_API_KEY="${fallback_key_from_cfg}"
-    SHADOW_FALLBACK_API_SECRET="${fallback_secret_from_cfg}"
 }
 
 usage() {
@@ -147,8 +142,8 @@ Options:
   -h, --help                    Show this help
 
 Credential resolution per venue (first non-empty wins):
-  SHADOW_<VENUE>_API_KEY, <VENUE>_API_KEY, fallback=<empty>
-  SHADOW_<VENUE>_API_SECRET, <VENUE>_API_SECRET, fallback=<empty>
+  SHADOW_<VENUE>_API_KEY, <VENUE>_API_KEY
+  SHADOW_<VENUE>_API_SECRET, <VENUE>_API_SECRET
 
   Coinbase Advanced Trade requires a valid EC private-key PEM for the level2
   WebSocket channel.  Set COINBASE_API_KEY and COINBASE_API_SECRET (or the
@@ -182,8 +177,7 @@ DRIFT_MIN_SAMPLES=100
 DRIFT_IC_FLOOR=-0.08
 ALPHA_SEQ_LEN=64
 ALPHA_LOG_PATH="$REPO_ROOT/logs/neural_alpha_shadow.jsonl"
-SHADOW_FALLBACK_API_KEY=""
-SHADOW_FALLBACK_API_SECRET=""
+OPS_EVENTS_LOG="$REPO_ROOT/logs/ops_events.jsonl"
 SKIP_ALPHA=0
 CONFIG_FILE="$CONFIG_FILE_DEFAULT"
 EXTRA_ARGS=()
@@ -257,8 +251,8 @@ set_shadow_creds() {
     local shadow_key_var="SHADOW_${venue}_API_KEY"
     local shadow_secret_var="SHADOW_${venue}_API_SECRET"
 
-    local key_val="${!shadow_key_var:-${!key_var:-$SHADOW_FALLBACK_API_KEY}}"
-    local secret_val="${!shadow_secret_var:-${!secret_var:-$SHADOW_FALLBACK_API_SECRET}}"
+    local key_val="${!shadow_key_var:-${!key_var:-}}"
+    local secret_val="${!shadow_secret_var:-${!secret_var:-}}"
 
     export "$key_var=$key_val"
     export "$secret_var=$secret_val"
@@ -443,7 +437,8 @@ PY
         log_info "Running full shadow metrics report..."
         (cd "$REPO_ROOT" && "$PYTHON_BIN" -m research.backtest.shadow_metrics \
             --signals "$ALPHA_LOG_PATH" \
-            --decisions "$decisions_log") || true
+            --decisions "$decisions_log" \
+) || true
     fi
 }
 

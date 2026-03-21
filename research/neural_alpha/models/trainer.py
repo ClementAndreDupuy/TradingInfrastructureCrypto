@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
+from typing import Callable
 import numpy as np
 import torch
 import torch.nn as nn
@@ -39,6 +40,7 @@ class TrainerConfig:
     early_stop_patience: int = 5
     log_every_epochs: int = 1
     fold_seed_offset: int = 1337
+    event_callback: Callable[[dict[str, float | int]], None] | None = None
 
 
 def _device() -> torch.device:
@@ -273,6 +275,8 @@ def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
                 print(
                     f"  epoch {epoch + 1:3d}/{cfg.epochs}  train={train_metrics['loss_total']:.4f}  val={val_loss:.4f}"
                 )
+                if cfg.event_callback is not None:
+                    cfg.event_callback({"fold": fold_idx + 1, "epoch": epoch + 1, "total_epochs": cfg.epochs, "train_loss": float(train_metrics["loss_total"]), "val_loss": float(val_loss)})
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                     best_state = {k: v.cpu().clone() for (k, v) in model.state_dict().items()}
