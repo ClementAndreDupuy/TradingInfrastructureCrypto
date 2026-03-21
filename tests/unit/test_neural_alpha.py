@@ -219,6 +219,14 @@ class TestModel:
         risk = preds["risk"].detach().numpy()
         assert (risk >= 0.0).all() and (risk <= 1.0).all(), "Risk not in [0, 1]"
 
+    def test_model_exposes_risk_logits_for_stable_training(self) -> None:
+        model = CryptoAlphaNet(d_spatial=16, d_temporal=32, seq_len=8)
+        lob = torch.randn(1, 8, 5, 4)
+        scalar = torch.randn(1, 8, D_SCALAR)
+        preds = model(lob, scalar)
+        assert "risk_logits" in preds
+        assert preds["risk_logits"].shape == preds["risk"].shape
+
 
 # ── Loss ──────────────────────────────────────────────────────────────────────
 
@@ -279,6 +287,15 @@ class TestDataset:
         x = np.arange(24, dtype=np.float64).reshape(12, 2)
         out = rolling_normalise(x, window=20)
         assert out.shape == x.shape
+        assert np.isfinite(out).all()
+
+    def test_rolling_normalise_accepts_history_without_leakage(self) -> None:
+        history = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=np.float64)
+        x = np.array([[2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
+        out = rolling_normalise(x, window=3, history=history)
+        expected_first = (2.0 - 1.0) / np.sqrt(2.0 / 3.0)
+        assert out.shape == x.shape
+        assert out[0, 0] == pytest.approx(expected_first, rel=1e-5)
         assert np.isfinite(out).all()
 
     def test_walk_forward_no_leakage(self, medium_df: pl.DataFrame) -> None:
