@@ -1,5 +1,6 @@
 #include "core/feeds/common/tick_size.hpp"
 #include "core/orderbook/orderbook.hpp"
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <gtest/gtest.h>
@@ -386,6 +387,41 @@ TEST(OrderBook, NegativeSizeDeltaRejected) {
 
 // Snapshot + delta round-trip for all four exchanges.
 // The exchange field is metadata only; verifies it doesn't affect book logic.
+TEST(OrderBook, DynamicSnapshotRangeIsCompatibleWithAllFourExchanges) {
+    struct Case {
+        Exchange ex;
+        const char* symbol;
+        double bid;
+        double ask;
+        double tick;
+        size_t expected_active_levels;
+    };
+
+    const std::array<Case, 4> cases{{
+        {Exchange::BINANCE, "DOGEUSDT", 0.25, 0.2501, 0.0001, 2498},
+        {Exchange::KRAKEN, "DOGE/USD", 0.25, 0.2501, 0.0001, 2498},
+        {Exchange::OKX, "DOGE-USDT", 0.25, 0.2501, 0.0001, 2498},
+        {Exchange::COINBASE, "DOGE-USD", 0.25, 0.2501, 0.0001, 2498},
+    }};
+
+    for (const auto& c : cases) {
+        OrderBook book(c.symbol, c.ex, c.tick, 20000);
+        Snapshot s;
+        s.symbol   = c.symbol;
+        s.exchange = c.ex;
+        s.sequence = 1;
+        s.bids.push_back(PriceLevel(c.bid, 10.0));
+        s.asks.push_back(PriceLevel(c.ask, 8.0));
+
+        EXPECT_EQ(book.apply_snapshot(s), Result::SUCCESS) << "exchange=" << (int)c.ex;
+        EXPECT_TRUE(book.is_initialized()) << "exchange=" << (int)c.ex;
+        EXPECT_EQ(book.active_levels(), c.expected_active_levels) << "exchange=" << (int)c.ex;
+        EXPECT_GT(book.base_price(), 0.0) << "exchange=" << (int)c.ex;
+        EXPECT_DOUBLE_EQ(book.get_best_bid(), c.bid) << "exchange=" << (int)c.ex;
+        EXPECT_DOUBLE_EQ(book.get_best_ask(), c.ask) << "exchange=" << (int)c.ex;
+    }
+}
+
 TEST(OrderBook, CompatibleWithAllFourExchanges) {
     struct Case {
         Exchange ex;
@@ -420,8 +456,9 @@ TEST(OrderBook, CompatibleWithAllFourExchanges) {
     }
 }
 
-// SOL at $20, tick=0.01, max_levels=20000 → base = 20 - 10000*0.01 = -80, rejected.
-TEST(OrderBook, NegativeBasePriceSnapshotRejected) {
+// SOL at $20, tick=0.01, max_levels=20000 → centered base would be -80.
+// Startup should clamp the lower bound instead of rejecting the snapshot.
+TEST(OrderBook, NegativeCenteredBaseShrinksActiveGridAtStartup) {
     OrderBook book("SOLUSD", Exchange::COINBASE, 0.01, 20000);
     Snapshot s;
     s.symbol   = "SOLUSD";
@@ -430,11 +467,12 @@ TEST(OrderBook, NegativeBasePriceSnapshotRejected) {
     s.bids.push_back(PriceLevel(20.00, 10.0));
     s.asks.push_back(PriceLevel(20.01, 8.0));
 
-    // base = 20 - 10000*0.01 = -80  →  must be rejected
-    EXPECT_EQ(book.apply_snapshot(s), Result::ERROR_INVALID_PRICE);
-    EXPECT_FALSE(book.is_initialized());
-    EXPECT_EQ(book.get_best_bid(), 0.0);
-    EXPECT_EQ(book.get_best_ask(), 0.0);
+    EXPECT_EQ(book.apply_snapshot(s), Result::SUCCESS);
+    EXPECT_TRUE(book.is_initialized());
+    EXPECT_EQ(book.active_levels(), 3998u);
+    EXPECT_DOUBLE_EQ(book.base_price(), 0.01);
+    EXPECT_DOUBLE_EQ(book.get_best_bid(), 20.00);
+    EXPECT_DOUBLE_EQ(book.get_best_ask(), 20.01);
 }
 
 // SOL at $20, tick=0.001, max_levels=20000 → base = 10 > 0, accepted.
@@ -482,8 +520,9 @@ TEST(OrderBook, SOLAt140CorrectTickPositiveBase) {
     EXPECT_DOUBLE_EQ(book.get_best_ask(), 140.01);
 }
 
-// SOL at $140, tick=0.1 (oversized, wrong precision) → base = -860, rejected.
-TEST(OrderBook, SOLLargeTickNegativeBaseRejected) {
+// SOL at $140, tick=0.1 (oversized precision fallback) → centered base would be -860.
+// Startup still clamps to a positive lower bound so feeds can come up deterministically.
+TEST(OrderBook, SOLLargeTickNegativeCenteredBaseStillStartsWithDynamicRange) {
     OrderBook book("SOLUSDT", Exchange::BINANCE, 0.1, 20000);
     Snapshot s;
     s.symbol   = "SOLUSDT";
@@ -492,9 +531,12 @@ TEST(OrderBook, SOLLargeTickNegativeBaseRejected) {
     s.bids.push_back(PriceLevel(140.0, 500.0));
     s.asks.push_back(PriceLevel(140.1, 450.0));
 
-    // base = 140 - 10000*0.1 = -860  →  must be rejected
-    EXPECT_EQ(book.apply_snapshot(s), Result::ERROR_INVALID_PRICE);
-    EXPECT_FALSE(book.is_initialized());
+    EXPECT_EQ(book.apply_snapshot(s), Result::SUCCESS);
+    EXPECT_TRUE(book.is_initialized());
+    EXPECT_EQ(book.active_levels(), 2798u);
+    EXPECT_DOUBLE_EQ(book.base_price(), 0.1);
+    EXPECT_DOUBLE_EQ(book.get_best_bid(), 140.0);
+    EXPECT_DOUBLE_EQ(book.get_best_ask(), 140.1);
 }
 
 // BTC at $69000, tick=1.0 → base = 59000 > 0, accepted.
@@ -513,8 +555,9 @@ TEST(OrderBook, BTCTypicalTickPositiveBase) {
     EXPECT_GT(book.base_price(), 0.0);
 }
 
-// ETH at $1000, tick=0.10, max_levels=20000 → base = 0.0, rejected (log(0) undefined).
-TEST(OrderBook, ZeroBasePriceRejected) {
+// ETH at $1000, tick=0.10, max_levels=20000 → centered base = 0.0.
+// Startup should still succeed by clamping to the minimum positive base.
+TEST(OrderBook, ZeroCenteredBaseShrinksToPositiveGridStart) {
     OrderBook book("ETHUSD", Exchange::KRAKEN, 0.10, 20000);
     Snapshot s;
     s.symbol   = "ETHUSD";
@@ -523,8 +566,10 @@ TEST(OrderBook, ZeroBasePriceRejected) {
     s.bids.push_back(PriceLevel(1000.0, 5.0));
     s.asks.push_back(PriceLevel(1000.1, 5.0));
 
-    EXPECT_EQ(book.apply_snapshot(s), Result::ERROR_INVALID_PRICE);
-    EXPECT_FALSE(book.is_initialized());
+    EXPECT_EQ(book.apply_snapshot(s), Result::SUCCESS);
+    EXPECT_TRUE(book.is_initialized());
+    EXPECT_EQ(book.active_levels(), 19998u);
+    EXPECT_DOUBLE_EQ(book.base_price(), 0.10);
 }
 
 // Price 1 tick below the grid base must be rejected, not silently mapped to index 0.

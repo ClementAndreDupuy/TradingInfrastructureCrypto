@@ -14,9 +14,10 @@ class OrderBook {
     OrderBook(const std::string& symbol, Exchange exchange, double tick_size = 1.0,
               size_t max_levels = 20000)
         : symbol_(symbol), exchange_(exchange), tick_size_(tick_size), max_levels_(max_levels),
-          base_price_(0.0), sequence_(0), initialized_(false), bid_sizes_(max_levels, 0.0),
-          ask_sizes_(max_levels, 0.0), scratch_bid_sizes_(max_levels, 0.0),
-          scratch_ask_sizes_(max_levels, 0.0), out_of_range_streak_(0) {}
+          active_levels_(max_levels), base_price_(0.0), sequence_(0), initialized_(false),
+          bid_sizes_(max_levels, 0.0), ask_sizes_(max_levels, 0.0),
+          scratch_bid_sizes_(max_levels, 0.0), scratch_ask_sizes_(max_levels, 0.0),
+          out_of_range_streak_(0) {}
 
     Result apply_snapshot(const Snapshot& snapshot) {
         if (snapshot.bids.empty() || snapshot.asks.empty()) {
@@ -32,7 +33,8 @@ class OrderBook {
             return Result::ERROR_INVALID_PRICE;
         }
 
-        const double max_allowed_spread = max_allowed_spread_abs();
+        const size_t active_levels = compute_snapshot_active_levels(best_bid);
+        const double max_allowed_spread = max_allowed_spread_abs(active_levels);
         if (spread > max_allowed_spread) {
             LOG_ERROR("[OrderBook] Snapshot spread too wide", "symbol", symbol_.c_str(), "spread", spread,
                       "max_allowed", max_allowed_spread, "best_bid", best_bid, "best_ask",
@@ -49,25 +51,21 @@ class OrderBook {
             }
         }
 
-        double new_base = best_bid - static_cast<double>(max_levels_ / 2) * tick_size_;
-
-        if (new_base <= 0.0) {
-            LOG_ERROR("[OrderBook] Snapshot rejected: base_price would be non-positive", "symbol",
-                      symbol_.c_str(), "base_price", new_base, "best_bid", best_bid, "tick_size",
-                      tick_size_, "max_levels", max_levels_);
-            return Result::ERROR_INVALID_PRICE;
-        }
+        const double new_base = compute_snapshot_base_price(best_bid, active_levels);
         initialized_.store(false, std::memory_order_release);
         std::fill(bid_sizes_.begin(), bid_sizes_.end(), 0.0);
         std::fill(ask_sizes_.begin(), ask_sizes_.end(), 0.0);
+        active_levels_.store(active_levels, std::memory_order_release);
         base_price_.store(new_base, std::memory_order_release);
         sequence_.store(snapshot.sequence, std::memory_order_release);
         out_of_range_streak_ = 0;
         initialized_.store(true, std::memory_order_release);
 
         LOG_INFO("[OrderBook] Grid bounds", "symbol", symbol_.c_str(), "exchange",
-                 exchange_to_string(exchange_), "tick_size", tick_size_, "max_levels", max_levels_,
-                 "base", new_base, "top", new_base + static_cast<double>(max_levels_) * tick_size_);
+                 exchange_to_string(exchange_), "tick_size", tick_size_, "capacity_levels",
+                 max_levels_, "active_levels", active_levels, "base", new_base, "top",
+                 new_base + static_cast<double>(active_levels) * tick_size_,
+                 "dynamic_range_from_snapshot", active_levels != max_levels_);
 
         size_t skipped = 0;
         for (const auto& level : snapshot.bids) {
@@ -91,9 +89,9 @@ class OrderBook {
         if (skipped * 2 > total) {
             LOG_ERROR("[OrderBook] Snapshot rejected: majority of levels out of grid range", "symbol",
                       symbol_.c_str(), "exchange", exchange_to_string(exchange_), "skipped",
-                      skipped, "total", total, "tick_size", tick_size_, "max_levels", max_levels_,
-                      "base", new_base,
-                      "top", new_base + static_cast<double>(max_levels_) * tick_size_);
+                      skipped, "total", total, "tick_size", tick_size_, "capacity_levels",
+                      max_levels_, "active_levels", active_levels, "base", new_base,
+                      "top", new_base + static_cast<double>(active_levels) * tick_size_);
             initialized_.store(false, std::memory_order_release);
             return Result::ERROR_BOOK_CORRUPTED;
         }
@@ -128,12 +126,12 @@ class OrderBook {
                 recenter_grid(delta.price);
                 if (!price_to_index(delta.price, idx)) {
                     LOG_WARN("[OrderBook] Delta price still out of recentered grid", "price", delta.price,
-                             "base", base_price_.load(), "range", max_levels_ * tick_size_);
+                             "base", base_price_.load(), "range", active_price_range());
                     return Result::ERROR_INVALID_PRICE;
                 }
             } else {
                 LOG_WARN("[OrderBook] Delta price out of grid range", "price", delta.price, "base",
-                         base_price_.load(), "range", max_levels_ * tick_size_, "streak",
+                         base_price_.load(), "range", active_price_range(), "streak",
                          out_of_range_streak_);
                 return Result::ERROR_INVALID_PRICE;
             }
@@ -155,7 +153,8 @@ class OrderBook {
     }
 
     double get_best_bid() const {
-        for (size_t i = max_levels_ - 1; i < max_levels_; --i) {
+        const size_t levels = active_levels();
+        for (size_t i = levels - 1; i < levels; --i) {
             if (bid_sizes_[i] > 0.0)
                 return index_to_price(i);
         }
@@ -163,7 +162,8 @@ class OrderBook {
     }
 
     double get_best_ask() const {
-        for (size_t i = 0; i < max_levels_; ++i) {
+        const size_t levels = active_levels();
+        for (size_t i = 0; i < levels; ++i) {
             if (ask_sizes_[i] > 0.0)
                 return index_to_price(i);
         }
@@ -187,12 +187,13 @@ class OrderBook {
         bids.clear();
         asks.clear();
 
-        for (size_t i = max_levels_ - 1; i < max_levels_ && bids.size() < n; --i) {
+        const size_t levels = active_levels();
+        for (size_t i = levels - 1; i < levels && bids.size() < n; --i) {
             if (bid_sizes_[i] > 0.0) {
                 bids.push_back(PriceLevel(index_to_price(i), bid_sizes_[i]));
             }
         }
-        for (size_t i = 0; i < max_levels_ && asks.size() < n; ++i) {
+        for (size_t i = 0; i < levels && asks.size() < n; ++i) {
             if (ask_sizes_[i] > 0.0) {
                 asks.push_back(PriceLevel(index_to_price(i), ask_sizes_[i]));
             }
@@ -201,16 +202,53 @@ class OrderBook {
 
     double tick_size() const { return tick_size_; }
     size_t max_levels() const { return max_levels_; }
+    size_t active_levels() const { return active_levels_.load(std::memory_order_acquire); }
     double base_price() const { return base_price_.load(std::memory_order_acquire); }
     const std::string& symbol() const { return symbol_; }
     Exchange exchange() const { return exchange_; }
 
   private:
     static constexpr double k_max_spread_ticks_multiplier_ = 0.25;
+    static constexpr size_t k_min_active_levels_ = 1024;
 
-    double max_allowed_spread_abs() const noexcept {
-        return std::max(tick_size_, static_cast<double>(max_levels_) * tick_size_ *
-                                        k_max_spread_ticks_multiplier_);
+    size_t compute_snapshot_active_levels(double best_bid) const noexcept {
+        const double best_bid_ticks = best_bid / tick_size_;
+        if (!std::isfinite(best_bid_ticks) || best_bid_ticks <= 2.0) {
+            return std::min(max_levels_, k_min_active_levels_);
+        }
+
+        const size_t max_centered_levels =
+            static_cast<size_t>(std::floor(best_bid_ticks - 1.0)) * 2;
+        const size_t bounded_levels = std::min(max_levels_, max_centered_levels);
+        const size_t preferred_levels = std::min(max_levels_, std::max(k_min_active_levels_, bounded_levels));
+        return std::max<size_t>(2, preferred_levels);
+    }
+
+    double compute_snapshot_base_price(double best_bid, size_t active_levels) const noexcept {
+        const double centered_base =
+            best_bid - static_cast<double>(active_levels / 2) * tick_size_;
+        if (centered_base > 0.0) {
+            return centered_base;
+        }
+
+        const double min_base = tick_size_;
+        LOG_WARN("[OrderBook] Shrinking startup grid to keep base positive", "symbol",
+                 symbol_.c_str(), "exchange", exchange_to_string(exchange_), "best_bid", best_bid,
+                 "tick_size", tick_size_, "capacity_levels", max_levels_, "active_levels",
+                 active_levels, "requested_base", centered_base, "clamped_base", min_base);
+        return min_base;
+    }
+
+    double active_price_range() const noexcept {
+        return static_cast<double>(active_levels()) * tick_size_;
+    }
+
+    double price_range_for_levels(size_t levels) const noexcept {
+        return static_cast<double>(levels) * tick_size_;
+    }
+
+    double max_allowed_spread_abs(size_t levels) const noexcept {
+        return std::max(tick_size_, price_range_for_levels(levels) * k_max_spread_ticks_multiplier_);
     }
 
     static uint32_t fnv1a_bytes(const char* data, size_t len, uint32_t seed) noexcept {
@@ -242,6 +280,7 @@ class OrderBook {
     Exchange exchange_;
     double tick_size_;
     size_t max_levels_;
+    std::atomic<size_t> active_levels_;
 
     std::atomic<double> base_price_;
     std::atomic<uint64_t> sequence_;
@@ -259,7 +298,7 @@ class OrderBook {
     bool should_recenter(double price) {
         const double base = base_price_.load(std::memory_order_acquire);
         const double relative = (price - base) / tick_size_;
-        const double upper_idx = static_cast<double>(max_levels_ - 1);
+        const double upper_idx = static_cast<double>(active_levels() - 1);
 
         const double breach_ticks =
             (relative < 0.0) ? -relative : (relative > upper_idx ? relative - upper_idx : 0.0);
@@ -270,23 +309,24 @@ class OrderBook {
 
         out_of_range_streak_++;
         const double hard_breach_ticks =
-            static_cast<double>(max_levels_) * k_recenter_hard_breach_ratio_;
+            static_cast<double>(active_levels()) * k_recenter_hard_breach_ratio_;
         return breach_ticks >= hard_breach_ticks ||
                out_of_range_streak_ >= k_recenter_streak_trigger_;
     }
 
     void recenter_grid(double anchor_price) {
         const double old_base = base_price_.load(std::memory_order_acquire);
-        const double new_base = anchor_price - static_cast<double>(max_levels_ / 2) * tick_size_;
+        const size_t levels = active_levels();
+        const double new_base = anchor_price - static_cast<double>(levels / 2) * tick_size_;
         const int64_t shift_ticks =
             static_cast<int64_t>(std::llround((old_base - new_base) / tick_size_));
 
         std::fill(scratch_bid_sizes_.begin(), scratch_bid_sizes_.end(), 0.0);
         std::fill(scratch_ask_sizes_.begin(), scratch_ask_sizes_.end(), 0.0);
 
-        for (size_t i = 0; i < max_levels_; ++i) {
+        for (size_t i = 0; i < levels; ++i) {
             const int64_t new_idx = static_cast<int64_t>(i) + shift_ticks;
-            if (new_idx < 0 || static_cast<size_t>(new_idx) >= max_levels_) {
+            if (new_idx < 0 || static_cast<size_t>(new_idx) >= levels) {
                 continue;
             }
 
@@ -310,7 +350,7 @@ class OrderBook {
         double base = base_price_.load(std::memory_order_acquire);
         double relative = (price - base) / tick_size_;
         int64_t idx = static_cast<int64_t>(std::llround(relative));
-        if (idx < 0 || static_cast<size_t>(idx) >= max_levels_)
+        if (idx < 0 || static_cast<size_t>(idx) >= active_levels())
             return false;
         out_idx = static_cast<size_t>(idx);
         return true;
