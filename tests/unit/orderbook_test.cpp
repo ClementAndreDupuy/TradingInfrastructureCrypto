@@ -193,6 +193,32 @@ TEST(OrderBook, OutOfRangePriceReturnsError) {
     EXPECT_EQ(book.apply_delta(d), Result::ERROR_INVALID_PRICE);
 }
 
+
+TEST(OrderBook, SameSequenceBatchLevelsRemainApplicable) {
+    OrderBook book("BTCUSDT", Exchange::BINANCE, 0.01, 20000);
+    book.apply_snapshot(make_snapshot(50000.00, 50000.01, 2, 0.01, 100));
+
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 50000.00, 0.0, 101)), Result::SUCCESS);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 49999.99, 3.2, 101)), Result::SUCCESS);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 50000.02, 1.1, 101)), Result::SUCCESS);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 50000.03, 2.4, 101)), Result::SUCCESS);
+
+    std::vector<PriceLevel> bids, asks;
+    book.get_top_levels(4, bids, asks);
+
+    ASSERT_EQ(bids.size(), 2u);
+    EXPECT_DOUBLE_EQ(bids[0].price, 49999.99);
+    EXPECT_DOUBLE_EQ(bids[0].size, 3.2);
+
+    ASSERT_EQ(asks.size(), 3u);
+    EXPECT_DOUBLE_EQ(asks[0].price, 50000.01);
+    EXPECT_DOUBLE_EQ(asks[1].price, 50000.02);
+    EXPECT_DOUBLE_EQ(asks[1].size, 1.1);
+    EXPECT_DOUBLE_EQ(asks[2].price, 50000.03);
+    EXPECT_DOUBLE_EQ(asks[2].size, 2.4);
+    EXPECT_EQ(book.get_sequence(), 101u);
+}
+
 TEST(OrderBook, RecentersAfterRepeatedOutOfRangeDeltas) {
     OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
     book.apply_snapshot(make_snapshot(50000.0, 50001.0, 2, 1.0, 100));

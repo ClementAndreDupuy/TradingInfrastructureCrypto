@@ -116,7 +116,7 @@ class OrderBook {
             return Result::ERROR_INVALID_SIZE;
         }
 
-        if (delta.sequence > 0 && delta.sequence <= sequence_.load(std::memory_order_acquire)) {
+        if (delta.sequence > 0 && delta.sequence < sequence_.load(std::memory_order_acquire)) {
             return Result::SUCCESS;
         }
 

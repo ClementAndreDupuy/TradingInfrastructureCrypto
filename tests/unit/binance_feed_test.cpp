@@ -1,5 +1,6 @@
 #define private public
 #include "core/feeds/binance/binance_feed_handler.hpp"
+#include "core/feeds/common/book_manager.hpp"
 #undef private
 #include <gtest/gtest.h>
 #include <string>
@@ -153,6 +154,65 @@ TEST_F(BinanceFeedHandlerTest, BufferOverflowTriggersResync) {
     EXPECT_EQ(stats.resync_count, 1u);
     EXPECT_EQ(stats.last_resync_reason, "buffer_overflow");
     EXPECT_TRUE(handler_->delta_buffer_.empty());
+}
+
+
+TEST_F(BinanceFeedHandlerTest, StreamingBatchKeepsBinanceUpdateIdOnEveryLevel) {
+    handler_->state_.store(BinanceFeedHandler::State::STREAMING, std::memory_order_release);
+    handler_->last_sequence_.store(100, std::memory_order_release);
+
+    const std::string msg =
+        R"({"e":"depthUpdate","E":1700000000000,"s":"BTCUSDT","U":101,"u":101,"b":[["50000.00","0.0"],["49999.98","3.2"]],"a":[["50000.03","1.1"],["50000.04","2.4"]]})";
+
+    ASSERT_EQ(handler_->process_message(msg), Result::SUCCESS);
+    ASSERT_EQ(deltas_.size(), 4u);
+    for (const auto& delta : deltas_) {
+        EXPECT_EQ(delta.sequence, 101u);
+    }
+}
+
+TEST_F(BinanceFeedHandlerTest, StreamingBatchAppliesAllLevelsToDynamicGridBook) {
+    BookManager book("BTCUSDT", Exchange::BINANCE, 0.01, 20000);
+
+    Snapshot snapshot;
+    snapshot.symbol = "BTCUSDT";
+    snapshot.exchange = Exchange::BINANCE;
+    snapshot.sequence = 100;
+    snapshot.bids = {{50000.00, 2.0}, {49999.99, 1.0}};
+    snapshot.asks = {{50000.01, 1.5}, {50000.02, 1.25}};
+
+    book.snapshot_handler()(snapshot);
+    ASSERT_TRUE(book.is_ready());
+
+    handler_->set_delta_callback(book.delta_handler());
+    handler_->state_.store(BinanceFeedHandler::State::STREAMING, std::memory_order_release);
+    handler_->last_sequence_.store(100, std::memory_order_release);
+
+    const std::string msg =
+        R"({"e":"depthUpdate","E":1700000000000,"s":"BTCUSDT","U":101,"u":101,"b":[["50000.00","0.0"],["49999.98","3.2"]],"a":[["50000.03","1.1"],["50000.04","2.4"]]})";
+
+    ASSERT_EQ(handler_->process_message(msg), Result::SUCCESS);
+    EXPECT_EQ(book.book().get_sequence(), 101u);
+
+    std::vector<PriceLevel> bids;
+    std::vector<PriceLevel> asks;
+    book.get_top_levels(4, bids, asks);
+
+    ASSERT_EQ(bids.size(), 2u);
+    EXPECT_DOUBLE_EQ(bids[0].price, 49999.99);
+    EXPECT_DOUBLE_EQ(bids[0].size, 1.0);
+    EXPECT_DOUBLE_EQ(bids[1].price, 49999.98);
+    EXPECT_DOUBLE_EQ(bids[1].size, 3.2);
+
+    ASSERT_EQ(asks.size(), 4u);
+    EXPECT_DOUBLE_EQ(asks[0].price, 50000.01);
+    EXPECT_DOUBLE_EQ(asks[0].size, 1.5);
+    EXPECT_DOUBLE_EQ(asks[1].price, 50000.02);
+    EXPECT_DOUBLE_EQ(asks[1].size, 1.25);
+    EXPECT_DOUBLE_EQ(asks[2].price, 50000.03);
+    EXPECT_DOUBLE_EQ(asks[2].size, 1.1);
+    EXPECT_DOUBLE_EQ(asks[3].price, 50000.04);
+    EXPECT_DOUBLE_EQ(asks[3].size, 2.4);
 }
 
 int main(int argc, char** argv) {
