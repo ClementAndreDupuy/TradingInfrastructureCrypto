@@ -1,24 +1,12 @@
-"""
-CryptoAlphaNet — GNN spatial encoder + Transformer temporal encoder.
-
-Architecture:
-    LOB snapshot  →  LOBSpatialEncoder (attention over levels)  →  spatial embedding
-    sequence      →  TemporalEncoder (Transformer)              →  temporal embedding
-    concat        →  FusionLayer
-    Fusion        →  MultiTaskHead
-        • ReturnHead   : 4-horizon regression   (MSE)  [1t, 10t, 100t, 500t]
-        • DirectionHead: up/flat/down            (cross-entropy)
-        • RiskHead     : adverse-selection prob  (BCE)
-
-Only PyTorch core — no external graph libraries.
-"""
-
 from __future__ import annotations
+
 import math
 import warnings
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from ..data.features import D_SCALAR, N_LEVELS
 
 warnings.filterwarnings(
@@ -35,15 +23,15 @@ warnings.filterwarnings(
 
 
 class LOBSpatialEncoder(nn.Module):
-    """
-    Treats each LOB price level as a token and applies multi-head self-attention.
-
-    Input : (B, T, N_LEVELS, 4)   — per-level [bid_p, bid_s, ask_p, ask_s]
-    Output: (B, T, d_spatial)
-    """
+    """Encode per-level LOB state with self-attention over price levels."""
 
     def __init__(
-        self, d_model: int = 64, n_heads: int = 4, n_layers: int = 2, n_levels: int = N_LEVELS * 2
+        self,
+        d_model: int = 64,
+        n_heads: int = 4,
+        n_layers: int = 2,
+        n_levels: int = N_LEVELS,
+        dropout: float = 0.1,
     ) -> None:
         super().__init__()
         self.n_levels = n_levels
@@ -53,38 +41,24 @@ class LOBSpatialEncoder(nn.Module):
             d_model=d_model,
             nhead=n_heads,
             dim_feedforward=d_model * 2,
-            dropout=0.1,
+            dropout=dropout,
             batch_first=True,
             norm_first=True,
         )
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
-        self.pool = nn.Linear(d_model, d_model)
+        self.pool = nn.Sequential(nn.LayerNorm(d_model), nn.Linear(d_model, d_model))
 
     def forward(self, lob: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            lob: (B, T, N_LEVELS, 4)
-        Returns:
-            (B, T, d_model)
-        """
-        (B, T, L, _) = lob.shape
-        x = lob.view(B * T, L, 4)
+        (batch, seq_len, levels, _) = lob.shape
+        x = lob.reshape(batch * seq_len, levels, 4)
         x = self.level_proj(x)
-        pos = self.pos_emb(torch.arange(L, device=x.device).unsqueeze(0))
-        x = x + pos
-        x = self.encoder(x)
-        spatial = x.mean(dim=1)
-        spatial = self.pool(spatial)
-        return spatial.view(B, T, -1)
+        pos = self.pos_emb(torch.arange(levels, device=x.device)).unsqueeze(0)
+        x = self.encoder(x + pos)
+        return self.pool(x.mean(dim=1)).reshape(batch, seq_len, -1)
 
 
 class TemporalEncoder(nn.Module):
-    """
-    Transformer over the time dimension.
-
-    Input : (B, T, d_in)   — concatenation of spatial embed + scalar features
-    Output: (B, T, d_model)
-    """
+    """Transformer over time after fusing spatial and scalar features."""
 
     def __init__(
         self,
@@ -112,13 +86,6 @@ class TemporalEncoder(nn.Module):
     def forward(
         self, x: torch.Tensor, src_key_padding_mask: torch.Tensor | None = None
     ) -> torch.Tensor:
-        """
-        Args:
-            x   : (B, T, d_in)
-            mask: (B, T) bool, True = padding position to ignore
-        Returns:
-            (B, T, d_model)
-        """
         x = self.input_proj(x)
         x = self.pos_enc(x)
         x = self.encoder(x, src_key_padding_mask=src_key_padding_mask)
@@ -126,7 +93,6 @@ class TemporalEncoder(nn.Module):
 
 
 class _SinusoidalPE(nn.Module):
-
     def __init__(self, d_model: int, max_len: int = 512) -> None:
         super().__init__()
         pe = torch.zeros(max_len, d_model)
@@ -140,59 +106,19 @@ class _SinusoidalPE(nn.Module):
         return x + self.pe[:, : x.size(1)]
 
 
-class ReturnHead(nn.Module):
-    """Regress multi-horizon log-returns."""
+class MLPHead(nn.Module):
+    """Small shared head used for all prediction tasks."""
 
-    def __init__(self, d_in: int, n_horizons: int = 4) -> None:
+    def __init__(self, d_in: int, d_hidden: int, d_out: int) -> None:
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(d_in, d_in // 2), nn.GELU(), nn.Linear(d_in // 2, n_horizons)
-        )
+        self.net = nn.Sequential(nn.Linear(d_in, d_hidden), nn.GELU(), nn.Linear(d_hidden, d_out))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
-
-
-class DirectionHead(nn.Module):
-    """Classify trend: 0=down, 1=flat, 2=up."""
-
-    def __init__(self, d_in: int, n_classes: int = 3) -> None:
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(d_in, d_in // 2), nn.GELU(), nn.Linear(d_in // 2, n_classes)
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
-
-
-class RiskHead(nn.Module):
-    """Estimate adverse-selection probability."""
-
-    def __init__(self, d_in: int) -> None:
-        super().__init__()
-        self.net = nn.Sequential(nn.Linear(d_in, d_in // 4), nn.GELU(), nn.Linear(d_in // 4, 1))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.sigmoid(self.net(x)).squeeze(-1)
 
 
 class CryptoAlphaNet(nn.Module):
-    """
-    End-to-end model that takes LOB snapshots + scalar features and outputs
-    return predictions, direction logits, and risk scores.
-
-    Args:
-        d_spatial   : hidden size for spatial encoder
-        d_temporal  : hidden size for temporal encoder
-        n_lob_heads : attention heads in spatial encoder
-        n_lob_layers: transformer layers in spatial encoder
-        n_temp_heads: attention heads in temporal encoder
-        n_temp_layers: transformer layers in temporal encoder
-        n_horizons  : number of return horizons (default 4: 1t, 10t, 100t, 500t)
-        seq_len     : max sequence length (for positional encoding)
-        dropout     : dropout rate
-    """
+    """LOB encoder + temporal encoder + lightweight multitask heads."""
 
     def __init__(
         self,
@@ -210,11 +136,14 @@ class CryptoAlphaNet(nn.Module):
     ) -> None:
         super().__init__()
         self.spatial_enc = LOBSpatialEncoder(
-            d_model=d_spatial, n_heads=n_lob_heads, n_layers=n_lob_layers, n_levels=n_levels
+            d_model=d_spatial,
+            n_heads=n_lob_heads,
+            n_layers=n_lob_layers,
+            n_levels=n_levels,
+            dropout=dropout,
         )
-        d_fused_in = d_spatial + d_scalar
         self.temporal_enc = TemporalEncoder(
-            d_in=d_fused_in,
+            d_in=d_spatial + d_scalar,
             d_model=d_temporal,
             n_heads=n_temp_heads,
             n_layers=n_temp_layers,
@@ -222,23 +151,18 @@ class CryptoAlphaNet(nn.Module):
             dropout=dropout,
         )
         self.fusion = nn.Sequential(
-            nn.Linear(d_temporal, d_temporal), nn.GELU(), nn.Dropout(dropout)
+            nn.Linear(d_temporal, d_temporal),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.LayerNorm(d_temporal),
         )
-        self.return_head = ReturnHead(d_temporal, n_horizons)
-        self.direction_head = DirectionHead(d_temporal)
-        self.risk_head = RiskHead(d_temporal)
+        self.return_head = MLPHead(d_temporal, d_temporal // 2, n_horizons)
+        self.direction_head = MLPHead(d_temporal, d_temporal // 2, 3)
+        self.risk_head = MLPHead(d_temporal, max(8, d_temporal // 4), 1)
 
     def forward(
         self, lob: torch.Tensor, scalar: torch.Tensor, mask: torch.Tensor | None = None
     ) -> dict[str, torch.Tensor]:
-        """
-        Args:
-            lob   : (B, T, N_LEVELS, 4)
-            scalar: (B, T, D_SCALAR)
-            mask  : (B, T) padding mask (True = ignore)
-        Returns:
-            dict with keys: returns (B,T,4), direction (B,T,3), risk (B,T)
-        """
         if lob.ndim != 4:
             raise ValueError(f"lob must have shape (B, T, N_LEVELS, 4), got {tuple(lob.shape)}")
         if scalar.ndim != 3:
@@ -247,30 +171,20 @@ class CryptoAlphaNet(nn.Module):
             raise ValueError("lob and scalar batch/time dimensions must match")
         if lob.shape[-1] != 4:
             raise ValueError("lob last dimension must be 4: [bid_px,bid_sz,ask_px,ask_sz]")
+
         spatial = self.spatial_enc(lob)
-        x = torch.cat([spatial, scalar], dim=-1)
-        temporal = self.temporal_enc(x, mask)
-        fused = self.fusion(temporal)
+        fused = self.fusion(self.temporal_enc(torch.cat([spatial, scalar], dim=-1), mask))
+        risk_logits = self.risk_head(fused).squeeze(-1)
         return {
             "returns": self.return_head(fused),
             "direction": self.direction_head(fused),
-            "risk": self.risk_head(fused),
+            "risk_logits": risk_logits,
+            "risk": torch.sigmoid(risk_logits),
         }
 
 
 class MultiTaskLoss(nn.Module):
-    """
-    Weighted combination of:
-        - MSE for return regression (per horizon)
-        - Cross-entropy for direction classification
-        - BCE for adverse-selection risk
-        - Transaction-cost penalty (penalises large predicted returns near zero)
-
-    Targets layout (B, T, 6):
-        cols 0-3: returns at horizons [1t, 10t, 100t, 500t]
-        col  4  : direction (0/1/2)
-        col  5  : adverse selection (0/1)
-    """
+    """Robust multitask loss for noisy return, direction, and risk targets."""
 
     def __init__(
         self,
@@ -280,6 +194,9 @@ class MultiTaskLoss(nn.Module):
         w_tc: float = 0.1,
         tc_bps: float = 7.0,
         label_smoothing: float = 0.05,
+        return_beta: float = 5e-5,
+        direction_class_weights: torch.Tensor | None = None,
+        risk_pos_weight: torch.Tensor | None = None,
     ) -> None:
         super().__init__()
         self.w_return = w_return
@@ -287,28 +204,32 @@ class MultiTaskLoss(nn.Module):
         self.w_risk = w_risk
         self.w_tc = w_tc
         self.tc_threshold = tc_bps * 0.0001
-        self.ce_loss = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
-        self.bce_loss = nn.BCELoss()
+        self.return_loss = nn.SmoothL1Loss(beta=return_beta)
+        self.register_buffer("direction_class_weights", direction_class_weights)
+        self.register_buffer("risk_pos_weight", risk_pos_weight)
+        self.ce_loss = nn.CrossEntropyLoss(
+            weight=self.direction_class_weights,
+            label_smoothing=label_smoothing,
+        )
+        self.bce_loss = nn.BCEWithLogitsLoss(pos_weight=self.risk_pos_weight)
 
     def forward(
         self, preds: dict[str, torch.Tensor], targets: torch.Tensor
     ) -> tuple[torch.Tensor, dict[str, float]]:
-        """
-        Args:
-            preds  : dict from CryptoAlphaNet.forward
-            targets: (B, T, 6) — [ret_1, ret_10, ret_100, ret_500, direction, adv_sel]
-        Returns:
-            total_loss, breakdown_dict
-        """
         ret_targets = targets[..., :4]
         dir_targets = targets[..., 4].long()
         risk_targets = targets[..., 5]
-        ret_loss = F.mse_loss(preds["returns"], ret_targets)
-        (B, T, _) = preds["direction"].shape
-        dir_loss = self.ce_loss(preds["direction"].view(B * T, -1), dir_targets.view(B * T))
-        risk_loss = self.bce_loss(preds["risk"], risk_targets)
+
+        ret_loss = self.return_loss(preds["returns"], ret_targets)
+        (batch, seq_len, _) = preds["direction"].shape
+        dir_loss = self.ce_loss(preds["direction"].reshape(batch * seq_len, -1), dir_targets.reshape(batch * seq_len))
+        risk_logits = preds.get("risk_logits")
+        if risk_logits is None:
+            risk_logits = torch.logit(preds["risk"].clamp(1e-6, 1.0 - 1e-6))
+        risk_loss = self.bce_loss(risk_logits, risk_targets)
         pred_ret_mid = preds["returns"][..., 2]
         tc_penalty = F.relu(self.tc_threshold - pred_ret_mid.abs()).mean()
+
         total = (
             self.w_return * ret_loss
             + self.w_direction * dir_loss
@@ -316,10 +237,10 @@ class MultiTaskLoss(nn.Module):
             + self.w_tc * tc_penalty
         )
         breakdown = {
-            "loss_return": ret_loss.item(),
-            "loss_direction": dir_loss.item(),
-            "loss_risk": risk_loss.item(),
-            "loss_tc": tc_penalty.item(),
-            "loss_total": total.item(),
+            "loss_return": float(ret_loss.detach().item()),
+            "loss_direction": float(dir_loss.detach().item()),
+            "loss_risk": float(risk_loss.detach().item()),
+            "loss_tc": float(tc_penalty.detach().item()),
+            "loss_total": float(total.detach().item()),
         }
-        return (total, breakdown)
+        return total, breakdown

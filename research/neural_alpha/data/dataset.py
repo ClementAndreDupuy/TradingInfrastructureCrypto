@@ -17,26 +17,43 @@ class DatasetConfig:
     horizons: tuple = (1, 10, 100, 500)
 
 
-def rolling_normalise(x: np.ndarray, window: int = 500) -> np.ndarray:
+def rolling_normalise(
+    x: np.ndarray,
+    window: int = 500,
+    history: np.ndarray | None = None,
+) -> np.ndarray:
     """Rolling z-score normalisation with no future leakage.
-    Each tick is normalised using the mean and std of the previous `window` ticks
-    (expanding window for the first `window` ticks)."""
+
+    ``history`` lets the caller warm-start the rolling statistics with prior
+    observations (for example the training split when normalising a holdout
+    split). That keeps evaluation point-in-time safe while avoiding unstable
+    first-batch scaling on a fresh test slice.
+    """
     T, D = x.shape
     if T == 0:
         return x.astype(np.float32)
 
-    cum = np.vstack([np.zeros((1, D), dtype=np.float64), np.cumsum(x, axis=0)])
-    cum2 = np.vstack([np.zeros((1, D), dtype=np.float64), np.cumsum(x ** 2, axis=0)])
+    hist = np.empty((0, D), dtype=np.float64) if history is None else np.asarray(history, dtype=np.float64)
+    if hist.ndim == 1:
+        hist = hist[:, None]
+    if hist.size and hist.shape[1] != D:
+        raise ValueError(f"history feature dimension {hist.shape[1]} does not match x dimension {D}")
 
-    end = np.arange(1, T + 1)
+    combined = np.vstack([hist[-window:], x.astype(np.float64, copy=False)])
+    total = len(combined)
+    cum = np.vstack([np.zeros((1, D), dtype=np.float64), np.cumsum(combined, axis=0)])
+    cum2 = np.vstack([np.zeros((1, D), dtype=np.float64), np.cumsum(combined ** 2, axis=0)])
+
+    current_idx = np.arange(len(hist), total)
+    end = current_idx + 1
     start = np.maximum(0, end - window)
 
     s1 = cum[end] - cum[start]
     s2 = cum2[end] - cum2[start]
     n = (end - start)[:, None].astype(np.float64)
     mean = s1 / n
-    var  = (s2 / n - mean ** 2).clip(0)
-    return ((x - mean) / (np.sqrt(var) + 1e-8)).astype(np.float32)
+    var = (s2 / n - mean ** 2).clip(0)
+    return ((combined[current_idx] - mean) / (np.sqrt(var) + 1e-8)).astype(np.float32)
 
 
 class LOBDataset(Dataset):
@@ -60,10 +77,11 @@ class LOBDataset(Dataset):
 
         self.lob_arr = compute_lob_tensor(df)
         raw_scalar = compute_scalar_features(df)
+        self.raw_scalar_arr = raw_scalar.astype(np.float32)
         self.labels_arr = compute_labels(df, self.cfg.horizons)
-        self.scalar_arr = rolling_normalise(raw_scalar)
-        self.scalar_mean: np.ndarray | None = None
-        self.scalar_std:  np.ndarray | None = None
+        self.scalar_arr = rolling_normalise(self.raw_scalar_arr, history=scalar_mean)
+        self.scalar_mean: np.ndarray | None = scalar_mean
+        self.scalar_std: np.ndarray | None = scalar_std
 
         T = len(self.lob_arr)
         S = self.cfg.seq_len
@@ -122,7 +140,7 @@ def build_loaders(
 
     cfg = cfg or DatasetConfig()
     train_ds = LOBDataset(train_df, cfg)
-    test_ds  = LOBDataset(test_df, cfg)
+    test_ds = LOBDataset(test_df, cfg, scalar_mean=train_ds.raw_scalar_arr[-cfg.seq_len:])
 
     train_loader = DataLoader(
         train_ds, batch_size=batch_size, shuffle=True,
