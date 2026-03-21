@@ -1,20 +1,20 @@
 {
-  "trained_at_ns": 1774088193861994000,
+  "trained_at_ns": 1774110548664731000,
   "train_ticks": 1000,
   "train_epochs": 3,
   "seq_len": 64,
   "d_spatial": 64,
   "d_temporal": 128,
   "metrics": {
-    "loss_return": 0.0013058253098279238,
-    "loss_direction": 0.17932508140802383,
-    "loss_risk": 0.028620893135666847,
-    "loss_tc": 7.5154391652176855e-06,
-    "loss_total": 0.09955538064241409
+    "loss_return": 5.4575715694227256e-05,
+    "loss_direction": 0.34257666766643524,
+    "loss_risk": 0.00021034834207966924,
+    "loss_tc": 1.5830245470027648e-07,
+    "loss_total": 0.17140603065490723
   },
   "oos_holdout_mse": {
-    "incumbent": 0.008565038469803594,
-    "challenger": 0.00030500514442984857,
+    "incumbent": 5.2312422581152975e-05,
+    "challenger": 1.765977878384394e-06,
     "selected": "challenger"
   }
 }

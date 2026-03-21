@@ -1,1389 +1,306 @@
-(.venv) clementandredupuy@Mac ThamesRiverTrading % git pull origin
-remote: Enumerating objects: 9, done.
-remote: Counting objects: 100% (9/9), done.
-remote: Compressing objects: 100% (9/9), done.
-remote: Total 9 (delta 0), reused 0 (delta 0), pack-reused 0 (from 0)
-Unpacking objects: 100% (9/9), 11.30 KiB | 890.00 KiB/s, done.
-From https://github.com/ClementAndreDupuy/ThamesRiverTrading
-   6f4bc7c..ff856c3  main       -> origin/main
-Updating 6f4bc7c..ff856c3
-Fast-forward
- core/feeds/kraken/kraken_feed_handler.cpp |  4 ----
- tests/unit/kraken_feed_test.cpp           | 23 +++++++++++++++++++++--
- 2 files changed, 21 insertions(+), 6 deletions(-)
-(.venv) clementandredupuy@Mac ThamesRiverTrading % ./deploy/scripts/build.sh --skip-tests --skip-cpp-tests
-=== ThamesRiverTrading local build ===
-[build] project_root=/Users/clementandredupuy/Desktop/ThamesRiverTrading
-[build] Running preflight dependency check
-[OK] cmake: binary in PATH
-[OK] pkg-config: binary in PATH
-[OK] libwebsockets: 4.5.5-unknown
-[OK] libcurl: 8.7.1
-[FAIL] nlohmann/json.hpp: <stdin>:1:10: fatal error: 'nlohmann/json.hpp' file not found
-    1 | #include <nlohmann/json.hpp>
-      |          ^~~~~~~~~~~~~~~~~~~
-1 error generated.
-
-Preflight failed. Install missing dependencies before bootstrap/build.
-Ubuntu example: sudo apt-get install -y cmake pkg-config libwebsockets-dev libcurl4-openssl-dev nlohmann-json3-dev
-[build] WARNING: Preflight check failed — C++ build may fail due to missing system deps.
-[build] Configuring CMake in build
--- Could NOT find GTest (missing: GTEST_LIBRARY GTEST_INCLUDE_DIR GTEST_MAIN_LIBRARY)
--- GTest not found, downloading...
-CMake Deprecation Warning at build/_deps/googletest-src/CMakeLists.txt:4 (cmake_minimum_required):
-  Compatibility with CMake < 3.10 will be removed from a future version of
-  CMake.
-
-  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
-  to tell CMake that the project requires at least <min> but has been updated
-  to work with policies introduced by <max> or earlier.
-
-
-CMake Deprecation Warning at build/_deps/googletest-src/googlemock/CMakeLists.txt:39 (cmake_minimum_required):
-  Compatibility with CMake < 3.10 will be removed from a future version of
-  CMake.
-
-  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
-  to tell CMake that the project requires at least <min> but has been updated
-  to work with policies introduced by <max> or earlier.
-
-
-CMake Deprecation Warning at build/_deps/googletest-src/googletest/CMakeLists.txt:49 (cmake_minimum_required):
-  Compatibility with CMake < 3.10 will be removed from a future version of
-  CMake.
-
-  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
-  to tell CMake that the project requires at least <min> but has been updated
-  to work with policies introduced by <max> or earlier.
-
-
--- pybind11 not found — skipping Python bindings. Fix: pip install pybind11  or  pip3 install pybind11
--- Configuring done (0.6s)
--- Generating done (0.1s)
--- Build files have been written to: /Users/clementandredupuy/Desktop/ThamesRiverTrading/build
-[build] Building C++ targets (jobs=10)
-[  3%] Built target coinbase_feed
-[  6%] Built target okx_feed
-[  7%] Building CXX object core/CMakeFiles/kraken_feed.dir/feeds/kraken/kraken_feed_handler.cpp.o
-[ 10%] Built target binance_feed
-[ 13%] Built target gtest
-[ 22%] Built target execution
-[ 25%] Built target gmock
-[ 28%] Built target gtest_main
-[ 31%] Built target orderbook_test
-[ 34%] Built target binance_feed_test
-[ 37%] Built target gmock_main
-[ 40%] Built target smart_order_router_test
-[ 43%] Built target okx_feed_test
-[ 46%] Built target connector_contract_test
-[ 50%] Built target live_connectors_test
-[ 53%] Built target coinbase_feed_test
-[ 56%] Built target connector_failure_injection_test
-[ 60%] Built target idempotency_recovery_test
-[ 62%] Built target global_risk_controls_test
-[ 65%] Built target market_maker_risk_test
-[ 68%] Built target order_manager_test
-[ 71%] Built target full_pipeline_replay_test
-[ 74%] Built target latency_budget_test
-[ 77%] Built target feed_replay_test
-[ 81%] Built target reconciliation_service_test
-[ 83%] Built target shadow_engine_test
-[ 89%] Built target feed_bootstrap_test
-[ 89%] Built target ipc_test
-/Users/clementandredupuy/Desktop/ThamesRiverTrading/core/feeds/kraken/kraken_feed_handler.cpp:44:84: warning: unused parameter 'unused' [-Wunused-parameter]
-   44 | static auto kraken_lws_cb(struct lws* wsi, enum lws_callback_reasons reason, void* unused,
-      |                                                                                    ^
-1 warning generated.
-[ 90%] Linking CXX static library ../lib/libkraken_feed.a
-[ 90%] Built target kraken_feed
-[ 95%] Building CXX object tests/CMakeFiles/kraken_feed_test.dir/unit/kraken_feed_test.cpp.o
-[ 95%] Linking CXX executable ../bin/feed_disconnect_chaos_test
-[ 95%] Linking CXX executable ../bin/trading_engine
-ld: warning: ignoring duplicate libraries: '../lib/libgtest.a'
-[ 98%] Built target feed_disconnect_chaos_test
-[ 98%] Built target trading_engine
-/Users/clementandredupuy/Desktop/ThamesRiverTrading/tests/unit/kraken_feed_test.cpp:168:62: error: expected ')'
-  168 |         R"(,"timestamp":"2024-01-01T00:00:00.123456789Z"}]})";
-      |                                                              ^
-/Users/clementandredupuy/Desktop/ThamesRiverTrading/tests/unit/kraken_feed_test.cpp:165:45: note: to match this '('
-  165 |     const std::string snapshot = std::string(
-      |                                             ^
-1 error generated.
-make[2]: *** [tests/CMakeFiles/kraken_feed_test.dir/unit/kraken_feed_test.cpp.o] Error 1
-make[1]: *** [tests/CMakeFiles/kraken_feed_test.dir/all] Error 2
-make: *** [all] Error 2
-[build] WARNING: C++ build failed (often due to missing local system dependencies).
-[build] WARNING: Continuing with Python-only steps. Use --strict-cpp to fail fast.
-[build] Using Python interpreter: python3.11 (Python 3.11.15)
-[build] Installing Python package (editable)
-Obtaining file:///Users/clementandredupuy/Desktop/ThamesRiverTrading
-  Installing build dependencies ... done
-  Checking if build backend supports build_editable ... done
-  Getting requirements to build editable ... done
-  Installing backend dependencies ... done
-  Preparing editable metadata (pyproject.toml) ... done
-Requirement already satisfied: numpy>=1.24 in /opt/homebrew/lib/python3.11/site-packages (from trading-core==1.0.0) (2.4.3)
-Building wheels for collected packages: trading-core
-  Building editable for trading-core (pyproject.toml) ... done
-  Created wheel for trading-core: filename=trading_core-1.0.0-cp311-cp311-macosx_15_0_arm64.whl size=1135577 sha256=b75b27f10225998d00125c1870e3703fd1db7c0ea6320e16a053c15b719caccd
-  Stored in directory: /private/var/folders/w0/m1s6w4vd2hxfy89cph1frbmr0000gn/T/pip-ephem-wheel-cache-ubw9adus/wheels/ec/f3/e3/3261dbd5d5e671aac6a7b077188ec6a93c1ba768120bfbca0a
-Successfully built trading-core
-Installing collected packages: trading-core
-  Attempting uninstall: trading-core
-    Found existing installation: trading-core 1.0.0
-    Uninstalling trading-core-1.0.0:
-      Successfully uninstalled trading-core-1.0.0
-Successfully installed trading-core-1.0.0
-[build] Skipping pybind11 bindings build
-[build] Byte-compiling Python sources
-Listing 'research'...
-Listing 'research/backtest'...
-Listing 'research/neural_alpha'...
-Listing 'research/neural_alpha/data'...
-Listing 'research/neural_alpha/evaluation'...
-Listing 'research/neural_alpha/models'...
-Listing 'research/neural_alpha/operations'...
-Listing 'research/neural_alpha/runtime'...
-Listing 'research/regime'...
-Listing 'deploy'...
-Listing 'deploy/aws'...
-Listing 'deploy/aws/terraform'...
-Listing 'deploy/scripts'...
-Listing 'deploy/systemd'...
-Listing 'tests'...
-Listing 'tests/data'...
-Listing 'tests/data/replay'...
-Listing 'tests/integration'...
-Listing 'tests/perf'...
-Listing 'tests/replay'...
-Listing 'tests/unit'...
-[build] Skipping C++ tests
-[build] Skipping Python tests
-[build] Done.
-(.venv) clementandredupuy@Mac ThamesRiverTrading % ./deploy/run_shadow.sh
-[2026-03-21T10:14:39Z] [shadow] [WARN] Coinbase credentials not configured (COINBASE_API_KEY / COINBASE_API_SECRET unset).
-[2026-03-21T10:14:39Z] [shadow] [WARN] The C++ Coinbase WebSocket feed will be skipped; training data uses REST fallback.
-[2026-03-21T10:14:39Z] [shadow] [INFO] Starting python shadow session with python3.11 (symbol=BTCUSDT, exchanges=BINANCE,KRAKEN,OKX,COINBASE, signals -> /tmp/trt_ipc/neural_alpha_signal.bin, log=/Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl)
-[2026-03-21T10:14:39Z] [shadow] [INFO] Starting C++ shadow runner symbol=BTCUSDT venues=BINANCE,KRAKEN,OKX,COINBASE duration=2000s interval=1000ms
-2026-03-21 10:14:39.451098125 [INFO ] [Binance] FeedHandler created symbol=BTCUSDT
-2026-03-21 10:14:39.451136500 [INFO ] [Kraken] FeedHandler created symbol=BTCUSDT
-2026-03-21 10:14:39.451148042 [INFO ] [OKX] FeedHandler created symbol=BTCUSDT inst_id=BTC-USDT
-2026-03-21 10:14:39.451159333 [INFO ] [Coinbase] FeedHandler created symbol=BTCUSDT
-2026-03-21 10:14:39.720707893 [INFO ] [Binance] Tick size fetched symbol=BTCUSDT tick_size=0.01
-2026-03-21 10:14:39.788247366 [INFO ] [Kraken] Tick size fetched symbol=BTCUSDT tick_size=0.1
-2026-03-21 10:14:40.045919249 [INFO ] [OKX] Tick size fetched symbol=BTCUSDT tick_size=0.1
-2026-03-21 10:14:40.338688953 [INFO ] [Coinbase] Tick size fetched symbol=BTCUSDT tick_size=0.01
-2026-03-21 10:14:40.338700537 [INFO ] Grid configuration target_range_usd=2000 binance_tick=0.01 binance_levels=200000 binance_range_usd=2000 kraken_tick=0.1 kraken_levels=20000 kraken_range_usd=2000 okx_tick=0.1 okx_levels=20000 okx_range_usd=2000 coinbase_tic
-2026-03-21 10:14:40.346395960 [INFO ] [Binance] Starting feed handler symbol=BTCUSDT
-2026-03-21 10:14:40.571736816 [INFO ] [Binance] Tick size fetched symbol=BTCUSDT tick_size=0.01
-[2026/03/21 10:14:40:5732] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
-[2026/03/21 10:14:40:5800] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
-[2026/03/21 10:14:40:5800] W: ssh pvo "ops" is mandatory
-[2026/03/21 10:14:40:5800] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
-[2026/03/21 10:14:40:5800] W: handler_server_protocol_init: requires 'upload-dir' pvo
-2026-03-21 10:14:41.329756286 [INFO ] [Binance] WebSocket established, fetching snapshot symbol=BTCUSDT
-2026-03-21 10:14:41.329760120 [INFO ] [Binance] Fetching snapshot symbol=BTCUSDT
-2026-03-21 10:14:41.843653009 [INFO ] [OrderBook] Grid bounds symbol=BTCUSDT exchange=BINANCE tick_size=0.01 max_levels=200000 base=69635.4 top=71635.4
-2026-03-21 10:14:41.843791967 [INFO ] [OrderBook] Snapshot applied symbol=BTCUSDT sequence=90565573940 base_price=69635.4 bids=5000 asks=5000
-2026-03-21 10:14:41.844347052 [INFO ] [Binance] Snapshot received symbol=BTCUSDT sequence=90565573940 bids=5000 asks=5000 snapshot_latency_ms=487
-2026-03-21 10:14:41.849494347 [INFO ] [Binance] No buffered bridge delta required sequence=90565573940 skipped=0
-2026-03-21 10:14:41.849503556 [INFO ] [Binance] Feed handler started symbol=BTCUSDT
-2026-03-21 10:14:41.849504389 [INFO ] [Kraken] Starting feed handler symbol=BTCUSDT
-2026-03-21 10:14:41.870379490 [INFO ] [Kraken] Tick size fetched symbol=BTCUSDT tick_size=0.1
-[2026/03/21 10:14:41:8704] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
-[2026/03/21 10:14:41:8707] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
-[2026/03/21 10:14:41:8707] W: ssh pvo "ops" is mandatory
-[2026/03/21 10:14:41:8707] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
-[2026/03/21 10:14:41:8707] W: handler_server_protocol_init: requires 'upload-dir' pvo
-2026-03-21 10:14:43.030127506 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:14:43.039945847 [INFO ] [Kraken] WebSocket established, waiting for snapshot symbol=BTCUSDT
-2026-03-21 10:14:43.224823336 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70576 old_base=62571.9 new_base=69576 shift_ticks=-700408
-2026-03-21 10:14:43.325454629 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69576 range=2000 streak=1
-2026-03-21 10:14:43.325455296 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:14:43.326415505 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69576 new_base=62571.9 shift_ticks=700408
-2026-03-21 10:14:43.424814004 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70632.4 old_base=62571.9 new_base=69632.4 shift_ticks=-706050
-2026-03-21 10:14:43.432583261 [INFO ] [OrderBook] Grid bounds symbol=BTCUSDT exchange=KRAKEN tick_size=0.1 max_levels=20000 base=69627.6 top=71627.6
-2026-03-21 10:14:43.432598802 [ERROR] [OrderBook] Snapshot rejected: majority of levels out of grid range symbol=BTCUSDT exchange=KRAKEN skipped=676 total=1000 tick_size=0.1 max_levels=20000 base=69627.6 top=71627.6
-2026-03-21 10:14:43.432599344 [ERROR] BookManager: snapshot apply failed symbol=BTCUSDT exchange=KRAKEN
-2026-03-21 10:14:43.432606677 [INFO ] [Kraken] Feed handler started symbol=BTCUSDT
-2026-03-21 10:14:43.432607552 [INFO ] [OKX] Starting feed handler symbol=BTCUSDT
-2026-03-21 10:14:43.633807138 [INFO ] [OKX] Tick size fetched symbol=BTCUSDT tick_size=0.1
-[2026/03/21 10:14:43:6338] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
-[2026/03/21 10:14:43:6343] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
-[2026/03/21 10:14:43:6343] W: ssh pvo "ops" is mandatory
-[2026/03/21 10:14:43:6343] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
-[2026/03/21 10:14:43:6343] W: handler_server_protocol_init: requires 'upload-dir' pvo
-2026-03-21 10:14:43.824720256 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69632.4 new_base=62571.9 shift_ticks=706050
-2026-03-21 10:14:43.925110800 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70527.6 old_base=62571.9 new_base=69527.6 shift_ticks=-695573
-2026-03-21 10:14:44.372198841 [INFO ] [OKX] WebSocket established symbol=BTCUSDT
-2026-03-21 10:14:44.623179469 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69527.6 new_base=62571.9 shift_ticks=695573
-2026-03-21 10:14:44.724690887 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:14:45.024254848 [INFO ] [OrderBook] Grid bounds symbol=BTCUSDT exchange=OKX tick_size=0.1 max_levels=20000 base=69629 top=71629
-2026-03-21 10:14:45.024269681 [INFO ] [OrderBook] Snapshot applied symbol=BTCUSDT sequence=73986715415 base_price=69629 bids=400 asks=400
-2026-03-21 10:14:45.024330723 [INFO ] [OKX] Applied buffered deltas applied=0 skipped=0
-2026-03-21 10:14:45.024334223 [INFO ] [OKX] WS snapshot applied symbol=BTCUSDT seq=73986715415
-2026-03-21 10:14:45.024338348 [INFO ] [OKX] feed handler started symbol=BTCUSDT
-2026-03-21 10:14:45.024339431 [INFO ] [Coinbase] Starting feed handler symbol=BTCUSDT
-2026-03-21 10:14:45.024340973 [WARN ] [Coinbase] Starting unauthenticated level2 session symbol=BTCUSDT
-2026-03-21 10:14:45.025027432 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:14:45.125661766 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:14:45.319681554 [INFO ] [Coinbase] Tick size fetched symbol=BTCUSDT tick_size=0.01
-[2026/03/21 10:14:45:3197] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
-[2026/03/21 10:14:45:3201] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
-[2026/03/21 10:14:45:3201] W: ssh pvo "ops" is mandatory
-[2026/03/21 10:14:45:3201] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
-[2026/03/21 10:14:45:3201] W: handler_server_protocol_init: requires 'upload-dir' pvo
-2026-03-21 10:14:45.323053974 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69635.4 range=2000 streak=1
-2026-03-21 10:14:45.323055224 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:14:45.324214100 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:14:45.425732768 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70627.2 old_base=62571.9 new_base=69627.2 shift_ticks=-705526
-2026-03-21 10:14:45.525400102 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69627.2 new_base=62571.9 shift_ticks=705526
-2026-03-21 10:14:45.625220561 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70609 old_base=62571.9 new_base=69609 shift_ticks=-703713
-2026-03-21 10:14:45.723959394 [WARN ] [OrderBook] Delta price out of grid range price=69223.6 base=69609 range=2000 streak=1
-2026-03-21 10:14:45.723960311 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69223.6
-2026-03-21 10:14:45.724690144 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69609 new_base=62571.9 shift_ticks=703713
-2026-03-21 10:14:45.729576190 [INFO ] [Coinbase] WebSocket established symbol=BTCUSDT
-2026-03-21 10:14:45.824562353 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70630.2 old_base=62571.9 new_base=69630.2 shift_ticks=-705833
-2026-03-21 10:14:46.025088730 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69630.2 new_base=62571.9 shift_ticks=705833
-2026-03-21 10:14:46.125562106 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70626.9 old_base=62571.9 new_base=69626.9 shift_ticks=-705505
-2026-03-21 10:14:46.225394023 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69626.9 new_base=62571.9 shift_ticks=705505
-2026-03-21 10:14:46.324762190 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69575.9 old_base=62571.9 new_base=68575.9 shift_ticks=-600400
-2026-03-21 10:14:46.424555690 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=68575.9 new_base=62571.9 shift_ticks=600400
-2026-03-21 10:14:46.526075775 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70607.6 old_base=62571.9 new_base=69607.6 shift_ticks=-703570
-2026-03-21 10:14:47.024569444 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69607.6 new_base=62571.9 shift_ticks=703570
-2026-03-21 10:14:47.124880987 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70539.6 old_base=62571.9 new_base=69539.6 shift_ticks=-696774
-2026-03-21 10:14:48.723867039 [WARN ] [OrderBook] Delta price out of grid range price=69223.5 base=69539.6 range=2000 streak=1
-2026-03-21 10:14:48.723868289 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69223.5
-2026-03-21 10:14:48.724804872 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69539.6 new_base=62571.9 shift_ticks=696774
-2026-03-21 10:14:48.924690624 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70618.2 old_base=62571.9 new_base=69618.2 shift_ticks=-704630
-2026-03-21 10:14:49.224741792 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69618.2 new_base=62571.9 shift_ticks=704630
-2026-03-21 10:14:49.324842460 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70464.4 old_base=62571.9 new_base=69464.4 shift_ticks=-689253
-2026-03-21 10:14:49.426271671 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69464.4 new_base=62571.9 shift_ticks=689253
-2026-03-21 10:14:49.624719670 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70463.9 old_base=62571.9 new_base=69463.9 shift_ticks=-689200
-2026-03-21 10:14:49.723662628 [WARN ] [OrderBook] Delta price out of grid range price=69223.5 base=69463.9 range=2000 streak=1
-2026-03-21 10:14:49.723663295 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69223.5
-2026-03-21 10:14:49.724393379 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69463.9 new_base=62571.9 shift_ticks=689200
-2026-03-21 10:14:49.925296756 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70613.2 old_base=62571.9 new_base=69613.2 shift_ticks=-704130
-2026-03-21 10:14:50.225487758 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69613.2 new_base=62571.9 shift_ticks=704130
-2026-03-21 10:14:50.324117841 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70633.6 old_base=62571.9 new_base=69633.6 shift_ticks=-706172
-2026-03-21 10:14:50.725211262 [WARN ] [OrderBook] Delta price out of grid range price=69223.6 base=69633.6 range=2000 streak=1
-2026-03-21 10:14:50.725212345 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69223.6
-2026-03-21 10:14:50.726168679 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69633.6 new_base=62571.9 shift_ticks=706172
-2026-03-21 10:14:50.825118929 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70627.9 old_base=62571.9 new_base=69627.9 shift_ticks=-705605
-2026-03-21 10:14:51.024744263 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69627.9 new_base=62571.9 shift_ticks=705605
-2026-03-21 10:14:51.124404013 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70607.2 old_base=62571.9 new_base=69607.2 shift_ticks=-703528
-2026-03-21 10:14:51.924771602 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69607.2 new_base=62571.9 shift_ticks=703528
-2026-03-21 10:14:52.125125146 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706353
-2026-03-21 10:14:52.323936480 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69635.4 range=2000 streak=1
-2026-03-21 10:14:52.323937480 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:14:52.324641355 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706353
-2026-03-21 10:14:52.424607772 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70602.6 old_base=62571.9 new_base=69602.6 shift_ticks=-703071
-2026-03-21 10:14:52.624727273 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69602.6 new_base=62571.9 shift_ticks=703071
-2026-03-21 10:14:52.725133567 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:14:52.924735067 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:14:53.024548193 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70607.2 old_base=62571.9 new_base=69607.2 shift_ticks=-703528
-2026-03-21 10:14:53.125075653 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69607.2 new_base=62571.9 shift_ticks=703528
-2026-03-21 10:14:53.224897902 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70607.8 old_base=62571.9 new_base=69607.8 shift_ticks=-703590
-2026-03-21 10:14:53.323428360 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69607.8 range=2000 streak=1
-2026-03-21 10:14:53.323429319 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:14:53.324329570 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69607.8 new_base=62571.9 shift_ticks=703590
-2026-03-21 10:14:53.425766321 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:14:53.525145739 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:14:53.624982739 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70595 old_base=62571.9 new_base=69595 shift_ticks=-702312
-2026-03-21 10:14:54.224370159 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69595 new_base=62571.9 shift_ticks=702312
-2026-03-21 10:14:54.324459910 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.9 old_base=62571.9 new_base=69629.9 shift_ticks=-705801
-2026-03-21 10:14:54.424460494 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69629.9 range=2000 streak=1
-2026-03-21 10:14:54.424461494 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:14:54.425361036 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69629.9 new_base=62571.9 shift_ticks=705801
-2026-03-21 10:14:54.524936870 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70621.3 old_base=62571.9 new_base=69621.3 shift_ticks=-704941
-2026-03-21 10:14:54.623094577 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69621.3 new_base=62571.9 shift_ticks=704941
-2026-03-21 10:14:54.725471580 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70547.6 old_base=62571.9 new_base=69547.6 shift_ticks=-697568
-2026-03-21 10:14:54.824167455 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69547.6 new_base=62571.9 shift_ticks=697568
-2026-03-21 10:14:54.924509872 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:14:55.224764124 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:14:55.431170423 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69575.9 old_base=62571.9 new_base=68575.9 shift_ticks=-600400
-2026-03-21 10:14:55.524318334 [WARN ] [OrderBook] Delta price out of grid range price=70635.4 base=68575.9 range=2000 streak=1
-2026-03-21 10:14:55.524319334 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70635.4
-2026-03-21 10:14:55.525279960 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=68575.9 new_base=62571.9 shift_ticks=600400
-2026-03-21 10:14:55.724613252 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70547.6 old_base=62571.9 new_base=69547.6 shift_ticks=-697568
-2026-03-21 10:14:56.024328296 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69547.6 new_base=62571.9 shift_ticks=697568
-2026-03-21 10:14:56.224977632 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70438 old_base=62571.9 new_base=69438 shift_ticks=-686612
-2026-03-21 10:14:58.126672229 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69438 new_base=62571.9 shift_ticks=686612
-2026-03-21 10:14:58.225091145 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:14:58.324682603 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:14:58.425287688 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:00.320706655 [ERROR] [Coinbase] feed start failed symbol=BTCUSDT attempt=1 reason=timeout waiting for snapshot
-2026-03-21 10:15:00.321320697 [INFO ] [Coinbase] Retrying feed start symbol=BTCUSDT backoff_ms=2000
-2026-03-21 10:15:01.124530205 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:01.224714622 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.3 old_base=62571.9 new_base=69629.3 shift_ticks=-705741
-2026-03-21 10:15:01.924839460 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69629.3 new_base=62571.9 shift_ticks=705741
-2026-03-21 10:15:02.024563836 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70621.3 old_base=62571.9 new_base=69621.3 shift_ticks=-704941
-2026-03-21 10:15:02.224706879 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69621.3 new_base=62571.9 shift_ticks=704941
-2026-03-21 10:15:02.325141714 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70618.1 old_base=62571.9 new_base=69618.1 shift_ticks=-704625
-[2026/03/21 10:15:02:3263] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
-[2026/03/21 10:15:02:3268] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
-[2026/03/21 10:15:02:3268] W: ssh pvo "ops" is mandatory
-[2026/03/21 10:15:02:3268] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
-[2026/03/21 10:15:02:3268] W: handler_server_protocol_init: requires 'upload-dir' pvo
-2026-03-21 10:15:02.727649510 [INFO ] [Coinbase] WebSocket established symbol=BTCUSDT
-2026-03-21 10:15:02.925826426 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69618.1 new_base=62571.9 shift_ticks=704625
-2026-03-21 10:15:03.024253676 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:03.224854719 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:03.325155137 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70615.9 old_base=62571.9 new_base=69615.9 shift_ticks=-704398
-2026-03-21 10:15:03.725912890 [WARN ] [OrderBook] Delta price out of grid range price=69222.9 base=69615.9 range=2000 streak=1
-2026-03-21 10:15:03.725913723 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69222.9
-2026-03-21 10:15:03.726874724 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69615.9 new_base=62571.9 shift_ticks=704398
-2026-03-21 10:15:03.824787181 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70607.2 old_base=62571.9 new_base=69607.2 shift_ticks=-703528
-2026-03-21 10:15:03.924703307 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69607.2 new_base=62571.9 shift_ticks=703528
-2026-03-21 10:15:04.225159310 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70615.9 old_base=62571.9 new_base=69615.9 shift_ticks=-704398
-2026-03-21 10:15:04.524721103 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69615.9 new_base=62571.9 shift_ticks=704398
-2026-03-21 10:15:04.724989563 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:04.925151856 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:05.024729106 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70634.8 old_base=62571.9 new_base=69634.8 shift_ticks=-706287
-2026-03-21 10:15:05.325377151 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64984.6 old_base=69634.8 new_base=63984.6 shift_ticks=565017
-2026-03-21 10:15:05.424787067 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70627.8 old_base=63984.6 new_base=69627.8 shift_ticks=-564319
-2026-03-21 10:15:05.824678528 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64984.6 old_base=69627.8 new_base=63984.6 shift_ticks=564319
-2026-03-21 10:15:05.925867613 [WARN ] [OrderBook] Delta price out of grid range price=63571.9 base=63984.6 range=2000 streak=1
-2026-03-21 10:15:05.925868446 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=63571.9
-2026-03-21 10:15:05.925869071 [WARN ] [OrderBook] Delta price out of grid range price=63571 base=63984.6 range=2000 streak=2
-2026-03-21 10:15:05.925869405 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=63571
-2026-03-21 10:15:05.926885572 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70747.4 old_base=63984.6 new_base=69747.4 shift_ticks=-576283
-2026-03-21 10:15:06.723717200 [WARN ] [OrderBook] Delta price out of grid range price=69223 base=69747.4 range=2000 streak=1
-2026-03-21 10:15:06.723717991 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69223
-2026-03-21 10:15:06.724430117 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69747.4 new_base=62571.9 shift_ticks=717553
-2026-03-21 10:15:06.824677451 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62571.9 new_base=69629.2 shift_ticks=-705730
-2026-03-21 10:15:07.224464954 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69629.2 new_base=62571.9 shift_ticks=705730
-2026-03-21 10:15:07.325524206 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70433.6 old_base=62571.9 new_base=69433.6 shift_ticks=-686173
-2026-03-21 10:15:07.424905330 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69433.6 new_base=62571.9 shift_ticks=686173
-2026-03-21 10:15:07.524795831 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70543.9 old_base=62571.9 new_base=69543.9 shift_ticks=-697199
-2026-03-21 10:15:07.624565415 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69543.9 new_base=62571.9 shift_ticks=697199
-2026-03-21 10:15:07.724555499 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69223 old_base=62571.9 new_base=68223 shift_ticks=-565114
-2026-03-21 10:15:07.823851291 [WARN ] [OrderBook] Delta price out of grid range price=70433.6 base=68223 range=2000 streak=1
-2026-03-21 10:15:07.823852166 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70433.6
-2026-03-21 10:15:07.823852791 [WARN ] [OrderBook] Delta price out of grid range price=70396.6 base=68223 range=2000 streak=2
-2026-03-21 10:15:07.823853125 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70396.6
-2026-03-21 10:15:07.824571708 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=68223 new_base=62571.9 shift_ticks=565114
-2026-03-21 10:15:07.925179251 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.9 old_base=62571.9 new_base=69629.9 shift_ticks=-705801
-2026-03-21 10:15:08.124680835 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69629.9 new_base=62571.9 shift_ticks=705801
-2026-03-21 10:15:08.224417002 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70618 old_base=62571.9 new_base=69618 shift_ticks=-704611
-2026-03-21 10:15:08.325003962 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69618 new_base=62571.9 shift_ticks=704611
-2026-03-21 10:15:08.524645588 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69575.9 old_base=62571.9 new_base=68575.9 shift_ticks=-600400
-2026-03-21 10:15:08.823753798 [WARN ] [OrderBook] Delta price out of grid range price=70608.9 base=68575.9 range=2000 streak=1
-2026-03-21 10:15:08.823754673 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70608.9
-2026-03-21 10:15:08.823755298 [WARN ] [OrderBook] Delta price out of grid range price=70608.3 base=68575.9 range=2000 streak=2
-2026-03-21 10:15:08.823755590 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70608.3
-2026-03-21 10:15:08.824589048 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=68575.9 new_base=62571.9 shift_ticks=600400
-2026-03-21 10:15:08.924995091 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70547.6 old_base=62571.9 new_base=69547.6 shift_ticks=-697568
-2026-03-21 10:15:09.025260509 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69547.6 new_base=62571.9 shift_ticks=697568
-2026-03-21 10:15:09.224649051 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69091.3 old_base=62571.9 new_base=68091.3 shift_ticks=-551938
-2026-03-21 10:15:09.325360844 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=68091.3 new_base=62571.9 shift_ticks=551938
-2026-03-21 10:15:09.424720135 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70608.9 old_base=62571.9 new_base=69608.9 shift_ticks=-703700
-2026-03-21 10:15:09.624984429 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69608.9 new_base=62571.9 shift_ticks=703700
-2026-03-21 10:15:09.724680221 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70450.4 old_base=62571.9 new_base=69450.4 shift_ticks=-687854
-2026-03-21 10:15:09.924581347 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69450.4 new_base=62571.9 shift_ticks=687854
-2026-03-21 10:15:10.524951935 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70459.8 old_base=62571.9 new_base=69459.8 shift_ticks=-688785
-2026-03-21 10:15:10.824771520 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69459.8 new_base=62571.9 shift_ticks=688785
-2026-03-21 10:15:10.926079271 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70547.6 old_base=62571.9 new_base=69547.6 shift_ticks=-697568
-2026-03-21 10:15:11.024593688 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69547.6 new_base=62571.9 shift_ticks=697568
-2026-03-21 10:15:11.326533942 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:11.723684733 [WARN ] [OrderBook] Delta price out of grid range price=69223 base=69635.4 range=2000 streak=1
-2026-03-21 10:15:11.723685483 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69223
-2026-03-21 10:15:11.724515609 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:11.824847943 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70459.8 old_base=62571.9 new_base=69459.8 shift_ticks=-688785
-2026-03-21 10:15:11.924641652 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69459.8 new_base=62571.9 shift_ticks=688785
-2026-03-21 10:15:12.025203320 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70627.8 old_base=62571.9 new_base=69627.8 shift_ticks=-705589
-2026-03-21 10:15:12.224873446 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69627.8 new_base=62571.9 shift_ticks=705589
-2026-03-21 10:15:12.422883696 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70462.1 old_base=62571.9 new_base=69462.1 shift_ticks=-689019
-2026-03-21 10:15:12.824355075 [WARN ] [OrderBook] Delta price out of grid range price=69243.9 base=69462.1 range=2000 streak=1
-2026-03-21 10:15:12.824355825 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69243.9
-2026-03-21 10:15:12.825316034 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69462.1 new_base=62571.9 shift_ticks=689019
-2026-03-21 10:15:13.124759660 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70564.8 old_base=62571.9 new_base=69564.8 shift_ticks=-699290
-2026-03-21 10:15:13.224937370 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69564.8 new_base=62571.9 shift_ticks=699290
-2026-03-21 10:15:13.324989412 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:13.523730329 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69635.4 range=2000 streak=1
-2026-03-21 10:15:13.523731246 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:15:13.524695829 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:13.625378498 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.9 old_base=62571.9 new_base=69629.9 shift_ticks=-705805
-2026-03-21 10:15:13.728040375 [WARN ] [OrderBook] Delta price out of grid range price=69223.1 base=69629.9 range=2000 streak=1
-2026-03-21 10:15:13.728041417 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69223.1
-2026-03-21 10:15:13.729002418 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69629.9 new_base=62571.9 shift_ticks=705805
-2026-03-21 10:15:13.824564623 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70510.9 old_base=62571.9 new_base=69510.9 shift_ticks=-693901
-2026-03-21 10:15:14.324885918 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69510.9 new_base=62571.9 shift_ticks=693901
-2026-03-21 10:15:14.525597754 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70608.4 old_base=62571.9 new_base=69608.4 shift_ticks=-703650
-2026-03-21 10:15:14.624807503 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69608.4 new_base=62571.9 shift_ticks=703650
-2026-03-21 10:15:14.724629837 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:14.824619380 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:15.324856341 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70627.7 old_base=62571.9 new_base=69627.7 shift_ticks=-705582
-2026-03-21 10:15:15.625035261 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69627.7 new_base=62571.9 shift_ticks=705582
-2026-03-21 10:15:15.724396761 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:15.825642221 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:15.925107013 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:16.224897972 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:16.324417890 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:16.524234433 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69635.4 range=2000 streak=1
-2026-03-21 10:15:16.524235349 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:15:16.525183684 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:16.725737768 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69223.3 old_base=62571.9 new_base=68223.3 shift_ticks=-565136
-2026-03-21 10:15:16.824073393 [WARN ] [OrderBook] Delta price out of grid range price=70615.6 base=68223.3 range=2000 streak=1
-2026-03-21 10:15:16.824074393 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70615.6
-2026-03-21 10:15:16.824075101 [WARN ] [OrderBook] Delta price out of grid range price=70614.4 base=68223.3 range=2000 streak=2
-2026-03-21 10:15:16.824075518 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70614.4
-2026-03-21 10:15:16.824076393 [WARN ] [OrderBook] Delta price out of grid range price=70550 base=68223.3 range=2000 streak=3
-2026-03-21 10:15:16.824076726 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70550
-2026-03-21 10:15:16.825063769 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=68223.3 new_base=62571.9 shift_ticks=565136
-2026-03-21 10:15:16.925087978 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70634.5 old_base=62571.9 new_base=69634.5 shift_ticks=-706257
-2026-03-21 10:15:17.225384147 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69634.5 new_base=62571.9 shift_ticks=706257
-2026-03-21 10:15:17.324898146 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:17.330199735 [ERROR] [Coinbase] feed start failed symbol=BTCUSDT attempt=2 reason=timeout waiting for snapshot
-[2026/03/21 10:15:17:3307] E: ZERO RANDOM FD
-2026-03-21 10:15:17.330798401 [INFO ] [Coinbase] Retrying feed start symbol=BTCUSDT backoff_ms=4000
-2026-03-21 10:15:17.824670608 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:17.923331899 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:18.723835489 [WARN ] [OrderBook] Delta price out of grid range price=69223.3 base=69635.4 range=2000 streak=1
-2026-03-21 10:15:18.723836531 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69223.3
-2026-03-21 10:15:18.724774156 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:18.925481658 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70582.3 old_base=62571.9 new_base=69582.3 shift_ticks=-701044
-2026-03-21 10:15:19.324765035 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69582.3 new_base=62571.9 shift_ticks=701044
-2026-03-21 10:15:19.425294286 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70462.1 old_base=62571.9 new_base=69462.1 shift_ticks=-689019
-2026-03-21 10:15:19.924689830 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69462.1 new_base=62571.9 shift_ticks=689019
-2026-03-21 10:15:20.124579873 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70461.8 old_base=62571.9 new_base=69461.8 shift_ticks=-688989
-2026-03-21 10:15:20.225186667 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69461.8 new_base=62571.9 shift_ticks=688989
-2026-03-21 10:15:20.324822750 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70604.6 old_base=62571.9 new_base=69604.6 shift_ticks=-703273
-2026-03-21 10:15:20.525348585 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69604.6 new_base=62571.9 shift_ticks=703273
-2026-03-21 10:15:20.625504211 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70620 old_base=62571.9 new_base=69620 shift_ticks=-704808
-2026-03-21 10:15:21.324194673 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69620 new_base=62571.9 shift_ticks=704808
-[2026/03/21 10:15:21:3314] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
-[2026/03/21 10:15:21:3318] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
-[2026/03/21 10:15:21:3318] W: ssh pvo "ops" is mandatory
-[2026/03/21 10:15:21:3318] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
-[2026/03/21 10:15:21:3318] W: handler_server_protocol_init: requires 'upload-dir' pvo
-2026-03-21 10:15:21.423876215 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70514.2 old_base=62571.9 new_base=69514.2 shift_ticks=-694234
-2026-03-21 10:15:21.730746097 [INFO ] [Coinbase] WebSocket established symbol=BTCUSDT
-2026-03-21 10:15:23.025407685 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69514.2 new_base=62571.9 shift_ticks=694234
-2026-03-21 10:15:23.225104812 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70622.7 old_base=62571.9 new_base=69622.7 shift_ticks=-705081
-2026-03-21 10:15:23.425931688 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69622.7 new_base=62571.9 shift_ticks=705081
-2026-03-21 10:15:23.527244648 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70614.7 old_base=62571.9 new_base=69614.7 shift_ticks=-704281
-2026-03-21 10:15:23.623814438 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69614.7 range=2000 streak=1
-2026-03-21 10:15:23.623815438 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:15:23.624769605 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69614.7 new_base=62571.9 shift_ticks=704281
-2026-03-21 10:15:23.724975148 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.9 old_base=62571.9 new_base=69629.9 shift_ticks=-705795
-2026-03-21 10:15:24.824555821 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69629.9 new_base=62571.9 shift_ticks=705795
-2026-03-21 10:15:24.924687530 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70626.7 old_base=62571.9 new_base=69626.7 shift_ticks=-705483
-2026-03-21 10:15:25.024582281 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69626.7 new_base=62571.9 shift_ticks=705483
-2026-03-21 10:15:25.125981949 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70620.7 old_base=62571.9 new_base=69620.7 shift_ticks=-704881
-2026-03-21 10:15:26.124858788 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69620.7 new_base=62571.9 shift_ticks=704881
-2026-03-21 10:15:26.224597622 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.8 old_base=62571.9 new_base=69629.8 shift_ticks=-705794
-2026-03-21 10:15:26.924874544 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69629.8 new_base=62571.9 shift_ticks=705794
-2026-03-21 10:15:27.025653129 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70633.2 old_base=62571.9 new_base=69633.2 shift_ticks=-706129
-2026-03-21 10:15:27.324692255 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69633.2 new_base=62571.9 shift_ticks=706129
-2026-03-21 10:15:27.424809130 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70608 old_base=62571.9 new_base=69608 shift_ticks=-703614
-2026-03-21 10:15:27.525011924 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69608 new_base=62571.9 shift_ticks=703614
-2026-03-21 10:15:27.624407673 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70574.8 old_base=62571.9 new_base=69574.8 shift_ticks=-700294
-2026-03-21 10:15:27.825431967 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69574.8 new_base=62571.9 shift_ticks=700294
-2026-03-21 10:15:27.924533175 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70612.8 old_base=62571.9 new_base=69612.8 shift_ticks=-704090
-2026-03-21 10:15:28.024530676 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69612.8 new_base=62571.9 shift_ticks=704090
-2026-03-21 10:15:28.124661218 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.8 old_base=62571.9 new_base=69629.8 shift_ticks=-705791
-2026-03-21 10:15:28.325091929 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69629.8 new_base=62571.9 shift_ticks=705791
-2026-03-21 10:15:28.624524097 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70631.9 old_base=62571.9 new_base=69631.9 shift_ticks=-706004
-2026-03-21 10:15:28.824753056 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69631.9 new_base=62571.9 shift_ticks=706004
-2026-03-21 10:15:29.024923474 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70437.1 old_base=62571.9 new_base=69437.1 shift_ticks=-686521
-2026-03-21 10:15:29.425761353 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69437.1 new_base=62571.9 shift_ticks=686521
-2026-03-21 10:15:29.524972895 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70454.9 old_base=62571.9 new_base=69454.9 shift_ticks=-688298
-2026-03-21 10:15:30.524815276 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69454.9 new_base=62571.9 shift_ticks=688298
-2026-03-21 10:15:30.625088361 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:31.225051532 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:31.422829114 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70613.1 old_base=62571.9 new_base=69613.1 shift_ticks=-704115
-2026-03-21 10:15:32.125728371 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69613.1 new_base=62571.9 shift_ticks=704115
-2026-03-21 10:15:32.324852205 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70633.9 old_base=62571.9 new_base=69633.9 shift_ticks=-706205
-2026-03-21 10:15:32.924793834 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69633.9 new_base=62571.9 shift_ticks=706205
-2026-03-21 10:15:33.024097668 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70576.9 old_base=62571.9 new_base=69576.9 shift_ticks=-700498
-2026-03-21 10:15:33.225479128 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64984.6 old_base=69576.9 new_base=63984.6 shift_ticks=559228
-2026-03-21 10:15:33.324856920 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70459.8 old_base=63984.6 new_base=69459.8 shift_ticks=-547515
-2026-03-21 10:15:33.524750879 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69459.8 new_base=62571.9 shift_ticks=688785
-2026-03-21 10:15:33.626402715 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70582.8 old_base=62571.9 new_base=69582.8 shift_ticks=-701088
-2026-03-21 10:15:34.025964384 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69582.8 new_base=62571.9 shift_ticks=701088
-2026-03-21 10:15:34.125816218 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70607.7 old_base=62571.9 new_base=69607.7 shift_ticks=-703579
-2026-03-21 10:15:34.226627261 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69607.7 new_base=62571.9 shift_ticks=703579
-2026-03-21 10:15:34.324974677 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:34.524821344 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:34.625163513 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:34.825503806 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:34.925621931 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70582.7 old_base=62571.9 new_base=69582.7 shift_ticks=-701084
-2026-03-21 10:15:35.225096933 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69582.7 new_base=62571.9 shift_ticks=701084
-2026-03-21 10:15:35.424996018 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70493.6 old_base=62571.9 new_base=69493.6 shift_ticks=-692169
-2026-03-21 10:15:36.331494987 [ERROR] [Coinbase] feed start failed symbol=BTCUSDT attempt=3 reason=timeout waiting for snapshot
-[2026/03/21 10:15:36:3319] E: ZERO RANDOM FD
-[OPS_EVENT] coinbase_feed_failed: {"symbol":"BTCUSDT"}
-2026-03-21 10:15:36.332037196 [ERROR] [Coinbase] feed permanently failed after all retries symbol=BTCUSDT
-2026-03-21 10:15:36.332843738 [WARN ] Feed failed to start venue=COINBASE symbol=BTCUSDT
-2026-03-21 10:15:36.335347240 [INFO ] trading_engine started mode=shadow venues=BINANCE,KRAKEN,OKX,COINBASE symbol=BTCUSDT
-2026-03-21 10:15:36.425451441 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69493.6 new_base=62571.9 shift_ticks=692169
-2026-03-21 10:15:36.625094818 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=68516.4 old_base=62571.9 new_base=67516.4 shift_ticks=-494448
-2026-03-21 10:15:36.726090902 [WARN ] [OrderBook] Delta price out of grid range price=70635.4 base=67516.4 range=2000 streak=1
-2026-03-21 10:15:36.726091818 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70635.4
-2026-03-21 10:15:36.726093318 [WARN ] [OrderBook] Delta price out of grid range price=70634.9 base=67516.4 range=2000 streak=2
-2026-03-21 10:15:36.726093693 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70634.9
-2026-03-21 10:15:36.726094360 [WARN ] [OrderBook] Delta price out of grid range price=70607 base=67516.4 range=2000 streak=3
-2026-03-21 10:15:36.726094693 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70607
-2026-03-21 10:15:36.727027819 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70606.4 old_base=67516.4 new_base=69606.4 shift_ticks=-209005
-2026-03-21 10:15:36.825045819 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69606.4 new_base=62571.9 shift_ticks=703453
-2026-03-21 10:15:36.924876194 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70607 old_base=62571.9 new_base=69607 shift_ticks=-703507
-2026-03-21 10:15:37.525190407 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69607 new_base=62571.9 shift_ticks=703507
-2026-03-21 10:15:37.624613740 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=67244.9 old_base=62571.9 new_base=66244.9 shift_ticks=-367304
-2026-03-21 10:15:37.725046200 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69575.9 old_base=66244.9 new_base=68575.9 shift_ticks=-233096
-2026-03-21 10:15:37.823773366 [WARN ] [OrderBook] Delta price out of grid range price=70629.7 base=68575.9 range=2000 streak=1
-2026-03-21 10:15:37.823774033 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70629.7
-2026-03-21 10:15:37.823774700 [WARN ] [OrderBook] Delta price out of grid range price=70629.7 base=68575.9 range=2000 streak=2
-2026-03-21 10:15:37.823775033 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70629.7
-2026-03-21 10:15:37.823775575 [WARN ] [OrderBook] Delta price out of grid range price=70578.6 base=68575.9 range=2000 streak=3
-2026-03-21 10:15:37.823775991 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70578.6
-2026-03-21 10:15:37.824485991 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=68575.9 new_base=62571.9 shift_ticks=600400
-2026-03-21 10:15:37.924779325 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70578.6 old_base=62571.9 new_base=69578.6 shift_ticks=-700667
-2026-03-21 10:15:38.324802786 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69578.6 new_base=62571.9 shift_ticks=700667
-2026-03-21 10:15:38.524677038 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=65973.5 old_base=62571.9 new_base=64973.5 shift_ticks=-240160
-2026-03-21 10:15:38.624558747 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70610.3 old_base=64973.5 new_base=69610.3 shift_ticks=-463683
-2026-03-21 10:15:38.824852165 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64984.6 old_base=69610.3 new_base=63984.6 shift_ticks=562573
-2026-03-21 10:15:38.925158666 [WARN ] [OrderBook] Delta price out of grid range price=63571.9 base=63984.6 range=2000 streak=1
-2026-03-21 10:15:38.925159500 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=63571.9
-2026-03-21 10:15:38.925160208 [WARN ] [OrderBook] Delta price out of grid range price=63571 base=63984.6 range=2000 streak=2
-2026-03-21 10:15:38.925160625 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=63571
-2026-03-21 10:15:39.025930917 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70437.1 old_base=63984.6 new_base=69437.1 shift_ticks=-545251
-2026-03-21 10:15:39.325153211 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69437.1 new_base=62571.9 shift_ticks=686521
-2026-03-21 10:15:39.424670419 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70623.3 old_base=62571.9 new_base=69623.3 shift_ticks=-705140
-2026-03-21 10:15:40.024767006 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69623.3 new_base=62571.9 shift_ticks=705140
-2026-03-21 10:15:40.325289759 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:40.523729008 [WARN ] [OrderBook] Delta price out of grid range price=69071.4 base=69635.4 range=2000 streak=1
-2026-03-21 10:15:40.523729842 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69071.4
-2026-03-21 10:15:40.524707634 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:40.624541802 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70462.1 old_base=62571.9 new_base=69462.1 shift_ticks=-689019
+(.venv) clementandredupuy@Mac ThamesRiverTrading % ./deploy/run_shadow.sh --venues OKX,KRAKEN
+[2026-03-21T16:22:55Z] [shadow] [INFO] Starting python shadow session with python3.11 (symbol=BTCUSDT, exchanges=OKX,KRAKEN, signals -> /tmp/trt_ipc/neural_alpha_signal.bin, log=/Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl)
+[2026-03-21T16:22:55Z] [shadow] [INFO] Starting C++ shadow runner symbol=BTCUSDT venues=OKX,KRAKEN duration=2000s interval=1000ms
+2026-03-21 16:22:55.538324667 [INFO ] [Binance] FeedHandler created symbol=BTCUSDT
+2026-03-21 16:22:55.538358458 [INFO ] [Kraken] FeedHandler created symbol=BTCUSDT
+2026-03-21 16:22:55.538383083 [INFO ] [OKX] FeedHandler created symbol=BTCUSDT inst_id=BTC-USDT
+2026-03-21 16:22:55.538395750 [INFO ] [Coinbase] FeedHandler created symbol=BTCUSDT
+2026-03-21 16:22:55.604276097 [INFO ] [Kraken] Tick size fetched symbol=BTCUSDT tick_size=0.1
+2026-03-21 16:22:55.856496184 [INFO ] [OKX] Tick size fetched symbol=BTCUSDT tick_size=0.1
+2026-03-21 16:22:55.856516350 [INFO ] Grid configuration target_range_usd=2000 binance_tick=1 binance_levels=2000 binance_range_usd=2000 kraken_tick=0.1 kraken_levels=20000 kraken_range_usd=2000 okx_tick=0.1 okx_levels=20000 okx_range_usd=2000 coinbase_tick=1 c
+2026-03-21 16:22:55.860103270 [INFO ] [Kraken] Starting feed handler symbol=BTCUSDT
+2026-03-21 16:22:55.877907410 [INFO ] [Kraken] Tick size fetched symbol=BTCUSDT tick_size=0.1
+[2026/03/21 16:22:55:8784] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+[2026/03/21 16:22:55:8838] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/21 16:22:55:8838] W: ssh pvo "ops" is mandatory
+[2026/03/21 16:22:55:8839] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/21 16:22:55:8839] W: handler_server_protocol_init: requires 'upload-dir' pvo
+2026-03-21 16:22:57.146481308 [INFO ] [Kraken] WebSocket established, waiting for snapshot symbol=BTCUSDT
+2026-03-21 16:22:57.643175435 [INFO ] [OrderBook] Grid bounds symbol=BTCUSDT exchange=KRAKEN tick_size=0.1 capacity_levels=20000 active_levels=20000 base=69543.9 top=71543.9 dynamic_range_from_snapshot=false
+2026-03-21 16:22:57.643179685 [INFO ] [OrderBook] Snapshot applied symbol=BTCUSDT sequence=0 base_price=69543.9 bids=100 asks=100
+2026-03-21 16:22:57.643246018 [INFO ] [Kraken] Feed handler started symbol=BTCUSDT
+2026-03-21 16:22:57.643246768 [INFO ] [OKX] Starting feed handler symbol=BTCUSDT
+2026-03-21 16:22:57.840659558 [INFO ] [OKX] Tick size fetched symbol=BTCUSDT tick_size=0.1
+[2026/03/21 16:22:57:8407] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+[2026/03/21 16:22:57:8414] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/21 16:22:57:8414] W: ssh pvo "ops" is mandatory
+[2026/03/21 16:22:57:8414] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/21 16:22:57:8414] W: handler_server_protocol_init: requires 'upload-dir' pvo
+2026-03-21 16:22:58.577651553 [INFO ] [OKX] WebSocket established symbol=BTCUSDT
+2026-03-21 16:22:59.123741886 [INFO ] [OrderBook] Grid bounds symbol=BTCUSDT exchange=OKX tick_size=0.1 capacity_levels=20000 active_levels=20000 base=69543.5 top=71543.5 dynamic_range_from_snapshot=false
+2026-03-21 16:22:59.123754719 [INFO ] [OrderBook] Snapshot applied symbol=BTCUSDT sequence=73993064928 base_price=69543.5 bids=400 asks=400
+2026-03-21 16:22:59.123816844 [INFO ] [OKX] Applied buffered deltas applied=0 skipped=0
+2026-03-21 16:22:59.123819303 [INFO ] [OKX] WS snapshot applied symbol=BTCUSDT seq=73993064928
+2026-03-21 16:22:59.123822053 [INFO ] [OKX] feed handler started symbol=BTCUSDT
+2026-03-21 16:22:59.123824011 [WARN ] venue credential missing venue=OKX field=api_key
+2026-03-21 16:22:59.123824303 [WARN ] venue credential missing venue=OKX field=api_secret
+2026-03-21 16:22:59.123824511 [WARN ] venue credential missing venue=OKX field=api_passphrase
+2026-03-21 16:22:59.125994638 [INFO ] trading_engine started mode=shadow venues=OKX,KRAKEN symbol=BTCUSDT
 Device: cpu
 
 ============================================================
 Fold 1/2  train=375 test=125 ticks
   Pre-training spatial encoder (5 epochs)…
-2026-03-21 10:15:41.623417849 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69462.1 new_base=62571.9 shift_ticks=689019
-2026-03-21 10:15:41.725046727 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:43.124998403 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:43.224951445 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70564.9 old_base=62571.9 new_base=69564.9 shift_ticks=-699304
-  [pretrain] epoch 1/5  loss=2.8907
-2026-03-21 10:15:43.925776033 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69564.9 new_base=62571.9 shift_ticks=699304
-2026-03-21 10:15:44.024038199 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69000 old_base=62571.9 new_base=68000 shift_ticks=-542810
-2026-03-21 10:15:44.125249909 [WARN ] [OrderBook] Delta price out of grid range price=70618.6 base=68000 range=2000 streak=1
-2026-03-21 10:15:44.125251201 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70618.6
-2026-03-21 10:15:44.126121909 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=68000 new_base=62571.9 shift_ticks=542810
-2026-03-21 10:15:44.225056785 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70462.1 old_base=62571.9 new_base=69462.1 shift_ticks=-689019
-2026-03-21 10:15:44.325946036 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69462.1 new_base=62571.9 shift_ticks=689019
-2026-03-21 10:15:44.424608327 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70382.8 old_base=62571.9 new_base=69382.8 shift_ticks=-681087
-  [pretrain] epoch 2/5  loss=2.7661
-2026-03-21 10:15:45.425240210 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69382.8 new_base=62571.9 shift_ticks=681087
-2026-03-21 10:15:45.525054669 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70554.7 old_base=62571.9 new_base=69554.7 shift_ticks=-698284
-2026-03-21 10:15:45.724179627 [WARN ] [OrderBook] Delta price out of grid range price=69224.9 base=69554.7 range=2000 streak=1
-2026-03-21 10:15:45.724180586 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69224.9
-2026-03-21 10:15:45.725288837 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69554.7 new_base=62571.9 shift_ticks=698284
-2026-03-21 10:15:45.825210046 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:46.024775754 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:46.225050007 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70563.2 old_base=62571.9 new_base=69563.2 shift_ticks=-699128
-2026-03-21 10:15:46.325122299 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69563.2 new_base=62571.9 shift_ticks=699128
-2026-03-21 10:15:46.424693549 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70605.7 old_base=62571.9 new_base=69605.7 shift_ticks=-703379
-2026-03-21 10:15:46.526097217 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69605.7 new_base=62571.9 shift_ticks=703379
-2026-03-21 10:15:46.725316427 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:46.927446930 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-  [pretrain] epoch 3/5  loss=2.7646
-2026-03-21 10:15:47.226453264 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:47.524775389 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:47.725299933 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635 old_base=62571.9 new_base=69635 shift_ticks=-706308
-2026-03-21 10:15:48.225637603 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635 new_base=62571.9 shift_ticks=706308
-2026-03-21 10:15:48.425078146 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70626 old_base=62571.9 new_base=69626 shift_ticks=-705410
-2026-03-21 10:15:49.024755774 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69626 new_base=62571.9 shift_ticks=705410
-2026-03-21 10:15:49.124984068 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70627.1 old_base=62571.9 new_base=69627.1 shift_ticks=-705522
-  [pretrain] epoch 4/5  loss=2.6708
-2026-03-21 10:15:49.624824653 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69627.1 new_base=62571.9 shift_ticks=705522
-2026-03-21 10:15:49.727414282 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70617.5 old_base=62571.9 new_base=69617.5 shift_ticks=-704561
-2026-03-21 10:15:50.025191824 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64984.6 old_base=69617.5 new_base=63984.6 shift_ticks=563291
-2026-03-21 10:15:50.125320908 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70575.1 old_base=63984.6 new_base=69575.1 shift_ticks=-559054
-2026-03-21 10:15:50.525272994 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64984.6 old_base=69575.1 new_base=63984.6 shift_ticks=559054
-2026-03-21 10:15:50.624894327 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70400.4 old_base=63984.6 new_base=69400.4 shift_ticks=-541579
-  [pretrain] epoch 5/5  loss=2.6011
-  epoch   1/3  train=0.6723  val=0.1220
-2026-03-21 10:15:53.025028344 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69400.4 new_base=62571.9 shift_ticks=682849
-2026-03-21 10:15:53.125360928 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70618.9 old_base=62571.9 new_base=69618.9 shift_ticks=-704695
-2026-03-21 10:15:53.525563930 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69618.9 new_base=62571.9 shift_ticks=704695
-2026-03-21 10:15:53.724852472 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:53.823780681 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69635.4 range=2000 streak=1
-2026-03-21 10:15:53.823781765 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:15:53.824578015 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:54.024801808 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70625 old_base=62571.9 new_base=69625 shift_ticks=-705308
-  epoch   2/3  train=0.3207  val=0.1013
-2026-03-21 10:15:54.624879395 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69625 new_base=62571.9 shift_ticks=705308
-2026-03-21 10:15:54.725854480 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70619.9 old_base=62571.9 new_base=69619.9 shift_ticks=-704801
-2026-03-21 10:15:55.325120026 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69619.9 new_base=62571.9 shift_ticks=704801
-2026-03-21 10:15:55.425266485 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70459.8 old_base=62571.9 new_base=69459.8 shift_ticks=-688785
-  epoch   3/3  train=0.2452  val=0.0996
-  Fold 1 best val loss: 0.0996
+  [pretrain] epoch 1/5  loss=3.0974
+  [pretrain] epoch 2/5  loss=2.3782
+  [pretrain] epoch 3/5  loss=2.1592
+  [pretrain] epoch 4/5  loss=2.0152
+  [pretrain] epoch 5/5  loss=1.8803
+  epoch   1/3  train=0.6655  val=0.4302
+  epoch   2/3  train=0.4881  val=0.3156
+  epoch   3/3  train=0.4546  val=0.3464
+  Fold 1 best val loss: 0.3156
 
 ============================================================
 Fold 2/2  train=875 test=125 ticks
   Pre-training spatial encoder (5 epochs)…
-2026-03-21 10:15:56.125103823 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64984.6 old_base=69459.8 new_base=63984.6 shift_ticks=547515
-2026-03-21 10:15:56.224347489 [WARN ] [OrderBook] Delta price out of grid range price=63571.9 base=63984.6 range=2000 streak=1
-2026-03-21 10:15:56.224348739 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=63571.9
-2026-03-21 10:15:56.225424573 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=77699 old_base=63984.6 new_base=76699 shift_ticks=-1271439
-2026-03-21 10:15:56.325360074 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=76699 new_base=69635.4 shift_ticks=706355
-2026-03-21 10:15:56.425407158 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:56.525251742 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:57.027159080 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:57.127470665 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70625.4 old_base=62571.9 new_base=69625.4 shift_ticks=-705353
-2026-03-21 10:15:57.326807832 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69625.4 new_base=62571.9 shift_ticks=705353
-2026-03-21 10:15:57.525129165 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70461.8 old_base=62571.9 new_base=69461.8 shift_ticks=-688992
-2026-03-21 10:15:57.924774834 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69461.8 new_base=62571.9 shift_ticks=688992
-2026-03-21 10:15:58.024685709 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70623.7 old_base=62571.9 new_base=69623.7 shift_ticks=-705179
-2026-03-21 10:15:58.125818586 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69623.7 new_base=62571.9 shift_ticks=705179
-2026-03-21 10:15:58.325504046 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:58.625432006 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:58.725167423 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69224.1 old_base=62571.9 new_base=68224.1 shift_ticks=-565219
-2026-03-21 10:15:58.825309132 [WARN ] [OrderBook] Delta price out of grid range price=70629.5 base=68224.1 range=2000 streak=1
-2026-03-21 10:15:58.825310257 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70629.5
-2026-03-21 10:15:58.825310966 [WARN ] [OrderBook] Delta price out of grid range price=70629.5 base=68224.1 range=2000 streak=2
-2026-03-21 10:15:58.825311382 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70629.5
-2026-03-21 10:15:58.924580549 [WARN ] [OrderBook] Delta price out of grid range price=70547.6 base=68224.1 range=2000 streak=1
-2026-03-21 10:15:58.924581632 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70547.6
-2026-03-21 10:15:59.025178217 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=68224.1 new_base=62571.9 shift_ticks=565219
-2026-03-21 10:15:59.226773678 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:15:59.425384470 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:15:59.625661554 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70621 old_base=62571.9 new_base=69621 shift_ticks=-704913
-2026-03-21 10:15:59.827084307 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69621 new_base=62571.9 shift_ticks=704913
-2026-03-21 10:15:59.925046765 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70547.6 old_base=62571.9 new_base=69547.6 shift_ticks=-697568
-2026-03-21 10:16:00.425249851 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69547.6 new_base=62571.9 shift_ticks=697568
-2026-03-21 10:16:00.723955894 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-  [pretrain] epoch 1/5  loss=2.5418
-2026-03-21 10:16:01.625574609 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:01.724854234 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70620.7 old_base=62571.9 new_base=69620.7 shift_ticks=-704883
-2026-03-21 10:16:02.025364320 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69620.7 new_base=62571.9 shift_ticks=704883
-2026-03-21 10:16:02.126152572 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70633.5 old_base=62571.9 new_base=69633.5 shift_ticks=-706164
-2026-03-21 10:16:03.125005911 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69633.5 new_base=62571.9 shift_ticks=706164
-2026-03-21 10:16:03.225452078 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70613 old_base=62571.9 new_base=69613 shift_ticks=-704110
-2026-03-21 10:16:03.825528999 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69613 new_base=62571.9 shift_ticks=704110
-2026-03-21 10:16:03.925182625 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70613.1 old_base=62571.9 new_base=69613.1 shift_ticks=-704120
-2026-03-21 10:16:04.325110919 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69613.1 new_base=62571.9 shift_ticks=704120
-2026-03-21 10:16:04.427824672 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70620.7 old_base=62571.9 new_base=69620.7 shift_ticks=-704876
-  [pretrain] epoch 2/5  loss=2.4029
-2026-03-21 10:16:07.025196895 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69620.7 new_base=62571.9 shift_ticks=704876
-2026-03-21 10:16:07.125287729 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:07.225737605 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:07.324054521 [WARN ] [OrderBook] Delta price out of grid range price=64984.6 base=62571.9 range=2000 streak=1
-2026-03-21 10:16:07.324055646 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=64984.6
-2026-03-21 10:16:07.724807149 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70617.1 old_base=62571.9 new_base=69617.1 shift_ticks=-704524
-2026-03-21 10:16:07.923676774 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69617.1 range=2000 streak=1
-2026-03-21 10:16:07.923677691 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:16:07.924478484 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69617.1 new_base=62571.9 shift_ticks=704524
-2026-03-21 10:16:08.025091610 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70505.9 old_base=62571.9 new_base=69505.9 shift_ticks=-693400
-2026-03-21 10:16:08.125462569 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69505.9 new_base=62571.9 shift_ticks=693400
-2026-03-21 10:16:08.226338154 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70613 old_base=62571.9 new_base=69613 shift_ticks=-704110
-2026-03-21 10:16:08.623691571 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69613 new_base=62571.9 shift_ticks=704110
-2026-03-21 10:16:08.724747197 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70457.1 old_base=62571.9 new_base=69457.1 shift_ticks=-688522
-2026-03-21 10:16:08.825353991 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=68000 old_base=69457.1 new_base=67000 shift_ticks=245712
-2026-03-21 10:16:08.925695450 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70630.5 old_base=67000 new_base=69630.5 shift_ticks=-263049
-2026-03-21 10:16:09.524819619 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69630.5 new_base=62571.9 shift_ticks=705859
-2026-03-21 10:16:09.625320996 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70587 old_base=62571.9 new_base=69587 shift_ticks=-701514
-2026-03-21 10:16:09.824949871 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69587 new_base=62571.9 shift_ticks=701514
-2026-03-21 10:16:09.924800497 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70620.7 old_base=62571.9 new_base=69620.7 shift_ticks=-704883
-2026-03-21 10:16:10.024889581 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69620.7 new_base=62571.9 shift_ticks=704883
-2026-03-21 10:16:10.125905249 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70620.5 old_base=62571.9 new_base=69620.5 shift_ticks=-704857
-2026-03-21 10:16:10.425502376 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69620.5 new_base=62571.9 shift_ticks=704857
-2026-03-21 10:16:10.524918168 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:10.824858086 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:10.924999796 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70476.9 old_base=62571.9 new_base=69476.9 shift_ticks=-690496
-  [pretrain] epoch 3/5  loss=2.3070
-2026-03-21 10:16:11.427494510 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69476.9 new_base=62571.9 shift_ticks=690496
-2026-03-21 10:16:11.525140300 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:11.825716136 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:11.925183303 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:12.625189141 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:12.725109600 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70475.6 old_base=62571.9 new_base=69475.6 shift_ticks=-690368
-2026-03-21 10:16:12.824925516 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69475.6 new_base=62571.9 shift_ticks=690368
-2026-03-21 10:16:12.925876601 [WARN ] [OrderBook] Delta price out of grid range price=64984.6 base=62571.9 range=2000 streak=1
-2026-03-21 10:16:12.925877726 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=64984.6
-2026-03-21 10:16:13.025774269 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70520.7 old_base=62571.9 new_base=69520.7 shift_ticks=-694876
-2026-03-21 10:16:13.125191144 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69520.7 new_base=62571.9 shift_ticks=694876
-2026-03-21 10:16:13.225158728 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70613.1 old_base=62571.9 new_base=69613.1 shift_ticks=-704120
-2026-03-21 10:16:13.925912275 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69613.1 new_base=62571.9 shift_ticks=704120
-2026-03-21 10:16:14.026246735 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:14.225061527 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:14.424892360 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70613.1 old_base=62571.9 new_base=69613.1 shift_ticks=-704115
-2026-03-21 10:16:14.625709988 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69613.1 new_base=62571.9 shift_ticks=704115
-2026-03-21 10:16:14.724908237 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.3 old_base=62571.9 new_base=69629.3 shift_ticks=-705744
-2026-03-21 10:16:15.023625405 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69629.3 range=2000 streak=1
-2026-03-21 10:16:15.023626197 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:16:15.024703906 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69629.3 new_base=62571.9 shift_ticks=705744
-2026-03-21 10:16:15.125638408 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70465.1 old_base=62571.9 new_base=69465.1 shift_ticks=-689318
-2026-03-21 10:16:15.427126952 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69465.1 new_base=62571.9 shift_ticks=689318
-2026-03-21 10:16:15.625240536 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70458.9 old_base=62571.9 new_base=69458.9 shift_ticks=-688701
-2026-03-21 10:16:16.424918374 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69458.9 new_base=62571.9 shift_ticks=688701
-2026-03-21 10:16:16.525056542 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70572.8 old_base=62571.9 new_base=69572.8 shift_ticks=-700090
-  [pretrain] epoch 4/5  loss=2.2682
-2026-03-21 10:16:16.826091961 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69572.8 new_base=62571.9 shift_ticks=700090
-2026-03-21 10:16:16.925102878 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70473.5 old_base=62571.9 new_base=69473.5 shift_ticks=-690163
-2026-03-21 10:16:17.424692964 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69473.5 new_base=62571.9 shift_ticks=690163
-2026-03-21 10:16:17.726485384 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70617 old_base=62571.9 new_base=69617 shift_ticks=-704508
-2026-03-21 10:16:18.324847678 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69617 new_base=62571.9 shift_ticks=704508
-2026-03-21 10:16:18.523793013 [WARN ] [OrderBook] Delta price out of grid range price=64984.6 base=62571.9 range=2000 streak=1
-2026-03-21 10:16:18.523794013 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=64984.6
-2026-03-21 10:16:18.625387139 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70619.9 old_base=62571.9 new_base=69619.9 shift_ticks=-704795
-2026-03-21 10:16:18.825524974 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69619.9 new_base=62571.9 shift_ticks=704795
-2026-03-21 10:16:19.025415892 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70633.6 old_base=62571.9 new_base=69633.6 shift_ticks=-706172
-2026-03-21 10:16:19.125015518 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69633.6 new_base=62571.9 shift_ticks=706172
-2026-03-21 10:16:19.224718309 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70570.1 old_base=62571.9 new_base=69570.1 shift_ticks=-699820
-2026-03-21 10:16:20.724187694 [WARN ] [OrderBook] Delta price out of grid range price=69223.6 base=69570.1 range=2000 streak=1
-2026-03-21 10:16:20.724189236 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69223.6
-2026-03-21 10:16:20.725269362 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69570.1 new_base=62571.9 shift_ticks=699820
-2026-03-21 10:16:20.824937070 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70632.6 old_base=62571.9 new_base=69632.6 shift_ticks=-706065
-2026-03-21 10:16:21.025227530 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69632.6 range=2000 streak=1
-2026-03-21 10:16:21.025228614 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:16:21.026307740 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69632.6 new_base=62571.9 shift_ticks=706065
-2026-03-21 10:16:21.126333365 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:21.225018615 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:21.324901740 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-  [pretrain] epoch 5/5  loss=2.2499
-2026-03-21 10:16:22.125888496 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:22.224944204 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:22.825139626 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:22.925556376 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:23.224981712 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:23.425263796 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70457.4 old_base=62571.9 new_base=69457.4 shift_ticks=-688551
-2026-03-21 10:16:23.524888796 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64984.6 old_base=69457.4 new_base=63984.6 shift_ticks=547281
-2026-03-21 10:16:23.623893422 [WARN ] [OrderBook] Delta price out of grid range price=63571.9 base=63984.6 range=2000 streak=1
-2026-03-21 10:16:23.623894338 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=63571.9
-2026-03-21 10:16:23.624728130 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=56508.4 old_base=63984.6 new_base=55508.4 shift_ticks=847624
-2026-03-21 10:16:23.725721673 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70613.3 old_base=55508.4 new_base=69613.3 shift_ticks=-1410495
-2026-03-21 10:16:23.825974549 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69613.3 new_base=62571.9 shift_ticks=704141
-2026-03-21 10:16:23.925556716 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70576.8 old_base=62571.9 new_base=69576.8 shift_ticks=-700489
-2026-03-21 10:16:24.024393299 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69576.8 range=2000 streak=1
-2026-03-21 10:16:24.024394633 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:16:24.025472634 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69576.8 new_base=62571.9 shift_ticks=700489
-2026-03-21 10:16:24.123848717 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70612.7 old_base=62571.9 new_base=69612.7 shift_ticks=-704080
-2026-03-21 10:16:24.225134927 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69612.7 new_base=62571.9 shift_ticks=704080
-2026-03-21 10:16:24.324742801 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70630.3 old_base=62571.9 new_base=69630.3 shift_ticks=-705841
-2026-03-21 10:16:24.424933469 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69630.3 new_base=62571.9 shift_ticks=705841
-2026-03-21 10:16:24.524911719 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70633.6 old_base=62571.9 new_base=69633.6 shift_ticks=-706172
-2026-03-21 10:16:24.624994804 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69633.6 new_base=62571.9 shift_ticks=706172
-2026-03-21 10:16:24.726193514 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70464.1 old_base=62571.9 new_base=69464.1 shift_ticks=-689216
-2026-03-21 10:16:25.425632476 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69464.1 new_base=62571.9 shift_ticks=689216
-2026-03-21 10:16:25.525151060 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-  epoch   1/3  train=0.4557  val=0.1617
-2026-03-21 10:16:27.124440487 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69635.4 range=2000 streak=1
-2026-03-21 10:16:27.124441612 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:16:27.125607654 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:27.325041781 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:27.425003698 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:27.526240075 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:27.825316909 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:27.925617410 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70547.6 old_base=62571.9 new_base=69547.6 shift_ticks=-697568
-2026-03-21 10:16:28.324686995 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69547.6 new_base=62571.9 shift_ticks=697568
-2026-03-21 10:16:28.525613372 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70608.1 old_base=62571.9 new_base=69608.1 shift_ticks=-703616
-2026-03-21 10:16:28.624884538 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69608.1 new_base=62571.9 shift_ticks=703616
-2026-03-21 10:16:28.725373207 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70444.7 old_base=62571.9 new_base=69444.7 shift_ticks=-687284
-2026-03-21 10:16:28.826359167 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69444.7 new_base=62571.9 shift_ticks=687284
-2026-03-21 10:16:28.923398914 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70611.2 old_base=62571.9 new_base=69611.2 shift_ticks=-703929
-2026-03-21 10:16:29.124276375 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69611.2 range=2000 streak=1
-2026-03-21 10:16:29.124277375 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:16:29.125486543 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69611.2 new_base=62571.9 shift_ticks=703929
-2026-03-21 10:16:29.224462917 [WARN ] [OrderBook] Delta price out of grid range price=64984.6 base=62571.9 range=2000 streak=1
-2026-03-21 10:16:29.224463917 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=64984.6
-2026-03-21 10:16:29.325336752 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-  epoch   2/3  train=0.1638  val=0.1465
-2026-03-21 10:16:29.927836008 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:30.025942007 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70621.3 old_base=62571.9 new_base=69621.3 shift_ticks=-704941
-2026-03-21 10:16:30.626715345 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69621.3 new_base=62571.9 shift_ticks=704941
-2026-03-21 10:16:30.725302095 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62571.9 new_base=69629.2 shift_ticks=-705730
-2026-03-21 10:16:30.925029805 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69629.2 new_base=62571.9 shift_ticks=705730
-2026-03-21 10:16:31.125899389 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:31.225029473 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:31.425937058 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:31.826694312 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:31.924933935 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:32.025464645 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:32.125136979 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70621.3 old_base=62571.9 new_base=69621.3 shift_ticks=-704941
-2026-03-21 10:16:32.226295773 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69621.3 new_base=62571.9 shift_ticks=704941
-2026-03-21 10:16:32.424815689 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:32.525351690 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:32.624854565 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70606.9 old_base=62571.9 new_base=69606.9 shift_ticks=-703496
-2026-03-21 10:16:32.724148399 [WARN ] [OrderBook] Delta price out of grid range price=69224 base=69606.9 range=2000 streak=1
-2026-03-21 10:16:32.724149816 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69224
-2026-03-21 10:16:32.725260817 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69606.9 new_base=62571.9 shift_ticks=703496
-2026-03-21 10:16:32.826032317 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70543.6 old_base=62571.9 new_base=69543.6 shift_ticks=-697170
-2026-03-21 10:16:33.225291153 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69543.6 new_base=62571.9 shift_ticks=697170
-2026-03-21 10:16:33.325130654 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70613.8 old_base=62571.9 new_base=69613.8 shift_ticks=-704185
-2026-03-21 10:16:33.426264239 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69613.8 new_base=62571.9 shift_ticks=704185
-  epoch   3/3  train=0.1127  val=0.1302
-  Fold 2 best val loss: 0.1302
-2026-03-21 10:16:33.725091490 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70613.2 old_base=62571.9 new_base=69613.2 shift_ticks=-704133
+  [pretrain] epoch 1/5  loss=2.3802
+  [pretrain] epoch 2/5  loss=1.6268
+  [pretrain] epoch 3/5  loss=1.4761
+  [pretrain] epoch 4/5  loss=1.3842
+  [pretrain] epoch 5/5  loss=1.3133
+  epoch   1/3  train=0.5659  val=0.3535
+  epoch   2/3  train=0.4164  val=0.3241
+  epoch   3/3  train=0.3800  val=0.3691
+  Fold 2 best val loss: 0.3241
 Device: cpu
 
 ============================================================
 Fold 1/2  train=375 test=125 ticks
   Pre-training spatial encoder (5 epochs)…
-2026-03-21 10:16:34.124060533 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69613.2 range=2000 streak=1
-2026-03-21 10:16:34.124061742 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:16:34.125173034 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69613.2 new_base=62571.9 shift_ticks=704133
-2026-03-21 10:16:34.425124828 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70606.9 old_base=62571.9 new_base=69606.9 shift_ticks=-703496
-  [pretrain] epoch 1/5  loss=3.1215
-  [pretrain] epoch 2/5  loss=2.7923
-  [pretrain] epoch 3/5  loss=2.7812
-  [pretrain] epoch 4/5  loss=2.7632
-2026-03-21 10:16:36.427272884 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69606.9 new_base=62571.9 shift_ticks=703496
-2026-03-21 10:16:36.625371051 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70444.8 old_base=62571.9 new_base=69444.8 shift_ticks=-687292
-2026-03-21 10:16:36.826195012 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69444.8 new_base=62571.9 shift_ticks=687292
-  [pretrain] epoch 5/5  loss=2.7330
-2026-03-21 10:16:37.125047846 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70611.6 old_base=62571.9 new_base=69611.6 shift_ticks=-703970
-  epoch   1/3  train=1.4338  val=1.4707
-  epoch   2/3  train=1.0499  val=1.3196
-  epoch   3/3  train=0.8114  val=1.2656
-  Fold 1 best val loss: 1.2656
+  [pretrain] epoch 1/5  loss=2.9925
+  [pretrain] epoch 2/5  loss=2.2859
+  [pretrain] epoch 3/5  loss=2.1442
+  [pretrain] epoch 4/5  loss=1.9237
+  [pretrain] epoch 5/5  loss=1.8683
+  epoch   1/3  train=1.4019  val=1.0950
+  epoch   2/3  train=1.1320  val=0.7706
+  epoch   3/3  train=1.0178  val=0.7157
+  Fold 1 best val loss: 0.7157
 
 ============================================================
 Fold 2/2  train=875 test=125 ticks
   Pre-training spatial encoder (5 epochs)…
-2026-03-21 10:16:38.425036480 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69611.6 new_base=62571.9 shift_ticks=703970
-2026-03-21 10:16:38.725365648 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70606.9 old_base=62571.9 new_base=69606.9 shift_ticks=-703496
-2026-03-21 10:16:39.226939944 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69606.9 range=2000 streak=1
-2026-03-21 10:16:39.226940903 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:16:39.228028487 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69606.9 new_base=62571.9 shift_ticks=703496
-2026-03-21 10:16:39.524931361 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70630.3 old_base=62571.9 new_base=69630.3 shift_ticks=-705841
-2026-03-21 10:16:39.625740529 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69630.3 new_base=62571.9 shift_ticks=705841
-2026-03-21 10:16:39.724942362 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-  [pretrain] epoch 1/5  loss=2.7812
-2026-03-21 10:16:39.925396990 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:40.126104491 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70611.6 old_base=62571.9 new_base=69611.6 shift_ticks=-703970
-2026-03-21 10:16:40.326153951 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64984.6 old_base=69611.6 new_base=63984.6 shift_ticks=562700
-2026-03-21 10:16:40.424952659 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70520.3 old_base=63984.6 new_base=69520.3 shift_ticks=-553572
-2026-03-21 10:16:41.125270748 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69520.3 new_base=62571.9 shift_ticks=694842
-2026-03-21 10:16:41.224930789 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70607.1 old_base=62571.9 new_base=69607.1 shift_ticks=-703517
-2026-03-21 10:16:41.324966998 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69607.1 new_base=62571.9 shift_ticks=703517
-2026-03-21 10:16:41.425097500 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-  [pretrain] epoch 2/5  loss=2.4507
-2026-03-21 10:16:41.725100085 [WARN ] [OrderBook] Delta price out of grid range price=69223.8 base=69635.4 range=2000 streak=1
-2026-03-21 10:16:41.725101252 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69223.8
-2026-03-21 10:16:41.726027043 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:41.825313877 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:42.126684714 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:42.224722337 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70628 old_base=62571.9 new_base=69628 shift_ticks=-705613
-2026-03-21 10:16:42.427354674 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69628 new_base=62571.9 shift_ticks=705613
-2026-03-21 10:16:42.525640924 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70628.4 old_base=62571.9 new_base=69628.4 shift_ticks=-705648
-2026-03-21 10:16:42.925417301 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69628.4 new_base=62571.9 shift_ticks=705648
-2026-03-21 10:16:43.025307510 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70611.4 old_base=62571.9 new_base=69611.4 shift_ticks=-703950
-  [pretrain] epoch 3/5  loss=2.3425
-2026-03-21 10:16:43.526038097 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69611.4 new_base=62571.9 shift_ticks=703950
-2026-03-21 10:16:43.625046514 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70596.9 old_base=62571.9 new_base=69596.9 shift_ticks=-702505
-2026-03-21 10:16:43.724455389 [WARN ] [OrderBook] Delta price out of grid range price=69223.2 base=69596.9 range=2000 streak=1
-2026-03-21 10:16:43.724456556 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69223.2
-2026-03-21 10:16:43.725545598 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69596.9 new_base=62571.9 shift_ticks=702505
-2026-03-21 10:16:44.025005392 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:44.125168809 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:44.224961476 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70457.4 old_base=62571.9 new_base=69457.4 shift_ticks=-688551
-2026-03-21 10:16:44.424916852 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69457.4 new_base=62571.9 shift_ticks=688551
-2026-03-21 10:16:44.525104354 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70617.3 old_base=62571.9 new_base=69617.3 shift_ticks=-704544
-2026-03-21 10:16:44.723837937 [WARN ] [OrderBook] Delta price out of grid range price=69223.9 base=69617.3 range=2000 streak=1
-2026-03-21 10:16:44.723838896 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69223.9
-2026-03-21 10:16:44.724933646 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69617.3 new_base=62571.9 shift_ticks=704544
-  [pretrain] epoch 4/5  loss=2.2969
-2026-03-21 10:16:44.824909105 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70607.9 old_base=62571.9 new_base=69607.9 shift_ticks=-703600
-2026-03-21 10:16:44.924968689 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69607.9 new_base=62571.9 shift_ticks=703600
-2026-03-21 10:16:45.125103483 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70457.4 old_base=62571.9 new_base=69457.4 shift_ticks=-688551
-2026-03-21 10:16:45.325082942 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69457.4 new_base=62571.9 shift_ticks=688551
-2026-03-21 10:16:45.426060443 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:46.025362364 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:46.125400698 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-  [pretrain] epoch 5/5  loss=2.3141
-2026-03-21 10:16:47.023930703 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:47.224228912 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.3 old_base=62571.9 new_base=69629.3 shift_ticks=-705737
-  epoch   1/3  train=1.0290  val=0.5727
-2026-03-21 10:16:48.224244961 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69629.3 range=2000 streak=1
-2026-03-21 10:16:48.224246002 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:16:48.225044003 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69629.3 new_base=62571.9 shift_ticks=705737
-2026-03-21 10:16:48.324563253 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70575.9 old_base=62571.9 new_base=69575.9 shift_ticks=-700396
-2026-03-21 10:16:48.524369504 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69575.9 new_base=62571.9 shift_ticks=700396
-  epoch   2/3  train=0.4033  val=0.4028
-2026-03-21 10:16:48.723357755 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70606.1 old_base=62571.9 new_base=69606.1 shift_ticks=-703419
-2026-03-21 10:16:49.425497761 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69606.1 new_base=62571.9 shift_ticks=703419
-2026-03-21 10:16:49.524969719 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70628.1 old_base=62571.9 new_base=69628.1 shift_ticks=-705617
-2026-03-21 10:16:49.723875929 [WARN ] [OrderBook] Delta price out of grid range price=69224 base=69628.1 range=2000 streak=1
-2026-03-21 10:16:49.723876971 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69224
-2026-03-21 10:16:49.724961304 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69628.1 new_base=62571.9 shift_ticks=705617
-  epoch   3/3  train=0.2869  val=0.3525
-  Fold 2 best val loss: 0.3525
-[REGIME] Flat training data (3/5 features near-zero variance) — anchoring artifact to calm regime.
-[Shadow] ticks=46  mean=-275.81bps  std=274.93bps  IC=0.0980  ICIR=5.127  confidence_gate=46  horizon_gate=0  safe_mode_gate=0  ts_issues=0
-2026-03-21 10:16:49.825269764 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:50.224070474 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69635.4 range=2000 streak=1
-2026-03-21 10:16:50.224072641 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:16:50.225161475 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:50.325072726 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:50.426988602 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:50.525619019 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:50.628035813 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:50.725519687 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69224 old_base=62571.9 new_base=68224 shift_ticks=-565208
-2026-03-21 10:16:50.825020521 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=68224 new_base=62571.9 shift_ticks=565208
-2026-03-21 10:16:51.124849063 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:51.223867606 [WARN ] [OrderBook] Delta price out of grid range price=69575.9 base=69635.4 range=2000 streak=1
-2026-03-21 10:16:51.223868272 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69575.9
-2026-03-21 10:16:51.224825439 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:51.325520857 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69575.9 old_base=62571.9 new_base=68575.9 shift_ticks=-600400
-2026-03-21 10:16:51.425031441 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=68575.9 new_base=62571.9 shift_ticks=600400
-2026-03-21 10:16:51.525144734 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70628.4 old_base=62571.9 new_base=69628.4 shift_ticks=-705648
-2026-03-21 10:16:51.723990526 [WARN ] [OrderBook] Delta price out of grid range price=69224 base=69628.4 range=2000 streak=1
-2026-03-21 10:16:51.723991651 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69224
-2026-03-21 10:16:51.724757942 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69628.4 new_base=62571.9 shift_ticks=705648
-2026-03-21 10:16:52.025632695 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:52.225572155 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:52.326505115 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70524.6 old_base=62571.9 new_base=69524.6 shift_ticks=-695275
-2026-03-21 10:16:53.024791034 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64984.6 old_base=69524.6 new_base=63984.6 shift_ticks=554005
-2026-03-21 10:16:53.124521285 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=63984.6 new_base=69635.4 shift_ticks=-565084
-2026-03-21 10:16:53.226935829 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:53.324853120 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:53.724092831 [WARN ] [OrderBook] Delta price out of grid range price=69224 base=69635.4 range=2000 streak=1
-2026-03-21 10:16:53.724093831 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69224
-2026-03-21 10:16:53.725013415 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:53.924459374 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:54.524766878 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:54.626653005 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:54.825002756 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:54.925264090 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70635.4 old_base=62571.9 new_base=69635.4 shift_ticks=-706354
-2026-03-21 10:16:55.025479799 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63571.9 old_base=69635.4 new_base=62571.9 shift_ticks=706354
-2026-03-21 10:16:55.124801215 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70541.9 old_base=62571.9 new_base=69541.9 shift_ticks=-697003
-2026-03-21 10:16:57.925730568 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69541.9 new_base=62566.3 shift_ticks=697565
-2026-03-21 10:16:58.024895359 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70614.9 old_base=62566.3 new_base=69614.9 shift_ticks=-704859
-2026-03-21 10:16:58.425003404 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69614.9 new_base=62566.3 shift_ticks=704859
-2026-03-21 10:16:58.625000572 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:16:58.724661697 [WARN ] [OrderBook] Delta price out of grid range price=69214.3 base=69629.2 range=2000 streak=1
-2026-03-21 10:16:58.724662822 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69214.3
-2026-03-21 10:16:58.725787448 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:16:58.925047408 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:16:59.225263410 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:16:59.324648368 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:16:59.925034040 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:00.025256582 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70566.9 old_base=62566.3 new_base=69566.9 shift_ticks=-700066
-2026-03-21 10:17:01.224727881 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69566.9 new_base=62566.3 shift_ticks=700066
-2026-03-21 10:17:01.324771048 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69569.8 old_base=62566.3 new_base=68569.8 shift_ticks=-600347
-2026-03-21 10:17:01.523910841 [WARN ] [OrderBook] Delta price out of grid range price=70629.2 base=68569.8 range=2000 streak=1
-2026-03-21 10:17:01.523911883 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70629.2
-2026-03-21 10:17:01.523912924 [WARN ] [OrderBook] Delta price out of grid range price=70600.9 base=68569.8 range=2000 streak=2
-2026-03-21 10:17:01.523913341 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70600.9
-2026-03-21 10:17:01.523914133 [WARN ] [OrderBook] Delta price out of grid range price=70600.8 base=68569.8 range=2000 streak=3
-2026-03-21 10:17:01.523914549 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70600.8
-2026-03-21 10:17:01.525167384 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70572.5 old_base=68569.8 new_base=69572.5 shift_ticks=-100274
-2026-03-21 10:17:01.825199511 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69572.5 new_base=62566.3 shift_ticks=700621
-2026-03-21 10:17:02.225623513 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:02.324203180 [WARN ] [OrderBook] Delta price out of grid range price=69569.8 base=69629.2 range=2000 streak=1
-2026-03-21 10:17:02.324204055 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69569.8
-2026-03-21 10:17:02.325240181 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:02.525222765 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:02.723895432 [WARN ] [OrderBook] Delta price out of grid range price=69215.9 base=69629.2 range=2000 streak=1
-2026-03-21 10:17:02.723896641 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69215.9
-2026-03-21 10:17:02.724861807 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:02.825306976 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70623.1 old_base=62566.3 new_base=69623.1 shift_ticks=-705678
-2026-03-21 10:17:02.925028143 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69623.1 new_base=62566.3 shift_ticks=705678
-2026-03-21 10:17:03.026096435 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70509.6 old_base=62566.3 new_base=69509.6 shift_ticks=-694332
-2026-03-21 10:17:03.124831310 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69509.6 new_base=62566.3 shift_ticks=694332
-2026-03-21 10:17:03.224917561 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70597.8 old_base=62566.3 new_base=69597.8 shift_ticks=-703155
-2026-03-21 10:17:03.524853646 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69597.8 new_base=62566.3 shift_ticks=703155
-2026-03-21 10:17:03.625449606 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:04.423697193 [WARN ] [OrderBook] Delta price out of grid range price=69569.8 base=69629.2 range=2000 streak=1
-2026-03-21 10:17:04.423698151 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69569.8
-2026-03-21 10:17:04.424655402 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:04.624817945 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:04.824628321 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64978.8 old_base=69629.2 new_base=63978.8 shift_ticks=565034
-2026-03-21 10:17:04.925088573 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70621.2 old_base=63978.8 new_base=69621.2 shift_ticks=-564238
-2026-03-21 10:17:05.125697283 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69621.2 new_base=62566.3 shift_ticks=705495
-2026-03-21 10:17:05.224910366 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:06.023514787 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:06.125443039 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70618.4 old_base=62566.3 new_base=69618.4 shift_ticks=-705217
-2026-03-21 10:17:06.324777206 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69618.4 new_base=62566.3 shift_ticks=705217
-2026-03-21 10:17:06.424929624 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69569.8 old_base=62566.3 new_base=68569.8 shift_ticks=-600347
-2026-03-21 10:17:06.523993041 [WARN ] [OrderBook] Delta price out of grid range price=70629.2 base=68569.8 range=2000 streak=1
-2026-03-21 10:17:06.523993874 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70629.2
-2026-03-21 10:17:06.523994833 [WARN ] [OrderBook] Delta price out of grid range price=70590 base=68569.8 range=2000 streak=2
-2026-03-21 10:17:06.523995166 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70590
-2026-03-21 10:17:06.524953749 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=68569.8 new_base=62566.3 shift_ticks=600347
-2026-03-21 10:17:06.724867459 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69215.8 old_base=62566.3 new_base=68215.8 shift_ticks=-564952
-2026-03-21 10:17:06.823706334 [WARN ] [OrderBook] Delta price out of grid range price=70547.6 base=68215.8 range=2000 streak=1
-2026-03-21 10:17:06.823707209 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70547.6
-2026-03-21 10:17:06.823707750 [WARN ] [OrderBook] Delta price out of grid range price=70444.1 base=68215.8 range=2000 streak=2
-2026-03-21 10:17:06.823708084 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70444.1
-2026-03-21 10:17:06.824429835 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=68215.8 new_base=62566.3 shift_ticks=564952
-2026-03-21 10:17:06.925041586 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70600.9 old_base=62566.3 new_base=69600.9 shift_ticks=-703465
-2026-03-21 10:17:07.224734837 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69600.9 new_base=62566.3 shift_ticks=703465
-2026-03-21 10:17:07.424413380 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:07.824836675 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:07.924935467 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:08.127410096 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:08.224973469 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70600.9 old_base=62566.3 new_base=69600.9 shift_ticks=-703465
-2026-03-21 10:17:08.524554513 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69600.9 new_base=62566.3 shift_ticks=703465
-2026-03-21 10:17:08.725555932 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69216.9 old_base=62566.3 new_base=68216.9 shift_ticks=-565062
-2026-03-21 10:17:08.825040682 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=68216.9 new_base=62566.3 shift_ticks=565062
-2026-03-21 10:17:08.925403100 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70614.4 old_base=62566.3 new_base=69614.4 shift_ticks=-704811
-2026-03-21 10:17:09.124716642 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69614.4 new_base=62566.3 shift_ticks=704811
-2026-03-21 10:17:09.425837728 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:09.624955062 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:09.724884896 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69216.9 old_base=62566.3 new_base=68216.9 shift_ticks=-565062
-2026-03-21 10:17:09.824901521 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64978.8 old_base=68216.9 new_base=63978.8 shift_ticks=423805
-2026-03-21 10:17:09.924828355 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70597.4 old_base=63978.8 new_base=69597.4 shift_ticks=-561850
-2026-03-21 10:17:10.025486357 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69597.4 new_base=62566.3 shift_ticks=703107
-2026-03-21 10:17:10.124335065 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70598.7 old_base=62566.3 new_base=69598.7 shift_ticks=-703246
-2026-03-21 10:17:10.225006357 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69598.7 new_base=62566.3 shift_ticks=703246
-2026-03-21 10:17:10.324395316 [WARN ] [OrderBook] Delta price out of grid range price=64978.8 base=62566.3 range=2000 streak=1
-2026-03-21 10:17:10.324396108 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=64978.8
-2026-03-21 10:17:10.423230816 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70600.8 old_base=62566.3 new_base=69600.8 shift_ticks=-703451
-2026-03-21 10:17:10.524964068 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69600.8 new_base=62566.3 shift_ticks=703451
-2026-03-21 10:17:10.624955318 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:11.924913535 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:12.025383204 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=68953.9 old_base=62566.3 new_base=67953.9 shift_ticks=-538764
-2026-03-21 10:17:12.124164328 [WARN ] [OrderBook] Delta price out of grid range price=70619.9 base=67953.9 range=2000 streak=1
-2026-03-21 10:17:12.124165287 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70619.9
-2026-03-21 10:17:12.124165912 [WARN ] [OrderBook] Delta price out of grid range price=70617.4 base=67953.9 range=2000 streak=2
-2026-03-21 10:17:12.124166245 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70617.4
-2026-03-21 10:17:12.125092621 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=67953.9 new_base=62566.3 shift_ticks=538764
-2026-03-21 10:17:12.224787037 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:12.324787205 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:12.424570747 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69569.8 old_base=62566.3 new_base=68569.8 shift_ticks=-600347
-2026-03-21 10:17:12.524699623 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=68569.8 new_base=62566.3 shift_ticks=600347
-2026-03-21 10:17:12.624884748 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70568.9 old_base=62566.3 new_base=69568.9 shift_ticks=-700265
-2026-03-21 10:17:14.723785928 [WARN ] [OrderBook] Delta price out of grid range price=69217.2 base=69568.9 range=2000 streak=1
-2026-03-21 10:17:14.723786886 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69217.2
-2026-03-21 10:17:14.724723304 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69568.9 new_base=62566.3 shift_ticks=700265
-2026-03-21 10:17:14.924981472 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70628.1 old_base=62566.3 new_base=69628.1 shift_ticks=-706187
-2026-03-21 10:17:15.324801391 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69628.1 new_base=62566.3 shift_ticks=706187
-2026-03-21 10:17:15.424858684 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70623.3 old_base=62566.3 new_base=69623.3 shift_ticks=-705706
-2026-03-21 10:17:15.625159644 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69623.3 new_base=62566.3 shift_ticks=705706
-2026-03-21 10:17:15.725070770 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:16.525145525 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:16.625449068 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70598.4 old_base=62566.3 new_base=69598.4 shift_ticks=-703216
-2026-03-21 10:17:16.723989901 [WARN ] [OrderBook] Delta price out of grid range price=69217.2 base=69598.4 range=2000 streak=1
-2026-03-21 10:17:16.723990859 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69217.2
-2026-03-21 10:17:16.725125360 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69598.4 new_base=62566.3 shift_ticks=703216
-2026-03-21 10:17:16.826170444 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70623.4 old_base=62566.3 new_base=69623.4 shift_ticks=-705710
-2026-03-21 10:17:16.924817819 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69623.4 new_base=62566.3 shift_ticks=705710
-2026-03-21 10:17:17.025851279 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70464.4 old_base=62566.3 new_base=69464.4 shift_ticks=-689815
-2026-03-21 10:17:17.325378239 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69464.4 new_base=62566.3 shift_ticks=689815
-2026-03-21 10:17:17.525153240 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70445.5 old_base=62566.3 new_base=69445.5 shift_ticks=-687926
-2026-03-21 10:17:17.824952575 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69445.5 new_base=62566.3 shift_ticks=687926
-2026-03-21 10:17:17.925223951 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70608.8 old_base=62566.3 new_base=69608.8 shift_ticks=-704252
-2026-03-21 10:17:18.225170578 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69608.8 new_base=62566.3 shift_ticks=704252
-2026-03-21 10:17:18.424357995 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70547.6 old_base=62566.3 new_base=69547.6 shift_ticks=-698130
-2026-03-21 10:17:18.625299831 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69547.6 new_base=62566.3 shift_ticks=698130
-2026-03-21 10:17:18.724666997 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70610.2 old_base=62566.3 new_base=69610.2 shift_ticks=-704395
-2026-03-21 10:17:19.126458127 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69610.2 new_base=62566.3 shift_ticks=704395
-2026-03-21 10:17:19.324950835 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:20.124105048 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:20.225197217 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:21.025310680 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64978.8 old_base=69629.2 new_base=63978.8 shift_ticks=565034
-2026-03-21 10:17:21.125253098 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=63978.8 new_base=69629.2 shift_ticks=-565034
-2026-03-21 10:17:21.824943101 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:21.924981060 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70624.8 old_base=62566.3 new_base=69624.8 shift_ticks=-705852
-2026-03-21 10:17:22.324989438 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69624.8 new_base=62566.3 shift_ticks=705852
-2026-03-21 10:17:22.425204731 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70624.3 old_base=62566.3 new_base=69624.3 shift_ticks=-705800
-2026-03-21 10:17:22.625578358 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69624.3 new_base=62566.3 shift_ticks=705800
-2026-03-21 10:17:22.724857274 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:23.125818778 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:23.225211320 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70611.9 old_base=62566.3 new_base=69611.9 shift_ticks=-704567
-2026-03-21 10:17:24.124675492 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69611.9 new_base=62566.3 shift_ticks=704567
-2026-03-21 10:17:24.224642284 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:24.524228453 [WARN ] [OrderBook] Delta price out of grid range price=69569.8 base=69629.2 range=2000 streak=1
-2026-03-21 10:17:24.524229536 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69569.8
-2026-03-21 10:17:24.524941911 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:24.624995662 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70628.1 old_base=62566.3 new_base=69628.1 shift_ticks=-706187
-2026-03-21 10:17:24.925308415 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69628.1 new_base=62566.3 shift_ticks=706187
-2026-03-21 10:17:25.123728914 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70624.3 old_base=62566.3 new_base=69624.3 shift_ticks=-705799
-2026-03-21 10:17:25.325077292 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69624.3 new_base=62566.3 shift_ticks=705799
-2026-03-21 10:17:25.525588877 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70608.8 old_base=62566.3 new_base=69608.8 shift_ticks=-704256
-2026-03-21 10:17:25.724195627 [WARN ] [OrderBook] Delta price out of grid range price=69217 base=69608.8 range=2000 streak=1
-2026-03-21 10:17:25.724196711 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69217
-2026-03-21 10:17:25.725147295 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69608.8 new_base=62566.3 shift_ticks=704256
-2026-03-21 10:17:25.926242006 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70565.2 old_base=62566.3 new_base=69565.2 shift_ticks=-699895
-2026-03-21 10:17:26.625028800 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64978.8 old_base=69565.2 new_base=63978.8 shift_ticks=558638
-2026-03-21 10:17:26.724561009 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=63978.8 new_base=69629.2 shift_ticks=-565034
-2026-03-21 10:17:27.124877512 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64978.8 old_base=69629.2 new_base=63978.8 shift_ticks=565034
-2026-03-21 10:17:27.224454804 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70615.6 old_base=63978.8 new_base=69615.6 shift_ticks=-563676
-2026-03-21 10:17:27.426157098 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69615.6 new_base=62566.3 shift_ticks=704933
-2026-03-21 10:17:27.526648266 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70599.1 old_base=62566.3 new_base=69599.1 shift_ticks=-703282
-2026-03-21 10:17:27.625166349 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69599.1 new_base=62566.3 shift_ticks=703282
-2026-03-21 10:17:27.730675146 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69217.2 old_base=62566.3 new_base=68217.2 shift_ticks=-565095
-2026-03-21 10:17:27.824414558 [WARN ] [OrderBook] Delta price out of grid range price=70629.2 base=68217.2 range=2000 streak=1
-2026-03-21 10:17:27.824415391 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70629.2
-2026-03-21 10:17:27.824416100 [WARN ] [OrderBook] Delta price out of grid range price=70605.5 base=68217.2 range=2000 streak=2
-2026-03-21 10:17:27.824416475 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70605.5
-2026-03-21 10:17:27.824417016 [WARN ] [OrderBook] Delta price out of grid range price=70605.5 base=68217.2 range=2000 streak=3
-2026-03-21 10:17:27.824417433 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70605.5
-2026-03-21 10:17:27.825490767 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=68217.2 new_base=62566.3 shift_ticks=565095
-2026-03-21 10:17:27.925540685 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:28.028037687 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:28.226564729 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70613.4 old_base=62566.3 new_base=69613.4 shift_ticks=-704709
-2026-03-21 10:17:28.324728811 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69613.4 new_base=62566.3 shift_ticks=704709
-2026-03-21 10:17:28.424713604 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70621.9 old_base=62566.3 new_base=69621.9 shift_ticks=-705563
-2026-03-21 10:17:28.727582275 [WARN ] [OrderBook] Delta price out of grid range price=69216.2 base=69621.9 range=2000 streak=1
-2026-03-21 10:17:28.727583484 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69216.2
-2026-03-21 10:17:28.728543734 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69621.9 new_base=62566.3 shift_ticks=705563
-2026-03-21 10:17:28.824892731 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70464.4 old_base=62566.3 new_base=69464.4 shift_ticks=-689815
-2026-03-21 10:17:28.924702107 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69464.4 new_base=62566.3 shift_ticks=689815
-2026-03-21 10:17:29.024876399 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:29.425016444 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:29.525011736 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70516.9 old_base=62566.3 new_base=69516.9 shift_ticks=-695059
-2026-03-21 10:17:31.924819919 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69516.9 new_base=62566.3 shift_ticks=695059
-2026-03-21 10:17:32.024731336 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70623.7 old_base=62566.3 new_base=69623.7 shift_ticks=-705746
-2026-03-21 10:17:32.125512796 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64978.8 old_base=69623.7 new_base=63978.8 shift_ticks=564489
-2026-03-21 10:17:32.224763587 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=63978.8 new_base=69629.2 shift_ticks=-565034
-2026-03-21 10:17:33.623892888 [WARN ] [OrderBook] Delta price out of grid range price=69569.8 base=69629.2 range=2000 streak=1
-2026-03-21 10:17:33.623893847 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69569.8
-2026-03-21 10:17:33.624859847 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:33.725442015 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70464.4 old_base=62566.3 new_base=69464.4 shift_ticks=-689815
-2026-03-21 10:17:33.925464641 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69464.4 new_base=62566.3 shift_ticks=689815
-2026-03-21 10:17:34.024842683 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=68500 old_base=62566.3 new_base=67500 shift_ticks=-493372
-2026-03-21 10:17:34.128099561 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=67500 new_base=62566.3 shift_ticks=493372
-2026-03-21 10:17:34.224915101 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:34.424673644 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:34.525463479 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70629.2 old_base=62566.3 new_base=69629.2 shift_ticks=-706291
-2026-03-21 10:17:35.325008566 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63566.3 old_base=69629.2 new_base=62566.3 shift_ticks=706291
-2026-03-21 10:17:35.425558193 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70628.3 old_base=62566.3 new_base=69628.3 shift_ticks=-706202
-2026-03-21 10:17:36.424525740 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63564.1 old_base=69628.3 new_base=62564.1 shift_ticks=706425
-2026-03-21 10:17:36.525697825 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70626.7 old_base=62564.1 new_base=69626.7 shift_ticks=-706267
-2026-03-21 10:17:36.824034326 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63564.1 old_base=69626.7 new_base=62564.1 shift_ticks=706267
-2026-03-21 10:17:36.925052453 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70626.7 old_base=62564.1 new_base=69626.7 shift_ticks=-706267
-2026-03-21 10:17:37.325327664 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63564.1 old_base=69626.7 new_base=62564.1 shift_ticks=706267
-2026-03-21 10:17:37.425377081 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70595.6 old_base=62564.1 new_base=69595.6 shift_ticks=-703154
-2026-03-21 10:17:37.824865208 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64976.6 old_base=69595.6 new_base=63976.6 shift_ticks=561901
-2026-03-21 10:17:37.926523377 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70626.7 old_base=63976.6 new_base=69626.7 shift_ticks=-565014
-2026-03-21 10:17:38.025168919 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63564.1 old_base=69626.7 new_base=62564.1 shift_ticks=706267
-2026-03-21 10:17:38.125002127 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70624.3 old_base=62564.1 new_base=69624.3 shift_ticks=-706029
-2026-03-21 10:17:38.225162087 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63564.1 old_base=69624.3 new_base=62564.1 shift_ticks=706029
-2026-03-21 10:17:38.425056463 [WARN ] [OrderBook] Delta price out of grid range price=64976.6 base=62564.1 range=2000 streak=1
-2026-03-21 10:17:38.425057463 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=64976.6
-2026-03-21 10:17:38.524800879 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70608.8 old_base=62564.1 new_base=69608.8 shift_ticks=-704471
-2026-03-21 10:17:38.923930257 [WARN ] [OrderBook] Delta price out of grid range price=69567.3 base=69608.8 range=2000 streak=1
-2026-03-21 10:17:38.923931382 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69567.3
-2026-03-21 10:17:38.924909215 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63564.1 old_base=69608.8 new_base=62564.1 shift_ticks=704471
-2026-03-21 10:17:39.127643511 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70527.6 old_base=62564.1 new_base=69527.6 shift_ticks=-696358
-2026-03-21 10:17:39.225349885 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63564.1 old_base=69527.6 new_base=62564.1 shift_ticks=696358
-2026-03-21 10:17:39.324961093 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70621.8 old_base=62564.1 new_base=69621.8 shift_ticks=-705770
-2026-03-21 10:17:39.826009681 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63564.1 old_base=69621.8 new_base=62564.1 shift_ticks=705770
-2026-03-21 10:17:39.924783847 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69567.3 old_base=62564.1 new_base=68567.3 shift_ticks=-600326
-2026-03-21 10:17:40.023955598 [WARN ] [OrderBook] Delta price out of grid range price=70609.9 base=68567.3 range=2000 streak=1
-2026-03-21 10:17:40.023956681 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70609.9
-2026-03-21 10:17:40.023957264 [WARN ] [OrderBook] Delta price out of grid range price=70609.2 base=68567.3 range=2000 streak=2
-2026-03-21 10:17:40.023957556 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70609.2
-2026-03-21 10:17:40.023958223 [WARN ] [OrderBook] Delta price out of grid range price=70607.7 base=68567.3 range=2000 streak=3
-2026-03-21 10:17:40.023958556 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70607.7
-2026-03-21 10:17:40.025105390 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70603.7 old_base=68567.3 new_base=69603.7 shift_ticks=-103638
-2026-03-21 10:17:43.625244664 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63558.6 old_base=69603.7 new_base=62558.6 shift_ticks=704509
-2026-03-21 10:17:43.725376748 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70604.9 old_base=62558.6 new_base=69604.9 shift_ticks=-704628
-2026-03-21 10:17:44.325071794 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63558.6 old_base=69604.9 new_base=62558.6 shift_ticks=704628
-2026-03-21 10:17:44.424731627 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70620.7 old_base=62558.6 new_base=69620.7 shift_ticks=-706206
-2026-03-21 10:17:44.824797005 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63558.6 old_base=69620.7 new_base=62558.6 shift_ticks=706206
-2026-03-21 10:17:44.925528215 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70568.8 old_base=62558.6 new_base=69568.8 shift_ticks=-701021
-2026-03-21 10:17:45.030869094 [WARN ] [OrderBook] Delta price out of grid range price=69561.4 base=69568.8 range=2000 streak=1
-2026-03-21 10:17:45.030870261 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69561.4
-2026-03-21 10:17:45.031600470 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63558.6 old_base=69568.8 new_base=62558.6 shift_ticks=701021
-2026-03-21 10:17:45.225840050 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70466.8 old_base=62558.6 new_base=69466.8 shift_ticks=-690817
-2026-03-21 10:17:45.328020678 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63558.6 old_base=69466.8 new_base=62558.6 shift_ticks=690817
-2026-03-21 10:17:45.624516552 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70620.7 old_base=62558.6 new_base=69620.7 shift_ticks=-706206
-2026-03-21 10:17:48.924855615 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69620.7 new_base=62551.9 shift_ticks=706874
-2026-03-21 10:17:49.025161200 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69554 old_base=62551.9 new_base=68554 shift_ticks=-600212
-2026-03-21 10:17:49.125020700 [WARN ] [OrderBook] Delta price out of grid range price=70613.2 base=68554 range=2000 streak=1
-2026-03-21 10:17:49.125021742 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70613.2
-2026-03-21 10:17:49.125022492 [WARN ] [OrderBook] Delta price out of grid range price=70608.7 base=68554 range=2000 streak=2
-2026-03-21 10:17:49.125022908 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70608.7
-2026-03-21 10:17:49.125023533 [WARN ] [OrderBook] Delta price out of grid range price=70606.6 base=68554 range=2000 streak=3
-2026-03-21 10:17:49.125023867 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70606.6
-2026-03-21 10:17:49.126229409 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70601.6 old_base=68554 new_base=69601.6 shift_ticks=-104760
-2026-03-21 10:17:49.424898577 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69601.6 new_base=62551.9 shift_ticks=704972
-2026-03-21 10:17:49.524629911 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70600.3 old_base=62551.9 new_base=69600.3 shift_ticks=-704836
-2026-03-21 10:17:49.925181873 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69600.3 new_base=62551.9 shift_ticks=704836
-2026-03-21 10:17:50.025039248 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70422.6 old_base=62551.9 new_base=69422.6 shift_ticks=-687068
-[Shadow] ticks=107  mean=-187.58bps  std=203.61bps  IC=-0.0268  ICIR=-8.896  confidence_gate=107  horizon_gate=0  safe_mode_gate=1  ts_issues=1
-2026-03-21 10:17:51.125233423 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69422.6 new_base=62551.9 shift_ticks=687068
-2026-03-21 10:17:51.224877297 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70571.1 old_base=62551.9 new_base=69571.1 shift_ticks=-701913
-2026-03-21 10:17:51.523190965 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69571.1 new_base=62551.9 shift_ticks=701913
-2026-03-21 10:17:51.625373301 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70601.8 old_base=62551.9 new_base=69601.8 shift_ticks=-704985
-2026-03-21 10:17:52.425504390 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69601.8 new_base=62551.9 shift_ticks=704985
-2026-03-21 10:17:52.526062599 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70600.4 old_base=62551.9 new_base=69600.4 shift_ticks=-704850
-2026-03-21 10:17:53.124720685 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69600.4 new_base=62551.9 shift_ticks=704850
-2026-03-21 10:17:53.225666520 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70574.9 old_base=62551.9 new_base=69574.9 shift_ticks=-702299
-2026-03-21 10:17:53.324643061 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69574.9 new_base=62551.9 shift_ticks=702299
-2026-03-21 10:17:53.424927895 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70596.8 old_base=62551.9 new_base=69596.8 shift_ticks=-704483
-2026-03-21 10:17:54.424717069 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69596.8 new_base=62551.9 shift_ticks=704483
-2026-03-21 10:17:54.526030779 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70608.8 old_base=62551.9 new_base=69608.8 shift_ticks=-705692
-2026-03-21 10:17:55.124812490 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64976.6 old_base=69608.8 new_base=63976.6 shift_ticks=563226
-2026-03-21 10:17:55.224296449 [WARN ] [OrderBook] Delta price out of grid range price=63551.9 base=63976.6 range=2000 streak=1
-2026-03-21 10:17:55.224297532 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=63551.9
-2026-03-21 10:17:55.225271783 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70613.2 old_base=63976.6 new_base=69613.2 shift_ticks=-563667
-2026-03-21 10:17:55.324724700 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69613.2 new_base=62551.9 shift_ticks=706133
-2026-03-21 10:17:55.426126826 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70260.2 old_base=62551.9 new_base=69260.2 shift_ticks=-670825
-2026-03-21 10:17:55.725066203 [WARN ] [OrderBook] Delta price out of grid range price=69199.4 base=69260.2 range=2000 streak=1
-2026-03-21 10:17:55.725067245 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69199.4
-2026-03-21 10:17:55.725774745 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69260.2 new_base=62551.9 shift_ticks=670825
-2026-03-21 10:17:56.024742121 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70547.6 old_base=62551.9 new_base=69547.6 shift_ticks=-699566
-2026-03-21 10:17:56.225311332 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69547.6 new_base=62551.9 shift_ticks=699566
-2026-03-21 10:17:56.325127999 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70590.8 old_base=62551.9 new_base=69590.8 shift_ticks=-703885
-2026-03-21 10:17:56.924948460 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69590.8 new_base=62551.9 shift_ticks=703885
-2026-03-21 10:17:57.024712753 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70547.6 old_base=62551.9 new_base=69547.6 shift_ticks=-699566
-2026-03-21 10:17:57.323868588 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69547.6 new_base=62551.9 shift_ticks=699566
-2026-03-21 10:17:57.524423839 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70584.2 old_base=62551.9 new_base=69584.2 shift_ticks=-703228
-2026-03-21 10:17:57.725131842 [WARN ] [OrderBook] Delta price out of grid range price=69200.7 base=69584.2 range=2000 streak=1
-2026-03-21 10:17:57.725132717 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69200.7
-2026-03-21 10:17:57.725846883 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69584.2 new_base=62551.9 shift_ticks=703228
-2026-03-21 10:17:57.924909634 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70542.8 old_base=62551.9 new_base=69542.8 shift_ticks=-699085
-2026-03-21 10:17:58.324838303 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69542.8 new_base=62551.9 shift_ticks=699085
-2026-03-21 10:17:58.725648598 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70601.2 old_base=62551.9 new_base=69601.2 shift_ticks=-704932
-2026-03-21 10:17:58.824847806 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69601.2 new_base=62551.9 shift_ticks=704932
-2026-03-21 10:17:59.124573183 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70607.4 old_base=62551.9 new_base=69607.4 shift_ticks=-705552
-2026-03-21 10:17:59.725721980 [WARN ] [OrderBook] Delta price out of grid range price=69201.1 base=69607.4 range=2000 streak=1
-2026-03-21 10:17:59.725722772 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69201.1
-2026-03-21 10:17:59.726678231 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69607.4 new_base=62551.9 shift_ticks=705552
-2026-03-21 10:17:59.824729063 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70613.2 old_base=62551.9 new_base=69613.2 shift_ticks=-706132
-2026-03-21 10:18:00.625107028 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63551.9 old_base=69613.2 new_base=62551.9 shift_ticks=706132
-2026-03-21 10:18:00.724917111 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70613.2 old_base=62551.9 new_base=69613.2 shift_ticks=-706132
-2026-03-21 10:18:04.524604969 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63543.7 old_base=69613.2 new_base=62543.7 shift_ticks=706955
-2026-03-21 10:18:04.625775054 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70575.1 old_base=62543.7 new_base=69575.1 shift_ticks=-703137
-2026-03-21 10:18:04.923154971 [WARN ] [OrderBook] Delta price out of grid range price=69545 base=69575.1 range=2000 streak=1
-2026-03-21 10:18:04.923155971 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69545
-2026-03-21 10:18:04.924103930 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63543.7 old_base=69575.1 new_base=62543.7 shift_ticks=703137
-2026-03-21 10:18:05.025299640 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70604.1 old_base=62543.7 new_base=69604.1 shift_ticks=-706040
-2026-03-21 10:18:05.622964559 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63543.7 old_base=69604.1 new_base=62543.7 shift_ticks=706040
-2026-03-21 10:18:05.724752102 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70600.9 old_base=62543.7 new_base=69600.9 shift_ticks=-705720
-2026-03-21 10:18:06.025599272 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63543.7 old_base=69600.9 new_base=62543.7 shift_ticks=705720
-2026-03-21 10:18:06.125509148 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70574.4 old_base=62543.7 new_base=69574.4 shift_ticks=-703071
-2026-03-21 10:18:06.224661689 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63543.7 old_base=69574.4 new_base=62543.7 shift_ticks=703071
-2026-03-21 10:18:06.324550023 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70604.1 old_base=62543.7 new_base=69604.1 shift_ticks=-706040
-2026-03-21 10:18:06.426121566 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63543.7 old_base=69604.1 new_base=62543.7 shift_ticks=706040
-2026-03-21 10:18:06.524990941 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70481.3 old_base=62543.7 new_base=69481.3 shift_ticks=-693759
-2026-03-21 10:18:07.124921403 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63543.7 old_base=69481.3 new_base=62543.7 shift_ticks=693759
-2026-03-21 10:18:07.225144530 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70546.7 old_base=62543.7 new_base=69546.7 shift_ticks=-700299
-2026-03-21 10:18:10.525593844 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63543.7 old_base=69546.7 new_base=62543.7 shift_ticks=700299
-2026-03-21 10:18:10.624589302 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70598.2 old_base=62543.7 new_base=69598.2 shift_ticks=-705454
-2026-03-21 10:18:10.825505179 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63543.7 old_base=69598.2 new_base=62543.7 shift_ticks=705454
-2026-03-21 10:18:10.925407596 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70604.1 old_base=62543.7 new_base=69604.1 shift_ticks=-706040
-2026-03-21 10:18:12.923550191 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63540 old_base=69604.1 new_base=62540 shift_ticks=706409
-2026-03-21 10:18:13.025158444 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70600 old_base=62540 new_base=69600 shift_ticks=-706000
-2026-03-21 10:18:15.424854084 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63540 old_base=69600 new_base=62540 shift_ticks=706000
-2026-03-21 10:18:15.523986668 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70563.9 old_base=62540 new_base=69563.9 shift_ticks=-702385
-2026-03-21 10:18:19.024946858 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63538.9 old_base=69563.9 new_base=62538.9 shift_ticks=702498
-2026-03-21 10:18:19.225021109 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70598.7 old_base=62538.9 new_base=69598.7 shift_ticks=-705987
-2026-03-21 10:18:20.425133201 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63538.9 old_base=69598.7 new_base=62538.9 shift_ticks=705987
-2026-03-21 10:18:20.527745579 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70592.9 old_base=62538.9 new_base=69592.9 shift_ticks=-705403
-2026-03-21 10:18:20.825121996 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63538.9 old_base=69592.9 new_base=62538.9 shift_ticks=705403
-2026-03-21 10:18:20.923998329 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70592.6 old_base=62538.9 new_base=69592.6 shift_ticks=-705369
-2026-03-21 10:18:22.724552757 [WARN ] [OrderBook] Delta price out of grid range price=69182.3 base=69592.6 range=2000 streak=1
-2026-03-21 10:18:22.724553632 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69182.3
-2026-03-21 10:18:22.725511342 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63535.5 old_base=69592.6 new_base=62535.5 shift_ticks=705706
-2026-03-21 10:18:22.826229967 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70595 old_base=62535.5 new_base=69595 shift_ticks=-705950
-2026-03-21 10:18:23.924894224 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=69595 new_base=62533.6 shift_ticks=706145
-2026-03-21 10:18:24.125094059 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70592.8 old_base=62533.6 new_base=69592.8 shift_ticks=-705928
-2026-03-21 10:18:25.925102613 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=69592.8 new_base=62533.6 shift_ticks=705928
-2026-03-21 10:18:26.026057447 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70204.5 old_base=62533.6 new_base=69204.5 shift_ticks=-667099
-2026-03-21 10:18:26.424936865 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=69204.5 new_base=62533.6 shift_ticks=667099
-2026-03-21 10:18:26.525444784 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70592.8 old_base=62533.6 new_base=69592.8 shift_ticks=-705928
-2026-03-21 10:18:26.924877202 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=69592.8 new_base=62533.6 shift_ticks=705928
-2026-03-21 10:18:27.025293245 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70113.7 old_base=62533.6 new_base=69113.7 shift_ticks=-658016
-2026-03-21 10:18:27.325121622 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=69113.7 new_base=62533.6 shift_ticks=658016
-2026-03-21 10:18:27.424909664 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69954 old_base=62533.6 new_base=68954 shift_ticks=-642045
-2026-03-21 10:18:27.924820417 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=68954 new_base=62533.6 shift_ticks=642045
-2026-03-21 10:18:28.024993459 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70512.8 old_base=62533.6 new_base=69512.8 shift_ticks=-697925
-2026-03-21 10:18:28.125320003 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=64952 old_base=69512.8 new_base=63952 shift_ticks=556080
-2026-03-21 10:18:28.223091960 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69533.9 old_base=63952 new_base=68533.9 shift_ticks=-458193
-2026-03-21 10:18:28.324179670 [WARN ] [OrderBook] Delta price out of grid range price=70592.8 base=68533.9 range=2000 streak=1
-2026-03-21 10:18:28.324180586 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70592.8
-2026-03-21 10:18:28.324181461 [WARN ] [OrderBook] Delta price out of grid range price=70583.7 base=68533.9 range=2000 streak=2
-2026-03-21 10:18:28.324181878 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70583.7
-2026-03-21 10:18:28.324182586 [WARN ] [OrderBook] Delta price out of grid range price=70582.4 base=68533.9 range=2000 streak=3
-2026-03-21 10:18:28.324183045 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70582.4
-2026-03-21 10:18:28.325399796 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70582.4 old_base=68533.9 new_base=69582.4 shift_ticks=-104850
-2026-03-21 10:18:29.723870136 [WARN ] [OrderBook] Delta price out of grid range price=69180.4 base=69582.4 range=2000 streak=1
-2026-03-21 10:18:29.723871178 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69180.4
-2026-03-21 10:18:29.724803346 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=69582.4 new_base=62533.6 shift_ticks=704888
-2026-03-21 10:18:29.925472181 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70566.8 old_base=62533.6 new_base=69566.8 shift_ticks=-703322
-2026-03-21 10:18:30.024732973 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=69566.8 new_base=62533.6 shift_ticks=703322
-2026-03-21 10:18:30.225490683 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70592.8 old_base=62533.6 new_base=69592.8 shift_ticks=-705928
-2026-03-21 10:18:30.525070893 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=69592.8 new_base=62533.6 shift_ticks=705928
-2026-03-21 10:18:30.724684227 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70591.1 old_base=62533.6 new_base=69591.1 shift_ticks=-705756
-2026-03-21 10:18:30.823150894 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=69591.1 new_base=62533.6 shift_ticks=705756
-2026-03-21 10:18:31.024609729 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70533.9 old_base=62533.6 new_base=69533.9 shift_ticks=-700038
-2026-03-21 10:18:31.125568731 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=69533.9 new_base=62533.6 shift_ticks=700038
-2026-03-21 10:18:31.225122065 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69533.9 old_base=62533.6 new_base=68533.9 shift_ticks=-600038
-2026-03-21 10:18:31.323835064 [WARN ] [OrderBook] Delta price out of grid range price=70584.7 base=68533.9 range=2000 streak=1
-2026-03-21 10:18:31.323835605 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70584.7
-2026-03-21 10:18:31.323836230 [WARN ] [OrderBook] Delta price out of grid range price=70578.7 base=68533.9 range=2000 streak=2
-2026-03-21 10:18:31.323836564 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70578.7
-2026-03-21 10:18:31.323837147 [WARN ] [OrderBook] Delta price out of grid range price=70564.6 base=68533.9 range=2000 streak=3
-2026-03-21 10:18:31.323837480 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70564.6
-2026-03-21 10:18:31.324789148 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=68533.9 new_base=62533.6 shift_ticks=600038
-2026-03-21 10:18:31.423847481 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70585.3 old_base=62533.6 new_base=69585.3 shift_ticks=-705175
-2026-03-21 10:18:32.324905530 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=69585.3 new_base=62533.6 shift_ticks=705175
-2026-03-21 10:18:32.424741864 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70585.1 old_base=62533.6 new_base=69585.1 shift_ticks=-705157
-2026-03-21 10:18:33.024167826 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=69585.1 new_base=62533.6 shift_ticks=705157
-2026-03-21 10:18:33.125807536 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70585.1 old_base=62533.6 new_base=69585.1 shift_ticks=-705157
-2026-03-21 10:18:35.126305842 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=69585.1 new_base=62533.6 shift_ticks=705157
-2026-03-21 10:18:35.227733385 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70533.8 old_base=62533.6 new_base=69533.8 shift_ticks=-700025
-2026-03-21 10:18:35.625178094 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=69533.8 new_base=62533.6 shift_ticks=700025
-2026-03-21 10:18:35.725248137 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69180.8 old_base=62533.6 new_base=68180.8 shift_ticks=-564725
-2026-03-21 10:18:35.823745052 [WARN ] [OrderBook] Delta price out of grid range price=70576.6 base=68180.8 range=2000 streak=1
-2026-03-21 10:18:35.823746052 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70576.6
-2026-03-21 10:18:35.823746802 [WARN ] [OrderBook] Delta price out of grid range price=70576.2 base=68180.8 range=2000 streak=2
-2026-03-21 10:18:35.823747135 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70576.2
-2026-03-21 10:18:35.824741220 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=68180.8 new_base=62533.6 shift_ticks=564725
-2026-03-21 10:18:35.924995220 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70587 old_base=62533.6 new_base=69587 shift_ticks=-705343
-2026-03-21 10:18:36.025324847 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63533.6 old_base=69587 new_base=62533.6 shift_ticks=705343
-2026-03-21 10:18:36.227100558 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70592.8 old_base=62533.6 new_base=69592.8 shift_ticks=-705928
-2026-03-21 10:18:36.484401232 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63532 old_base=69592.8 new_base=62532 shift_ticks=706083
-2026-03-21 10:18:36.524910099 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70591.1 old_base=62532 new_base=69591.1 shift_ticks=-705911
-2026-03-21 10:18:37.025206895 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63532 old_base=69591.1 new_base=62532 shift_ticks=705911
-2026-03-21 10:18:37.125185146 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70591.1 old_base=62532 new_base=69591.1 shift_ticks=-705911
-2026-03-21 10:18:37.224731062 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63532 old_base=69591.1 new_base=62532 shift_ticks=705911
-2026-03-21 10:18:37.324974521 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69532.2 old_base=62532 new_base=68532.2 shift_ticks=-600024
-2026-03-21 10:18:37.424069022 [WARN ] [OrderBook] Delta price out of grid range price=67627.9 base=68532.2 range=2000 streak=1
-2026-03-21 10:18:37.424069730 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=67627.9
-2026-03-21 10:18:37.425017397 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63532 old_base=68532.2 new_base=62532 shift_ticks=600024
-2026-03-21 10:18:37.524828731 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70584.7 old_base=62532 new_base=69584.7 shift_ticks=-705270
-2026-03-21 10:18:37.723984357 [WARN ] [OrderBook] Delta price out of grid range price=69177.3 base=69584.7 range=2000 streak=1
-2026-03-21 10:18:37.723985316 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69177.3
-2026-03-21 10:18:37.724942566 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=67204.4 old_base=69584.7 new_base=66204.4 shift_ticks=338033
-2026-03-21 10:18:37.824712025 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70117.9 old_base=66204.4 new_base=69117.9 shift_ticks=-291349
-2026-03-21 10:18:37.923367608 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63532 old_base=69117.9 new_base=62532 shift_ticks=658586
-2026-03-21 10:18:38.125742861 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=66780.8 old_base=62532 new_base=65780.8 shift_ticks=-324881
-2026-03-21 10:18:38.224780527 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70591.1 old_base=65780.8 new_base=69591.1 shift_ticks=-381030
-2026-03-21 10:18:38.723926114 [WARN ] [OrderBook] Delta price out of grid range price=69178.4 base=69591.1 range=2000 streak=1
-2026-03-21 10:18:38.723926947 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=69178.4
-2026-03-21 10:18:38.724884697 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=65933.7 old_base=69591.1 new_base=64933.7 shift_ticks=465741
-2026-03-21 10:18:38.825701449 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70591.1 old_base=64933.7 new_base=69591.1 shift_ticks=-465741
-2026-03-21 10:18:39.427192079 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63532 old_base=69591.1 new_base=62532 shift_ticks=705911
-2026-03-21 10:18:39.525024453 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70591.1 old_base=62532 new_base=69591.1 shift_ticks=-705911
-2026-03-21 10:18:40.125282833 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63532 old_base=69591.1 new_base=62532 shift_ticks=705911
-2026-03-21 10:18:40.224998499 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70585.8 old_base=62532 new_base=69585.8 shift_ticks=-705383
-2026-03-21 10:18:40.628779714 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=63532 old_base=69585.8 new_base=62532 shift_ticks=705383
-2026-03-21 10:18:40.725950670 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=69179.1 old_base=62532 new_base=68179.1 shift_ticks=-564711
+  [pretrain] epoch 1/5  loss=2.4948
+  [pretrain] epoch 2/5  loss=1.8728
+  [pretrain] epoch 3/5  loss=1.7517
+  [pretrain] epoch 4/5  loss=1.6571
+  [pretrain] epoch 5/5  loss=1.6406
+  epoch   1/3  train=1.1901  val=0.8079
+  epoch   2/3  train=0.8593  val=0.7392
+  epoch   3/3  train=0.7816  val=0.7643
+  Fold 2 best val loss: 0.7392
+[Shadow] ticks=33  mean=-81.06bps  std=21.83bps  IC=0.5514  ICIR=0.000  confidence_gate=33  horizon_gate=0  safe_mode_gate=0  ts_issues=0
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=2.6523
+  [pretrain] epoch 2/5  loss=2.2339
+  [pretrain] epoch 3/5  loss=2.2463
+  [pretrain] epoch 4/5  loss=2.1698
+  [pretrain] epoch 5/5  loss=2.0809
+  epoch   1/3  train=0.1257  val=0.0898
+  epoch   2/3  train=0.0920  val=0.0887
+  epoch   3/3  train=0.0887  val=0.0864
+  Fold 1 best val loss: 0.0864
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=1.6670
+  [pretrain] epoch 2/5  loss=1.5006
+  [pretrain] epoch 3/5  loss=1.3569
+  [pretrain] epoch 4/5  loss=1.3278
+  [pretrain] epoch 5/5  loss=1.2919
+  epoch   1/3  train=0.2037  val=0.1950
+  epoch   2/3  train=0.1183  val=0.2058
+  epoch   3/3  train=0.1012  val=0.1559
+  Fold 2 best val loss: 0.1559
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=2.7753
+  [pretrain] epoch 2/5  loss=2.3956
+  [pretrain] epoch 3/5  loss=2.3247
+  [pretrain] epoch 4/5  loss=2.3133
+  [pretrain] epoch 5/5  loss=2.2840
+  epoch   1/3  train=1.3337  val=1.1474
+  epoch   2/3  train=0.8417  val=0.8229
+  epoch   3/3  train=0.5847  val=0.7211
+  Fold 1 best val loss: 0.7211
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=2.6946
+  [pretrain] epoch 2/5  loss=1.9301
+  [pretrain] epoch 3/5  loss=1.6729
+  [pretrain] epoch 4/5  loss=1.5196
+  [pretrain] epoch 5/5  loss=1.4339
+  epoch   1/3  train=0.9334  val=0.3255
+  epoch   2/3  train=0.3696  val=0.1991
+  epoch   3/3  train=0.2681  val=0.1896
+  Fold 2 best val loss: 0.1896
+[Shadow] ticks=34  mean=-80.62bps  std=21.65bps  IC=-0.4784  ICIR=0.000  confidence_gate=34  horizon_gate=0  safe_mode_gate=0  ts_issues=1
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=2.4030
+  [pretrain] epoch 2/5  loss=2.0705
+  [pretrain] epoch 3/5  loss=1.9417
+  [pretrain] epoch 4/5  loss=1.7509
+  [pretrain] epoch 5/5  loss=1.6681
+  epoch   1/3  train=0.6956  val=0.3468
+  epoch   2/3  train=0.3916  val=0.3965
+  epoch   3/3  train=0.3643  val=0.3969
+  Fold 1 best val loss: 0.3468
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=1.7345
+  [pretrain] epoch 2/5  loss=1.3518
+  [pretrain] epoch 3/5  loss=1.2021
+  [pretrain] epoch 4/5  loss=1.1420
+  [pretrain] epoch 5/5  loss=1.1000
+  epoch   1/3  train=0.2794  val=0.1211
+  epoch   2/3  train=0.1648  val=0.1274
+  epoch   3/3  train=0.1257  val=0.1319
+  Fold 2 best val loss: 0.1211
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=2.7526
+  [pretrain] epoch 2/5  loss=2.4330
+  [pretrain] epoch 3/5  loss=2.1536
+  [pretrain] epoch 4/5  loss=1.8946
+  [pretrain] epoch 5/5  loss=1.7457
+  epoch   1/3  train=1.4399  val=1.3049
+  epoch   2/3  train=1.0967  val=1.1094
+  epoch   3/3  train=0.9350  val=1.0766
+  Fold 1 best val loss: 1.0766
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=2.2891
+  [pretrain] epoch 2/5  loss=1.6403
+  [pretrain] epoch 3/5  loss=1.4587
+  [pretrain] epoch 4/5  loss=1.3387
+  [pretrain] epoch 5/5  loss=1.1993
+  epoch   1/3  train=0.9469  val=1.4507
+  epoch   2/3  train=0.4095  val=1.5215
+  epoch   3/3  train=0.3087  val=1.5128
+  Fold 2 best val loss: 1.4507
+[Shadow] ticks=40  mean=-77.38bps  std=31.23bps  IC=-0.4178  ICIR=0.000  confidence_gate=40  horizon_gate=0  safe_mode_gate=0  ts_issues=1
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=1.8731
+  [pretrain] epoch 2/5  loss=1.5853
+  [pretrain] epoch 3/5  loss=1.6265
+  [pretrain] epoch 4/5  loss=1.4652
+  [pretrain] epoch 5/5  loss=1.4557
+  epoch   1/3  train=0.4463  val=0.2302
+  epoch   2/3  train=0.3991  val=0.2113
+  epoch   3/3  train=0.3937  val=0.2049
+  Fold 1 best val loss: 0.2049
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=1.1171
+  [pretrain] epoch 2/5  loss=0.8926
+  [pretrain] epoch 3/5  loss=0.8138
+  [pretrain] epoch 4/5  loss=0.7729
+  [pretrain] epoch 5/5  loss=0.7572
+  epoch   1/3  train=0.3933  val=0.1841
+  epoch   2/3  train=0.3803  val=0.1714
+  epoch   3/3  train=0.3680  val=0.1723
+  Fold 2 best val loss: 0.1714
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=2.5391
+  [pretrain] epoch 2/5  loss=1.9763
+  [pretrain] epoch 3/5  loss=1.8395
+  [pretrain] epoch 4/5  loss=1.7743
+  [pretrain] epoch 5/5  loss=1.5989
+  epoch   1/3  train=1.4104  val=1.0026
+  epoch   2/3  train=1.0777  val=0.6331
+  epoch   3/3  train=0.9375  val=0.5359
+  Fold 1 best val loss: 0.5359
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  Pre-training spatial encoder (5 epochs)…
+  [pretrain] epoch 1/5  loss=2.1189
+  [pretrain] epoch 2/5  loss=1.4538
+  [pretrain] epoch 3/5  loss=1.1014
+  [pretrain] epoch 4/5  loss=0.9888
+  [pretrain] epoch 5/5  loss=0.8878
+  epoch   1/3  train=1.0982  val=0.4592
+  epoch   2/3  train=0.8068  val=0.3609
+  epoch   3/3  train=0.7391  val=0.3771
+  Fold 2 best val loss: 0.3609
+[Shadow] ticks=46  mean=-71.27bps  std=37.00bps  IC=-0.0668  ICIR=5.411  confidence_gate=46  horizon_gate=0  safe_mode_gate=0  ts_issues=1
+[Shadow] ticks=107  mean=-34.10bps  std=41.64bps  IC=-0.0508  ICIR=3.117  confidence_gate=107  horizon_gate=0  safe_mode_gate=1  ts_issues=1
+[Shadow] ticks=167  mean=-23.14bps  std=37.11bps  IC=-0.0091  ICIR=1.963  confidence_gate=167  horizon_gate=0  safe_mode_gate=30  ts_issues=1
+[Shadow] ticks=227  mean=-18.65bps  std=32.87bps  IC=-0.0036  ICIR=-8.724  confidence_gate=227  horizon_gate=0  safe_mode_gate=30  ts_issues=1
+[Shadow] ticks=287  mean=-17.59bps  std=29.44bps  IC=-0.0013  ICIR=-0.176  confidence_gate=287  horizon_gate=0  safe_mode_gate=30  ts_issues=1
+[Shadow] ticks=347  mean=-15.38bps  std=27.67bps  IC=-0.0024  ICIR=-10.593  confidence_gate=347  horizon_gate=0  safe_mode_gate=41  ts_issues=1
+[Shadow] ticks=407  mean=-15.59bps  std=26.18bps  IC=-0.0067  ICIR=-13.875  confidence_gate=407  horizon_gate=0  safe_mode_gate=101  ts_issues=1
+[Shadow] ticks=467  mean=-15.90bps  std=24.50bps  IC=-0.0071  ICIR=-36.776  confidence_gate=467  horizon_gate=0  safe_mode_gate=161  ts_issues=1
+[Shadow] ticks=527  mean=-15.83bps  std=23.16bps  IC=-0.0071  ICIR=-23.266  confidence_gate=527  horizon_gate=0  safe_mode_gate=221  ts_issues=1
+[Shadow] ticks=587  mean=-13.79bps  std=22.79bps  IC=-0.0043  ICIR=-11.791  confidence_gate=587  horizon_gate=0  safe_mode_gate=281  ts_issues=1
+[Shadow] ticks=647  mean=-13.26bps  std=22.00bps  IC=-0.0035  ICIR=-24.742  confidence_gate=647  horizon_gate=0  safe_mode_gate=282  ts_issues=1
+[Shadow] ticks=707  mean=-40.11bps  std=168.20bps  IC=-0.0060  ICIR=-20.642  confidence_gate=707  horizon_gate=0  safe_mode_gate=282  ts_issues=1
+[Shadow] ticks=765  mean=-108.11bps  std=315.88bps  IC=0.0363  ICIR=-5.044  confidence_gate=765  horizon_gate=0  safe_mode_gate=282  ts_issues=1
+[Shadow] ticks=823  mean=-101.35bps  std=305.55bps  IC=0.0380  ICIR=0.161  confidence_gate=823  horizon_gate=0  safe_mode_gate=282  ts_issues=1
+[Shadow] ticks=883  mean=-95.30bps  std=295.85bps  IC=0.0385  ICIR=0.276  confidence_gate=883  horizon_gate=0  safe_mode_gate=282  ts_issues=1
+[Shadow] ticks=943  mean=-90.32bps  std=286.92bps  IC=0.0391  ICIR=4.274  confidence_gate=943  horizon_gate=0  safe_mode_gate=282  ts_issues=1
+[Shadow] ticks=1003  mean=-85.30bps  std=278.92bps  IC=0.0398  ICIR=8.590  confidence_gate=1003  horizon_gate=0  safe_mode_gate=296  ts_issues=1
+[Shadow] ticks=1063  mean=-77.79bps  std=275.41bps  IC=0.0379  ICIR=-3.954  confidence_gate=1063  horizon_gate=0  safe_mode_gate=330  ts_issues=1
+[Shadow] ticks=1123  mean=-92.00bps  std=274.68bps  IC=0.0387  ICIR=1.449  confidence_gate=1123  horizon_gate=0  safe_mode_gate=379  ts_issues=1
+[Shadow] ticks=1183  mean=-103.98bps  std=272.76bps  IC=0.0367  ICIR=3.250  confidence_gate=1183  horizon_gate=0  safe_mode_gate=379  ts_issues=1
 ^C
 Interrupt received — stopping session...
-[2026-03-21T10:18:40Z] [shadow] [INFO] Final shadow session statistics from /Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl
+[2026-03-21T16:49:18Z] [shadow] [INFO] Final shadow session statistics from /Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl
 ============================================================
   Shadow Session Report
 ============================================================
 
 ── Signal statistics ────────────────────────────────────────
-  Signals generated   : 786
-  Session duration    : 15.4 min
-  Mean signal         : -357.1688 bps
-  Signal std          : 491.0980 bps
-  Max |signal|        : 1220.4420 bps
-  Avg risk score      : 0.2586
+  Signals generated   : 2195
+  Session duration    : 406.0 min
+  Mean signal         : -197.9452 bps
+  Signal std          : 406.4385 bps
+  Max |signal|        : 1571.9032 bps
+  Avg risk score      : 0.1170
 
 ── Alpha quality ────────────────────────────────────────────
-  Realised IC         : -0.0346
-  ICIR (annualised)   : 2.2943
-  Safe-mode events    : 348  (44.3% of ticks)
-  Gated events        : 747  (95.0% of ticks)
+  Realised IC         : 0.0064
+  ICIR (annualised)   : 2.9352
+  Safe-mode events    : 727  (33.1% of ticks)
+  Gated events        : 2156  (98.2% of ticks)
 
 ── Regime distribution (session avg) ────────────────────────
-  p_calm              : 0.470
-  p_trending          : 0.035
-  p_shock             : 0.460
-  p_illiquid          : 0.035
+  p_calm              : 0.192
+  p_trending          : 0.037
+  p_shock             : 0.733
+  p_illiquid          : 0.038
 
 ── Readiness check ──────────────────────────────────────────
   Run >= 2 weeks before promoting to live.
@@ -1392,38 +309,31 @@ Interrupt received — stopping session...
   ICIR (annualised) target: > 0.5.
 
 ============================================================
-[2026-03-21T10:18:40Z] [shadow] [ERROR] trading_engine exited with status 130
-[2026-03-21T10:18:40Z] [shadow] [INFO] Final shadow session statistics from /Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl
-2026-03-21 10:18:40.824520170 [WARN ] [OrderBook] Delta price out of grid range price=70558.5 base=68179.1 range=2000 streak=1
-2026-03-21 10:18:40.824523920 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70558.5
-2026-03-21 10:18:40.824524795 [WARN ] [OrderBook] Delta price out of grid range price=70417 base=68179.1 range=2000 streak=2
-2026-03-21 10:18:40.824525211 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70417
-2026-03-21 10:18:40.824525836 [WARN ] [OrderBook] Delta price out of grid range price=70415.8 base=68179.1 range=2000 streak=3
-2026-03-21 10:18:40.824526211 [WARN ] BookManager: delta out of grid range — re-snapshot needed symbol=BTCUSDT price=70415.8
-2026-03-21 10:18:40.825537379 [WARN ] [OrderBook] grid recentered symbol=BTCUSDT anchor_price=70414.8 old_base=68179.1 new_base=69414.8 shift_ticks=-123572
+[2026-03-21T16:49:18Z] [shadow] [ERROR] trading_engine exited with status 130
+[2026-03-21T16:49:18Z] [shadow] [INFO] Final shadow session statistics from /Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl
 ============================================================
   Shadow Session Report
 ============================================================
 
 ── Signal statistics ────────────────────────────────────────
-  Signals generated   : 786
-  Session duration    : 15.4 min
-  Mean signal         : -357.1688 bps
-  Signal std          : 491.0980 bps
-  Max |signal|        : 1220.4420 bps
-  Avg risk score      : 0.2586
+  Signals generated   : 2195
+  Session duration    : 406.0 min
+  Mean signal         : -197.9452 bps
+  Signal std          : 406.4385 bps
+  Max |signal|        : 1571.9032 bps
+  Avg risk score      : 0.1170
 
 ── Alpha quality ────────────────────────────────────────────
-  Realised IC         : -0.0346
-  ICIR (annualised)   : 2.2943
-  Safe-mode events    : 348  (44.3% of ticks)
-  Gated events        : 747  (95.0% of ticks)
+  Realised IC         : 0.0064
+  ICIR (annualised)   : 2.9352
+  Safe-mode events    : 727  (33.1% of ticks)
+  Gated events        : 2156  (98.2% of ticks)
 
 ── Regime distribution (session avg) ────────────────────────
-  p_calm              : 0.470
-  p_trending          : 0.035
-  p_shock             : 0.460
-  p_illiquid          : 0.035
+  p_calm              : 0.192
+  p_trending          : 0.037
+  p_shock             : 0.733
+  p_illiquid          : 0.038
 
 ── Readiness check ──────────────────────────────────────────
   Run >= 2 weeks before promoting to live.
@@ -1432,11 +342,8 @@ Interrupt received — stopping session...
   ICIR (annualised) target: > 0.5.
 
 ============================================================
-(.venv) clementandredupuy@Mac ThamesRiverTrading % 2026-03-21 10:18:40.860071491 [INFO ] [Binance] Stopping feed handler symbol=BTCUSDT
-2026-03-21 10:18:40.860965034 [INFO ] [Kraken] Stopping feed handler symbol=BTCUSDT
-2026-03-21 10:18:40.861428701 [INFO ] [OKX] Stopping feed handler symbol=BTCUSDT
-2026-03-21 10:18:40.862979202 [INFO ] trading_engine shutdown complete
-[Shadow] ticks=157  mean=-212.59bps  std=254.66bps  IC=0.1065  ICIR=15.478  confidence_gate=157  horizon_gate=0  safe_mode_gate=30  ts_issues=1
+(.venv) clementandredupuy@Mac ThamesRiverTrading % 2026-03-21 16:49:18.403925148 [INFO ] [Kraken] Stopping feed handler symbol=BTCUSDT
+2026-03-21 16:49:18.406186357 [INFO ] [OKX] Stopping feed handler symbol=BTCUSDT
+2026-03-21 16:49:18.407854484 [INFO ] trading_engine shutdown complete
+[Shadow] ticks=1231  mean=-112.23bps  std=270.54bps  IC=0.0346  ICIR=3.917  confidence_gate=1231  horizon_gate=0  safe_mode_gate=379  ts_issues=1
 Shadow session complete.
-
-(.venv) clementandredupuy@Mac ThamesRiverTrading %
