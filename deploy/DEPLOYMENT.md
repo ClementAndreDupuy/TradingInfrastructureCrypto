@@ -188,15 +188,15 @@ Shadow starts automatically after bootstrap.
 # Live logs
 sudo journalctl -fu neural-alpha-shadow.service
 
-# Signal stream
-sudo tail -f /opt/trading/neural_alpha_shadow.jsonl | python3 -c "
-import sys, json
-for line in sys.stdin:
-    d = json.loads(line.strip())
-    if 'signal_bps' in d:
-        print(f'signal={d[\"signal_bps\"]:+.1f}bps  pos={d[\"position\"]}  pnl={d.get(\"unrealised_pnl_bps\",0):+.1f}bps')
-"
+# Structured training and runtime telemetry
+sudo tail -f /opt/trading/logs/ops_events.jsonl
+
+# End-of-run health report
+cd /opt/trading && python3 -m research.backtest.shadow_metrics   --signals logs/neural_alpha_shadow.jsonl   --decisions logs/shadow_decisions.jsonl
 ```
+
+Use `ops_events.jsonl` to inspect bootstrap training start/end, per-epoch metrics, retrain triggers, drift breaches, canary rollbacks, safe-mode activations, and venue fallback incidents. Use `shadow_metrics` to separate venue/data-quality issues from model/gating issues in a single post-run report.
+
 
 **Go/no-go checklist before enabling live:**
 - [ ] IC (information coefficient) > 0.02 on shadow trades

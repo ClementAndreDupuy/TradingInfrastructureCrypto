@@ -19,5 +19,3 @@ continuous_train_window_ticks: 1000
 safe_mode_ticks: 30
 drift_min_samples: 100
 drift_ic_floor: -0.08
-shadow_fallback_api_key: ""
-shadow_fallback_api_secret: ""

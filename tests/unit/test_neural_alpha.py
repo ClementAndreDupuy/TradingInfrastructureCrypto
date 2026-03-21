@@ -59,7 +59,7 @@ from research.neural_alpha.runtime.shadow_session import (
     _summarise_timestamp_quality,
     _symbol_model_path,
 )
-from research.backtest.shadow_metrics import analyse_signals
+from research.backtest.shadow_metrics import analyse_ops_events, analyse_signals
 
 
 # ── Test data helpers ─────────────────────────────────────────────────────────
@@ -446,6 +446,7 @@ class TestShadowSessionTraining:
             d_temporal=32,
         )
         session = NeuralAlphaShadowSession(cfg)
+        session._ops_log_path = tmp_path / "ops.jsonl"
 
         tick = {
             "timestamp_ns": 1,
@@ -649,6 +650,88 @@ class TestShadowTimestampMetrics:
         assert diagnostics["has_timestamp_issues"] is True
         assert diagnostics["exchange_non_monotonic"] == 1
         assert diagnostics["local_non_monotonic"] == 1
+
+
+    def test_analyse_ops_events_uses_shadow_health_summary(self) -> None:
+        ops = analyse_ops_events([
+            {
+                "event": "shadow_health_summary",
+                "data_quality": {
+                    "per_venue": {
+                        "BINANCE": {
+                            "ticks_received": 10,
+                            "ticks_used": 8,
+                            "missing_venue_incidents": 2,
+                            "rest_fallback_usage": 1,
+                            "resnapshot_count": 1,
+                            "feed_startup_failures": 0,
+                        }
+                    }
+                },
+                "model_quality": {"gating_reason_counts": {"confidence_gate": 2}},
+            },
+            {"event": "safe_mode_activated", "reason": "drift"},
+            {"event": "continuous_retrain_completed"},
+        ])
+
+        assert ops["safe_mode_activations"] == 1
+        assert ops["continuous_retrain_completions"] == 1
+        assert ops["health"]["data_quality"]["per_venue"]["BINANCE"]["ticks_received"] == 10
+
+    def test_fetch_tick_records_rest_fallback_and_startup_failures(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        signal_path = tmp_path / "alpha_signal.bin"
+        log_path = tmp_path / "shadow.jsonl"
+        cfg = ShadowSessionConfig(
+            log_path=str(log_path),
+            signal_file=str(signal_path),
+            exchanges=["BINANCE"],
+            seq_len=8,
+        )
+        session = NeuralAlphaShadowSession(cfg)
+        session._ops_log_path = tmp_path / "ops.jsonl"
+
+        monkeypatch.setattr(session._bridge, "read_new_ticks", lambda: [])
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session._fetch_binance_l5",
+            lambda symbol: {
+                "timestamp_ns": 1,
+                "exchange": "BINANCE",
+                "best_bid": 100.0,
+                "best_ask": 100.1,
+                "bid_price_1": 100.0,
+                "ask_price_1": 100.1,
+                "bid_size_1": 1.0,
+                "ask_size_1": 1.0,
+                "bid_price_2": 99.9,
+                "ask_price_2": 100.2,
+                "bid_size_2": 1.0,
+                "ask_size_2": 1.0,
+                "bid_price_3": 99.8,
+                "ask_price_3": 100.3,
+                "bid_size_3": 1.0,
+                "ask_size_3": 1.0,
+                "bid_price_4": 99.7,
+                "ask_price_4": 100.4,
+                "bid_size_4": 1.0,
+                "ask_size_4": 1.0,
+                "bid_price_5": 99.6,
+                "ask_price_5": 100.5,
+                "bid_size_5": 1.0,
+                "ask_size_5": 1.0,
+            },
+        )
+
+        ticks = session._fetch_tick()
+
+        assert len(ticks) == 1
+        stats = session._venue_stats["BINANCE"]
+        assert stats.feed_startup_failures == 1
+        assert stats.rest_fallback_usage >= 1
+        assert ticks[0]["tick_source"] == "rest_fallback"
+
+        session._log_fp.close()
+        session._publisher.close()
+        session._regime_publisher.close()
 
     def test_shadow_metrics_uses_session_elapsed_for_duration_and_blocks_bad_timestamps(self) -> None:
         rows = [

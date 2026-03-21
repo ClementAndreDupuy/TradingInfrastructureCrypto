@@ -1,48 +1,49 @@
 """
 Shadow validation metrics rollup.
 
-Reads two JSONL logs produced during a shadow session:
-    1. shadow_decisions.jsonl — from the C++ ShadowEngine (fills, cancels, rejects)
-    2. neural_alpha_shadow.jsonl — from neural alpha shadow session (signals)
+Reads JSONL logs produced during a shadow session:
+    1. shadow_decisions.jsonl — from the C++ ShadowEngine
+    2. neural_alpha_shadow.jsonl — from neural alpha shadow session
+    3. ops_events.jsonl — structured training and runtime operations events
 
 Produces a text report and optionally a Prometheus metrics file.
-
-Usage:
-    python research/backtest/shadow_metrics.py \\
-        --decisions shadow_decisions.jsonl \\
-        --signals   neural_alpha_shadow.jsonl \\
-        --out       shadow_report.txt \\
-        --prom      shadow_metrics.prom
 """
 
 from __future__ import annotations
+
 import argparse
 import json
 import math
 from pathlib import Path
+from typing import Any
+
 import numpy as np
 
 _IC_WINDOW = 20
 _MAX_EXCHANGE_JUMP_NS = 60 * 1000000000
+_DEFAULT_DECISIONS_LOG = "shadow_decisions.jsonl"
+_DEFAULT_SIGNALS_LOG = "neural_alpha_shadow.jsonl"
+_DEFAULT_OPS_LOG = "logs/ops_events.jsonl"
 
 
-def load_jsonl(path: str) -> list[dict]:
-    rows: list[dict] = []
+def load_jsonl(path: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     p = Path(path)
     if not p.exists():
         return rows
-    with open(p) as f:
-        for line in f:
+    with open(p, encoding="utf-8") as handle:
+        for line in handle:
             line = line.strip()
-            if line:
-                try:
-                    rows.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
     return rows
 
 
-def analyse_decisions(rows: list[dict]) -> dict:
+def analyse_decisions(rows: list[dict[str, Any]]) -> dict[str, Any]:
     fills = [r for r in rows if r.get("event") == "FILL"]
     cancels = [r for r in rows if r.get("event") == "CANCELED"]
     rejects = [r for r in rows if r.get("event") == "REJECTED"]
@@ -50,22 +51,20 @@ def analyse_decisions(rows: list[dict]) -> dict:
     terminal_orders = len(fills) + len(cancels) + len(rejects)
     fill_rate = len(fills) / terminal_orders if terminal_orders else 0.0
     total_orders = terminal_orders + len(resting)
-    pnl_series: list[float] = []
-    for r in fills:
-        pnl_series.append(r.get("cumulative_pnl", 0.0))
+    pnl_series = [float(r.get("cumulative_pnl", 0.0)) for r in fills]
     net_pnl = pnl_series[-1] if pnl_series else 0.0
-    exchanges: dict[str, dict] = {}
-    for r in fills:
-        ex = r.get("exchange", "UNKNOWN")
-        if ex not in exchanges:
-            exchanges[ex] = {"fills": 0, "maker": 0, "taker": 0, "fees": 0.0}
-        exchanges[ex]["fills"] += 1
-        if r.get("maker"):
-            exchanges[ex]["maker"] += 1
+    exchanges: dict[str, dict[str, Any]] = {}
+    for record in fills:
+        exchange = str(record.get("exchange", "UNKNOWN"))
+        if exchange not in exchanges:
+            exchanges[exchange] = {"fills": 0, "maker": 0, "taker": 0, "fees": 0.0}
+        exchanges[exchange]["fills"] += 1
+        if record.get("maker"):
+            exchanges[exchange]["maker"] += 1
         else:
-            exchanges[ex]["taker"] += 1
-        exchanges[ex]["fees"] += r.get("fee_usd", 0.0)
-    fill_qty = sum((r.get("qty", 0.0) for r in fills))
+            exchanges[exchange]["taker"] += 1
+        exchanges[exchange]["fees"] += float(record.get("fee_usd", 0.0))
+    fill_qty = sum(float(r.get("qty", 0.0)) for r in fills)
     max_dd = 0.0
     peak = 0.0
     for pnl in pnl_series:
@@ -88,66 +87,7 @@ def analyse_decisions(rows: list[dict]) -> dict:
     }
 
 
-def analyse_signals(rows: list[dict]) -> dict:
-    if not rows:
-        return {}
-    ordered = sorted(
-        rows, key=lambda r: (int(r.get("event_index", 0)), int(r.get("session_elapsed_ns", 0)))
-    )
-    sigs = np.nan_to_num(np.array([r.get("signal", 0.0) for r in ordered], dtype=np.float64))
-    risk = np.nan_to_num(np.array([r.get("risk_score", 0.0) for r in ordered], dtype=np.float64))
-    mids = np.nan_to_num(np.array([r.get("mid_price", 0.0) for r in ordered], dtype=np.float64))
-    elapsed = np.array([r.get("session_elapsed_ns", 0) for r in ordered], dtype=np.int64)
-    signals_for_ic: list[float] = []
-    realised_values: list[float] = []
-    for i in range(len(ordered) - 1):
-        if mids[i] <= 0.0 or mids[i + 1] <= 0.0:
-            continue
-        signals_for_ic.append(float(ordered[i].get("signal", 0.0)))
-        realised_values.append((mids[i + 1] - mids[i]) / mids[i])
-    realised = np.asarray(realised_values, dtype=np.float64)
-    aligned_sigs = np.asarray(signals_for_ic, dtype=np.float64)
-    ic = 0.0
-    icir = 0.0
-    if len(realised) >= _IC_WINDOW and aligned_sigs.std() > 0:
-        ic_series = np.array(
-            [
-                (
-                    float(
-                        np.corrcoef(
-                            aligned_sigs[i - _IC_WINDOW : i], realised[i - _IC_WINDOW : i]
-                        )[0, 1]
-                    )
-                    if i >= _IC_WINDOW
-                    else 0.0
-                )
-                for i in range(1, len(aligned_sigs) + 1)
-            ]
-        )
-        ic_series = np.nan_to_num(ic_series)
-        ic = float(np.mean(ic_series))
-        ic_std = float(np.std(ic_series))
-        icir = float(ic / ic_std) * math.sqrt(252) if ic_std > 1e-06 else 0.0
-    timestamp_quality = analyse_timestamp_quality(ordered)
-    duration_min = (
-        (int(elapsed[-1]) - int(elapsed[0])) / 1000000000.0 / 60.0 if len(elapsed) > 1 else 0.0
-    )
-    if timestamp_quality["has_timestamp_issues"]:
-        ic = 0.0
-        icir = 0.0
-    return {
-        "total_signals": len(ordered),
-        "duration_min": round(duration_min, 2),
-        "signal_mean_bps": round(float(np.mean(sigs)) * 10000.0, 4),
-        "signal_std_bps": round(float(np.std(sigs)) * 10000.0, 4),
-        "avg_risk_score": round(float(np.mean(risk)), 4),
-        "ic": round(ic, 4),
-        "icir_annualised": round(icir, 4),
-        "timestamp_quality": timestamp_quality,
-    }
-
-
-def analyse_timestamp_quality(rows: list[dict]) -> dict:
+def analyse_timestamp_quality(rows: list[dict[str, Any]]) -> dict[str, Any]:
     diagnostics = {
         "exchange_missing": 0,
         "local_missing": 0,
@@ -172,15 +112,11 @@ def analyse_timestamp_quality(rows: list[dict]) -> dict:
         if local_ts <= 0:
             diagnostics["local_missing"] += 1
         if prev_exchange is not None and exchange_ts > 0:
-            diagnostics["max_exchange_jump_ns"] = max(
-                diagnostics["max_exchange_jump_ns"], abs(exchange_ts - prev_exchange)
-            )
+            diagnostics["max_exchange_jump_ns"] = max(diagnostics["max_exchange_jump_ns"], abs(exchange_ts - prev_exchange))
             if exchange_ts < prev_exchange:
                 diagnostics["exchange_non_monotonic"] += 1
         if prev_local is not None and local_ts > 0:
-            diagnostics["max_local_gap_ns"] = max(
-                diagnostics["max_local_gap_ns"], abs(local_ts - prev_local)
-            )
+            diagnostics["max_local_gap_ns"] = max(diagnostics["max_local_gap_ns"], abs(local_ts - prev_local))
             if local_ts < prev_local:
                 diagnostics["local_non_monotonic"] += 1
         if prev_event_index is not None and event_index <= prev_event_index:
@@ -201,9 +137,100 @@ def analyse_timestamp_quality(rows: list[dict]) -> dict:
     return diagnostics
 
 
-def fill_rate_check(
-    shadow_fill_rate: float, backtest_fill_rate: float, tolerance: float = 0.1
-) -> dict:
+def analyse_signals(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    if not rows:
+        return {}
+    ordered = sorted(rows, key=lambda r: (int(r.get("event_index", 0)), int(r.get("session_elapsed_ns", 0))))
+    sigs = np.nan_to_num(np.array([r.get("signal", 0.0) for r in ordered], dtype=np.float64))
+    risk = np.nan_to_num(np.array([r.get("risk_score", 0.0) for r in ordered], dtype=np.float64))
+    mids = np.nan_to_num(np.array([r.get("mid_price", 0.0) for r in ordered], dtype=np.float64))
+    elapsed = np.array([r.get("session_elapsed_ns", 0) for r in ordered], dtype=np.int64)
+    signals_for_ic: list[float] = []
+    realised_values: list[float] = []
+    gating_breakdown = {"confidence_gate": 0, "horizon_disagreement_gate": 0, "safe_mode_gate": 0}
+    for record in ordered:
+        for reason in record.get("gating_reasons", []):
+            if reason in gating_breakdown:
+                gating_breakdown[reason] += 1
+    for i in range(len(ordered) - 1):
+        if mids[i] <= 0.0 or mids[i + 1] <= 0.0:
+            continue
+        signals_for_ic.append(float(ordered[i].get("signal", 0.0)))
+        realised_values.append((mids[i + 1] - mids[i]) / mids[i])
+    realised = np.asarray(realised_values, dtype=np.float64)
+    aligned_sigs = np.asarray(signals_for_ic, dtype=np.float64)
+    ic = 0.0
+    icir = 0.0
+    if len(realised) >= _IC_WINDOW and aligned_sigs.std() > 0:
+        ic_series = np.array([
+            float(np.corrcoef(aligned_sigs[i - _IC_WINDOW : i], realised[i - _IC_WINDOW : i])[0, 1]) if i >= _IC_WINDOW else 0.0
+            for i in range(1, len(aligned_sigs) + 1)
+        ])
+        ic_series = np.nan_to_num(ic_series)
+        ic = float(np.mean(ic_series))
+        ic_std = float(np.std(ic_series))
+        icir = float(ic / ic_std) * math.sqrt(252) if ic_std > 1e-06 else 0.0
+    timestamp_quality = analyse_timestamp_quality(ordered)
+    duration_min = (int(elapsed[-1]) - int(elapsed[0])) / 1000000000.0 / 60.0 if len(elapsed) > 1 else 0.0
+    if timestamp_quality["has_timestamp_issues"]:
+        ic = 0.0
+        icir = 0.0
+    return {
+        "total_signals": len(ordered),
+        "duration_min": round(duration_min, 2),
+        "signal_mean_bps": round(float(np.mean(sigs)) * 10000.0, 4),
+        "signal_std_bps": round(float(np.std(sigs)) * 10000.0, 4),
+        "avg_risk_score": round(float(np.mean(risk)), 4),
+        "ic": round(ic, 4),
+        "icir_annualised": round(icir, 4),
+        "timestamp_quality": timestamp_quality,
+        "gating_breakdown": gating_breakdown,
+    }
+
+
+def analyse_ops_events(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    training_events = [row for row in rows if row.get("event") in {"bootstrap_training_started", "bootstrap_training_completed", "training_epoch", "continuous_retrain_triggered", "continuous_retrain_completed", "continuous_retrain_failed"}]
+    data_events = [row for row in rows if str(row.get("event", "")).startswith("venue_") or row.get("event") == "shadow_health_summary"]
+    runtime_events = [row for row in rows if row.get("event") in {"drift_breach", "ensemble_canary_rollback", "safe_mode_activated", "incomplete_model_stack"}]
+    per_venue: dict[str, dict[str, int]] = {}
+    for row in rows:
+        venue = row.get("venue")
+        if not isinstance(venue, str):
+            continue
+        venue = venue.upper()
+        if venue not in per_venue:
+            per_venue[venue] = {
+                "missing_venue_incidents": 0,
+                "rest_fallback_usage": 0,
+                "resnapshot_count": 0,
+                "feed_startup_failures": 0,
+            }
+        event = row.get("event")
+        if event == "venue_rest_fallback_used":
+            per_venue[venue]["rest_fallback_usage"] += 1
+        elif event == "venue_resnapshot_detected":
+            per_venue[venue]["resnapshot_count"] += 1
+            per_venue[venue]["missing_venue_incidents"] += 1
+        elif event == "venue_feed_startup_failure":
+            per_venue[venue]["feed_startup_failures"] += 1
+            per_venue[venue]["missing_venue_incidents"] += 1
+    health_events = [row for row in rows if row.get("event") == "shadow_health_summary"]
+    health = health_events[-1] if health_events else {}
+    return {
+        "training_event_count": len(training_events),
+        "runtime_event_count": len(runtime_events),
+        "data_event_count": len(data_events),
+        "drift_breaches": sum(1 for row in rows if row.get("event") == "drift_breach"),
+        "canary_rollbacks": sum(1 for row in rows if row.get("event") == "ensemble_canary_rollback"),
+        "safe_mode_activations": sum(1 for row in rows if row.get("event") == "safe_mode_activated"),
+        "continuous_retrain_failures": sum(1 for row in rows if row.get("event") == "continuous_retrain_failed"),
+        "continuous_retrain_completions": sum(1 for row in rows if row.get("event") == "continuous_retrain_completed"),
+        "per_venue": per_venue,
+        "health": health,
+    }
+
+
+def fill_rate_check(shadow_fill_rate: float, backtest_fill_rate: float, tolerance: float = 0.1) -> dict[str, Any]:
     diff = abs(shadow_fill_rate - backtest_fill_rate)
     ok = diff <= tolerance
     return {
@@ -216,7 +243,7 @@ def fill_rate_check(
     }
 
 
-def print_report(dec: dict, sig: dict, out_path: str | None = None) -> None:
+def print_report(dec: dict[str, Any], sig: dict[str, Any], ops: dict[str, Any], out_path: str | None = None) -> None:
     lines = [
         "=" * 60,
         "  Shadow Validation Report",
@@ -236,11 +263,9 @@ def print_report(dec: dict, sig: dict, out_path: str | None = None) -> None:
     ]
     if dec.get("exchanges"):
         lines.append("── Per-exchange breakdown ───────────────────────────────────")
-        for ex, s in dec["exchanges"].items():
-            maker_pct = s["maker"] / s["fills"] if s["fills"] else 0.0
-            lines.append(
-                f"  {ex:10s}  fills={s['fills']}  maker={maker_pct:.0%}  fees=${s['fees']:.4f}"
-            )
+        for exchange, stats in dec["exchanges"].items():
+            maker_pct = stats["maker"] / stats["fills"] if stats["fills"] else 0.0
+            lines.append(f"  {exchange:10s}  fills={stats['fills']}  maker={maker_pct:.0%}  fees=${stats['fees']:.4f}")
         lines.append("")
     if sig:
         lines += [
@@ -252,6 +277,11 @@ def print_report(dec: dict, sig: dict, out_path: str | None = None) -> None:
             f"  Avg risk score         : {sig.get('avg_risk_score', 0):.4f}",
             f"  IC (rolling 20)        : {sig.get('ic', 0):.4f}",
             f"  ICIR (annualised)      : {sig.get('icir_annualised', 0):.4f}",
+            "",
+            "── Gating breakdown ────────────────────────────────────────",
+            f"  Confidence gate        : {sig.get('gating_breakdown', {}).get('confidence_gate', 0)}",
+            f"  Horizon disagreement   : {sig.get('gating_breakdown', {}).get('horizon_disagreement_gate', 0)}",
+            f"  Safe-mode gate         : {sig.get('gating_breakdown', {}).get('safe_mode_gate', 0)}",
             "",
         ]
         quality = sig.get("timestamp_quality", {})
@@ -266,6 +296,27 @@ def print_report(dec: dict, sig: dict, out_path: str | None = None) -> None:
             "",
         ]
     lines += [
+        "── Shadow health ────────────────────────────────────────────",
+        f"  Training events        : {ops.get('training_event_count', 0)}",
+        f"  Runtime incidents      : {ops.get('runtime_event_count', 0)}",
+        f"  Drift breaches         : {ops.get('drift_breaches', 0)}",
+        f"  Canary rollbacks       : {ops.get('canary_rollbacks', 0)}",
+        f"  Safe-mode activations  : {ops.get('safe_mode_activations', 0)}",
+        f"  Retrain completions    : {ops.get('continuous_retrain_completions', 0)}",
+        f"  Retrain failures       : {ops.get('continuous_retrain_failures', 0)}",
+        "",
+    ]
+    per_venue = ops.get("health", {}).get("data_quality", {}).get("per_venue", {}) or ops.get("per_venue", {})
+    if per_venue:
+        lines.append("── Venue quality ────────────────────────────────────────────")
+        for venue, stats in per_venue.items():
+            lines.append(
+                f"  {venue:10s}  received={stats.get('ticks_received', 0)}  used={stats.get('ticks_used', 0)}"
+                f"  missing={stats.get('missing_venue_incidents', 0)}  rest_fallback={stats.get('rest_fallback_usage', 0)}"
+                f"  resnapshot={stats.get('resnapshot_count', 0)}  startup_fail={stats.get('feed_startup_failures', 0)}"
+            )
+        lines.append("")
+    lines += [
         "── Readiness check ─────────────────────────────────────────",
         "  Run >= 2 weeks before promoting to live.",
         "  Shadow fill rates must match backtest within 10%.",
@@ -277,11 +328,11 @@ def print_report(dec: dict, sig: dict, out_path: str | None = None) -> None:
     report = "\n".join(lines)
     print(report)
     if out_path:
-        Path(out_path).write_text(report)
+        Path(out_path).write_text(report, encoding="utf-8")
         print(f"Report saved → {out_path}")
 
 
-def write_prometheus(dec: dict, sig: dict, path: str) -> None:
+def write_prometheus(dec: dict[str, Any], sig: dict[str, Any], ops: dict[str, Any], path: str) -> None:
     lines = [
         "# HELP shadow_fill_rate Fraction of shadow orders that filled",
         "# TYPE shadow_fill_rate gauge",
@@ -295,6 +346,9 @@ def write_prometheus(dec: dict, sig: dict, path: str) -> None:
         "# HELP shadow_total_fills Total number of shadow fills",
         "# TYPE shadow_total_fills counter",
         f"shadow_total_fills {dec.get('total_fills', 0)}",
+        "# HELP shadow_safe_mode_activations Total number of safe mode activations",
+        "# TYPE shadow_safe_mode_activations counter",
+        f"shadow_safe_mode_activations {ops.get('safe_mode_activations', 0)}",
     ]
     if sig:
         lines += [
@@ -308,43 +362,37 @@ def write_prometheus(dec: dict, sig: dict, path: str) -> None:
             "# TYPE neural_alpha_signal_mean_bps gauge",
             f"neural_alpha_signal_mean_bps {sig.get('signal_mean_bps', 0.0):.6f}",
         ]
-    Path(path).write_text("\n".join(lines) + "\n")
+    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"Prometheus metrics → {path}")
+
+
+def _require_log(path: str, label: str) -> None:
+    if not Path(path).exists():
+        raise FileNotFoundError(f"Missing required {label} log: {path}")
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Shadow session metrics rollup")
-    ap.add_argument(
-        "--decisions",
-        type=str,
-        default="shadow_decisions.jsonl",
-        help="C++ shadow engine decision log",
-    )
-    ap.add_argument(
-        "--signals", type=str, default="neural_alpha_shadow.jsonl", help="Neural alpha signal log"
-    )
+    ap.add_argument("--decisions", type=str, default=_DEFAULT_DECISIONS_LOG, help="C++ shadow engine decision log")
+    ap.add_argument("--signals", type=str, default=_DEFAULT_SIGNALS_LOG, help="Neural alpha signal log")
     ap.add_argument("--out", type=str, default=None, help="Save text report to file")
     ap.add_argument("--prom", type=str, default=None, help="Save Prometheus metrics to file")
-    ap.add_argument(
-        "--backtest-fill-rate",
-        type=float,
-        default=None,
-        dest="backtest_fill_rate",
-        help="Expected fill rate from backtest (for readiness check)",
-    )
+    ap.add_argument("--backtest-fill-rate", type=float, default=None, dest="backtest_fill_rate", help="Expected fill rate from backtest (for readiness check)")
     args = ap.parse_args()
+    _require_log(args.decisions, "decisions")
+    _require_log(_DEFAULT_OPS_LOG, "ops")
     dec_rows = load_jsonl(args.decisions)
     sig_rows = load_jsonl(args.signals)
+    ops_rows = load_jsonl(_DEFAULT_OPS_LOG)
     dec = analyse_decisions(dec_rows)
     sig = analyse_signals(sig_rows)
-    print_report(dec, sig, out_path=args.out)
+    ops = analyse_ops_events(ops_rows)
+    print_report(dec, sig, ops, out_path=args.out)
     if args.backtest_fill_rate is not None:
         check = fill_rate_check(dec.get("fill_rate", 0.0), args.backtest_fill_rate)
-        print(
-            f"Fill-rate readiness: shadow={check['shadow_fill_rate']:.2%}  backtest={check['backtest_fill_rate']:.2%}  verdict={check['verdict']}"
-        )
+        print(f"Fill-rate readiness: shadow={check['shadow_fill_rate']:.2%}  backtest={check['backtest_fill_rate']:.2%}  verdict={check['verdict']}")
     if args.prom:
-        write_prometheus(dec, sig, args.prom)
+        write_prometheus(dec, sig, ops, args.prom)
 
 
 if __name__ == "__main__":
