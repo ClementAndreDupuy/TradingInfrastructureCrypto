@@ -49,8 +49,6 @@ data/
 
 # Logs
 *.log
-logs/
-*.jsonl
 
 # Model weights (tracked via artifacts, not git)
 models/*.pt
@@ -58,7 +56,6 @@ models/*.npz
 
 # Shadow session runtime files
 shadow_decisions*.jsonl
-neural_alpha_shadow*.jsonl
 neural_alpha_live*.jsonl
 
 # OS
