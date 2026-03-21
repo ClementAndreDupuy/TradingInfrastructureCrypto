@@ -254,25 +254,32 @@ void BinanceFeedHandler::ws_event_loop() {
         }
     }
 
+    BinanceWsSession session;
+    session.handler = this;
+
+    lws_context_creation_info ctx_info = {};
+    ctx_info.port = CONTEXT_PORT_NO_LISTEN;
+    ctx_info.protocols = k_binance_protocols;
+    ctx_info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+    ctx_info.user = &session;
+
+    auto* ctx = lws_create_context(&ctx_info);
+    if (ctx == nullptr) {
+        LOG_ERROR("[Binance] lws_create_context failed", "symbol", symbol_.c_str());
+        running_.store(false, std::memory_order_release);
+        ws_cv_.notify_all();
+        return;
+    }
+    lws_ctx_.store(ctx, std::memory_order_release);
+
     while (running_.load(std::memory_order_acquire)) {
         reconnect_requested_.store(false, std::memory_order_release);
-        BinanceWsSession session;
-        session.handler = this;
-
-        lws_context_creation_info ctx_info = {};
-        ctx_info.port = CONTEXT_PORT_NO_LISTEN;
-        ctx_info.protocols = k_binance_protocols;
-        ctx_info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
-        ctx_info.user = &session;
-
-        auto* ctx = lws_create_context(&ctx_info);
-        if (ctx == nullptr) {
-            LOG_ERROR("[Binance] lws_create_context failed", "symbol", symbol_.c_str());
-            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-            delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
-            continue;
-        }
-        lws_ctx_.store(ctx, std::memory_order_release);
+        session.wsi = nullptr;
+        session.established = false;
+        session.closed = false;
+        session.send_ping = false;
+        session.last_ping_ns = 0;
+        session.frag_len = 0;
 
         lws_client_connect_info connect_info = {};
         connect_info.context = ctx;
@@ -286,8 +293,9 @@ void BinanceFeedHandler::ws_event_loop() {
 
         if (lws_client_connect_via_info(&connect_info) == nullptr) {
             LOG_ERROR("[Binance] WebSocket connect failed", "symbol", symbol_.c_str());
-            lws_context_destroy(ctx);
-            lws_ctx_.store(nullptr, std::memory_order_release);
+            if (!running_.load(std::memory_order_acquire)) {
+                break;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
             continue;
@@ -297,13 +305,12 @@ void BinanceFeedHandler::ws_event_loop() {
             lws_service(ctx, 50);
         }
 
-        if (!running_.load(std::memory_order_acquire) || session.closed) {
-            lws_context_destroy(ctx);
-            lws_ctx_.store(nullptr, std::memory_order_release);
-            if (running_.load(std::memory_order_acquire)) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-                delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
-            }
+        if (!running_.load(std::memory_order_acquire)) {
+            break;
+        }
+        if (session.closed) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+            delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
             continue;
         }
 
@@ -334,22 +341,16 @@ void BinanceFeedHandler::ws_event_loop() {
         }
 
         if (!running_.load(std::memory_order_acquire)) {
-            lws_context_destroy(ctx);
-            lws_ctx_.store(nullptr, std::memory_order_release);
-            continue;
+            break;
         }
 
         if (!snapshot_ready) {
-            lws_context_destroy(ctx);
-            lws_ctx_.store(nullptr, std::memory_order_release);
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
             continue;
         }
 
         if (apply_buffered_deltas(last_sequence_.load(std::memory_order_acquire)) != Result::SUCCESS) {
-            lws_context_destroy(ctx);
-            lws_ctx_.store(nullptr, std::memory_order_release);
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
             continue;
@@ -377,19 +378,23 @@ void BinanceFeedHandler::ws_event_loop() {
             }
         }
 
-        lws_context_destroy(ctx);
-        lws_ctx_.store(nullptr, std::memory_order_release);
+        reconnect_requested_.store(false, std::memory_order_release);
 
         if (running_.load(std::memory_order_acquire)) {
             LOG_WARN("[Binance] WebSocket disconnected, reconnecting", "symbol", symbol_.c_str(), "delay_ms",
                      delay_ms);
-            if (!reconnect_requested_.load(std::memory_order_acquire)) {
+            if (state_.load(std::memory_order_acquire) == State::STREAMING) {
                 trigger_resnapshot("WebSocket disconnected");
+                reconnect_requested_.store(false, std::memory_order_release);
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
         }
     }
+
+    lws_context_destroy(ctx);
+    lws_ctx_.store(nullptr, std::memory_order_release);
+    ws_cv_.notify_all();
 }
 
 auto BinanceFeedHandler::process_snapshot() -> Result {
