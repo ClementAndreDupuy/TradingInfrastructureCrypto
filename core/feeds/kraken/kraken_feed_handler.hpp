@@ -88,6 +88,7 @@ class KrakenFeedHandler {
     double tick_size_{0.0};
 
     std::atomic<bool> running_{false};
+    std::atomic<bool> force_reconnect_{false};
     std::atomic<uint64_t> last_sequence_{0};
     std::atomic<State> state_{State::DISCONNECTED};
     std::atomic<void*> lws_ctx_{nullptr};
@@ -118,7 +119,7 @@ class KrakenFeedHandler {
     extract_levels_from_message(const std::string& message, const std::string& side);
     void trigger_resnapshot(const std::string& reason);
 
-    uint32_t subscribed_depth_{500};
+    uint32_t subscribed_depth_{100};
     std::map<double, std::pair<std::string, std::string>, std::greater<double>> bids_;
     std::map<double, std::pair<std::string, std::string>> asks_;
 };
