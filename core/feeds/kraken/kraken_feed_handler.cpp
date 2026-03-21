@@ -220,6 +220,7 @@ void KrakenFeedHandler::ws_event_loop() {
 
     std::string ws_host = "ws.kraken.com";
     int ws_port = 443;
+    std::string ws_path = "/v2";
     {
         size_t pos = ws_url_.find("://");
         if (pos != std::string::npos) {
@@ -230,6 +231,9 @@ void KrakenFeedHandler::ws_event_loop() {
         size_t slash = ws_url_.find('/', pos);
         std::string authority =
             ws_url_.substr(pos, slash == std::string::npos ? std::string::npos : slash - pos);
+        if (slash != std::string::npos) {
+            ws_path = ws_url_.substr(slash);
+        }
         size_t colon = authority.rfind(':');
         if (colon != std::string::npos) {
             ws_host = authority.substr(0, colon);
@@ -269,7 +273,7 @@ void KrakenFeedHandler::ws_event_loop() {
         connect_info.context = ctx;
         connect_info.address = ws_host.c_str();
         connect_info.port = ws_port;
-        connect_info.path = "/v2";
+        connect_info.path = ws_path.c_str();
         connect_info.host = ws_host.c_str();
         connect_info.origin = ws_host.c_str();
         connect_info.protocol = k_kraken_protocols[0].name;

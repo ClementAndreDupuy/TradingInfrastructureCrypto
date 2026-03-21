@@ -148,17 +148,17 @@ auto main(int argc, char** argv) -> int {
         OkxFeedHandler okx_feed(opts.symbol);
         CoinbaseFeedHandler coinbase_feed(opts.symbol);
 
-        if (run_binance && binance_feed.start() != Result::SUCCESS) {
-            LOG_WARN("Binance feed failed to start", "symbol", opts.symbol.c_str());
+        if (run_binance && binance_feed.refresh_tick_size() != Result::SUCCESS) {
+            LOG_WARN("Binance tick size fetch failed before book init", "symbol", opts.symbol.c_str());
         }
-        if (run_kraken && kraken_feed.start() != Result::SUCCESS) {
-            LOG_WARN("Kraken feed failed to start", "symbol", opts.symbol.c_str());
+        if (run_kraken && kraken_feed.refresh_tick_size() != Result::SUCCESS) {
+            LOG_WARN("Kraken tick size fetch failed before book init", "symbol", opts.symbol.c_str());
         }
-        if (run_okx && okx_feed.start() != Result::SUCCESS) {
-            LOG_WARN("OKX feed failed to start", "symbol", opts.symbol.c_str());
+        if (run_okx && okx_feed.refresh_tick_size() != Result::SUCCESS) {
+            LOG_WARN("OKX tick size fetch failed before book init", "symbol", opts.symbol.c_str());
         }
-        if (run_coinbase && coinbase_feed.start() != Result::SUCCESS) {
-            LOG_WARN("Coinbase feed failed to start", "symbol", opts.symbol.c_str());
+        if (run_coinbase && coinbase_feed.refresh_tick_size() != Result::SUCCESS) {
+            LOG_WARN("Coinbase tick size fetch failed before book init", "symbol", opts.symbol.c_str());
         }
 
         constexpr double k_target_range_usd  = 2'000.0;
@@ -209,6 +209,19 @@ auto main(int argc, char** argv) -> int {
         okx_feed.set_delta_callback(okx_book.delta_handler());
         coinbase_feed.set_snapshot_callback(coinbase_book.snapshot_handler());
         coinbase_feed.set_delta_callback(coinbase_book.delta_handler());
+
+        if (run_binance && binance_feed.start() != Result::SUCCESS) {
+            LOG_WARN("Binance feed failed to start", "symbol", opts.symbol.c_str());
+        }
+        if (run_kraken && kraken_feed.start() != Result::SUCCESS) {
+            LOG_WARN("Kraken feed failed to start", "symbol", opts.symbol.c_str());
+        }
+        if (run_okx && okx_feed.start() != Result::SUCCESS) {
+            LOG_WARN("OKX feed failed to start", "symbol", opts.symbol.c_str());
+        }
+        if (run_coinbase && coinbase_feed.start() != Result::SUCCESS) {
+            LOG_WARN("Coinbase feed failed to start", "symbol", opts.symbol.c_str());
+        }
 
         BinanceConnector binance(
             http::env_var("BINANCE_API_KEY"), http::env_var("BINANCE_API_SECRET"),
