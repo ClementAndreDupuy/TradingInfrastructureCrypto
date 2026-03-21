@@ -245,10 +245,10 @@ TEST(OrderBook, RecentersImmediatelyOnLargeBreach) {
 
     const double initial_base = book.base_price();
 
-    // Extreme overshoot should force immediate recenter instead of repeated rejection.
-    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 85000.0, 5.0, 101)), Result::SUCCESS);
+    // A new best bid well above the current grid should force immediate recenter.
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 85000.0, 5.0, 101)), Result::SUCCESS);
     EXPECT_NE(book.base_price(), initial_base);
-    EXPECT_DOUBLE_EQ(book.get_best_ask(), 85000.0);
+    EXPECT_DOUBLE_EQ(book.get_best_bid(), 85000.0);
 }
 
 TEST(OrderBook, RecenterPreservesInRangeLiquidity) {
@@ -259,13 +259,13 @@ TEST(OrderBook, RecenterPreservesInRangeLiquidity) {
     EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 52000.0, 2.5, 101)), Result::SUCCESS);
     EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 52001.0, 3.5, 102)), Result::SUCCESS);
 
-    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 62000.0, 6.0, 103)),
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 62000.0, 6.0, 103)),
               Result::ERROR_INVALID_PRICE);
-    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 62000.0, 6.1, 104)),
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 62000.0, 6.1, 104)),
               Result::ERROR_INVALID_PRICE);
-    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 62000.0, 6.2, 105)),
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 62000.0, 6.2, 105)),
               Result::ERROR_INVALID_PRICE);
-    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 62000.0, 6.3, 106)), Result::SUCCESS);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 62000.0, 6.3, 106)), Result::SUCCESS);
 
     std::vector<PriceLevel> bids, asks;
     book.get_top_levels(20000, bids, asks);
@@ -287,6 +287,21 @@ TEST(OrderBook, RecenterPreservesInRangeLiquidity) {
 
     EXPECT_TRUE(found_bid);
     EXPECT_TRUE(found_ask);
+}
+
+TEST(OrderBook, IgnoresFarPassiveLiquidityWithoutRecentering) {
+    OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
+    book.apply_snapshot(make_snapshot(50000.0, 50001.0, 2, 1.0, 100));
+
+    const double initial_base = book.base_price();
+
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 85000.0, 5.0, 101)), Result::ERROR_INVALID_PRICE);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 15000.0, 5.0, 102)), Result::ERROR_INVALID_PRICE);
+
+    EXPECT_DOUBLE_EQ(book.base_price(), initial_base);
+    EXPECT_DOUBLE_EQ(book.get_best_bid(), 50000.0);
+    EXPECT_DOUBLE_EQ(book.get_best_ask(), 50001.0);
+    EXPECT_EQ(book.get_sequence(), 100u);
 }
 
 TEST(OrderBook, GetBestBidAsk) {
