@@ -122,7 +122,7 @@ class OrderBook {
 
         size_t idx;
         if (!price_to_index(delta.price, idx)) {
-            if (should_recenter(delta.price)) {
+            if (should_recenter(delta)) {
                 recenter_grid(delta.price);
                 if (!price_to_index(delta.price, idx)) {
                     LOG_WARN("[OrderBook] Delta price still out of recentered grid", "price", delta.price,
@@ -295,9 +295,24 @@ class OrderBook {
     static constexpr uint32_t k_recenter_streak_trigger_ = 4;
     static constexpr double k_recenter_hard_breach_ratio_ = 0.6;
 
-    bool should_recenter(double price) {
+    bool delta_improves_touch(const Delta& delta) const noexcept {
+        if (delta.side == Side::BID) {
+            const double best_bid = get_best_bid();
+            return best_bid <= 0.0 || delta.price >= best_bid;
+        }
+
+        const double best_ask = get_best_ask();
+        return best_ask <= 0.0 || delta.price <= best_ask;
+    }
+
+    bool should_recenter(const Delta& delta) {
+        if (!delta_improves_touch(delta)) {
+            out_of_range_streak_ = 0;
+            return false;
+        }
+
         const double base = base_price_.load(std::memory_order_acquire);
-        const double relative = (price - base) / tick_size_;
+        const double relative = (delta.price - base) / tick_size_;
         const double upper_idx = static_cast<double>(active_levels() - 1);
 
         const double breach_ticks =
