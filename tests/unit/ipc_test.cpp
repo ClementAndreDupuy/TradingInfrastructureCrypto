@@ -6,6 +6,7 @@
 
 #include "core/ipc/alpha_signal.hpp"
 #include "core/ipc/lob_publisher.hpp"
+#include "core/feeds/common/book_manager.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -335,6 +336,58 @@ TEST(LobPublisher, SlotContentsMatchPublishedData) {
     double best_ask;
     std::memcpy(&best_ask, slot0 + 112, 8);
     EXPECT_NEAR(best_ask, 100.1, 1e-9);
+
+    ::munmap(const_cast<char*>(m), total);
+    ::close(fd);
+}
+
+TEST(LobPublisher, BookManagerSnapshotPublishesImmediately) {
+    TempFile tmp;
+    ::unlink(tmp.path.c_str());
+
+    trading::LobPublisher pub(tmp.path);
+    ASSERT_TRUE(pub.open());
+
+    trading::BookManager manager("BTCUSDT", trading::Exchange::BINANCE, 1.0, 1024);
+    manager.set_publisher(&pub);
+
+    trading::Snapshot snapshot;
+    snapshot.symbol = "BTCUSDT";
+    snapshot.exchange = trading::Exchange::BINANCE;
+    snapshot.sequence = 42;
+    snapshot.timestamp_local_ns = 987'654'321LL;
+    snapshot.bids = {{50'000.0, 1.5}, {49'999.0, 2.0}};
+    snapshot.asks = {{50'001.0, 1.0}, {50'002.0, 3.0}};
+
+    auto on_snapshot = manager.snapshot_handler();
+    on_snapshot(snapshot);
+
+    const size_t total = trading::LobPublisher::k_header_size +
+                         trading::LobPublisher::k_capacity *
+                             trading::LobPublisher::k_slot_size;
+    int fd = ::open(tmp.path.c_str(), O_RDONLY);
+    ASSERT_GE(fd, 0);
+    const char* m =
+        static_cast<const char*>(::mmap(nullptr, total, PROT_READ, MAP_SHARED, fd, 0));
+    ASSERT_NE(m, MAP_FAILED);
+
+    const uint64_t* write_seq_ptr =
+        reinterpret_cast<const uint64_t*>(m + 24);
+    EXPECT_EQ(*write_seq_ptr, 1u);
+
+    const char* slot0 = m + trading::LobPublisher::k_header_size;
+
+    int64_t ts_ns;
+    std::memcpy(&ts_ns, slot0 + 16, 8);
+    EXPECT_EQ(ts_ns, snapshot.timestamp_local_ns);
+
+    double best_bid;
+    std::memcpy(&best_bid, slot0 + 32, 8);
+    EXPECT_NEAR(best_bid, 50'000.0, 1e-9);
+
+    double best_ask;
+    std::memcpy(&best_ask, slot0 + 112, 8);
+    EXPECT_NEAR(best_ask, 50'001.0, 1e-9);
 
     ::munmap(const_cast<char*>(m), total);
     ::close(fd);

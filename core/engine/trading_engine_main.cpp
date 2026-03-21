@@ -190,6 +190,17 @@ auto main(int argc, char** argv) -> int {
         BookManager okx_book(opts.symbol,     Exchange::OKX,      okx_tick,      okx_levels);
         BookManager coinbase_book(opts.symbol, Exchange::COINBASE, coinbase_tick, coinbase_levels);
 
+        LobPublisher lob_publisher;
+        if (!lob_publisher.open()) {
+            LOG_WARN("LOB publisher unavailable", "path", LobPublisher::k_default_path);
+        }
+
+        LobPublisher* pub = lob_publisher.is_open() ? &lob_publisher : nullptr;
+        binance_book.set_publisher(pub);
+        kraken_book.set_publisher(pub);
+        okx_book.set_publisher(pub);
+        coinbase_book.set_publisher(pub);
+
         binance_feed.set_snapshot_callback(binance_book.snapshot_handler());
         binance_feed.set_delta_callback(binance_book.delta_handler());
         kraken_feed.set_snapshot_callback(kraken_book.snapshot_handler());
@@ -211,18 +222,6 @@ auto main(int argc, char** argv) -> int {
         if (run_coinbase && coinbase_feed.start() != Result::SUCCESS) {
             LOG_WARN("Coinbase feed failed to start", "symbol", opts.symbol.c_str());
         }
-
-        LobPublisher lob_publisher;
-        if (!lob_publisher.open()) {
-            LOG_WARN("LOB publisher unavailable", "path", LobPublisher::k_default_path);
-        }
-
-        LobPublisher* pub = lob_publisher.is_open() ? &lob_publisher : nullptr;
-        binance_book.set_publisher(pub);
-        kraken_book.set_publisher(pub);
-        okx_book.set_publisher(pub);
-        coinbase_book.set_publisher(pub);
-
 
         BinanceConnector binance(
             http::env_var("BINANCE_API_KEY"), http::env_var("BINANCE_API_SECRET"),

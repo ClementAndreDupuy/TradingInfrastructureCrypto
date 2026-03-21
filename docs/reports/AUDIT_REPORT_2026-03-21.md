@@ -7,8 +7,8 @@ Deep audit of the four C++ market-data feeds in `core/feeds/` (Binance, Kraken, 
 
 ### Critical
 1. **Feed-to-bridge startup ordering dropped the initial snapshot and early deltas.**
-   - `trading_engine_main.cpp` started all feed handlers before registering `BookManager` snapshot/delta callbacks.
-   - Because each handler transitions to streaming during `start()`, the shared books and LOB bridge missed the first synchronized snapshot and any early deltas emitted before callback registration.
+   - `trading_engine_main.cpp` started feed handlers before the full `BookManager` and LOB bridge wiring was complete.
+   - Because each handler transitions to streaming during `start()`, the shared books could miss the first synchronized snapshot if callbacks or the `LobPublisher` were attached afterward.
    - This directly explains a “connection established but no data reaches the bridge” failure mode.
 
 ### High
@@ -47,7 +47,7 @@ Deep audit of the four C++ market-data feeds in `core/feeds/` (Binance, Kraken, 
 - The main correctness issue was the startup auth gate, which is now relaxed to allow public market-data sessions.
 
 ## Remediation completed
-- Registered feed callbacks before starting feed threads.
+- Wired the LOB publisher and feed callbacks before starting feed threads.
 - Added an explicit pre-start tick-size refresh so books are constructed with venue-derived grids when available.
 - Allowed Coinbase to start without credentials, while still using JWT auth when available.
 - Honored custom Kraken WebSocket paths.
