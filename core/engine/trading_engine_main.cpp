@@ -61,6 +61,14 @@ auto parse_args(int argc, char** argv) -> CliOptions {
 
 std::atomic<bool> g_running{true};
 
+auto log_loaded_credential(const char* venue, const char* field, const std::string& value) -> void {
+    if (value.empty()) {
+        LOG_WARN("venue credential missing", "venue", venue, "field", field);
+        return;
+    }
+    LOG_INFO("venue credential loaded", "venue", venue, "field", field,
+             "length", static_cast<int>(value.size()));
+}
 
 auto has_venue(const std::string& csv, const std::string& needle) -> bool {
     std::stringstream csv_stream(csv);
@@ -196,15 +204,31 @@ auto main(int argc, char** argv) -> int {
         engine::start_feed_after_wiring(okx_feed, run_okx, "OKX", opts.symbol);
         engine::start_feed_after_wiring(coinbase_feed, run_coinbase, "COINBASE", opts.symbol);
 
+        const std::string binance_api_key = http::env_var("BINANCE_API_KEY");
+        const std::string binance_api_secret = http::env_var("BINANCE_API_SECRET");
+        const std::string kraken_api_key = http::env_var("KRAKEN_API_KEY");
+        const std::string kraken_api_secret = http::env_var("KRAKEN_API_SECRET");
+        const std::string okx_api_key = http::env_var("OKX_API_KEY");
+        const std::string okx_api_secret = http::env_var("OKX_API_SECRET");
+        const std::string okx_api_passphrase = http::env_var("OKX_API_PASSPHRASE");
+        const std::string coinbase_api_key = http::env_var("COINBASE_API_KEY");
+        const std::string coinbase_api_secret = http::env_var("COINBASE_API_SECRET");
+
+        if (run_okx) {
+            log_loaded_credential("OKX", "api_key", okx_api_key);
+            log_loaded_credential("OKX", "api_secret", okx_api_secret);
+            log_loaded_credential("OKX", "api_passphrase", okx_api_passphrase);
+        }
+
         BinanceConnector binance(
-            http::env_var("BINANCE_API_KEY"), http::env_var("BINANCE_API_SECRET"),
+            binance_api_key, binance_api_secret,
             opts.mode == "shadow" ? "mock://binance" : "https://api.binance.com");
-        KrakenConnector kraken(http::env_var("KRAKEN_API_KEY"), http::env_var("KRAKEN_API_SECRET"),
+        KrakenConnector kraken(kraken_api_key, kraken_api_secret,
                                opts.mode == "shadow" ? "mock://kraken" : "https://api.kraken.com");
-        OkxConnector okx(http::env_var("OKX_API_KEY"), http::env_var("OKX_API_SECRET"),
+        OkxConnector okx(okx_api_key, okx_api_secret, okx_api_passphrase,
                          opts.mode == "shadow" ? "mock://okx" : "https://www.okx.com");
         CoinbaseConnector coinbase(
-            http::env_var("COINBASE_API_KEY"), http::env_var("COINBASE_API_SECRET"),
+            coinbase_api_key, coinbase_api_secret,
             opts.mode == "shadow" ? "mock://coinbase" : "https://api.coinbase.com");
 
         ReconciliationService reconciliation;

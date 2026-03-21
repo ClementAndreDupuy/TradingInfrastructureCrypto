@@ -225,30 +225,38 @@ void OkxFeedHandler::ws_event_loop() {
         }
     }
 
+    OkxWsSession session;
+    session.handler = this;
+
+    nlohmann::json sub = {
+        {"op", "subscribe"},
+        {"args", nlohmann::json::array({{{"channel", "books"}, {"instId", instrument_id_}}})},
+    };
+    session.subscribe_msg = sub.dump();
+
+    lws_context_creation_info ctx_info = {};
+    ctx_info.port = CONTEXT_PORT_NO_LISTEN;
+    ctx_info.protocols = k_okx_protocols;
+    ctx_info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+    ctx_info.user = &session;
+
+    auto* ctx = lws_create_context(&ctx_info);
+    if (ctx == nullptr) {
+        LOG_ERROR("[OKX] lws_create_context failed", "symbol", symbol_.c_str());
+        running_.store(false, std::memory_order_release);
+        ws_cv_.notify_all();
+        return;
+    }
+    lws_ctx_.store(ctx, std::memory_order_release);
+
     while (running_.load(std::memory_order_acquire)) {
-        OkxWsSession session;
-        session.handler = this;
-
-        nlohmann::json sub = {
-            {"op", "subscribe"},
-            {"args", nlohmann::json::array({{{"channel", "books"}, {"instId", instrument_id_}}})},
-        };
-        session.subscribe_msg = sub.dump();
-
-        lws_context_creation_info ctx_info = {};
-        ctx_info.port = CONTEXT_PORT_NO_LISTEN;
-        ctx_info.protocols = k_okx_protocols;
-        ctx_info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
-        ctx_info.user = &session;
-
-        auto* ctx = lws_create_context(&ctx_info);
-        if (ctx == nullptr) {
-            LOG_ERROR("[OKX] lws_create_context failed", "symbol", symbol_.c_str());
-            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-            delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
-            continue;
-        }
-        lws_ctx_.store(ctx, std::memory_order_release);
+        session.wsi = nullptr;
+        session.established = false;
+        session.closed = false;
+        session.send_ping = false;
+        session.send_subscribe = false;
+        session.last_ping_ns = 0;
+        session.frag_len = 0;
 
         lws_client_connect_info connect_info = {};
         connect_info.context = ctx;
@@ -262,8 +270,9 @@ void OkxFeedHandler::ws_event_loop() {
 
         if (lws_client_connect_via_info(&connect_info) == nullptr) {
             LOG_ERROR("[OKX] WebSocket connect failed", "symbol", symbol_.c_str());
-            lws_context_destroy(ctx);
-            lws_ctx_.store(nullptr, std::memory_order_release);
+            if (!running_.load(std::memory_order_acquire)) {
+                break;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
             continue;
@@ -273,13 +282,12 @@ void OkxFeedHandler::ws_event_loop() {
             lws_service(ctx, 50);
         }
 
-        if (!running_.load() || session.closed) {
-            lws_context_destroy(ctx);
-            lws_ctx_.store(nullptr, std::memory_order_release);
-            if (running_.load()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-                delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
-            }
+        if (!running_.load()) {
+            break;
+        }
+        if (session.closed) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+            delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
             continue;
         }
 
@@ -307,8 +315,6 @@ void OkxFeedHandler::ws_event_loop() {
         }
 
         force_reconnect_.store(false, std::memory_order_release);
-        lws_context_destroy(ctx);
-        lws_ctx_.store(nullptr, std::memory_order_release);
 
         if (running_.load(std::memory_order_acquire)) {
             LOG_WARN("[OKX] stream disconnected, reconnecting", "symbol", symbol_.c_str(),
@@ -318,6 +324,8 @@ void OkxFeedHandler::ws_event_loop() {
         }
     }
 
+    lws_context_destroy(ctx);
+    lws_ctx_.store(nullptr, std::memory_order_release);
     ws_cv_.notify_all();
 }
 
