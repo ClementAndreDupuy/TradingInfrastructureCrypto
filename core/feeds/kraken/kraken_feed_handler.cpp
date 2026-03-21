@@ -407,10 +407,6 @@ auto KrakenFeedHandler::process_snapshot(const std::string& message,
     snap.sequence = 0;
     snap.timestamp_exchange_ns = parse_rfc3339_timestamp_ns(book.value("timestamp", std::string()));
     snap.timestamp_local_ns = http::now_ns();
-    if (book.contains("checksum")) {
-        snap.checksum = static_cast<uint32_t>(book["checksum"].get<uint64_t>());
-        snap.checksum_present = true;
-    }
     snap.bids.reserve(bids_.size());
     for (const auto& [price, level] : bids_) {
         snap.bids.emplace_back(price, std::stod(level.second));

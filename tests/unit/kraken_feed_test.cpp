@@ -1,3 +1,4 @@
+#include "core/feeds/common/book_manager.hpp"
 #include "core/feeds/kraken/kraken_feed_handler.hpp"
 #include <gtest/gtest.h>
 #include <string>
@@ -114,8 +115,8 @@ TEST_F(KrakenFeedHandlerTest, WebsocketSnapshotInitializesBook) {
     EXPECT_EQ(snapshot_count_, 1);
     EXPECT_EQ(last_snapshot_.exchange, Exchange::KRAKEN);
     EXPECT_EQ(last_snapshot_.sequence, 0u);
-    EXPECT_TRUE(last_snapshot_.checksum_present);
-    EXPECT_EQ(last_snapshot_.checksum, snapshot_checksum());
+    EXPECT_FALSE(last_snapshot_.checksum_present);
+    EXPECT_EQ(last_snapshot_.checksum, 0u);
     EXPECT_EQ(last_snapshot_.timestamp_exchange_ns, 1704067200123456789LL);
     EXPECT_GT(last_snapshot_.timestamp_local_ns, 0);
     ASSERT_EQ(last_snapshot_.bids.size(), 2u);
@@ -152,6 +153,24 @@ TEST_F(KrakenFeedHandlerTest, NumericWirePrecisionStillPassesChecksum) {
 
     EXPECT_EQ(handler_->process_message(snapshot), Result::SUCCESS);
     EXPECT_EQ(snapshot_count_, 1);
+}
+
+TEST(KrakenBookManagerRegression, VenueChecksumDoesNotTripGenericOrderBookValidation) {
+    set_log_level(LogLevel::ERROR);
+
+    BookManager book("BTCUSDT", Exchange::KRAKEN, 0.5, 200000);
+    KrakenFeedHandler handler("XBTUSD");
+    handler.set_snapshot_callback(book.snapshot_handler());
+
+    const std::string snapshot = std::string(
+        R"({"channel":"book","type":"snapshot","data":[{"symbol":"BTC/USD","bids":[{"price":"50000.0","qty":"1.50000000"},{"price":"49999.5","qty":"0.75000000"}],"asks":[{"price":"50001.0","qty":"2.00000000"},{"price":"50002.0","qty":"3.50000000"}],"checksum":)" +
+        std::to_string(snapshot_checksum()) +
+        R"(,"timestamp":"2024-01-01T00:00:00.123456789Z"}]})";
+
+    EXPECT_EQ(handler.process_message(snapshot), Result::SUCCESS);
+    EXPECT_TRUE(book.is_ready());
+    EXPECT_DOUBLE_EQ(book.best_bid(), 50000.0);
+    EXPECT_DOUBLE_EQ(book.best_ask(), 50001.0);
 }
 
 TEST_F(KrakenFeedHandlerTest, ChecksumMismatchTriggersResnapshot) {
