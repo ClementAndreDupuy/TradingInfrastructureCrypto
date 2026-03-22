@@ -36,8 +36,6 @@ target_include_directories(trading_common INTERFACE
 # Binance feed handler library
 add_library(binance_feed
     feeds/binance/binance_feed_handler.cpp
-    feeds/binance/binance_feed_processing.cpp
-    feeds/common/feed_handler_utils.cpp
 )
 
 target_link_libraries(binance_feed
@@ -60,8 +58,6 @@ target_compile_options(binance_feed PRIVATE ${LIBWEBSOCKETS_CFLAGS_OTHER})
 # Kraken feed handler library
 add_library(kraken_feed
     feeds/kraken/kraken_feed_handler.cpp
-    feeds/kraken/kraken_feed_handler_processing.cpp
-    feeds/common/feed_handler_utils.cpp
 )
 
 target_link_libraries(kraken_feed
@@ -84,9 +80,6 @@ target_compile_options(kraken_feed PRIVATE ${LIBWEBSOCKETS_CFLAGS_OTHER})
 # Coinbase feed handler library
 add_library(coinbase_feed
     feeds/coinbase/coinbase_feed_handler.cpp
-    feeds/coinbase/coinbase_feed_handler_runtime.cpp
-    feeds/coinbase/coinbase_feed_processing.cpp
-    feeds/common/feed_handler_utils.cpp
 )
 
 target_link_libraries(coinbase_feed
@@ -109,8 +102,6 @@ target_compile_options(coinbase_feed PRIVATE ${LIBWEBSOCKETS_CFLAGS_OTHER})
 # OKX feed handler library
 add_library(okx_feed
     feeds/okx/okx_feed_handler.cpp
-    feeds/okx/okx_feed_handler_processing.cpp
-    feeds/common/feed_handler_utils.cpp
 )
 
 target_link_libraries(okx_feed
