@@ -2,7 +2,9 @@
 
 #include "../../common/logging.hpp"
 #include "exchange_connector.hpp"
+#include "position_ledger.hpp"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -88,6 +90,7 @@ namespace trading {
                 LOG_ERROR("OrderManager: submit_order rejected", "client_id", order.client_order_id);
                 return 0;
             }
+            ledger_.on_order_submitted(order);
             return order.client_order_id;
         }
 
@@ -102,7 +105,11 @@ namespace trading {
         }
 
         double position() const noexcept { return position_; }
-        double realized_pnl() const noexcept { return realized_pnl_; }
+        double realized_pnl() const noexcept { return ledger_.snapshot().realized_pnl; }
+        void update_mid_price(const char *symbol, Exchange exchange, double mid_price) noexcept {
+            ledger_.update_mid_price(symbol, exchange, mid_price);
+        }
+        PositionLedgerSnapshot ledger_snapshot() const noexcept { return ledger_.snapshot(); }
 
         uint32_t active_order_count() const noexcept {
             uint32_t n = 0;
@@ -119,7 +126,7 @@ namespace trading {
         std::atomic<uint64_t> next_id_;
         std::array<ManagedOrder, MAX_ORDERS> slots_{};
         double position_ = 0.0;
-        double realized_pnl_ = 0.0;
+        PositionLedger ledger_;
 
         SpscQueue<FillUpdate, FILL_QUEUE_DEPTH> fill_queue_;
 
@@ -132,14 +139,15 @@ namespace trading {
             mo->avg_fill_price = u.avg_fill_price;
             mo->state = u.new_state;
 
+            if (u.fill_qty > 0.0) {
+                double sign = (mo->order.side == Side::BID) ? 1.0 : -1.0;
+                position_ += sign * u.fill_qty;
+                ledger_.on_fill(mo->order, u);
+            }
+
             if (u.new_state == OrderState::FILLED || u.new_state == OrderState::CANCELED ||
                 u.new_state == OrderState::REJECTED) {
-                if (u.new_state == OrderState::FILLED && u.fill_qty > 0.0) {
-                    double sign = (mo->order.side == Side::BID) ? 1.0 : -1.0;
-                    position_ += sign * u.fill_qty;
-                    realized_pnl_ -= sign * u.fill_price * u.fill_qty;
-                }
-
+                ledger_.on_order_closed(mo->order, std::max(0.0, mo->order.quantity - mo->filled_qty));
                 if (on_fill)
                     on_fill(*mo, u);
                 mo->active = false;

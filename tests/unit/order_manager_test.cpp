@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <chrono>
 #include <thread>
 #include <vector>
 
@@ -220,6 +221,124 @@ TEST(OrderManagerTest, RealizedPnlAccumulatesCorrectly) {
     conn.emit(make_fill(sell_id, 2.0, 51000.0));
     om.drain_fills();
     EXPECT_DOUBLE_EQ(om.realized_pnl(), 2000.0);
+}
+
+TEST(OrderManagerTest, LedgerTracksPartialUnwindAndPendingOrders) {
+    MockConnector conn;
+    OrderManager om(conn);
+
+    const uint64_t buy_id = om.submit(make_order(Side::BID, 50000.0, 3.0));
+    ASSERT_GT(buy_id, 0u);
+    conn.emit(make_fill(buy_id, 3.0, 50000.0));
+    om.drain_fills();
+
+    const uint64_t sell_id = om.submit(make_order(Side::ASK, 51000.0, 1.0));
+    ASSERT_GT(sell_id, 0u);
+    conn.emit(make_fill(sell_id, 1.0, 51000.0));
+    om.drain_fills();
+
+    const auto snapshot = om.ledger_snapshot();
+    ASSERT_EQ(snapshot.venue_count, 1u);
+    EXPECT_DOUBLE_EQ(snapshot.global_position, 2.0);
+    EXPECT_DOUBLE_EQ(snapshot.global_avg_entry_price, 50000.0);
+    EXPECT_DOUBLE_EQ(snapshot.realized_pnl, 1000.0);
+    EXPECT_DOUBLE_EQ(snapshot.pending_bid_qty, 0.0);
+    EXPECT_DOUBLE_EQ(snapshot.pending_ask_qty, 0.0);
+    EXPECT_DOUBLE_EQ(snapshot.venues[0].position, 2.0);
+    EXPECT_DOUBLE_EQ(snapshot.venues[0].avg_entry_price, 50000.0);
+}
+
+TEST(OrderManagerTest, LedgerTracksPartialFillsBeforeFinalClose) {
+    MockConnector conn;
+    OrderManager om(conn);
+
+    const uint64_t id = om.submit(make_order(Side::BID, 50000.0, 3.0));
+    ASSERT_GT(id, 0u);
+
+    conn.emit(make_fill(id, 1.0, 50000.0, OrderState::PARTIALLY_FILLED));
+    om.drain_fills();
+
+    auto snapshot = om.ledger_snapshot();
+    ASSERT_EQ(snapshot.venue_count, 1u);
+    EXPECT_DOUBLE_EQ(snapshot.global_position, 1.0);
+    EXPECT_DOUBLE_EQ(snapshot.pending_bid_qty, 2.0);
+
+    FillUpdate final_fill = make_fill(id, 2.0, 50010.0);
+    final_fill.cumulative_filled_qty = 3.0;
+    final_fill.avg_fill_price = (50000.0 + 2.0 * 50010.0) / 3.0;
+    conn.emit(final_fill);
+    om.drain_fills();
+
+    snapshot = om.ledger_snapshot();
+    EXPECT_DOUBLE_EQ(snapshot.global_position, 3.0);
+    EXPECT_DOUBLE_EQ(snapshot.pending_bid_qty, 0.0);
+    EXPECT_NEAR(snapshot.global_avg_entry_price, final_fill.avg_fill_price, 1e-9);
+}
+
+TEST(OrderManagerTest, LedgerTracksCrossVenueInventoryAndMidMarks) {
+    MockConnector conn;
+    OrderManager om(conn);
+
+    auto okx_buy = make_order(Side::BID, 100.0, 1.5);
+    okx_buy.exchange = Exchange::OKX;
+    const uint64_t okx_id = om.submit(okx_buy);
+    ASSERT_GT(okx_id, 0u);
+    conn.emit(make_fill(okx_id, 1.5, 100.0));
+    om.drain_fills();
+
+    auto kraken_buy = make_order(Side::BID, 101.0, 0.5);
+    kraken_buy.exchange = Exchange::KRAKEN;
+    const uint64_t kraken_id = om.submit(kraken_buy);
+    ASSERT_GT(kraken_id, 0u);
+    conn.emit(make_fill(kraken_id, 0.5, 101.0));
+    om.drain_fills();
+
+    om.update_mid_price("BTCUSDT", Exchange::OKX, 102.0);
+    om.update_mid_price("BTCUSDT", Exchange::KRAKEN, 99.0);
+
+    const auto snapshot = om.ledger_snapshot();
+    ASSERT_EQ(snapshot.venue_count, 2u);
+    EXPECT_DOUBLE_EQ(snapshot.global_position, 2.0);
+    EXPECT_DOUBLE_EQ(snapshot.global_avg_entry_price, 100.25);
+    EXPECT_DOUBLE_EQ(snapshot.unrealized_pnl, 2.5);
+}
+
+TEST(OrderManagerTest, LedgerTracksInventoryAgeAfterEntry) {
+    MockConnector conn;
+    OrderManager om(conn);
+
+    const uint64_t buy_id = om.submit(make_order(Side::BID, 50000.0, 1.0));
+    ASSERT_GT(buy_id, 0u);
+    conn.emit(make_fill(buy_id, 1.0, 50000.0));
+    om.drain_fills();
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+
+    const auto snapshot = om.ledger_snapshot();
+    ASSERT_EQ(snapshot.venue_count, 1u);
+    EXPECT_GE(snapshot.oldest_inventory_age_ms, 1);
+    EXPECT_GE(snapshot.venues[0].inventory_age_ms, 1);
+}
+
+TEST(OrderManagerTest, LedgerResetsAveragePriceOnFullFlatten) {
+    MockConnector conn;
+    OrderManager om(conn);
+
+    const uint64_t buy_id = om.submit(make_order(Side::BID, 50000.0, 1.0));
+    ASSERT_GT(buy_id, 0u);
+    conn.emit(make_fill(buy_id, 1.0, 50000.0));
+    om.drain_fills();
+
+    const uint64_t sell_id = om.submit(make_order(Side::ASK, 50500.0, 1.0));
+    ASSERT_GT(sell_id, 0u);
+    conn.emit(make_fill(sell_id, 1.0, 50500.0));
+    om.drain_fills();
+
+    const auto snapshot = om.ledger_snapshot();
+    EXPECT_DOUBLE_EQ(snapshot.global_position, 0.0);
+    EXPECT_DOUBLE_EQ(snapshot.global_avg_entry_price, 0.0);
+    EXPECT_DOUBLE_EQ(snapshot.realized_pnl, 500.0);
+    EXPECT_EQ(snapshot.oldest_inventory_age_ms, 0);
 }
 
 TEST(OrderManagerTest, ConcurrentFillsAndStrategyOps_NoDataRace) {
