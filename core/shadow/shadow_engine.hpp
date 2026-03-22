@@ -44,7 +44,7 @@ namespace trading {
             c.okx_taker_fee_bps = okx_taker_bps;
             c.coinbase_maker_fee_bps = coinbase_maker_bps;
             c.coinbase_taker_fee_bps = coinbase_taker_bps;
-       Z     std::strncpy(c.log_path, log_file, sizeof(c.log_path) - 1);
+            std::strncpy(c.log_path, log_file, sizeof(c.log_path) - 1);
             c.log_path[sizeof(c.log_path) - 1] = '\0';
             return c;
         }

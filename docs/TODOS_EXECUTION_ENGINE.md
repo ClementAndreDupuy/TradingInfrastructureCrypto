@@ -21,9 +21,9 @@ Purpose: replace the current signal-to-submit loop with a target-position, state
 - Produce one comparison report from an existing shadow run that explains whether losses came from fees, slippage, churn, or stale inventory.
 
 **Acceptance criteria**
-- A shadow run emits enough metrics to explain a negative net PnL without reading raw order logs manually.
-- The end-of-run summary includes per-venue execution quality, not only fill counts and net PnL.
-- At least one replay or shadow report attributes losses into fees, slippage, and adverse-selection buckets.
+- [ ] A shadow run emits enough metrics to explain a negative net PnL without reading raw order logs manually.
+- [ ] The end-of-run summary includes per-venue execution quality, not only fill counts and net PnL.
+- [ ] At least one replay or shadow report attributes losses into fees, slippage, and adverse-selection buckets.
 
 **Example**
 - Example summary line: `net_pnl=-0.05 gross_alpha=0.14 fees=-0.06 spread_paid=-0.04 markout=-0.09 avg_hold_ms=820 venue_worst=OKX`.
@@ -42,9 +42,9 @@ Purpose: replace the current signal-to-submit loop with a target-position, state
 - Add tests covering partial fills, partial exits, cross-venue inventory, and inventory aging.
 
 **Acceptance criteria**
-- Ledger global position matches aggregate connector position across all venues within tolerance.
-- Venue-level inventory survives partial fills/exits and never requires inference from logs.
-- Tests cover long entry, partial unwind, full flatten, and venue divergence cases.
+- [ ] Ledger global position matches aggregate connector position across all venues within tolerance.
+- [ ] Venue-level inventory survives partial fills/exits and never requires inference from logs.
+- [ ] Tests cover long entry, partial unwind, full flatten, and venue divergence cases.
 
 **Example**
 - Example snapshot: `global_pos=0.75 | OKX=0.50 avg=87.54 age_ms=600 | KRAKEN=0.25 avg=87.55 age_ms=420`.
@@ -62,9 +62,9 @@ Purpose: replace the current signal-to-submit loop with a target-position, state
 - Log why each intent changed: stronger alpha, alpha decay, negative reversal, illiquid regime, stale inventory, etc.
 
 **Acceptance criteria**
-- No direct entry/exit orders are created from raw signal thresholds alone in the new path.
-- Identical signal inputs produce deterministic target-position outputs in unit tests.
-- The engine can explain every state change via machine-readable reason codes.
+- [ ] No direct entry/exit orders are created from raw signal thresholds alone in the new path.
+- [ ] Identical signal inputs produce deterministic target-position outputs in unit tests.
+- [ ] The engine can explain every state change via machine-readable reason codes.
 
 **Example**
 - Example: `signal_bps=8.0 risk=0.20 size_fraction=0.80 expected_cost=2.0 => target_pos=0.64 urgency=BALANCED`.
@@ -83,9 +83,9 @@ Purpose: replace the current signal-to-submit loop with a target-position, state
 - Add tests for fill progression, cancellation, replacement, and deadline expiry.
 
 **Acceptance criteria**
-- A target-position change creates or updates one parent execution plan, not ad hoc child orders every loop.
-- Remaining quantity and plan state are always observable.
-- Plans expire or escalate when their deadline passes.
+- [ ] A target-position change creates or updates one parent execution plan, not ad hoc child orders every loop.
+- [ ] Remaining quantity and plan state are always observable.
+- [ ] Plans expire or escalate when their deadline passes.
 
 **Example**
 - Example: `plan_id=17 side=BID total_qty=0.40 remaining=0.15 urgency=PASSIVE deadline_ms=1500`.
@@ -103,9 +103,9 @@ Purpose: replace the current signal-to-submit loop with a target-position, state
 - Make the scheduler horizon-aware so short-lived alpha trades more aggressively than long-lived alpha.
 
 **Acceptance criteria**
-- Execution style depends on urgency and horizon rather than a fixed IOC-style submit path.
-- Venue selection is based on expected shortfall, not just displayed best price.
-- Unit tests verify that high-toxicity or low-fill venues are deprioritized.
+- [ ] Execution style depends on urgency and horizon rather than a fixed IOC-style submit path.
+- [ ] Venue selection is based on expected shortfall, not just displayed best price.
+- [ ] Unit tests verify that high-toxicity or low-fill venues are deprioritized.
 
 **Example**
 - Example: `urgency=PASSIVE horizon_ticks=500 => post on KRAKEN best queue-adjusted venue`.
@@ -124,9 +124,9 @@ Purpose: replace the current signal-to-submit loop with a target-position, state
 - Expand shadow reports with before/after comparisons for churn, shortfall, and realized edge capture.
 
 **Acceptance criteria**
-- New shadow mode can run end-to-end without manual intervention.
-- A/B comparison on the same replay data shows equal or lower churn and equal or better net alpha capture.
-- State transitions are logged and testable.
+- [ ] New shadow mode can run end-to-end without manual intervention.
+- [ ] A/B comparison on the same replay data shows equal or lower churn and equal or better net alpha capture.
+- [ ] State transitions are logged and testable.
 
 **Example**
 - Example transition: `HOLDING -> REDUCING reason=alpha_decay current_pos=0.55 target_pos=0.20`.
@@ -144,9 +144,9 @@ Purpose: replace the current signal-to-submit loop with a target-position, state
 - Keep the old live path behind a fast rollback flag until the canary is stable.
 
 **Acceptance criteria**
-- Live canary can be disabled instantly through config without code changes.
-- Reconciliation or venue-health failures force flatten-or-halt behaviour within configured limits.
-- Live execution quality remains within pre-defined tolerance of shadow benchmarks for the same regime bucket.
+- [ ] Live canary can be disabled instantly through config without code changes.
+- [ ] Reconciliation or venue-health failures force flatten-or-halt behaviour within configured limits.
+- [ ] Live execution quality remains within pre-defined tolerance of shadow benchmarks for the same regime bucket.
 
 **Example**
 - Example rollout: `symbol=BTCUSDT venues=OKX,KRAKEN max_position=0.10 engine=new_execution_v1`.
@@ -164,9 +164,9 @@ Purpose: replace the current signal-to-submit loop with a target-position, state
 - Persist summary snapshots for post-trade analysis.
 
 **Acceptance criteria**
-- Venue scores change in response to measured execution outcomes, not hard-coded constants alone.
-- Routing decisions remain stable under noisy short-term conditions.
-- Reports show why a venue gained or lost priority over time.
+- [ ] Venue scores change in response to measured execution outcomes, not hard-coded constants alone.
+- [ ] Routing decisions remain stable under noisy short-term conditions.
+- [ ] Reports show why a venue gained or lost priority over time.
 
 **Example**
 - Example: `OKX passive_markout_100ms=-1.8bps => reduce passive posting weight; KRAKEN fill_prob=0.82 => increase passive preference`.

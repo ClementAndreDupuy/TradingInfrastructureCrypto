@@ -163,7 +163,7 @@ TEST(KrakenBookManagerRegression, VenueChecksumDoesNotTripGenericOrderBookValida
     handler.set_snapshot_callback(book.snapshot_handler());
 
     const std::string snapshot = std::string(
-        R"({"channel":"book","type":"snapshot","data":[{"symbol":"BTC/USD","bids":[{"price":"50000.0","qty":"1.50000000"},{"price":"49999.5","qty":"0.75000000"}],"asks":[{"price":"50001.0","qty":"2.00000000"},{"price":"50002.0","qty":"3.50000000"}],"checksum":)" +
+        R"({"channel":"book","type":"snapshot","data":[{"symbol":"BTC/USD","bids":[{"price":"50000.0","qty":"1.50000000"},{"price":"49999.5","qty":"0.75000000"}],"asks":[{"price":"50001.0","qty":"2.00000000"},{"price":"50002.0","qty":"3.50000000"}],"checksum":)") +
         std::to_string(snapshot_checksum()) +
         R"(,"timestamp":"2024-01-01T00:00:00.123456789Z"}]})";
 
