@@ -15,6 +15,7 @@ namespace trading {
         CircuitBreakerConfig circuit_breaker;
         GlobalRiskConfig global_risk;
         int64_t heartbeat_timeout_ns = KillSwitch::DEFAULT_HEARTBEAT_TIMEOUT_NS;
+        double target_range_usd = 50.0;
     };
 
     class RiskConfigLoader {
@@ -70,6 +71,9 @@ namespace trading {
             apply_double(values, "heartbeat_timeout_ms", heartbeat_timeout_ms);
             apply_double(values, "timeout_ms", heartbeat_timeout_ms);
             out.heartbeat_timeout_ns = static_cast<int64_t>(heartbeat_timeout_ms * 1e6);
+
+            apply_double(values, "target_range_usd", out.target_range_usd);
+            apply_double(values, "book_target_range_usd", out.target_range_usd);
 
             apply_double(values, "max_gross_notional", out.global_risk.max_gross_notional);
             apply_double(values, "max_portfolio_notional", out.global_risk.max_gross_notional);

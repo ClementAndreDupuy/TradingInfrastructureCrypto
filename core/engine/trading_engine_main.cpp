@@ -276,9 +276,13 @@ auto main(int argc, char **argv) -> int {
         OkxFeedHandler okx_feed(opts.symbol);
         CoinbaseFeedHandler coinbase_feed(opts.symbol);
 
-        constexpr double k_target_range_usd = 50.0;
-        auto levels_for_tick = [](double tick) -> size_t {
-            return static_cast<size_t>(k_target_range_usd / tick);
+        const double target_range_usd = risk_cfg.target_range_usd > 0.0 ? risk_cfg.target_range_usd : 50.0;
+        auto levels_for_tick = [target_range_usd](double tick) -> size_t {
+            if (tick <= 0.0) {
+                return 1;
+            }
+            const size_t levels = static_cast<size_t>(target_range_usd / tick);
+            return levels > 0 ? levels : 1;
         };
 
         const double binance_tick = engine::refresh_tick_size_for_book_init(
@@ -296,7 +300,7 @@ auto main(int argc, char **argv) -> int {
         const size_t coinbase_levels = levels_for_tick(coinbase_tick);
 
         LOG_INFO("Grid configuration",
-                 "target_range_usd", k_target_range_usd,
+                 "target_range_usd", target_range_usd,
                  "binance_tick", binance_tick, "binance_levels", binance_levels, "binance_range_usd",
                  binance_levels * binance_tick,
                  "kraken_tick", kraken_tick, "kraken_levels", kraken_levels, "kraken_range_usd",

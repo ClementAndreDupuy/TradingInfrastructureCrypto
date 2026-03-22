@@ -67,13 +67,14 @@ TEST(GlobalRiskControlsTest, DoesNotTripConcentrationWhenPortfolioHasSingleSymbo
 
 TEST(GlobalRiskControlsTest, LoadsGlobalLimitsFromConfigFile) {
     RiskRuntimeConfig cfg;
-    ASSERT_TRUE(RiskConfigLoader::load("config/dev/risk.yaml", cfg));
+    ASSERT_TRUE(RiskConfigLoader::load("config/live/risk.yaml", cfg));
 
-    EXPECT_EQ(cfg.circuit_breaker.max_orders_per_second, 10);
-    EXPECT_DOUBLE_EQ(cfg.global_risk.max_gross_notional, 500000.0);
-    EXPECT_DOUBLE_EQ(cfg.global_risk.max_venue_notional, 250000.0);
-    EXPECT_NEAR(cfg.global_risk.max_symbol_concentration, 0.35, 1e-12);
-    EXPECT_DOUBLE_EQ(cfg.global_risk.max_cross_venue_net_notional, 75000.0);
+    EXPECT_EQ(cfg.circuit_breaker.max_orders_per_second, 5);
+    EXPECT_DOUBLE_EQ(cfg.global_risk.max_gross_notional, 13000.0);
+    EXPECT_DOUBLE_EQ(cfg.global_risk.max_venue_notional, 6500.0);
+    EXPECT_NEAR(cfg.global_risk.max_symbol_concentration, 0.30, 1e-12);
+    EXPECT_DOUBLE_EQ(cfg.global_risk.max_cross_venue_net_notional, 2500.0);
+    EXPECT_DOUBLE_EQ(cfg.target_range_usd, 50.0);
 }
 
 } // namespace
