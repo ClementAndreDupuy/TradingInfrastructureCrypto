@@ -442,17 +442,16 @@ auto main(int argc, char** argv) -> int {
             if (opts.mode == "shadow") {
                 ++shadow_loop_index;
                 const double current_position = shadow_engine.net_position();
-                const bool long_signal = alpha_signal.signal_bps >= 3.0 && alpha_signal.risk_score < 0.65;
-                const bool short_signal = alpha_signal.signal_bps <= -3.0 && alpha_signal.risk_score < 0.65;
+                const bool buy_signal = alpha_signal.signal_bps >= 3.0 &&
+                                        alpha_signal.risk_score < 0.65;
                 const double target_qty = 0.5 * alpha_signal.size_fraction;
 
-                if (std::abs(current_position) > 1e-9) {
+                if (current_position > 1e-9) {
                     const bool exit_due_horizon = shadow_exit_loop >= 0 &&
                                                   static_cast<int64_t>(shadow_loop_index) >= shadow_exit_loop;
-                    const bool exit_due_flip = (current_position > 0.0 && !long_signal) ||
-                                               (current_position < 0.0 && !short_signal);
-                    if (exit_due_horizon || exit_due_flip) {
-                        const Side exit_side = current_position > 0.0 ? Side::ASK : Side::BID;
+                    const bool exit_due_signal = !buy_signal;
+                    if (exit_due_horizon || exit_due_signal) {
+                        constexpr Side exit_side = Side::ASK;
                         std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> exit_quotes{{
                             make_quote(Exchange::BINANCE, binance_book, run_binance, exit_side),
                             make_quote(Exchange::KRAKEN, kraken_book, run_kraken, exit_side),
@@ -460,13 +459,13 @@ auto main(int argc, char** argv) -> int {
                             make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, exit_side),
                         }};
                         const RoutingDecision exit_decision =
-                            sor.route(exit_side, std::abs(current_position), exit_quotes);
-                        submit_decision(exit_decision, exit_side, std::abs(current_position),
+                            sor.route(exit_side, current_position, exit_quotes);
+                        submit_decision(exit_decision, exit_side, current_position,
                                         exit_due_horizon ? "horizon_exit" : "signal_exit");
                         shadow_exit_loop = -1;
                     }
-                } else if (target_qty > 1e-6 && (long_signal || short_signal)) {
-                    const Side entry_side = long_signal ? Side::BID : Side::ASK;
+                } else if (target_qty > 1e-6 && buy_signal) {
+                    constexpr Side entry_side = Side::BID;
                     std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> entry_quotes{{
                         make_quote(Exchange::BINANCE, binance_book, run_binance, entry_side),
                         make_quote(Exchange::KRAKEN, kraken_book, run_kraken, entry_side),
@@ -543,8 +542,8 @@ auto main(int argc, char** argv) -> int {
         if (opts.mode == "shadow") {
             shadow_engine.check_fills();
             const double final_position = shadow_engine.net_position();
-            if (std::abs(final_position) > 1e-9) {
-                const Side exit_side = final_position > 0.0 ? Side::ASK : Side::BID;
+            if (final_position > 1e-9) {
+                constexpr Side exit_side = Side::ASK;
                 std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> exit_quotes{{
                     make_quote(Exchange::BINANCE, binance_book, run_binance, exit_side),
                     make_quote(Exchange::KRAKEN, kraken_book, run_kraken, exit_side),
@@ -552,7 +551,7 @@ auto main(int argc, char** argv) -> int {
                     make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, exit_side),
                 }};
                 const RoutingDecision exit_decision =
-                    sor.route(exit_side, std::abs(final_position), exit_quotes);
+                    sor.route(exit_side, final_position, exit_quotes);
                 const auto final_submit = [&](const RoutingDecision& decision) {
                     for (size_t i = 0; i < decision.child_count; ++i) {
                         const auto& child = decision.children[i];
