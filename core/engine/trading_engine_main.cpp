@@ -599,8 +599,8 @@ auto main(int argc, char **argv) -> int {
                                 reason_codes);
             }
 
-            const auto now = std::chrono::steady_clock::now();
-            if (run_reconciliation && now >= next_reconnect) {
+            const auto reconciliation_now = std::chrono::steady_clock::now();
+            if (run_reconciliation && reconciliation_now >= next_reconnect) {
                 bool recovered_connection = false;
                 recovered_connection |= connect_if_needed(binance, run_binance, reconciliation);
                 recovered_connection |= connect_if_needed(kraken, run_kraken, reconciliation);
@@ -614,15 +614,15 @@ auto main(int argc, char **argv) -> int {
                                  static_cast<int>(reconcile_res));
                     }
                 }
-                next_reconnect = now + reconnect_interval;
+                next_reconnect = reconciliation_now + reconnect_interval;
             }
 
-            if (run_reconciliation && now >= next_reconciliation) {
+            if (run_reconciliation && reconciliation_now >= next_reconciliation) {
                 const ConnectorResult drift_res = reconciliation.run_periodic_drift_check();
                 if (drift_res != ConnectorResult::OK) {
                     LOG_WARN("periodic_reconciliation failed", "code", static_cast<int>(drift_res));
                 }
-                next_reconciliation = now + reconciliation_interval;
+                next_reconciliation = reconciliation_now + reconciliation_interval;
             }
 
             std::this_thread::sleep_for(loop_interval);
