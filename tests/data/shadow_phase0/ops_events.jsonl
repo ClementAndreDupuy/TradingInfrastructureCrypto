@@ -1,0 +1,1 @@
+{"event":"shadow_health_summary","data_quality":{"per_venue":{"BINANCE":{"ticks_received":10,"ticks_used":10,"missing_venue_incidents":0,"rest_fallback_usage":0,"resnapshot_count":0},"OKX":{"ticks_received":10,"ticks_used":10,"missing_venue_incidents":0,"rest_fallback_usage":0,"resnapshot_count":0}}}}

@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <fstream>
+#include <string>
 #include <vector>
 
 using namespace trading;
@@ -138,6 +140,53 @@ TEST(ShadowEngineTest, CountsOpenedPositionsOnFirstFillOnly) {
 
     connector.check_fills();
     EXPECT_EQ(connector.opened_positions(), 1u);
+}
+
+TEST(ShadowEngineTest, FillLogIncludesPhaseZeroDiagnostics) {
+    BookManager book("BTCUSDT", Exchange::BINANCE, 1.0, 2048);
+    book.snapshot_handler()(make_snapshot(Exchange::BINANCE, 100.0, 5.0, 100.5, 5.0));
+
+    ShadowConfig cfg;
+    cfg.base_latency_ns = 0;
+    cfg.latency_jitter_ns = 0;
+    cfg.impact_slippage_per_notional_bps = 0.0;
+    std::strncpy(cfg.log_path, "/tmp/shadow_phase0_test.jsonl", sizeof(cfg.log_path) - 1);
+    std::remove(cfg.log_path);
+
+    ShadowConnector connector(Exchange::BINANCE, cfg, book);
+    ShadowIntentMetadata intent;
+    std::strncpy(intent.intent, "enter_long", sizeof(intent.intent) - 1);
+    std::strncpy(intent.reason, "alpha_positive", sizeof(intent.reason) - 1);
+    intent.signal_bps = 8.5;
+    intent.risk_score = 0.2;
+    intent.target_position = 0.5;
+    intent.current_position = 0.0;
+    intent.expected_cost_bps = 2.5;
+    intent.expected_edge_bps = 6.0;
+    intent.max_shortfall_bps = 3.0;
+    intent.decision_ts_ns = 1;
+    intent.urgency = ShadowUrgency::AGGRESSIVE;
+    connector.set_intent_metadata(intent);
+
+    ASSERT_EQ(connector.submit_order(make_limit(Exchange::BINANCE, Side::BID, 40, 101.0, 0.5)),
+              ConnectorResult::OK);
+
+    std::ifstream handle(cfg.log_path);
+    ASSERT_TRUE(handle.is_open());
+    std::string line;
+    bool found_fill = false;
+    while (std::getline(handle, line)) {
+        if (line.find("\"event\":\"FILL\"") == std::string::npos)
+            continue;
+        found_fill = true;
+        EXPECT_NE(line.find("\"implementation_shortfall_bps\":"), std::string::npos);
+        EXPECT_NE(line.find("\"edge_at_entry_bps\":"), std::string::npos);
+        EXPECT_NE(line.find("\"hold_time_ms\":"), std::string::npos);
+        EXPECT_NE(line.find("\"markout_bps\":"), std::string::npos);
+        EXPECT_NE(line.find("\"intent\":\"enter_long\""), std::string::npos);
+        EXPECT_NE(line.find("\"urgency\":\"AGGRESSIVE\""), std::string::npos);
+    }
+    EXPECT_TRUE(found_fill);
 }
 
 int main(int argc, char** argv) {

@@ -54,17 +54,87 @@ def analyse_decisions(rows: list[dict[str, Any]]) -> dict[str, Any]:
     pnl_series = [float(r.get("cumulative_pnl", 0.0)) for r in fills]
     net_pnl = pnl_series[-1] if pnl_series else 0.0
     exchanges: dict[str, dict[str, Any]] = {}
+    total_fees = 0.0
+    total_shortfall = 0.0
+    total_markout = 0.0
+    total_edge = 0.0
+    spread_paid = 0.0
+    spread_captured = 0.0
+    weighted_hold_ms = 0.0
+    weighted_inventory_age_ms = 0.0
+    fill_qty = 0.0
+    venue_contribution: dict[str, float] = {}
+    open_lots: list[dict[str, float]] = []
+    realised_slippage = 0.0
+    stale_inventory = 0.0
     for record in fills:
         exchange = str(record.get("exchange", "UNKNOWN"))
         if exchange not in exchanges:
-            exchanges[exchange] = {"fills": 0, "maker": 0, "taker": 0, "fees": 0.0}
+            exchanges[exchange] = {
+                "fills": 0,
+                "maker": 0,
+                "taker": 0,
+                "fees": 0.0,
+                "shortfall_bps": 0.0,
+                "markout_bps": 0.0,
+                "edge_bps": 0.0,
+                "hold_ms": 0.0,
+                "net_pnl_usd": 0.0,
+                "qty": 0.0,
+            }
+            venue_contribution[exchange] = 0.0
+        qty = float(record.get("qty", 0.0))
+        fee = float(record.get("fee_usd", 0.0))
+        fill_px = float(record.get("fill_px", 0.0))
+        shortfall_bps = float(record.get("implementation_shortfall_bps", 0.0))
+        markout_bps = float(record.get("markout_bps", 0.0))
+        edge_bps = float(record.get("edge_at_entry_bps", 0.0))
+        hold_ms = float(record.get("hold_time_ms", 0.0))
+        side = str(record.get("side", "BID"))
+        decision_mid = float(record.get("decision_mid", 0.0))
         exchanges[exchange]["fills"] += 1
         if record.get("maker"):
             exchanges[exchange]["maker"] += 1
         else:
             exchanges[exchange]["taker"] += 1
-        exchanges[exchange]["fees"] += float(record.get("fee_usd", 0.0))
-    fill_qty = sum(float(r.get("qty", 0.0)) for r in fills)
+        exchanges[exchange]["fees"] += fee
+        exchanges[exchange]["shortfall_bps"] += shortfall_bps * qty
+        exchanges[exchange]["markout_bps"] += markout_bps * qty
+        exchanges[exchange]["edge_bps"] += edge_bps * qty
+        exchanges[exchange]["hold_ms"] += hold_ms * qty
+        exchanges[exchange]["qty"] += qty
+        total_fees += fee
+        total_shortfall += shortfall_bps * qty
+        total_markout += markout_bps * qty
+        total_edge += edge_bps * qty
+        weighted_hold_ms += hold_ms * qty
+        weighted_inventory_age_ms += hold_ms * qty
+        fill_qty += qty
+        if decision_mid > 0.0 and fill_px > 0.0:
+            signed_spread_bps = abs(fill_px - decision_mid) / decision_mid * 10000.0
+            if record.get("maker"):
+                spread_captured += signed_spread_bps * qty
+            else:
+                spread_paid += signed_spread_bps * qty
+        contribution = -fee - (shortfall_bps + max(0.0, -markout_bps)) * qty * max(fill_px, 0.0) / 10000.0
+        venue_contribution[exchange] += contribution
+        exchanges[exchange]["net_pnl_usd"] += contribution
+        if hold_ms > 1000.0:
+            stale_inventory += qty
+        realised_slippage += shortfall_bps * qty * max(fill_px, 0.0) / 10000.0
+        remaining = qty
+        if side == "BID":
+            open_lots.append({"qty": qty, "ts_ns": float(record.get("ts_ns", 0.0))})
+        else:
+            while remaining > 1e-12 and open_lots:
+                lot = open_lots[0]
+                matched = min(remaining, float(lot["qty"]))
+                age_ms = max(0.0, (float(record.get("ts_ns", 0.0)) - float(lot["ts_ns"])) / 1000000.0)
+                weighted_inventory_age_ms += age_ms * matched
+                lot["qty"] = float(lot["qty"]) - matched
+                remaining -= matched
+                if float(lot["qty"]) <= 1e-12:
+                    open_lots.pop(0)
     max_dd = 0.0
     peak = 0.0
     for pnl in pnl_series:
@@ -73,6 +143,21 @@ def analyse_decisions(rows: list[dict[str, Any]]) -> dict[str, Any]:
         dd = pnl - peak
         if dd < max_dd:
             max_dd = dd
+    for exchange, stats in exchanges.items():
+        qty = stats["qty"]
+        if qty > 0.0:
+            stats["shortfall_bps"] /= qty
+            stats["markout_bps"] /= qty
+            stats["edge_bps"] /= qty
+            stats["hold_ms"] /= qty
+    avg_inventory_age_ms = weighted_inventory_age_ms / fill_qty if fill_qty else 0.0
+    avg_hold_ms = weighted_hold_ms / fill_qty if fill_qty else 0.0
+    fee_drag = -total_fees
+    slippage_cost = -(realised_slippage / fill_qty) if fill_qty else 0.0
+    adverse_selection_cost = -(total_markout / fill_qty) if fill_qty else 0.0
+    spread_paid_bps = spread_paid / fill_qty if fill_qty else 0.0
+    spread_captured_bps = spread_captured / fill_qty if fill_qty else 0.0
+    venue_worst = min(venue_contribution.items(), key=lambda item: item[1])[0] if venue_contribution else "UNKNOWN"
     return {
         "total_orders": total_orders,
         "total_fills": len(fills),
@@ -84,6 +169,23 @@ def analyse_decisions(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "max_drawdown_usd": max_dd,
         "total_volume": fill_qty,
         "exchanges": exchanges,
+        "fees_usd": total_fees,
+        "fee_drag_usd": fee_drag,
+        "implementation_shortfall_bps": total_shortfall / fill_qty if fill_qty else 0.0,
+        "markout_bps": total_markout / fill_qty if fill_qty else 0.0,
+        "edge_at_entry_bps": total_edge / fill_qty if fill_qty else 0.0,
+        "spread_paid_bps": spread_paid_bps,
+        "spread_captured_bps": spread_captured_bps,
+        "avg_hold_ms": avg_hold_ms,
+        "avg_inventory_age_ms": avg_inventory_age_ms,
+        "loss_buckets": {
+            "fees_usd": fee_drag,
+            "slippage_bps": slippage_cost,
+            "adverse_selection_bps": adverse_selection_cost,
+            "stale_inventory_ratio": stale_inventory / fill_qty if fill_qty else 0.0,
+        },
+        "venue_contribution": venue_contribution,
+        "venue_worst": venue_worst,
     }
 
 
@@ -256,16 +358,37 @@ def print_report(dec: dict[str, Any], sig: dict[str, Any], ops: dict[str, Any], 
         f"  Resting (open)         : {dec.get('total_resting', 0)}",
         f"  Fill rate              : {dec.get('fill_rate', 0.0):.2%}",
         f"  Net P&L                : ${dec.get('net_pnl_usd', 0.0):.4f}",
+        f"  Fee drag               : ${dec.get('fee_drag_usd', 0.0):.4f}",
         f"  Max drawdown           : ${dec.get('max_drawdown_usd', 0.0):.4f}",
         f"  Total volume (qty)     : {dec.get('total_volume', 0.0):.6f}",
+        f"  Impl shortfall         : {dec.get('implementation_shortfall_bps', 0.0):.4f} bps",
+        f"  Fill-to-markout        : {dec.get('markout_bps', 0.0):.4f} bps",
+        f"  Edge at entry          : {dec.get('edge_at_entry_bps', 0.0):.4f} bps",
+        f"  Spread paid/captured   : {dec.get('spread_paid_bps', 0.0):.4f} / {dec.get('spread_captured_bps', 0.0):.4f} bps",
+        f"  Avg hold / inv age     : {dec.get('avg_hold_ms', 0.0):.2f} / {dec.get('avg_inventory_age_ms', 0.0):.2f} ms",
+        f"  Worst venue            : {dec.get('venue_worst', 'UNKNOWN')}",
         "",
     ]
     if dec.get("exchanges"):
         lines.append("── Per-exchange breakdown ───────────────────────────────────")
         for exchange, stats in dec["exchanges"].items():
             maker_pct = stats["maker"] / stats["fills"] if stats["fills"] else 0.0
-            lines.append(f"  {exchange:10s}  fills={stats['fills']}  maker={maker_pct:.0%}  fees=${stats['fees']:.4f}")
+            lines.append(
+                f"  {exchange:10s}  fills={stats['fills']}  maker={maker_pct:.0%}"
+                f"  fees=${stats['fees']:.4f}  shortfall={stats['shortfall_bps']:.3f}bps"
+                f"  markout={stats['markout_bps']:.3f}bps  hold={stats['hold_ms']:.1f}ms"
+                f"  contrib=${stats['net_pnl_usd']:.4f}"
+            )
         lines.append("")
+    loss_buckets = dec.get("loss_buckets", {})
+    lines += [
+        "── Loss attribution ────────────────────────────────────────",
+        f"  Fees                  : ${loss_buckets.get('fees_usd', 0.0):.4f}",
+        f"  Slippage              : {loss_buckets.get('slippage_bps', 0.0):.4f} bps",
+        f"  Adverse selection     : {loss_buckets.get('adverse_selection_bps', 0.0):.4f} bps",
+        f"  Stale inventory ratio : {loss_buckets.get('stale_inventory_ratio', 0.0):.2%}",
+        "",
+    ]
     if sig:
         lines += [
             "── Neural alpha signal ──────────────────────────────────────",
@@ -376,15 +499,16 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Shadow session metrics rollup")
     ap.add_argument("--decisions", type=str, default=_DEFAULT_DECISIONS_LOG, help="C++ shadow engine decision log")
     ap.add_argument("--signals", type=str, default=_DEFAULT_SIGNALS_LOG, help="Neural alpha signal log")
+    ap.add_argument("--ops", type=str, default=_DEFAULT_OPS_LOG, help="Structured ops/runtime log")
     ap.add_argument("--out", type=str, default=None, help="Save text report to file")
     ap.add_argument("--prom", type=str, default=None, help="Save Prometheus metrics to file")
     ap.add_argument("--backtest-fill-rate", type=float, default=None, dest="backtest_fill_rate", help="Expected fill rate from backtest (for readiness check)")
     args = ap.parse_args()
     _require_log(args.decisions, "decisions")
-    _require_log(_DEFAULT_OPS_LOG, "ops")
+    _require_log(args.ops, "ops")
     dec_rows = load_jsonl(args.decisions)
     sig_rows = load_jsonl(args.signals)
-    ops_rows = load_jsonl(_DEFAULT_OPS_LOG)
+    ops_rows = load_jsonl(args.ops)
     dec = analyse_decisions(dec_rows)
     sig = analyse_signals(sig_rows)
     ops = analyse_ops_events(ops_rows)
