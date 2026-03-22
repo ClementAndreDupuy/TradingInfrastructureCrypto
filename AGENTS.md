@@ -44,9 +44,11 @@ Development guidelines of the project.
 [Development guidelines](/docs/DEVELOPMENT_GUIDELINES.md)
 
 ## Project TODOs
-All the project todos should be placed in the TODO file below, ranked by priority and severity.
+All the project todos should be placed in the TODO file below, ranked by priority and severity. For the execution-engine rebuild, keep the dedicated phased roadmap in `/docs/TODOS_EXECUTION_ENGINE.md` updated with clear acceptance criteria and examples, and update this `AGENTS.md` in the same commit whenever that roadmap changes.
 
 [TODOS file](/docs/TODOS.md)
+
+[Execution engine roadmap](/docs/TODOS_EXECUTION_ENGINE.md)
 
 ## Components
 
@@ -127,6 +129,10 @@ Use this as a lightweight operating checklist for future agent sessions.
    - Keep hot-path and cold-path boundaries explicit in commits.
    - Update scoped `AGENTS.md` whenever new conventions are introduced.
    - Prefer replay/integration validation whenever touching book/feed/risk paths.
+
+5. **Execution-engine roadmap hygiene**:
+   - Any change to the phased execution-engine plan must update both `docs/TODOS_EXECUTION_ENGINE.md` and this `AGENTS.md` in the same commit.
+   - Do not mark a roadmap phase complete unless every acceptance criterion in the roadmap file is satisfied.
 
 ## Known Issues Fixed
 
