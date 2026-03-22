@@ -30,6 +30,8 @@ arb_risk:
   max_book_age_ms:              250        # tighter staleness check
   max_open_arb_legs:            5
 
+  target_range_usd:             50.0      # Depth range used to size per-venue book grids
+
   # ── Flash crash / book corruption guard ──────────────────────────────────────
   max_price_deviation_bps:      200.0      # tighter than dev
 
