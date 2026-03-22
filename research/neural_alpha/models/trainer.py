@@ -50,6 +50,7 @@ class TrainerConfig:
     event_callback: Callable[[dict[str, float | int]], None] | None = None
     use_amp: bool = True
     validation_frac: float = 0.15
+    verbose: bool = True
 
 
 def _device() -> torch.device:
@@ -252,13 +253,15 @@ def _make_warmup_cosine_scheduler(
 def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
     cfg = cfg or TrainerConfig()
     device = _device()
-    print(f"Device: {device}")
+    if cfg.verbose:
+        print(f"Device: {device}")
     splits = split_walk_forward(df, n_folds=cfg.n_folds, train_frac=cfg.train_frac, min_samples=cfg.seq_len)
     ds_cfg = DatasetConfig(seq_len=cfg.seq_len)
     results = []
     for fold_idx, (train_df, test_df) in enumerate(splits):
-        print(f"\n{'=' * 60}")
-        print(f"Fold {fold_idx + 1}/{len(splits)}  train={len(train_df)} test={len(test_df)} ticks")
+        if cfg.verbose:
+            print(f"\n{'=' * 60}")
+            print(f"Fold {fold_idx + 1}/{len(splits)}  train={len(train_df)} test={len(test_df)} ticks")
         if cfg.fold_seed_offset > 0:
             seed = cfg.fold_seed_offset + fold_idx * 17
             torch.manual_seed(seed)
@@ -269,12 +272,14 @@ def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
             min_samples=cfg.seq_len,
         )
         if len(val_df) == 0:
-            print("  Skipping fold — not enough data for an internal validation slice.")
+            if cfg.verbose:
+                print("  Skipping fold — not enough data for an internal validation slice.")
             continue
         train_loader, val_loader, _, _ = build_loaders(fit_train_df, val_df, ds_cfg, batch_size=cfg.batch_size)
         _, test_loader, _, _ = build_loaders(train_df, test_df, ds_cfg, batch_size=cfg.batch_size)
         if len(train_loader.dataset) == 0 or len(val_loader.dataset) == 0 or len(test_loader.dataset) == 0:
-            print("  Skipping fold — not enough data for windows.")
+            if cfg.verbose:
+                print("  Skipping fold — not enough data for windows.")
             continue
         model = CryptoAlphaNet(
             d_spatial=cfg.d_spatial,
@@ -299,7 +304,8 @@ def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
             risk_pos_weight=risk_pos_weight,
         )
         if cfg.pretrain and cfg.pretrain_epochs > 0:
-            print(f"  Pre-training spatial encoder ({cfg.pretrain_epochs} epochs)…")
+            if cfg.verbose:
+                print(f"  Pre-training spatial encoder ({cfg.pretrain_epochs} epochs)…")
             pretrain_spatial(model, train_loader, cfg.pretrain_epochs, cfg.lr, device, cfg.adv_noise_std)
         optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
         scheduler = _make_warmup_cosine_scheduler(optimizer, warmup_epochs=cfg.lr_warmup_epochs, total_epochs=cfg.epochs)
@@ -326,9 +332,10 @@ def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
             if should_log:
                 val_metrics, _, _ = eval_epoch(model, val_loader, criterion, device, use_amp=cfg.use_amp)
                 current_selection_loss = selection_score(val_metrics, cfg)
-                print(
-                    f"  epoch {epoch + 1:3d}/{cfg.epochs}  train={train_metrics['loss_total']:.4f}  val={val_metrics['loss_total']:.4f}  sel={current_selection_loss:.4f}"
-                )
+                if cfg.verbose:
+                    print(
+                        f"  epoch {epoch + 1:3d}/{cfg.epochs}  train={train_metrics['loss_total']:.4f}  val={val_metrics['loss_total']:.4f}  sel={current_selection_loss:.4f}"
+                    )
                 if cfg.event_callback is not None:
                     cfg.event_callback({
                         "fold": fold_idx + 1,
@@ -346,7 +353,8 @@ def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
                 else:
                     epochs_no_improve += log_every
                     if cfg.early_stop_patience > 0 and epochs_no_improve >= cfg.early_stop_patience:
-                        print(f"  Early stopping at epoch {epoch + 1} (no improvement for {epochs_no_improve} epochs)")
+                        if cfg.verbose:
+                            print(f"  Early stopping at epoch {epoch + 1} (no improvement for {epochs_no_improve} epochs)")
                         break
         if best_state is not None:
             model.load_state_dict(best_state)
@@ -368,5 +376,6 @@ def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
                 "model_state": best_state,
             }
         )
-        print(f"  Fold {fold_idx + 1} best selection score: {best_selection_loss:.4f}")
+        if cfg.verbose:
+            print(f"  Fold {fold_idx + 1} best selection score: {best_selection_loss:.4f}")
     return results

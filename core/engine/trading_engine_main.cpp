@@ -90,6 +90,38 @@ namespace {
         std::signal(SIGTERM, stop_handler);
     }
 
+    struct PortfolioIntentLogState {
+        std::string intent;
+        std::string reason;
+        std::string reason_codes;
+        double target_position = 0.0;
+        bool flatten_now = false;
+        std::chrono::steady_clock::time_point last_log_time{};
+    };
+
+    auto portfolio_intent_changed(const PortfolioIntentLogState &state,
+                                  const trading::ShadowIntentMetadata &intent_metadata,
+                                  const std::string &reason_codes,
+                                  const trading::PortfolioIntent &intent) -> bool {
+        return state.intent != intent_metadata.intent || state.reason != intent_metadata.reason ||
+               state.reason_codes != reason_codes ||
+               std::abs(state.target_position - intent.target_global_position) > 1e-6 ||
+               state.flatten_now != intent.flatten_now;
+    }
+
+    void update_portfolio_intent_log_state(PortfolioIntentLogState &state,
+                                           const trading::ShadowIntentMetadata &intent_metadata,
+                                           const std::string &reason_codes,
+                                           const trading::PortfolioIntent &intent,
+                                           std::chrono::steady_clock::time_point now) {
+        state.intent = intent_metadata.intent;
+        state.reason = intent_metadata.reason;
+        state.reason_codes = reason_codes;
+        state.target_position = intent.target_global_position;
+        state.flatten_now = intent.flatten_now;
+        state.last_log_time = now;
+    }
+
     auto make_child_order(const char *symbol, trading::Exchange exchange, trading::Side side,
                           double qty, double price, uint64_t client_order_id) -> trading::Order {
         trading::Order order;
@@ -386,6 +418,8 @@ auto main(int argc, char **argv) -> int {
 
         uint64_t next_id = 1;
         AlphaSignal last_alpha_signal{};
+        PortfolioIntentLogState portfolio_log_state;
+        constexpr auto portfolio_log_heartbeat = std::chrono::seconds(15);
 
         LOG_INFO("trading_engine started", "mode", opts.mode.c_str(), "venues", opts.venues.c_str(),
                  "symbol", opts.symbol.c_str());
@@ -531,14 +565,24 @@ auto main(int argc, char **argv) -> int {
                 build_intent_metadata(alpha_signal, portfolio_snapshot.global_position, intent);
             const std::string reason_codes = join_reason_codes(intent);
 
-            LOG_INFO("portfolio intent", "intent", intent_metadata.intent, "reason",
-                     intent_metadata.reason, "reason_codes", reason_codes.c_str(),
-                     "signal_bps", alpha_signal.signal_bps, "risk_score", alpha_signal.risk_score,
-                     "current_position", portfolio_snapshot.global_position, "target_position",
-                     intent.target_global_position, "position_delta", intent.position_delta,
-                     "expected_cost_bps", intent.expected_cost_bps, "max_shortfall_bps",
-                     intent.max_shortfall_bps, "flatten_now", intent.flatten_now ? 1 : 0,
-                     "urgency", static_cast<int>(intent.urgency));
+            const auto now = std::chrono::steady_clock::now();
+            const bool should_log_portfolio_intent =
+                portfolio_log_state.last_log_time == std::chrono::steady_clock::time_point{} ||
+                portfolio_intent_changed(portfolio_log_state, intent_metadata, reason_codes, intent) ||
+                now - portfolio_log_state.last_log_time >= portfolio_log_heartbeat;
+
+            if (should_log_portfolio_intent) {
+                update_portfolio_intent_log_state(portfolio_log_state, intent_metadata, reason_codes,
+                                                  intent, now);
+                LOG_INFO("portfolio intent", "intent", intent_metadata.intent, "reason",
+                         intent_metadata.reason, "reason_codes", reason_codes.c_str(),
+                         "signal_bps", alpha_signal.signal_bps, "risk_score", alpha_signal.risk_score,
+                         "current_position", portfolio_snapshot.global_position, "target_position",
+                         intent.target_global_position, "position_delta", intent.position_delta,
+                         "expected_cost_bps", intent.expected_cost_bps, "max_shortfall_bps",
+                         intent.max_shortfall_bps, "flatten_now", intent.flatten_now ? 1 : 0,
+                         "urgency", static_cast<int>(intent.urgency));
+            }
 
             if (intent.position_delta > 1e-6) {
                 const RoutingDecision entry_decision = sor.route(Side::BID, intent.position_delta, bid_quotes);
