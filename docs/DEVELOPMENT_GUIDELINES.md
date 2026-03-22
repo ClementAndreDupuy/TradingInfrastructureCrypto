@@ -11,4 +11,4 @@
 9. No performance regression in C++, should always be faster 
 10. Make sure that all the C++ code you are writing is matching the .clang expectation
 11. Chrono semantics are mandatory — use `std::chrono::system_clock` as a watch (real wall-clock timestamps / “what time is it?”) and `std::chrono::steady_clock` as a stopwatch (durations, elapsed time, freshness, deadlines / “how much time passed?”). Never use `steady_clock` as a persisted or cross-process timestamp.
-12. Files should not exceed 500 lines, otherwise we need to restructure the code
+12. Files should not exceed 750 lines, otherwise we need to restructure the code
