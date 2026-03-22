@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from ..data.dataset import DatasetConfig, build_loaders, split_walk_forward
+from ..data.dataset import DatasetConfig, build_loaders, split_train_validation, split_walk_forward
 from .model import CryptoAlphaNet, MultiTaskLoss
 
 
@@ -49,6 +49,7 @@ class TrainerConfig:
     fold_seed_offset: int = 1337
     event_callback: Callable[[dict[str, float | int]], None] | None = None
     use_amp: bool = True
+    validation_frac: float = 0.15
 
 
 def _device() -> torch.device:
@@ -262,8 +263,17 @@ def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
             seed = cfg.fold_seed_offset + fold_idx * 17
             torch.manual_seed(seed)
             np.random.seed(seed & 0xFFFFFFFF)
-        train_loader, test_loader, _, _ = build_loaders(train_df, test_df, ds_cfg, batch_size=cfg.batch_size)
-        if len(train_loader.dataset) == 0 or len(test_loader.dataset) == 0:
+        fit_train_df, val_df = split_train_validation(
+            train_df,
+            validation_frac=cfg.validation_frac,
+            min_samples=cfg.seq_len,
+        )
+        if len(val_df) == 0:
+            print("  Skipping fold — not enough data for an internal validation slice.")
+            continue
+        train_loader, val_loader, _, _ = build_loaders(fit_train_df, val_df, ds_cfg, batch_size=cfg.batch_size)
+        _, test_loader, _, _ = build_loaders(train_df, test_df, ds_cfg, batch_size=cfg.batch_size)
+        if len(train_loader.dataset) == 0 or len(val_loader.dataset) == 0 or len(test_loader.dataset) == 0:
             print("  Skipping fold — not enough data for windows.")
             continue
         model = CryptoAlphaNet(
@@ -314,7 +324,7 @@ def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
             scheduler.step()
             should_log = (epoch + 1) % log_every == 0 or epoch == cfg.epochs - 1
             if should_log:
-                val_metrics, outputs, labels = eval_epoch(model, test_loader, criterion, device, use_amp=cfg.use_amp)
+                val_metrics, _, _ = eval_epoch(model, val_loader, criterion, device, use_amp=cfg.use_amp)
                 current_selection_loss = selection_score(val_metrics, cfg)
                 print(
                     f"  epoch {epoch + 1:3d}/{cfg.epochs}  train={train_metrics['loss_total']:.4f}  val={val_metrics['loss_total']:.4f}  sel={current_selection_loss:.4f}"
@@ -340,11 +350,13 @@ def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
                         break
         if best_state is not None:
             model.load_state_dict(best_state)
-        val_metrics, outputs, labels = eval_epoch(model, test_loader, criterion, device, use_amp=cfg.use_amp)
+        val_metrics, _, _ = eval_epoch(model, val_loader, criterion, device, use_amp=cfg.use_amp)
+        test_metrics, outputs, labels = eval_epoch(model, test_loader, criterion, device, use_amp=cfg.use_amp)
         results.append(
             {
                 "fold": fold_idx + 1,
-                "metrics": val_metrics,
+                "metrics": test_metrics,
+                "validation_metrics": val_metrics,
                 "selection_score": selection_score(val_metrics, cfg),
                 "best_selection_score": best_selection_loss,
                 "best_metrics": best_metrics if best_metrics is not None else dict(val_metrics),
