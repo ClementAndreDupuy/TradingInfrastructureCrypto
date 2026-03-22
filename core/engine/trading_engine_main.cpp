@@ -369,6 +369,7 @@ auto main(int argc, char **argv) -> int {
         uint64_t next_id = 1;
         uint64_t shadow_loop_index = 0;
         int64_t shadow_exit_loop = -1;
+        AlphaSignal last_alpha_signal{};
 
         LOG_INFO("trading_engine started", "mode", opts.mode.c_str(), "venues", opts.venues.c_str(),
                  "symbol", opts.symbol.c_str());
@@ -382,6 +383,7 @@ auto main(int argc, char **argv) -> int {
             (void) kill_switch.check_heartbeat();
 
             const AlphaSignal alpha_signal = alpha_reader.read();
+            last_alpha_signal = alpha_signal;
             if (opts.mode == "shadow") {
                 shadow_engine.check_fills();
             }
@@ -622,7 +624,7 @@ auto main(int argc, char **argv) -> int {
                         sor.route(exit_side, final_position, exit_quotes);
                 const auto final_submit = [&](const RoutingDecision &decision) {
                     const ShadowIntentMetadata final_metadata =
-                            build_intent_metadata("flatten", "session_end", alpha_signal,
+                            build_intent_metadata("flatten", "session_end", last_alpha_signal,
                                                   final_position, 0.0, 6.0, 7.5);
                     for (size_t i = 0; i < decision.child_count; ++i) {
                         const auto &child = decision.children[i];
