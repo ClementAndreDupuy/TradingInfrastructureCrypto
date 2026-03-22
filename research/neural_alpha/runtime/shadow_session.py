@@ -70,10 +70,10 @@ from ..pipeline import (
 )
 
 _SIGNAL_FILE = "/tmp/trt_ipc/neural_alpha_signal.bin"
-_SIGNAL_SIZE = 32
+_SIGNAL_SIZE = 48
 _SEQ_FMT = "=Q"
 _SEQ_OFFSET = 0
-_DATA_FMT = "=ddq"
+_DATA_FMT = "=dddqq"
 _DATA_OFFSET = 8
 _REGIME_SIGNAL_FILE = "/tmp/trt_ipc/regime_signal.bin"
 _MAX_EXCHANGE_JUMP_NS = 60 * 1000000000
@@ -132,11 +132,20 @@ class _SignalPublisher:
         self._f.flush()
         self._mm = mmap.mmap(self._f.fileno(), _SIGNAL_SIZE)
 
-    def publish(self, signal_bps: float, risk_score: float) -> None:
+    def publish(self, signal_bps: float, risk_score: float, size_fraction: float, horizon_ticks: int) -> None:
         ts_ns = time.time_ns()
         seq: int = struct.unpack_from(_SEQ_FMT, self._mm, _SEQ_OFFSET)[0]
         struct.pack_into(_SEQ_FMT, self._mm, _SEQ_OFFSET, seq + 1)
-        struct.pack_into(_DATA_FMT, self._mm, _DATA_OFFSET, signal_bps, risk_score, ts_ns)
+        struct.pack_into(
+            _DATA_FMT,
+            self._mm,
+            _DATA_OFFSET,
+            signal_bps,
+            risk_score,
+            float(size_fraction),
+            int(horizon_ticks),
+            ts_ns,
+        )
         struct.pack_into(_SEQ_FMT, self._mm, _SEQ_OFFSET, seq + 2)
         self._mm.flush()
 
@@ -528,6 +537,9 @@ class NeuralAlphaShadowSession:
         risk = float(out["risk"][0, -1].cpu().item())
         primary_signal = float(ret[2])
         raw_signal_bps = primary_signal * 10000.0
+        horizon_candidates = (1, 10, 100, 500)
+        horizon_idx = int(np.argmax(np.abs(ret)))
+        selected_horizon_ticks = int(horizon_candidates[horizon_idx])
         if self._secondary_model is not None:
             with torch.no_grad():
                 out2 = self._secondary_model(lob_t, scalar_t)
@@ -557,7 +569,10 @@ class NeuralAlphaShadowSession:
             gating_reasons.append("safe_mode_gate")
         for reason in set(gating_reasons):
             self._gating_reason_counts[reason] += 1
-        self._publisher.publish(signal_bps, risk)
+        size_fraction = float(np.clip(1.0 - risk, 0.0, 1.0))
+        if signal_bps == 0.0:
+            size_fraction = 0.0
+        self._publisher.publish(signal_bps, risk, size_fraction, selected_horizon_ticks)
         regime_probs = {"p_calm": 1.0, "p_trending": 0.0, "p_shock": 0.0, "p_illiquid": 0.0}
         if self._regime_artifact is not None:
             try:
@@ -588,6 +603,8 @@ class NeuralAlphaShadowSession:
             "ret_mid_bps": signal_bps,
             "ret_long_bps": float(ret[3]) * 10000.0,
             "risk_score": risk,
+            "size_fraction": size_fraction,
+            "horizon_ticks": selected_horizon_ticks,
             "signal": float(ret[2]),
             "dir_p_down": float(dir_probs[0]),
             "dir_p_flat": float(dir_probs[1]),
@@ -751,7 +768,7 @@ class NeuralAlphaShadowSession:
                 self._maybe_continuous_train()
                 signal_info = self._infer()
                 if signal_info is None:
-                    self._publisher.publish(0.0, 0.0)
+                    self._publisher.publish(0.0, 0.0, 0.0, 0)
                 if signal_info:
                     if self._signal_records:
                         previous_record = self._signal_records[-1]

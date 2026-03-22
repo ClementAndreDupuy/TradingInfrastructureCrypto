@@ -125,6 +125,38 @@ BkP4Jrped1IovnHgwlHGawEq+y3OCAXo+A==
                                R"({"results":[{"success":true}]})");
 }
 
+TEST(ConnectorContractTest, KrakenSubmitMapsBusinessErrors) {
+    ScopedMockTransport transport([](const char* method, const std::string&, const std::string&,
+                                     const std::vector<std::string>&) {
+        if (std::strcmp(method, "POST") == 0) {
+            return http::HttpResponse{200, R"({"error":["EOrder:Insufficient funds"]})"};
+        }
+        return http::HttpResponse{404, ""};
+    });
+
+    KrakenConnector c("", "", "https://kraken.test");
+    EXPECT_EQ(c.connect(), ConnectorResult::OK);
+
+    const Order o = make_order<KrakenConnector>(Exchange::KRAKEN, 601, "XBTUSD");
+    EXPECT_EQ(c.submit_order(o), ConnectorResult::ERROR_INSUFFICIENT_FUNDS);
+}
+
+TEST(ConnectorContractTest, OkxSubmitMapsBusinessErrors) {
+    ScopedMockTransport transport([](const char* method, const std::string&, const std::string&,
+                                     const std::vector<std::string>&) {
+        if (std::strcmp(method, "POST") == 0) {
+            return http::HttpResponse{200, R"({"code":"1","msg":"failure","data":[{"sCode":"51008","sMsg":"Order failed. Insufficient balance."}]})"};
+        }
+        return http::HttpResponse{404, ""};
+    });
+
+    OkxConnector c("", "", "pass", "https://okx.test");
+    EXPECT_EQ(c.connect(), ConnectorResult::OK);
+
+    const Order o = make_order<OkxConnector>(Exchange::OKX, 602, "BTC-USDT-SWAP");
+    EXPECT_EQ(c.submit_order(o), ConnectorResult::ERROR_INSUFFICIENT_FUNDS);
+}
+
 TEST(ConnectorContractTest, RejectsMalformedVenueResponses) {
     ScopedMockTransport transport([](const char* method, const std::string&, const std::string&,
                                      const std::vector<std::string>&) {

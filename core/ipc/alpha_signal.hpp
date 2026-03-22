@@ -13,13 +13,15 @@ namespace trading {
 struct AlphaSignal {
     double signal_bps = 0.0;
     double risk_score = 0.5;
+    double size_fraction = 0.0;
+    int64_t horizon_ticks = 0;
     int64_t ts_ns = 0;
 };
 
 class AlphaSignalReader {
   public:
 
-    static constexpr size_t FILE_SIZE = 32;
+    static constexpr size_t FILE_SIZE = 48;
     static constexpr int64_t STALE_NS = 2'000'000'000LL;
     static constexpr double DEFAULT_RISK = 0.5;
     static constexpr int k_max_retries = 16;
@@ -76,7 +78,9 @@ class AlphaSignalReader {
             AlphaSignal s;
             std::memcpy(&s.signal_bps, ptr_ + 8, sizeof(s.signal_bps));
             std::memcpy(&s.risk_score, ptr_ + 16, sizeof(s.risk_score));
-            std::memcpy(&s.ts_ns, ptr_ + 24, sizeof(s.ts_ns));
+            std::memcpy(&s.size_fraction, ptr_ + 24, sizeof(s.size_fraction));
+            std::memcpy(&s.horizon_ticks, ptr_ + 32, sizeof(s.horizon_ticks));
+            std::memcpy(&s.ts_ns, ptr_ + 40, sizeof(s.ts_ns));
 
             std::atomic_thread_fence(std::memory_order_acquire);
             uint64_t seq2;

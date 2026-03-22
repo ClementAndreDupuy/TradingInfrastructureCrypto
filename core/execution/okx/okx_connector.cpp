@@ -82,6 +82,44 @@ auto parse_order_id(const std::string& body, std::string& venue_order_id) -> boo
     return !venue_order_id.empty();
 }
 
+auto classify_okx_business_error(const std::string& body) -> ConnectorResult {
+    const auto json = nlohmann::json::parse(body, nullptr, false);
+    if (json.is_discarded()) {
+        return ConnectorResult::ERROR_UNKNOWN;
+    }
+
+    const std::string top_code = json.value("code", std::string(""));
+    if (!top_code.empty() && top_code != "0") {
+        if (top_code == "50011") {
+            return ConnectorResult::ERROR_RATE_LIMIT;
+        }
+        if (top_code == "50113" || top_code == "50114") {
+            return ConnectorResult::AUTH_FAILED;
+        }
+        return ConnectorResult::ERROR_INVALID_ORDER;
+    }
+
+    const auto& data = json["data"];
+    if (!data.is_array() || data.empty()) {
+        return ConnectorResult::ERROR_UNKNOWN;
+    }
+
+    const std::string sub_code = data[0].value("sCode", std::string(""));
+    if (sub_code.empty() || sub_code == "0") {
+        return ConnectorResult::ERROR_UNKNOWN;
+    }
+    if (sub_code == "50011") {
+        return ConnectorResult::ERROR_RATE_LIMIT;
+    }
+    if (sub_code == "50113" || sub_code == "50114") {
+        return ConnectorResult::AUTH_FAILED;
+    }
+    if (sub_code == "51008") {
+        return ConnectorResult::ERROR_INSUFFICIENT_FUNDS;
+    }
+    return ConnectorResult::ERROR_INVALID_ORDER;
+}
+
 auto parse_order_status(const std::string& raw) -> OrderState {
     if (raw == "live") {
         return OrderState::OPEN;
@@ -243,7 +281,7 @@ auto OkxConnector::submit_to_venue(const Order& order, const std::string& idempo
     }
 
     if (!parse_order_id(resp.body, venue_order_id)) {
-        return ConnectorResult::ERROR_UNKNOWN;
+        return classify_okx_business_error(resp.body);
     }
     return ConnectorResult::OK;
 }
