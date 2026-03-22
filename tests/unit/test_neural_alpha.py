@@ -40,6 +40,7 @@ from research.neural_alpha.data.dataset import (
     DatasetConfig,
     LOBDataset,
     rolling_normalise,
+    split_train_validation,
     split_walk_forward,
 )
 from research.neural_alpha.data.features import (
@@ -56,6 +57,7 @@ from research.neural_alpha.models.model import (
     MultiTaskLoss,
     TemporalEncoder,
 )
+from research.neural_alpha.models.trainer import TrainerConfig, walk_forward_train
 from research.neural_alpha.runtime.shadow_session import (
     NeuralAlphaShadowSession,
     ShadowSessionConfig,
@@ -324,6 +326,38 @@ class TestDataset:
             test_ds = LOBDataset(test_df, cfg)
             assert len(train_ds) > 0
             assert len(test_ds) > 0
+
+    def test_split_train_validation_is_chronological(self, medium_df: pl.DataFrame) -> None:
+        fit_train_df, val_df = split_train_validation(medium_df, validation_frac=0.2, min_samples=32)
+        assert len(fit_train_df) + len(val_df) == len(medium_df)
+        assert len(val_df) > 0
+        assert fit_train_df["timestamp_ns"].max() < val_df["timestamp_ns"].min()
+
+    def test_split_train_validation_returns_empty_validation_when_fold_too_short(self) -> None:
+        tiny = _make_lob_df(n_ticks=40, seed=3)
+        fit_train_df, val_df = split_train_validation(tiny, validation_frac=0.5, min_samples=24)
+        assert len(fit_train_df) == len(tiny)
+        assert len(val_df) == 0
+
+    def test_walk_forward_train_uses_internal_validation_for_selection(self) -> None:
+        df = _make_lob_df(n_ticks=240, seed=4)
+        cfg = TrainerConfig(
+            seq_len=16,
+            epochs=1,
+            batch_size=8,
+            n_folds=2,
+            train_frac=0.75,
+            validation_frac=0.2,
+            log_every_epochs=1,
+            use_amp=False,
+        )
+        results = walk_forward_train(df, cfg)
+        assert results
+        for result in results:
+            assert "validation_metrics" in result
+            assert result["selection_score"] == pytest.approx(
+                result["best_selection_score"], rel=1e-6, abs=1e-6
+            )
 
     def test_model_raises_on_invalid_lob_tensor_shape(self) -> None:
         model = CryptoAlphaNet(d_spatial=16, d_temporal=32, seq_len=8)

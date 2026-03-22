@@ -127,6 +127,31 @@ def split_walk_forward(
     return splits
 
 
+def split_train_validation(
+    train_df: pl.DataFrame,
+    validation_frac: float = 0.15,
+    min_samples: int = 1,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Split a training fold into chronological train/validation segments.
+
+    The validation slice is always the newest tail of the fold so model
+    selection remains point-in-time safe. If the fold is too short to satisfy
+    ``min_samples`` on both sides, the original training data is returned with
+    an empty validation frame so callers can decide how to handle the fallback.
+    """
+    if len(train_df) == 0:
+        return (train_df, train_df.clear())
+    if not 0.0 < validation_frac < 1.0:
+        raise ValueError("validation_frac must be between 0 and 1")
+
+    val_size = max(min_samples, int(round(len(train_df) * validation_frac)))
+    if len(train_df) - val_size < min_samples:
+        return (train_df, train_df.clear())
+
+    split_idx = len(train_df) - val_size
+    return (train_df[:split_idx], train_df[split_idx:])
+
+
 def build_loaders(
     train_df: pl.DataFrame,
     test_df: pl.DataFrame,
