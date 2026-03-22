@@ -78,7 +78,9 @@ class GlobalRiskControls {
             signed_notional;
 
         const double gross_before = gross_notional_.load(std::memory_order_acquire);
-        if (cfg_.max_symbol_concentration > 0.0 && gross_before > 0.0 && gross_after > 0.0) {
+        const double other_symbol_gross_before = gross_before - symbol_gross_before;
+        if (cfg_.max_symbol_concentration > 0.0 && other_symbol_gross_before > 0.0 &&
+            gross_after > 0.0) {
             const double concentration = symbol_gross_after / gross_after;
             if (concentration > cfg_.max_symbol_concentration)
                 return GlobalRiskCheckResult::CONCENTRATION_CAP;
