@@ -68,6 +68,7 @@ class NeuralAlphaMarketMaker {
         const double mid = book_.mid_price();
         if (mid <= 0.0)
             return;
+        om_.update_mid_price(cfg_.symbol, cfg_.exchange, mid);
 
         check_stop(mid, sig);
 
