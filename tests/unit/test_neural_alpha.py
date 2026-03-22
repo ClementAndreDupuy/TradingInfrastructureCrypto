@@ -26,10 +26,14 @@ sys.path.insert(0, str(ROOT))
 
 from research.neural_alpha.evaluation.alpha_regression import (
     analyse_alpha,
+    analyse_direction_calibration,
+    analyse_flat_threshold_sensitivity,
     compute_hit_rate,
     compute_ic,
     compute_turnover,
+    expected_calibration_error,
     ols_regression,
+    sweep_direction_thresholds,
 )
 from research.neural_alpha.evaluation.backtest import BacktestConfig, NeuralAlphaBacktest
 from research.neural_alpha.data.dataset import (
@@ -436,6 +440,77 @@ class TestAlphaRegression:
         ]
         metrics = analyse_alpha(fold_results)
         assert metrics.n_samples == 50
+
+    def test_expected_calibration_error_matches_simple_case(self) -> None:
+        confidences = np.array([0.9, 0.8, 0.4, 0.3], dtype=np.float32)
+        outcomes = np.array([1.0, 1.0, 0.0, 0.0], dtype=np.float32)
+        ece, bins = expected_calibration_error(confidences, outcomes, n_bins=2)
+        assert ece == pytest.approx(0.25)
+        assert len(bins) == 2
+
+    def test_direction_calibration_uses_sign_aligned_probabilities(self) -> None:
+        fold_results = [
+            {
+                "fold": 1,
+                "predictions": np.array(
+                    [[0.0, 0.0, 0.8, 0.0], [0.0, 0.0, -0.7, 0.0], [0.0, 0.0, 0.0, 0.0]],
+                    dtype=np.float32,
+                ),
+                "direction_probs": np.array(
+                    [[0.1, 0.2, 0.7], [0.6, 0.1, 0.3], [0.2, 0.6, 0.2]],
+                    dtype=np.float32,
+                ),
+                "labels": np.array(
+                    [[0.0, 0.0, 0.5, 0.0, 2.0, 0.0], [0.0, 0.0, -0.4, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 1.0, 0.0]],
+                    dtype=np.float32,
+                ),
+            }
+        ]
+        report = analyse_direction_calibration(fold_results, horizon_idx=2, n_bins=4)
+        assert report.mean_signed_precision == pytest.approx(1.0)
+        assert report.mean_confidence == pytest.approx(0.65)
+        assert report.coverage == pytest.approx(2.0 / 3.0)
+
+    def test_threshold_sweep_reduces_coverage_as_floor_rises(self) -> None:
+        fold_results = [
+            {
+                "fold": 1,
+                "predictions": np.array(
+                    [[0.0, 0.0, 0.8, 0.0], [0.0, 0.0, -0.7, 0.0], [0.0, 0.0, 0.6, 0.0]],
+                    dtype=np.float32,
+                ),
+                "direction_probs": np.array(
+                    [[0.1, 0.2, 0.7], [0.45, 0.3, 0.25], [0.2, 0.3, 0.55]],
+                    dtype=np.float32,
+                ),
+                "labels": np.array(
+                    [[0.0, 0.0, 0.5, 0.0, 2.0, 0.0], [0.0, 0.0, -0.4, 0.0, 0.0, 0.0], [0.0, 0.0, 0.2, 0.0, 2.0, 0.0]],
+                    dtype=np.float32,
+                ),
+            }
+        ]
+        sweep = sweep_direction_thresholds(fold_results, thresholds=[0.4, 0.6], horizon_idx=2)
+        assert sweep[0].coverage > sweep[1].coverage
+        assert sweep[0].hit_rate >= sweep[1].hit_rate
+
+    def test_flat_threshold_sensitivity_expands_flat_share(self) -> None:
+        fold_results = [
+            {
+                "fold": 1,
+                "predictions": np.zeros((4, 4), dtype=np.float32),
+                "labels": np.array(
+                    [
+                        [0.0, 0.0, -0.00003, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, -0.00001, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.00001, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.00004, 0.0, 2.0, 0.0],
+                    ],
+                    dtype=np.float32,
+                ),
+            }
+        ]
+        points = analyse_flat_threshold_sensitivity(fold_results, thresholds_bps=[0.1, 0.3], horizon_idx=2)
+        assert points[1].flat_share > points[0].flat_share
 
 
 class TestShadowSessionTraining:
