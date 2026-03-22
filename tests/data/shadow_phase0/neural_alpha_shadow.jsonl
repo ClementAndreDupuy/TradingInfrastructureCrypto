@@ -1,0 +1,2 @@
+{"event_index":1,"session_elapsed_ns":0,"exchange":"BINANCE","signal":0.0008,"ret_mid_bps":8.0,"risk_score":0.2,"mid_price":100.0,"timestamp_exchange_ns":1000000000,"timestamp_local_ns":1000000100,"gating_reasons":[]}
+{"event_index":2,"session_elapsed_ns":1000000000,"exchange":"OKX","signal":-0.00025,"ret_mid_bps":-2.5,"risk_score":0.3,"mid_price":99.97,"timestamp_exchange_ns":2000000000,"timestamp_local_ns":2000000100,"gating_reasons":[]}

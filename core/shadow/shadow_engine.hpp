@@ -14,6 +14,26 @@
 #include <vector>
 
 namespace trading {
+    enum class ShadowUrgency : uint8_t {
+        PASSIVE = 0,
+        BALANCED = 1,
+        AGGRESSIVE = 2,
+    };
+
+    struct ShadowIntentMetadata {
+        char intent[24] = "unspecified";
+        char reason[48] = "none";
+        double signal_bps = 0.0;
+        double risk_score = 0.0;
+        double target_position = 0.0;
+        double current_position = 0.0;
+        double expected_cost_bps = 0.0;
+        double expected_edge_bps = 0.0;
+        double max_shortfall_bps = 0.0;
+        int64_t decision_ts_ns = 0;
+        ShadowUrgency urgency = ShadowUrgency::BALANCED;
+    };
+
     struct ShadowConfig {
         double binance_maker_fee_bps = 2.0;
         double binance_taker_fee_bps = 5.0;
@@ -66,6 +86,9 @@ namespace trading {
         int64_t release_ts_ns = 0;
         bool active = false;
         bool is_maker = false;
+        ShadowIntentMetadata intent{};
+        double decision_price = 0;
+        double decision_mid = 0;
     };
 
     class ShadowConnector : public ExchangeConnector {
@@ -117,6 +140,11 @@ namespace trading {
             slot->active = true;
             slot->is_maker = false;
             slot->queue_ahead_qty = queue_ahead_at_submit(*slot);
+            slot->intent = next_intent_;
+            if (slot->intent.decision_ts_ns <= 0)
+                slot->intent.decision_ts_ns = slot->submit_ts_ns;
+            slot->decision_price = decision_price(order.side);
+            slot->decision_mid = book_.mid_price();
 
             const bool fillable_now = is_immediately_fillable(*slot);
             const bool released = slot->submit_ts_ns >= slot->release_ts_ns;
@@ -222,6 +250,8 @@ namespace trading {
             return n;
         }
 
+        void set_intent_metadata(const ShadowIntentMetadata &intent) noexcept { next_intent_ = intent; }
+
     private:
         static void copy_symbol(char (&dst)[16], const char (&src)[16]) noexcept {
             std::memcpy(dst, src, sizeof(dst));
@@ -233,6 +263,7 @@ namespace trading {
         BookManager &book_;
         std::FILE *log_fp_ = nullptr;
         std::array<ShadowOrder, MAX_SHADOW_ORDERS> orders_{};
+        ShadowIntentMetadata next_intent_{};
 
         std::atomic<double> total_pnl_{0.0};
         std::atomic<uint64_t> total_fills_{0};
@@ -379,11 +410,20 @@ namespace trading {
                          "\"symbol\":\"%s\",\"side\":\"%s\",\"type\":\"%s\","
                          "\"price\":%.2f,\"qty\":%.6f,"
                          "\"book_bid\":%.2f,\"book_ask\":%.2f,"
-                         "\"client_oid\":%llu}\n",
+                         "\"client_oid\":%llu,\"intent\":\"%s\",\"reason\":\"%s\","
+                         "\"signal_bps\":%.4f,\"risk_score\":%.4f,\"target_position\":%.6f,"
+                         "\"current_position\":%.6f,\"expected_cost_bps\":%.4f,"
+                         "\"expected_edge_bps\":%.4f,\"max_shortfall_bps\":%.4f,"
+                         "\"decision_px\":%.6f,\"decision_mid\":%.6f,\"urgency\":\"%s\"}\n",
                          event, (long long) now_ns(), exchange_to_string(s.exchange), s.symbol,
                          s.side == Side::BID ? "BID" : "ASK",
                          s.type == OrderType::LIMIT ? "LIMIT" : "MARKET", s.price, s.quantity, best_bid,
-                         best_ask, (unsigned long long) s.client_order_id);
+                         best_ask, (unsigned long long) s.client_order_id, s.intent.intent,
+                         s.intent.reason, s.intent.signal_bps, s.intent.risk_score,
+                         s.intent.target_position, s.intent.current_position,
+                         s.intent.expected_cost_bps, s.intent.expected_edge_bps,
+                         s.intent.max_shortfall_bps, s.decision_price, s.decision_mid,
+                         urgency_to_string(s.intent.urgency));
             std::fflush(log_fp_);
         }
 
@@ -396,12 +436,26 @@ namespace trading {
                          "\"symbol\":\"%s\",\"side\":\"%s\",\"maker\":%s,"
                          "\"fill_px\":%.2f,\"qty\":%.6f,\"cum_qty\":%.6f,"
                          "\"fee_bps\":%.2f,\"fee_usd\":%.6f,"
-                         "\"cumulative_pnl\":%.6f,\"client_oid\":%llu}\n",
+                         "\"cumulative_pnl\":%.6f,\"client_oid\":%llu,"
+                         "\"intent\":\"%s\",\"reason\":\"%s\",\"signal_bps\":%.4f,"
+                         "\"risk_score\":%.4f,\"target_position\":%.6f,"
+                         "\"current_position\":%.6f,\"expected_cost_bps\":%.4f,"
+                         "\"expected_edge_bps\":%.4f,\"max_shortfall_bps\":%.4f,"
+                         "\"decision_px\":%.6f,\"decision_mid\":%.6f,\"book_mid\":%.6f,"
+                         "\"implementation_shortfall_bps\":%.4f,\"edge_at_entry_bps\":%.4f,"
+                         "\"hold_time_ms\":%.3f,\"markout_bps\":%.4f,\"urgency\":\"%s\"}\n",
                          (long long) now_ns(), exchange_to_string(s.exchange), s.symbol,
                          s.side == Side::BID ? "BID" : "ASK", s.is_maker ? "true" : "false", fill_px,
                          fill_qty, s.filled_qty, fee_bps, fee,
                          total_pnl_.load(std::memory_order_relaxed),
-                         (unsigned long long) s.client_order_id);
+                         (unsigned long long) s.client_order_id, s.intent.intent, s.intent.reason,
+                         s.intent.signal_bps, s.intent.risk_score, s.intent.target_position,
+                         s.intent.current_position, s.intent.expected_cost_bps,
+                         s.intent.expected_edge_bps, s.intent.max_shortfall_bps, s.decision_price,
+                         s.decision_mid, book_.mid_price(),
+                         implementation_shortfall_bps(s, fill_px), edge_at_entry_bps(s, fill_px),
+                         static_cast<double>(now_ns() - s.intent.decision_ts_ns) / 1000000.0,
+                         markout_bps(s, fill_px), urgency_to_string(s.intent.urgency));
             std::fflush(log_fp_);
         }
 
@@ -446,6 +500,43 @@ namespace trading {
             const double impact_bps = cfg_.impact_slippage_per_notional_bps * (qty / top_size);
             const double sign = side == Side::BID ? 1.0 : -1.0;
             return px * (1.0 + sign * (impact_bps / 10000.0));
+        }
+
+        double decision_price(Side side) const noexcept {
+            return side == Side::BID ? book_.best_ask() : book_.best_bid();
+        }
+
+        static const char *urgency_to_string(ShadowUrgency urgency) noexcept {
+            switch (urgency) {
+                case ShadowUrgency::PASSIVE:
+                    return "PASSIVE";
+                case ShadowUrgency::BALANCED:
+                    return "BALANCED";
+                case ShadowUrgency::AGGRESSIVE:
+                    return "AGGRESSIVE";
+                default:
+                    return "BALANCED";
+            }
+        }
+
+        double implementation_shortfall_bps(const ShadowOrder &s, double fill_px) const noexcept {
+            if (s.decision_price <= 0.0)
+                return 0.0;
+            const double raw_bps = (fill_px - s.decision_price) / s.decision_price * 10000.0;
+            return s.side == Side::BID ? raw_bps : -raw_bps;
+        }
+
+        double edge_at_entry_bps(const ShadowOrder &s, double fill_px) const noexcept {
+            const double alpha_edge = s.side == Side::BID ? s.intent.signal_bps : -s.intent.signal_bps;
+            return alpha_edge - implementation_shortfall_bps(s, fill_px);
+        }
+
+        double markout_bps(const ShadowOrder &s, double fill_px) const noexcept {
+            const double mark = book_.mid_price();
+            if (mark <= 0.0 || fill_px <= 0.0)
+                return 0.0;
+            const double raw_bps = (mark - fill_px) / fill_px * 10000.0;
+            return s.side == Side::BID ? raw_bps : -raw_bps;
         }
 
         static int64_t now_ns() noexcept {
