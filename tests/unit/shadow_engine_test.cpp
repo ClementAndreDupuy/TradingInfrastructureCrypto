@@ -120,6 +120,26 @@ TEST(ShadowEngineTest, LatencyGateDelaysFillUntilReleaseTime) {
     EXPECT_EQ(connector.active_orders(), 1u);
 }
 
+TEST(ShadowEngineTest, CountsOpenedPositionsOnFirstFillOnly) {
+    BookManager book("BTCUSDT", Exchange::BINANCE, 1.0, 2048);
+    book.snapshot_handler()(make_snapshot(Exchange::BINANCE, 100.0, 5.0, 100.5, 5.0));
+
+    ShadowConfig cfg;
+    cfg.base_latency_ns = 0;
+    cfg.latency_jitter_ns = 0;
+    cfg.impact_slippage_per_notional_bps = 0.0;
+
+    ShadowConnector connector(Exchange::BINANCE, cfg, book);
+    ASSERT_EQ(connector.submit_order(make_limit(Exchange::BINANCE, Side::BID, 30, 101.0, 1.0)),
+              ConnectorResult::OK);
+
+    EXPECT_EQ(connector.opened_positions(), 1u);
+    EXPECT_EQ(connector.total_fills(), 1u);
+
+    connector.check_fills();
+    EXPECT_EQ(connector.opened_positions(), 1u);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

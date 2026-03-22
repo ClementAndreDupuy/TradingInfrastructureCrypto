@@ -17,6 +17,7 @@
 #include "../risk/global_risk_controls.hpp"
 #include "../risk/kill_switch.hpp"
 #include "../risk/risk_config_loader.hpp"
+#include "../shadow/shadow_engine.hpp"
 
 #include <array>
 #include <atomic>
@@ -103,8 +104,50 @@ auto make_child_order(const char* symbol, trading::Exchange exchange, trading::S
     return order;
 }
 
+auto top_opposite_depth(const trading::BookManager& book, trading::Side side) -> double {
+    std::vector<trading::PriceLevel> bids;
+    std::vector<trading::PriceLevel> asks;
+    book.get_top_levels(1, bids, asks);
+    if (side == trading::Side::BID) {
+        return asks.empty() ? 0.0 : asks.front().size;
+    }
+    return bids.empty() ? 0.0 : bids.front().size;
+}
+
+auto price_for_quantity(const trading::BookManager& book, trading::Side side, double qty) -> double {
+    std::vector<trading::PriceLevel> bids;
+    std::vector<trading::PriceLevel> asks;
+    book.get_top_levels(8, bids, asks);
+    const auto& levels = side == trading::Side::BID ? asks : bids;
+    double cumulative = 0.0;
+    for (const auto& level : levels) {
+        cumulative += level.size;
+        if (cumulative + 1e-12 >= qty) {
+            return level.price;
+        }
+    }
+    return levels.empty() ? 0.0 : levels.back().price;
+}
+
+auto book_for_exchange(trading::Exchange exchange, trading::BookManager& binance_book,
+                       trading::BookManager& kraken_book, trading::BookManager& okx_book,
+                       trading::BookManager& coinbase_book) -> trading::BookManager* {
+    switch (exchange) {
+    case trading::Exchange::BINANCE:
+        return &binance_book;
+    case trading::Exchange::KRAKEN:
+        return &kraken_book;
+    case trading::Exchange::OKX:
+        return &okx_book;
+    case trading::Exchange::COINBASE:
+        return &coinbase_book;
+    default:
+        return nullptr;
+    }
+}
+
 auto make_quote(trading::Exchange exchange, const trading::BookManager& book,
-                bool enabled) -> trading::VenueQuote {
+                bool enabled, trading::Side side = trading::Side::BID) -> trading::VenueQuote {
     if (!enabled) {
         return {exchange, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
     }
@@ -114,9 +157,10 @@ auto make_quote(trading::Exchange exchange, const trading::BookManager& book,
 
     const double bid = book.best_bid();
     const double ask = book.best_ask();
+    const double side_depth = top_opposite_depth(book, side);
 
     return {
-        exchange, bid, ask, 0.40, 5.0, 0.5, 0.2, 0.70, 0.20, 0.4, true,
+        exchange, bid, ask, side_depth, 5.0, 0.5, 0.2, 0.70, 0.20, 0.4, side_depth > 0.0,
     };
 }
 
@@ -229,6 +273,8 @@ auto main(int argc, char** argv) -> int {
             coinbase_api_key, coinbase_api_secret,
             opts.mode == "shadow" ? "mock://coinbase" : "https://api.coinbase.com");
 
+        ShadowEngine shadow_engine(binance_book, kraken_book, okx_book, coinbase_book);
+
         ReconciliationService reconciliation;
         if (run_binance && !reconciliation.register_connector(binance)) {
             LOG_WARN("Failed to register Binance connector with reconciliation service");
@@ -288,6 +334,8 @@ auto main(int argc, char** argv) -> int {
         auto next_reconciliation = std::chrono::steady_clock::now() + reconciliation_interval;
 
         uint64_t next_id = 1;
+        uint64_t shadow_loop_index = 0;
+        int64_t shadow_exit_loop = -1;
 
         LOG_INFO("trading_engine started", "mode", opts.mode.c_str(), "venues", opts.venues.c_str(),
                  "symbol", opts.symbol.c_str());
@@ -301,16 +349,11 @@ auto main(int argc, char** argv) -> int {
             (void)kill_switch.check_heartbeat();
 
             const AlphaSignal alpha_signal = alpha_reader.read();
-            std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venue_quotes{{
-                make_quote(Exchange::BINANCE, binance_book, run_binance),
-                make_quote(Exchange::KRAKEN, kraken_book, run_kraken),
-                make_quote(Exchange::OKX, okx_book, run_okx),
-                make_quote(Exchange::COINBASE, coinbase_book, run_coinbase),
-            }};
-
-            const RoutingDecision decision =
-                sor.route_with_alpha(Side::BID, 0.5, alpha_signal, venue_quotes);
-            if (!decision.blocked_by_alpha) {
+            if (opts.mode == "shadow") {
+                shadow_engine.check_fills();
+            }
+            const auto submit_decision = [&](const RoutingDecision& decision, Side side,
+                                            double route_qty, const char* intent) {
                 for (size_t i = 0; i < decision.child_count; ++i) {
                     const auto& child = decision.children[i];
 
@@ -319,11 +362,25 @@ auto main(int argc, char** argv) -> int {
                         break;
                     }
 
-                    const Order child_order =
-                        make_child_order(opts.symbol.c_str(), child.exchange, Side::BID,
-                                         child.quantity, child.limit_price, next_id++);
+                    BookManager* child_book =
+                        book_for_exchange(child.exchange, binance_book, kraken_book, okx_book,
+                                          coinbase_book);
+                    if (child_book == nullptr) {
+                        continue;
+                    }
+                    const double limit_price = price_for_quantity(*child_book, side, child.quantity);
+                    if (limit_price <= 0.0) {
+                        LOG_WARN("shadow routing skipped due to missing LOB depth", "venue",
+                                 exchange_to_string(child.exchange), "qty", child.quantity);
+                        continue;
+                    }
 
-                    const double signed_notional = child.quantity * child.limit_price;
+                    const Order child_order =
+                        make_child_order(opts.symbol.c_str(), child.exchange, side, child.quantity,
+                                         limit_price, next_id++);
+
+                    const double signed_notional = child.quantity * child_order.price *
+                                                   (side == Side::BID ? 1.0 : -1.0);
                     if (global_risk.commit_order(child.exchange, child_order.symbol,
                                                  signed_notional) != GlobalRiskCheckResult::OK) {
                         LOG_WARN("global-risk blocked submit", "venue",
@@ -338,26 +395,102 @@ auto main(int argc, char** argv) -> int {
                     }
 
                     ConnectorResult res = ConnectorResult::ERROR_UNKNOWN;
-                    switch (child.exchange) {
-                    case Exchange::BINANCE:
-                        res = binance.submit_order(child_order);
-                        break;
-                    case Exchange::KRAKEN:
-                        res = kraken.submit_order(child_order);
-                        break;
-                    case Exchange::OKX:
-                        res = okx.submit_order(child_order);
-                        break;
-                    case Exchange::COINBASE:
-                        res = coinbase.submit_order(child_order);
-                        break;
-                    default:
-                        break;
+                    if (opts.mode == "shadow") {
+                        switch (child.exchange) {
+                        case Exchange::BINANCE:
+                            res = shadow_engine.binance_connector().submit_order(child_order);
+                            break;
+                        case Exchange::KRAKEN:
+                            res = shadow_engine.kraken_connector().submit_order(child_order);
+                            break;
+                        case Exchange::OKX:
+                            res = shadow_engine.okx_connector().submit_order(child_order);
+                            break;
+                        case Exchange::COINBASE:
+                            res = shadow_engine.coinbase_connector().submit_order(child_order);
+                            break;
+                        default:
+                            break;
+                        }
+                    } else {
+                        switch (child.exchange) {
+                        case Exchange::BINANCE:
+                            res = binance.submit_order(child_order);
+                            break;
+                        case Exchange::KRAKEN:
+                            res = kraken.submit_order(child_order);
+                            break;
+                        case Exchange::OKX:
+                            res = okx.submit_order(child_order);
+                            break;
+                        case Exchange::COINBASE:
+                            res = coinbase.submit_order(child_order);
+                            break;
+                        default:
+                            break;
+                        }
                     }
 
-                    LOG_INFO("order submitted", "child", static_cast<int>(i), "venue",
-                             exchange_to_string(child.exchange), "qty", child.quantity, "result",
+                    LOG_INFO("order submitted", "intent", intent, "child", static_cast<int>(i),
+                             "venue", exchange_to_string(child.exchange), "side",
+                             side == Side::BID ? "BID" : "ASK", "qty", child.quantity,
+                             "route_qty", route_qty, "limit_px", child_order.price, "result",
                              static_cast<int>(res));
+                }
+            };
+
+            if (opts.mode == "shadow") {
+                ++shadow_loop_index;
+                const double current_position = shadow_engine.net_position();
+                const bool long_signal = alpha_signal.signal_bps >= 3.0 && alpha_signal.risk_score < 0.65;
+                const bool short_signal = alpha_signal.signal_bps <= -3.0 && alpha_signal.risk_score < 0.65;
+                const double target_qty = 0.5 * alpha_signal.size_fraction;
+
+                if (std::abs(current_position) > 1e-9) {
+                    const bool exit_due_horizon = shadow_exit_loop >= 0 &&
+                                                  static_cast<int64_t>(shadow_loop_index) >= shadow_exit_loop;
+                    const bool exit_due_flip = (current_position > 0.0 && !long_signal) ||
+                                               (current_position < 0.0 && !short_signal);
+                    if (exit_due_horizon || exit_due_flip) {
+                        const Side exit_side = current_position > 0.0 ? Side::ASK : Side::BID;
+                        std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> exit_quotes{{
+                            make_quote(Exchange::BINANCE, binance_book, run_binance, exit_side),
+                            make_quote(Exchange::KRAKEN, kraken_book, run_kraken, exit_side),
+                            make_quote(Exchange::OKX, okx_book, run_okx, exit_side),
+                            make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, exit_side),
+                        }};
+                        const RoutingDecision exit_decision =
+                            sor.route(exit_side, std::abs(current_position), exit_quotes);
+                        submit_decision(exit_decision, exit_side, std::abs(current_position),
+                                        exit_due_horizon ? "horizon_exit" : "signal_exit");
+                        shadow_exit_loop = -1;
+                    }
+                } else if (target_qty > 1e-6 && (long_signal || short_signal)) {
+                    const Side entry_side = long_signal ? Side::BID : Side::ASK;
+                    std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> entry_quotes{{
+                        make_quote(Exchange::BINANCE, binance_book, run_binance, entry_side),
+                        make_quote(Exchange::KRAKEN, kraken_book, run_kraken, entry_side),
+                        make_quote(Exchange::OKX, okx_book, run_okx, entry_side),
+                        make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, entry_side),
+                    }};
+                    const RoutingDecision entry_decision =
+                        sor.route(entry_side, target_qty, entry_quotes);
+                    submit_decision(entry_decision, entry_side, target_qty, "alpha_entry");
+                    shadow_exit_loop = static_cast<int64_t>(shadow_loop_index) +
+                                       (alpha_signal.horizon_ticks > 0 ? alpha_signal.horizon_ticks : 1);
+                }
+            } else {
+                std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venue_quotes{{
+                    make_quote(Exchange::BINANCE, binance_book, run_binance, Side::BID),
+                    make_quote(Exchange::KRAKEN, kraken_book, run_kraken, Side::BID),
+                    make_quote(Exchange::OKX, okx_book, run_okx, Side::BID),
+                    make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, Side::BID),
+                }};
+
+                const RoutingDecision decision =
+                    sor.route_with_alpha(Side::BID, 0.5, alpha_signal, venue_quotes);
+                if (!decision.blocked_by_alpha) {
+                    submit_decision(decision, Side::BID, 0.5, "alpha_entry");
                 }
             }
 
@@ -405,6 +538,59 @@ auto main(int argc, char** argv) -> int {
         if (run_coinbase) {
             coinbase.disconnect();
             coinbase_feed.stop();
+        }
+
+        if (opts.mode == "shadow") {
+            shadow_engine.check_fills();
+            const double final_position = shadow_engine.net_position();
+            if (std::abs(final_position) > 1e-9) {
+                const Side exit_side = final_position > 0.0 ? Side::ASK : Side::BID;
+                std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> exit_quotes{{
+                    make_quote(Exchange::BINANCE, binance_book, run_binance, exit_side),
+                    make_quote(Exchange::KRAKEN, kraken_book, run_kraken, exit_side),
+                    make_quote(Exchange::OKX, okx_book, run_okx, exit_side),
+                    make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, exit_side),
+                }};
+                const RoutingDecision exit_decision =
+                    sor.route(exit_side, std::abs(final_position), exit_quotes);
+                const auto final_submit = [&](const RoutingDecision& decision) {
+                    for (size_t i = 0; i < decision.child_count; ++i) {
+                        const auto& child = decision.children[i];
+                        BookManager* child_book =
+                            book_for_exchange(child.exchange, binance_book, kraken_book, okx_book,
+                                              coinbase_book);
+                        if (child_book == nullptr) {
+                            continue;
+                        }
+                        const double limit_price = price_for_quantity(*child_book, exit_side, child.quantity);
+                        if (limit_price <= 0.0) {
+                            continue;
+                        }
+                        const Order order = make_child_order(opts.symbol.c_str(), child.exchange,
+                                                             exit_side, child.quantity,
+                                                             limit_price, next_id++);
+                        switch (child.exchange) {
+                        case Exchange::BINANCE:
+                            (void)shadow_engine.binance_connector().submit_order(order);
+                            break;
+                        case Exchange::KRAKEN:
+                            (void)shadow_engine.kraken_connector().submit_order(order);
+                            break;
+                        case Exchange::OKX:
+                            (void)shadow_engine.okx_connector().submit_order(order);
+                            break;
+                        case Exchange::COINBASE:
+                            (void)shadow_engine.coinbase_connector().submit_order(order);
+                            break;
+                        default:
+                            break;
+                        }
+                    }
+                };
+                final_submit(exit_decision);
+                shadow_engine.check_fills();
+            }
+            shadow_engine.log_summary();
         }
 
         LOG_INFO("trading_engine shutdown complete");

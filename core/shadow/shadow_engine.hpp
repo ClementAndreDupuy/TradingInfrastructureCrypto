@@ -206,6 +206,10 @@ class ShadowConnector : public ExchangeConnector {
 
     double total_pnl() const noexcept { return total_pnl_.load(std::memory_order_acquire); }
     uint64_t total_fills() const noexcept { return total_fills_.load(std::memory_order_acquire); }
+    uint64_t opened_positions() const noexcept {
+        return opened_positions_.load(std::memory_order_acquire);
+    }
+    double net_position() const noexcept { return net_position_.load(std::memory_order_acquire); }
     uint32_t active_orders() const noexcept {
         uint32_t n = 0;
         for (const auto& s : orders_)
@@ -228,6 +232,8 @@ class ShadowConnector : public ExchangeConnector {
 
     std::atomic<double> total_pnl_{0.0};
     std::atomic<uint64_t> total_fills_{0};
+    std::atomic<uint64_t> opened_positions_{0};
+    std::atomic<double> net_position_{0.0};
 
     bool is_immediately_fillable(const ShadowOrder& s) const noexcept {
         if (s.type == OrderType::MARKET)
@@ -286,6 +292,7 @@ class ShadowConnector : public ExchangeConnector {
         if (fill_qty <= 0.0)
             return;
 
+        const bool opened_position = s.filled_qty <= 1e-12;
         s.filled_qty += fill_qty;
         s.notional_filled += fill_px * fill_qty;
         if (s.filled_qty >= s.quantity - 1e-12) {
@@ -301,6 +308,12 @@ class ShadowConnector : public ExchangeConnector {
         const double old_pnl = total_pnl_.load(std::memory_order_acquire);
         total_pnl_.store(old_pnl + contrib, std::memory_order_release);
         total_fills_.fetch_add(1, std::memory_order_relaxed);
+        const double position_delta = (s.side == Side::BID) ? fill_qty : -fill_qty;
+        const double old_position = net_position_.load(std::memory_order_acquire);
+        net_position_.store(old_position + position_delta, std::memory_order_release);
+        if (opened_position) {
+            opened_positions_.fetch_add(1, std::memory_order_relaxed);
+        }
 
         log_fill(s, fill_px, fill_qty, fee_bps, fee);
         emit_fill(s, fill_px, fill_qty);
@@ -468,14 +481,31 @@ class ShadowEngine {
             + okx_shadow_.total_fills()     + coinbase_shadow_.total_fills();
     }
 
-    void print_summary() const {
+    uint64_t opened_positions() const noexcept {
+        return binance_shadow_.opened_positions() + kraken_shadow_.opened_positions()
+            + okx_shadow_.opened_positions()     + coinbase_shadow_.opened_positions();
+    }
+
+    double net_position() const noexcept {
+        return binance_shadow_.net_position() + kraken_shadow_.net_position()
+            + okx_shadow_.net_position()     + coinbase_shadow_.net_position();
+    }
+
+    void log_summary() const {
         LOG_INFO("Shadow session summary",
-                 "net_pnl",     net_pnl(),
-                 "total_fills", total_fills(),
-                 "bin_active",  binance_shadow_.active_orders(),
-                 "kra_active",  kraken_shadow_.active_orders(),
-                 "okx_active",  okx_shadow_.active_orders(),
-                 "cb_active",   coinbase_shadow_.active_orders());
+                 "exact_session_pnl", net_pnl(),
+                 "net_pnl",           net_pnl(),
+                 "net_position",      net_position(),
+                 "total_fills",       total_fills(),
+                 "opened_positions",  opened_positions(),
+                 "bin_opened",       binance_shadow_.opened_positions(),
+                 "kra_opened",       kraken_shadow_.opened_positions(),
+                 "okx_opened",       okx_shadow_.opened_positions(),
+                 "cb_opened",        coinbase_shadow_.opened_positions(),
+                 "bin_active",       binance_shadow_.active_orders(),
+                 "kra_active",       kraken_shadow_.active_orders(),
+                 "okx_active",       okx_shadow_.active_orders(),
+                 "cb_active",        coinbase_shadow_.active_orders());
     }
 
   private:

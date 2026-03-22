@@ -98,6 +98,35 @@ auto parse_order_id(const std::string& body, std::string& venue_order_id) -> boo
     return !venue_order_id.empty();
 }
 
+auto classify_kraken_business_error(const std::string& body) -> ConnectorResult {
+    const auto json = nlohmann::json::parse(body, nullptr, false);
+    if (json.is_discarded()) {
+        return ConnectorResult::ERROR_UNKNOWN;
+    }
+    const auto& errors = json["error"];
+    if (!errors.is_array() || errors.empty() || !errors[0].is_string()) {
+        return ConnectorResult::ERROR_UNKNOWN;
+    }
+
+    const std::string error = errors[0].get<std::string>();
+    if (error.find("Rate limit") != std::string::npos) {
+        return ConnectorResult::ERROR_RATE_LIMIT;
+    }
+    if (error.find("Insufficient funds") != std::string::npos) {
+        return ConnectorResult::ERROR_INSUFFICIENT_FUNDS;
+    }
+    if (error.find("Invalid key") != std::string::npos ||
+        error.find("Invalid signature") != std::string::npos ||
+        error.find("Permission denied") != std::string::npos) {
+        return ConnectorResult::AUTH_FAILED;
+    }
+    if (error.find("Order") != std::string::npos || error.find("Tick size") != std::string::npos ||
+        error.find("Pair") != std::string::npos || error.find("volume") != std::string::npos) {
+        return ConnectorResult::ERROR_INVALID_ORDER;
+    }
+    return ConnectorResult::ERROR_UNKNOWN;
+}
+
 auto parse_order_status(const std::string& raw) -> OrderState {
     if (raw == "open") {
         return OrderState::OPEN;
@@ -156,7 +185,7 @@ auto KrakenConnector::submit_to_venue(const Order& order, const std::string& ide
     }
 
     if (!parse_order_id(resp.body, venue_order_id)) {
-        return ConnectorResult::ERROR_UNKNOWN;
+        return classify_kraken_business_error(resp.body);
     }
     return ConnectorResult::OK;
 }
