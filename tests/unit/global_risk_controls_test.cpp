@@ -49,6 +49,22 @@ TEST(GlobalRiskControlsTest, EnforcesConcentrationAndCrossVenueNetting) {
               GlobalRiskCheckResult::CROSS_VENUE_NETTING_CAP);
 }
 
+TEST(GlobalRiskControlsTest, DoesNotTripConcentrationWhenPortfolioHasSingleSymbol) {
+    KillSwitch kill_switch;
+    GlobalRiskConfig cfg;
+    cfg.max_gross_notional = 1000.0;
+    cfg.max_net_notional = 1000.0;
+    cfg.max_symbol_concentration = 0.3;
+    cfg.max_venue_notional = 1000.0;
+    cfg.max_cross_venue_net_notional = 1000.0;
+    cfg.kill_on_breach = false;
+
+    GlobalRiskControls controls(cfg, kill_switch);
+
+    EXPECT_EQ(controls.commit_order(Exchange::KRAKEN, "SOLUSDT", 34.9), GlobalRiskCheckResult::OK);
+    EXPECT_EQ(controls.check_order(Exchange::OKX, "SOLUSDT", 34.9), GlobalRiskCheckResult::OK);
+}
+
 TEST(GlobalRiskControlsTest, LoadsGlobalLimitsFromConfigFile) {
     RiskRuntimeConfig cfg;
     ASSERT_TRUE(RiskConfigLoader::load("config/dev/risk.yaml", cfg));
