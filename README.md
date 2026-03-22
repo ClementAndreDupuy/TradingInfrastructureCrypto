@@ -1,4 +1,4 @@
-# ThamesRiverTrading Architecture Overview
+# TradingInfrastructureCrypto Architecture Overview
 
 This is a high-level map of how each system block talks to the others.
 
