@@ -486,7 +486,14 @@ def _signal_from_fold_outputs(
 
 def run_pipeline(args: argparse.Namespace) -> None:
     from research.regime import RegimeConfig, save_regime_artifact, train_regime_model_from_ipc
-    from .evaluation.alpha_regression import analyse_alpha, print_alpha_report
+    from .evaluation.alpha_regression import (
+        analyse_alpha,
+        analyse_direction_calibration,
+        analyse_flat_threshold_sensitivity,
+        print_alpha_report,
+        print_direction_diagnostics,
+        sweep_direction_thresholds,
+    )
     from .evaluation.backtest import BacktestConfig, NeuralAlphaBacktest
     from .models.trainer import TrainerConfig, walk_forward_train
 
@@ -587,6 +594,10 @@ def run_pipeline(args: argparse.Namespace) -> None:
     merged_bt["total_trades"] = sum((m.get("total_trades", 0) for m in all_bt_metrics))
     alpha_metrics = analyse_alpha(effective_folds, horizon_idx=2)
     print_alpha_report(alpha_metrics, merged_bt)
+    calibration = analyse_direction_calibration(effective_folds, horizon_idx=args.signal_horizon_idx)
+    threshold_sweep = sweep_direction_thresholds(effective_folds, horizon_idx=args.signal_horizon_idx)
+    flat_sensitivity = analyse_flat_threshold_sensitivity(effective_folds, horizon_idx=args.signal_horizon_idx)
+    print_direction_diagnostics(calibration, threshold_sweep, flat_sensitivity)
     try:
         regime_cfg = RegimeConfig(n_regimes=args.regimes)
         (regime_artifact, regime_dist) = train_regime_model_from_ipc(args.ipc_dir, regime_cfg)
