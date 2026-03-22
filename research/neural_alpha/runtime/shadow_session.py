@@ -393,6 +393,7 @@ class NeuralAlphaShadowSession:
             lr_warmup_epochs=min(3, self.cfg.train_epochs // 4),
             early_stop_patience=4,
             log_every_epochs=1,
+            verbose=False,
         )
         fold_results = walk_forward_train(df, tcfg)
         if not fold_results:
@@ -465,6 +466,7 @@ class NeuralAlphaShadowSession:
             lr_warmup_epochs=min(3, self.cfg.train_epochs // 4),
             early_stop_patience=4,
             log_every_epochs=1,
+            verbose=False,
         )
         fold_results = walk_forward_train(df, tcfg)
         if not fold_results:
@@ -740,7 +742,7 @@ class NeuralAlphaShadowSession:
         train_window = max(self.cfg.seq_len * 4, self.cfg.continuous_train_window_ticks)
         try:
             print(
-                f"[Shadow] continuous retrain triggered processed_ticks={self._processed_ticks}"
+                f"[Shadow] continuous retrain started processed_ticks={self._processed_ticks}"
                 f" window_ticks={train_window}"
             )
             self.train_on_recent(train_window)

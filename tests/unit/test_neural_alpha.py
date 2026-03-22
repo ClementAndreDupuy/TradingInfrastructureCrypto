@@ -359,6 +359,26 @@ class TestDataset:
                 result["best_selection_score"], rel=1e-6, abs=1e-6
             )
 
+    def test_walk_forward_train_can_run_quietly(self, capsys: pytest.CaptureFixture[str]) -> None:
+        df = _make_lob_df(n_ticks=240, seed=40)
+        cfg = TrainerConfig(
+            seq_len=16,
+            epochs=1,
+            batch_size=8,
+            n_folds=2,
+            train_frac=0.75,
+            validation_frac=0.2,
+            log_every_epochs=1,
+            use_amp=False,
+            verbose=False,
+        )
+
+        results = walk_forward_train(df, cfg)
+
+        captured = capsys.readouterr()
+        assert results
+        assert captured.out == ""
+
     def test_model_raises_on_invalid_lob_tensor_shape(self) -> None:
         model = CryptoAlphaNet(d_spatial=16, d_temporal=32, seq_len=8)
         bad_lob = torch.randn(2, 8, 5)
