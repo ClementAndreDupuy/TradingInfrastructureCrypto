@@ -156,6 +156,27 @@ set_tests_properties(SmartOrderRouterTest PROPERTIES
     LABELS "unit;execution"
 )
 
+add_executable(portfolio_intent_engine_test
+    unit/portfolio_intent_engine_test.cpp
+)
+
+target_link_libraries(portfolio_intent_engine_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(portfolio_intent_engine_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME PortfolioIntentEngineTest COMMAND portfolio_intent_engine_test)
+set_tests_properties(PortfolioIntentEngineTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;execution"
+)
+
 # Live connectors contract tests (mock transport)
 add_executable(live_connectors_test
     unit/live_connectors_test.cpp

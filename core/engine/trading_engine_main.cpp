@@ -3,6 +3,7 @@
 #include "../execution/coinbase/coinbase_connector.hpp"
 #include "../execution/kraken/kraken_connector.hpp"
 #include "../execution/okx/okx_connector.hpp"
+#include "../execution/common/portfolio_intent_engine.hpp"
 #include "../execution/common/reconciliation_service.hpp"
 #include "../execution/router/smart_order_router.hpp"
 #include "feed_bootstrap.hpp"
@@ -164,34 +165,47 @@ namespace {
         };
     }
 
-    auto urgency_for_signal(const trading::AlphaSignal &signal, double current_position,
-                            double target_position) -> trading::ShadowUrgency {
-        const double delta = std::abs(target_position - current_position);
-        if (signal.horizon_ticks <= 2 || delta >= 0.35 || signal.risk_score >= 0.55)
-            return trading::ShadowUrgency::AGGRESSIVE;
-        if (signal.horizon_ticks >= 8 && delta <= 0.10 && signal.risk_score < 0.35)
-            return trading::ShadowUrgency::PASSIVE;
-        return trading::ShadowUrgency::BALANCED;
+    auto join_reason_codes(const trading::PortfolioIntent &intent) -> std::string {
+        if (intent.reason_count == 0)
+            return trading::PortfolioIntentEngine::reason_code_to_string(
+                trading::PortfolioIntentReasonCode::NONE);
+        std::string joined;
+        for (size_t i = 0; i < intent.reason_count; ++i) {
+            if (!joined.empty())
+                joined += ",";
+            joined += trading::PortfolioIntentEngine::reason_code_to_string(intent.reason_codes[i]);
+        }
+        return joined;
     }
 
-    auto build_intent_metadata(const char *intent, const char *reason, const trading::AlphaSignal &signal,
-                               double current_position, double target_position,
-                               double expected_cost_bps, double max_shortfall_bps)
-            -> trading::ShadowIntentMetadata {
+    auto intent_action(const trading::PortfolioIntent &intent) -> const char * {
+        if (intent.flatten_now)
+            return "flatten";
+        if (intent.position_delta > 1e-9)
+            return "enter_long";
+        if (intent.position_delta < -1e-9)
+            return "reduce";
+        return "hold";
+    }
+
+    auto build_intent_metadata(const trading::AlphaSignal &signal,
+                               double current_position,
+                               const trading::PortfolioIntent &intent) -> trading::ShadowIntentMetadata {
         trading::ShadowIntentMetadata metadata;
-        std::strncpy(metadata.intent, intent, sizeof(metadata.intent) - 1);
-        std::strncpy(metadata.reason, reason, sizeof(metadata.reason) - 1);
+        const std::string reasons = join_reason_codes(intent);
+        std::strncpy(metadata.intent, intent_action(intent), sizeof(metadata.intent) - 1);
+        std::strncpy(metadata.reason, reasons.c_str(), sizeof(metadata.reason) - 1);
         metadata.signal_bps = signal.signal_bps;
         metadata.risk_score = signal.risk_score;
         metadata.current_position = current_position;
-        metadata.target_position = target_position;
-        metadata.expected_cost_bps = expected_cost_bps;
-        metadata.expected_edge_bps = signal.signal_bps - expected_cost_bps;
-        metadata.max_shortfall_bps = max_shortfall_bps;
+        metadata.target_position = intent.target_global_position;
+        metadata.expected_cost_bps = intent.expected_cost_bps;
+        metadata.expected_edge_bps = signal.signal_bps - intent.expected_cost_bps;
+        metadata.max_shortfall_bps = intent.max_shortfall_bps;
         metadata.decision_ts_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                           std::chrono::system_clock::now().time_since_epoch())
                                           .count();
-        metadata.urgency = urgency_for_signal(signal, current_position, target_position);
+        metadata.urgency = intent.urgency;
         return metadata;
     }
 } // namespace
@@ -357,7 +371,10 @@ auto main(int argc, char **argv) -> int {
 
         AlphaSignalReader alpha_reader;
         alpha_reader.open();
+        RegimeSignalReader regime_reader;
+        regime_reader.open();
         SmartOrderRouter sor;
+        PortfolioIntentEngine intent_engine;
 
         const auto reconnect_interval = std::chrono::seconds(1);
         const auto reconciliation_interval = std::chrono::seconds(30);
@@ -367,8 +384,6 @@ auto main(int argc, char **argv) -> int {
         auto next_reconciliation = std::chrono::steady_clock::now() + reconciliation_interval;
 
         uint64_t next_id = 1;
-        uint64_t shadow_loop_index = 0;
-        int64_t shadow_exit_loop = -1;
         AlphaSignal last_alpha_signal{};
 
         LOG_INFO("trading_engine started", "mode", opts.mode.c_str(), "venues", opts.venues.c_str(),
@@ -383,12 +398,14 @@ auto main(int argc, char **argv) -> int {
             (void) kill_switch.check_heartbeat();
 
             const AlphaSignal alpha_signal = alpha_reader.read();
+            const RegimeSignal regime_signal = regime_reader.read();
             last_alpha_signal = alpha_signal;
             if (opts.mode == "shadow") {
                 shadow_engine.check_fills();
             }
             const auto submit_decision = [&](const RoutingDecision &decision, Side side,
-                                             double route_qty, const ShadowIntentMetadata &intent_metadata) {
+                                             double route_qty, const ShadowIntentMetadata &intent_metadata,
+                                             const std::string &reason_codes) {
                 for (size_t i = 0; i < decision.child_count; ++i) {
                     const auto &child = decision.children[i];
 
@@ -471,7 +488,7 @@ auto main(int argc, char **argv) -> int {
                     }
 
                     LOG_INFO("order submitted", "intent", intent_metadata.intent, "reason",
-                             intent_metadata.reason, "child", static_cast<int>(i),
+                             intent_metadata.reason, "reason_codes", reason_codes.c_str(), "child", static_cast<int>(i),
                              "venue", exchange_to_string(child.exchange), "side",
                              side == Side::BID ? "BID" : "ASK", "qty", child.quantity,
                              "route_qty", route_qty, "limit_px", child_order.price, "result",
@@ -485,80 +502,52 @@ auto main(int argc, char **argv) -> int {
                 }
             };
 
-            if (opts.mode == "shadow") {
-                ++shadow_loop_index;
-                const double current_position = shadow_engine.net_position();
-                const bool buy_signal = alpha_signal.signal_bps >= 3.0 &&
-                                        alpha_signal.risk_score < 0.65;
-                const double target_qty = 0.5 * alpha_signal.size_fraction;
-
-                if (current_position > 1e-9) {
-                    const bool exit_due_horizon = shadow_exit_loop >= 0 &&
-                                                  static_cast<int64_t>(shadow_loop_index) >= shadow_exit_loop;
-                    const bool exit_due_signal = !buy_signal;
-                    if (exit_due_horizon || exit_due_signal) {
-                        const double expected_cost_bps =
-                                std::max(0.0, 5.0 + alpha_signal.risk_score * 4.0);
-                        const ShadowIntentMetadata exit_metadata =
-                                build_intent_metadata(exit_due_horizon ? "exit" : "reduce",
-                                                      exit_due_horizon ? "horizon_expiry"
-                                                                       : "signal_decay",
-                                                      alpha_signal, current_position, 0.0,
-                                                      expected_cost_bps, expected_cost_bps + 1.5);
-                        constexpr Side exit_side = Side::ASK;
-                        std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> exit_quotes{
-                            {
-                                make_quote(Exchange::BINANCE, binance_book, run_binance, exit_side),
-                                make_quote(Exchange::KRAKEN, kraken_book, run_kraken, exit_side),
-                                make_quote(Exchange::OKX, okx_book, run_okx, exit_side),
-                                make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, exit_side),
-                            }
-                        };
-                        const RoutingDecision exit_decision =
-                                sor.route(exit_side, current_position, exit_quotes);
-                        submit_decision(exit_decision, exit_side, current_position, exit_metadata);
-                        shadow_exit_loop = -1;
-                    }
-                } else if (target_qty > 1e-6 && buy_signal) {
-                    const double expected_cost_bps = std::max(0.0, 3.0 + alpha_signal.risk_score * 4.0);
-                    const ShadowIntentMetadata entry_metadata =
-                            build_intent_metadata("enter_long", "alpha_positive", alpha_signal,
-                                                  current_position, target_qty, expected_cost_bps,
-                                                  expected_cost_bps + 1.0);
-                    constexpr Side entry_side = Side::BID;
-                    std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> entry_quotes{
-                        {
-                            make_quote(Exchange::BINANCE, binance_book, run_binance, entry_side),
-                            make_quote(Exchange::KRAKEN, kraken_book, run_kraken, entry_side),
-                            make_quote(Exchange::OKX, okx_book, run_okx, entry_side),
-                            make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, entry_side),
-                        }
-                    };
-                    const RoutingDecision entry_decision =
-                            sor.route(entry_side, target_qty, entry_quotes);
-                    submit_decision(entry_decision, entry_side, target_qty, entry_metadata);
-                    shadow_exit_loop = static_cast<int64_t>(shadow_loop_index) +
-                                       (alpha_signal.horizon_ticks > 0 ? alpha_signal.horizon_ticks : 1);
+            const auto bid_quotes = std::array<VenueQuote, SmartOrderRouter::MAX_VENUES>{
+                {
+                    make_quote(Exchange::BINANCE, binance_book, run_binance, Side::BID),
+                    make_quote(Exchange::KRAKEN, kraken_book, run_kraken, Side::BID),
+                    make_quote(Exchange::OKX, okx_book, run_okx, Side::BID),
+                    make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, Side::BID),
                 }
-            } else {
-                std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venue_quotes{
-                    {
-                        make_quote(Exchange::BINANCE, binance_book, run_binance, Side::BID),
-                        make_quote(Exchange::KRAKEN, kraken_book, run_kraken, Side::BID),
-                        make_quote(Exchange::OKX, okx_book, run_okx, Side::BID),
-                        make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, Side::BID),
-                    }
-                };
-
-                const RoutingDecision decision =
-                        sor.route_with_alpha(Side::BID, 0.5, alpha_signal, venue_quotes);
-                if (!decision.blocked_by_alpha) {
-                    const ShadowIntentMetadata live_metadata =
-                            build_intent_metadata("enter_long", "alpha_positive", alpha_signal,
-                                                  0.0, 0.5, 3.0 + alpha_signal.risk_score * 4.0,
-                                                  5.0 + alpha_signal.risk_score * 4.0);
-                    submit_decision(decision, Side::BID, 0.5, live_metadata);
+            };
+            const auto ask_quotes = std::array<VenueQuote, SmartOrderRouter::MAX_VENUES>{
+                {
+                    make_quote(Exchange::BINANCE, binance_book, run_binance, Side::ASK),
+                    make_quote(Exchange::KRAKEN, kraken_book, run_kraken, Side::ASK),
+                    make_quote(Exchange::OKX, okx_book, run_okx, Side::ASK),
+                    make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, Side::ASK),
                 }
+            };
+
+            PositionLedgerSnapshot portfolio_snapshot;
+            portfolio_snapshot.global_position = opts.mode == "shadow" ? shadow_engine.net_position() : 0.0;
+            if (portfolio_snapshot.global_position > 1e-9)
+                portfolio_snapshot.oldest_inventory_age_ms = std::max<int64_t>(
+                    0, alpha_signal.horizon_ticks) * opts.loop_interval_ms;
+            const PortfolioIntent intent =
+                intent_engine.evaluate(alpha_signal, regime_signal, portfolio_snapshot, bid_quotes);
+            const ShadowIntentMetadata intent_metadata =
+                build_intent_metadata(alpha_signal, portfolio_snapshot.global_position, intent);
+            const std::string reason_codes = join_reason_codes(intent);
+
+            LOG_INFO("portfolio intent", "intent", intent_metadata.intent, "reason",
+                     intent_metadata.reason, "reason_codes", reason_codes.c_str(),
+                     "signal_bps", alpha_signal.signal_bps, "risk_score", alpha_signal.risk_score,
+                     "current_position", portfolio_snapshot.global_position, "target_position",
+                     intent.target_global_position, "position_delta", intent.position_delta,
+                     "expected_cost_bps", intent.expected_cost_bps, "max_shortfall_bps",
+                     intent.max_shortfall_bps, "flatten_now", intent.flatten_now ? 1 : 0,
+                     "urgency", static_cast<int>(intent.urgency));
+
+            if (intent.position_delta > 1e-6) {
+                const RoutingDecision entry_decision = sor.route(Side::BID, intent.position_delta, bid_quotes);
+                submit_decision(entry_decision, Side::BID, intent.position_delta, intent_metadata,
+                                reason_codes);
+            } else if (intent.position_delta < -1e-6) {
+                const double reduce_qty = std::abs(intent.position_delta);
+                const RoutingDecision exit_decision = sor.route(Side::ASK, reduce_qty, ask_quotes);
+                submit_decision(exit_decision, Side::ASK, reduce_qty, intent_metadata,
+                                reason_codes);
             }
 
             const auto now = std::chrono::steady_clock::now();
