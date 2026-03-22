@@ -30,143 +30,141 @@
 #include <thread>
 
 namespace {
+    struct CliOptions {
+        std::string mode = "live";
+        std::string venues = "BINANCE,KRAKEN,OKX,COINBASE";
+        std::string symbol = "BTCUSDT";
+        int loop_interval_ms = 500;
+    };
 
-struct CliOptions {
-    std::string mode = "live";
-    std::string venues = "BINANCE,KRAKEN,OKX,COINBASE";
-    std::string symbol = "BTCUSDT";
-    int loop_interval_ms = 500;
-};
-
-auto parse_args(int argc, char** argv) -> CliOptions {
-    CliOptions out;
-    for (int i = 1; i < argc; ++i) {
-        const std::string arg(argv[i]);
-        if (arg == "--mode" && i + 1 < argc) {
-            out.mode = argv[++i];
-        } else if (arg == "--venues" && i + 1 < argc) {
-            out.venues = argv[++i];
-        } else if (arg == "--symbol" && i + 1 < argc) {
-            out.symbol = argv[++i];
-        } else if (arg == "--loop-interval-ms" && i + 1 < argc) {
-            try {
-                out.loop_interval_ms = std::stoi(argv[++i]);
-            } catch (...) {
-                LOG_WARN("parse_args: invalid --loop-interval-ms value, using default", "value",
-                         argv[i], "default_ms", out.loop_interval_ms);
+    auto parse_args(int argc, char **argv) -> CliOptions {
+        CliOptions out;
+        for (int i = 1; i < argc; ++i) {
+            const std::string arg(argv[i]);
+            if (arg == "--mode" && i + 1 < argc) {
+                out.mode = argv[++i];
+            } else if (arg == "--venues" && i + 1 < argc) {
+                out.venues = argv[++i];
+            } else if (arg == "--symbol" && i + 1 < argc) {
+                out.symbol = argv[++i];
+            } else if (arg == "--loop-interval-ms" && i + 1 < argc) {
+                try {
+                    out.loop_interval_ms = std::stoi(argv[++i]);
+                } catch (...) {
+                    LOG_WARN("parse_args: invalid --loop-interval-ms value, using default", "value",
+                             argv[i], "default_ms", out.loop_interval_ms);
+                }
             }
         }
+        return out;
     }
-    return out;
-}
 
-std::atomic<bool> g_running{true};
+    std::atomic<bool> g_running{true};
 
-auto log_loaded_credential(const char* venue, const char* field, const std::string& value) -> void {
-    if (value.empty()) {
-        LOG_WARN("venue credential missing", "venue", venue, "field", field);
-        return;
+    auto log_loaded_credential(const char *venue, const char *field, const std::string &value) -> void {
+        if (value.empty()) {
+            LOG_WARN("venue credential missing", "venue", venue, "field", field);
+            return;
+        }
+        LOG_INFO("venue credential loaded", "venue", venue, "field", field,
+                 "length", static_cast<int>(value.size()));
     }
-    LOG_INFO("venue credential loaded", "venue", venue, "field", field,
-             "length", static_cast<int>(value.size()));
-}
 
-auto has_venue(const std::string& csv, const std::string& needle) -> bool {
-    std::stringstream csv_stream(csv);
-    std::string item;
-    while (std::getline(csv_stream, item, ',')) {
-        if (item == needle) {
-            return true;
+    auto has_venue(const std::string &csv, const std::string &needle) -> bool {
+        std::stringstream csv_stream(csv);
+        std::string item;
+        while (std::getline(csv_stream, item, ',')) {
+            if (item == needle) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void stop_handler(int /*signum*/) { g_running.store(false, std::memory_order_release); }
+
+    void setup_signal_handlers() {
+        std::signal(SIGINT, stop_handler);
+        std::signal(SIGTERM, stop_handler);
+    }
+
+    auto make_child_order(const char *symbol, trading::Exchange exchange, trading::Side side,
+                          double qty, double price, uint64_t client_order_id) -> trading::Order {
+        trading::Order order;
+        std::strncpy(order.symbol, symbol, sizeof(order.symbol) - 1);
+        order.symbol[sizeof(order.symbol) - 1] = '\0';
+        order.exchange = exchange;
+        order.side = side;
+        order.type = trading::OrderType::LIMIT;
+        order.tif = trading::TimeInForce::IOC;
+        order.quantity = qty;
+        order.price = price;
+        order.client_order_id = client_order_id;
+        return order;
+    }
+
+    auto top_opposite_depth(const trading::BookManager &book, trading::Side side) -> double {
+        std::vector<trading::PriceLevel> bids;
+        std::vector<trading::PriceLevel> asks;
+        book.get_top_levels(1, bids, asks);
+        if (side == trading::Side::BID) {
+            return asks.empty() ? 0.0 : asks.front().size;
+        }
+        return bids.empty() ? 0.0 : bids.front().size;
+    }
+
+    auto price_for_quantity(const trading::BookManager &book, trading::Side side, double qty) -> double {
+        std::vector<trading::PriceLevel> bids;
+        std::vector<trading::PriceLevel> asks;
+        book.get_top_levels(8, bids, asks);
+        const auto &levels = side == trading::Side::BID ? asks : bids;
+        double cumulative = 0.0;
+        for (const auto &level: levels) {
+            cumulative += level.size;
+            if (cumulative + 1e-12 >= qty) {
+                return level.price;
+            }
+        }
+        return levels.empty() ? 0.0 : levels.back().price;
+    }
+
+    auto book_for_exchange(trading::Exchange exchange, trading::BookManager &binance_book,
+                           trading::BookManager &kraken_book, trading::BookManager &okx_book,
+                           trading::BookManager &coinbase_book) -> trading::BookManager * {
+        switch (exchange) {
+            case trading::Exchange::BINANCE:
+                return &binance_book;
+            case trading::Exchange::KRAKEN:
+                return &kraken_book;
+            case trading::Exchange::OKX:
+                return &okx_book;
+            case trading::Exchange::COINBASE:
+                return &coinbase_book;
+            default:
+                return nullptr;
         }
     }
-    return false;
-}
 
-void stop_handler(int /*signum*/) { g_running.store(false, std::memory_order_release); }
-
-void setup_signal_handlers() {
-    std::signal(SIGINT, stop_handler);
-    std::signal(SIGTERM, stop_handler);
-}
-
-auto make_child_order(const char* symbol, trading::Exchange exchange, trading::Side side,
-                      double qty, double price, uint64_t client_order_id) -> trading::Order {
-    trading::Order order;
-    std::strncpy(order.symbol, symbol, sizeof(order.symbol) - 1);
-    order.symbol[sizeof(order.symbol) - 1] = '\0';
-    order.exchange = exchange;
-    order.side = side;
-    order.type = trading::OrderType::LIMIT;
-    order.tif = trading::TimeInForce::IOC;
-    order.quantity = qty;
-    order.price = price;
-    order.client_order_id = client_order_id;
-    return order;
-}
-
-auto top_opposite_depth(const trading::BookManager& book, trading::Side side) -> double {
-    std::vector<trading::PriceLevel> bids;
-    std::vector<trading::PriceLevel> asks;
-    book.get_top_levels(1, bids, asks);
-    if (side == trading::Side::BID) {
-        return asks.empty() ? 0.0 : asks.front().size;
-    }
-    return bids.empty() ? 0.0 : bids.front().size;
-}
-
-auto price_for_quantity(const trading::BookManager& book, trading::Side side, double qty) -> double {
-    std::vector<trading::PriceLevel> bids;
-    std::vector<trading::PriceLevel> asks;
-    book.get_top_levels(8, bids, asks);
-    const auto& levels = side == trading::Side::BID ? asks : bids;
-    double cumulative = 0.0;
-    for (const auto& level : levels) {
-        cumulative += level.size;
-        if (cumulative + 1e-12 >= qty) {
-            return level.price;
+    auto make_quote(trading::Exchange exchange, const trading::BookManager &book,
+                    bool enabled, trading::Side side = trading::Side::BID) -> trading::VenueQuote {
+        if (!enabled) {
+            return {exchange, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
         }
+        if (!book.is_ready()) {
+            return {exchange, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
+        }
+
+        const double bid = book.best_bid();
+        const double ask = book.best_ask();
+        const double side_depth = top_opposite_depth(book, side);
+
+        return {
+            exchange, bid, ask, side_depth, 5.0, 0.5, 0.2, 0.70, 0.20, 0.4, side_depth > 0.0,
+        };
     }
-    return levels.empty() ? 0.0 : levels.back().price;
-}
-
-auto book_for_exchange(trading::Exchange exchange, trading::BookManager& binance_book,
-                       trading::BookManager& kraken_book, trading::BookManager& okx_book,
-                       trading::BookManager& coinbase_book) -> trading::BookManager* {
-    switch (exchange) {
-    case trading::Exchange::BINANCE:
-        return &binance_book;
-    case trading::Exchange::KRAKEN:
-        return &kraken_book;
-    case trading::Exchange::OKX:
-        return &okx_book;
-    case trading::Exchange::COINBASE:
-        return &coinbase_book;
-    default:
-        return nullptr;
-    }
-}
-
-auto make_quote(trading::Exchange exchange, const trading::BookManager& book,
-                bool enabled, trading::Side side = trading::Side::BID) -> trading::VenueQuote {
-    if (!enabled) {
-        return {exchange, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
-    }
-    if (!book.is_ready()) {
-        return {exchange, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
-    }
-
-    const double bid = book.best_bid();
-    const double ask = book.best_ask();
-    const double side_depth = top_opposite_depth(book, side);
-
-    return {
-        exchange, bid, ask, side_depth, 5.0, 0.5, 0.2, 0.70, 0.20, 0.4, side_depth > 0.0,
-    };
-}
-
 } // namespace
 
-auto main(int argc, char** argv) -> int {
+auto main(int argc, char **argv) -> int {
     try {
         using namespace trading;
 
@@ -199,8 +197,8 @@ auto main(int argc, char** argv) -> int {
         OkxFeedHandler okx_feed(opts.symbol);
         CoinbaseFeedHandler coinbase_feed(opts.symbol);
 
-        constexpr double k_target_range_usd  = 50.0;
-        auto levels_for_tick  = [](double tick) -> size_t {
+        constexpr double k_target_range_usd = 50.0;
+        auto levels_for_tick = [](double tick) -> size_t {
             return static_cast<size_t>(k_target_range_usd / tick);
         };
 
@@ -209,25 +207,28 @@ auto main(int argc, char** argv) -> int {
         const double kraken_tick = engine::refresh_tick_size_for_book_init(
             kraken_feed, run_kraken, "KRAKEN", opts.symbol);
         const double okx_tick =
-            engine::refresh_tick_size_for_book_init(okx_feed, run_okx, "OKX", opts.symbol);
+                engine::refresh_tick_size_for_book_init(okx_feed, run_okx, "OKX", opts.symbol);
         const double coinbase_tick = engine::refresh_tick_size_for_book_init(
             coinbase_feed, run_coinbase, "COINBASE", opts.symbol);
 
-        const size_t binance_levels  = levels_for_tick(binance_tick);
-        const size_t kraken_levels   = levels_for_tick(kraken_tick);
-        const size_t okx_levels      = levels_for_tick(okx_tick);
+        const size_t binance_levels = levels_for_tick(binance_tick);
+        const size_t kraken_levels = levels_for_tick(kraken_tick);
+        const size_t okx_levels = levels_for_tick(okx_tick);
         const size_t coinbase_levels = levels_for_tick(coinbase_tick);
 
         LOG_INFO("Grid configuration",
                  "target_range_usd", k_target_range_usd,
-                 "binance_tick",  binance_tick,  "binance_levels",  binance_levels,  "binance_range_usd",  binance_levels  * binance_tick,
-                 "kraken_tick",   kraken_tick,   "kraken_levels",   kraken_levels,   "kraken_range_usd",   kraken_levels   * kraken_tick,
-                 "okx_tick",      okx_tick,      "okx_levels",      okx_levels,      "okx_range_usd",      okx_levels      * okx_tick,
-                 "coinbase_tick", coinbase_tick, "coinbase_levels", coinbase_levels, "coinbase_range_usd", coinbase_levels * coinbase_tick);
+                 "binance_tick", binance_tick, "binance_levels", binance_levels, "binance_range_usd",
+                 binance_levels * binance_tick,
+                 "kraken_tick", kraken_tick, "kraken_levels", kraken_levels, "kraken_range_usd",
+                 kraken_levels * kraken_tick,
+                 "okx_tick", okx_tick, "okx_levels", okx_levels, "okx_range_usd", okx_levels * okx_tick,
+                 "coinbase_tick", coinbase_tick, "coinbase_levels", coinbase_levels, "coinbase_range_usd",
+                 coinbase_levels * coinbase_tick);
 
-        BookManager binance_book(opts.symbol, Exchange::BINANCE,  binance_tick,  binance_levels);
-        BookManager kraken_book(opts.symbol,  Exchange::KRAKEN,   kraken_tick,   kraken_levels);
-        BookManager okx_book(opts.symbol,     Exchange::OKX,      okx_tick,      okx_levels);
+        BookManager binance_book(opts.symbol, Exchange::BINANCE, binance_tick, binance_levels);
+        BookManager kraken_book(opts.symbol, Exchange::KRAKEN, kraken_tick, kraken_levels);
+        BookManager okx_book(opts.symbol, Exchange::OKX, okx_tick, okx_levels);
         BookManager coinbase_book(opts.symbol, Exchange::COINBASE, coinbase_tick, coinbase_levels);
 
         LobPublisher lob_publisher;
@@ -235,7 +236,7 @@ auto main(int argc, char** argv) -> int {
             LOG_WARN("LOB publisher unavailable", "path", LobPublisher::k_default_path);
         }
 
-        LobPublisher* pub = lob_publisher.is_open() ? &lob_publisher : nullptr;
+        LobPublisher *pub = lob_publisher.is_open() ? &lob_publisher : nullptr;
         engine::wire_book_bridge_and_callbacks(binance_feed, binance_book, pub);
         engine::wire_book_bridge_and_callbacks(kraken_feed, kraken_book, pub);
         engine::wire_book_bridge_and_callbacks(okx_feed, okx_book, pub);
@@ -289,8 +290,8 @@ auto main(int argc, char** argv) -> int {
             LOG_WARN("Failed to register Coinbase connector with reconciliation service");
         }
 
-        auto connect_if_needed = [](LiveConnectorBase& connector, bool enabled,
-                                    ReconciliationService& reconciliation) -> bool {
+        auto connect_if_needed = [](LiveConnectorBase &connector, bool enabled,
+                                    ReconciliationService &reconciliation) -> bool {
             if (!enabled) {
                 return false;
             }
@@ -300,7 +301,7 @@ auto main(int argc, char** argv) -> int {
 
             const ConnectorResult res = connector.connect();
             if (res == ConnectorResult::OK) {
-                (void)reconciliation.mark_reconnect_required(connector.exchange_id());
+                (void) reconciliation.mark_reconnect_required(connector.exchange_id());
             }
             return res == ConnectorResult::OK;
         };
@@ -329,7 +330,7 @@ auto main(int argc, char** argv) -> int {
         const auto reconnect_interval = std::chrono::seconds(1);
         const auto reconciliation_interval = std::chrono::seconds(30);
         const auto loop_interval =
-            std::chrono::milliseconds(opts.loop_interval_ms > 0 ? opts.loop_interval_ms : 500);
+                std::chrono::milliseconds(opts.loop_interval_ms > 0 ? opts.loop_interval_ms : 500);
         auto next_reconnect = std::chrono::steady_clock::now() + reconnect_interval;
         auto next_reconciliation = std::chrono::steady_clock::now() + reconciliation_interval;
 
@@ -346,25 +347,25 @@ auto main(int argc, char** argv) -> int {
             }
 
             kill_switch.heartbeat();
-            (void)kill_switch.check_heartbeat();
+            (void) kill_switch.check_heartbeat();
 
             const AlphaSignal alpha_signal = alpha_reader.read();
             if (opts.mode == "shadow") {
                 shadow_engine.check_fills();
             }
-            const auto submit_decision = [&](const RoutingDecision& decision, Side side,
-                                            double route_qty, const char* intent) {
+            const auto submit_decision = [&](const RoutingDecision &decision, Side side,
+                                             double route_qty, const char *intent) {
                 for (size_t i = 0; i < decision.child_count; ++i) {
-                    const auto& child = decision.children[i];
+                    const auto &child = decision.children[i];
 
                     if (circuit_breaker.check_order_rate() != CircuitCheckResult::OK) {
                         LOG_WARN("circuit-breaker: order rate limit reached, halting submissions");
                         break;
                     }
 
-                    BookManager* child_book =
-                        book_for_exchange(child.exchange, binance_book, kraken_book, okx_book,
-                                          coinbase_book);
+                    BookManager *child_book =
+                            book_for_exchange(child.exchange, binance_book, kraken_book, okx_book,
+                                              coinbase_book);
                     if (child_book == nullptr) {
                         continue;
                     }
@@ -376,8 +377,8 @@ auto main(int argc, char** argv) -> int {
                     }
 
                     const Order child_order =
-                        make_child_order(opts.symbol.c_str(), child.exchange, side, child.quantity,
-                                         limit_price, next_id++);
+                            make_child_order(opts.symbol.c_str(), child.exchange, side, child.quantity,
+                                             limit_price, next_id++);
 
                     const double signed_notional = child.quantity * child_order.price *
                                                    (side == Side::BID ? 1.0 : -1.0);
@@ -397,37 +398,37 @@ auto main(int argc, char** argv) -> int {
                     ConnectorResult res = ConnectorResult::ERROR_UNKNOWN;
                     if (opts.mode == "shadow") {
                         switch (child.exchange) {
-                        case Exchange::BINANCE:
-                            res = shadow_engine.binance_connector().submit_order(child_order);
-                            break;
-                        case Exchange::KRAKEN:
-                            res = shadow_engine.kraken_connector().submit_order(child_order);
-                            break;
-                        case Exchange::OKX:
-                            res = shadow_engine.okx_connector().submit_order(child_order);
-                            break;
-                        case Exchange::COINBASE:
-                            res = shadow_engine.coinbase_connector().submit_order(child_order);
-                            break;
-                        default:
-                            break;
+                            case Exchange::BINANCE:
+                                res = shadow_engine.binance_connector().submit_order(child_order);
+                                break;
+                            case Exchange::KRAKEN:
+                                res = shadow_engine.kraken_connector().submit_order(child_order);
+                                break;
+                            case Exchange::OKX:
+                                res = shadow_engine.okx_connector().submit_order(child_order);
+                                break;
+                            case Exchange::COINBASE:
+                                res = shadow_engine.coinbase_connector().submit_order(child_order);
+                                break;
+                            default:
+                                break;
                         }
                     } else {
                         switch (child.exchange) {
-                        case Exchange::BINANCE:
-                            res = binance.submit_order(child_order);
-                            break;
-                        case Exchange::KRAKEN:
-                            res = kraken.submit_order(child_order);
-                            break;
-                        case Exchange::OKX:
-                            res = okx.submit_order(child_order);
-                            break;
-                        case Exchange::COINBASE:
-                            res = coinbase.submit_order(child_order);
-                            break;
-                        default:
-                            break;
+                            case Exchange::BINANCE:
+                                res = binance.submit_order(child_order);
+                                break;
+                            case Exchange::KRAKEN:
+                                res = kraken.submit_order(child_order);
+                                break;
+                            case Exchange::OKX:
+                                res = okx.submit_order(child_order);
+                                break;
+                            case Exchange::COINBASE:
+                                res = coinbase.submit_order(child_order);
+                                break;
+                            default:
+                                break;
                         }
                     }
 
@@ -452,42 +453,48 @@ auto main(int argc, char** argv) -> int {
                     const bool exit_due_signal = !buy_signal;
                     if (exit_due_horizon || exit_due_signal) {
                         constexpr Side exit_side = Side::ASK;
-                        std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> exit_quotes{{
-                            make_quote(Exchange::BINANCE, binance_book, run_binance, exit_side),
-                            make_quote(Exchange::KRAKEN, kraken_book, run_kraken, exit_side),
-                            make_quote(Exchange::OKX, okx_book, run_okx, exit_side),
-                            make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, exit_side),
-                        }};
+                        std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> exit_quotes{
+                            {
+                                make_quote(Exchange::BINANCE, binance_book, run_binance, exit_side),
+                                make_quote(Exchange::KRAKEN, kraken_book, run_kraken, exit_side),
+                                make_quote(Exchange::OKX, okx_book, run_okx, exit_side),
+                                make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, exit_side),
+                            }
+                        };
                         const RoutingDecision exit_decision =
-                            sor.route(exit_side, current_position, exit_quotes);
+                                sor.route(exit_side, current_position, exit_quotes);
                         submit_decision(exit_decision, exit_side, current_position,
                                         exit_due_horizon ? "horizon_exit" : "signal_exit");
                         shadow_exit_loop = -1;
                     }
                 } else if (target_qty > 1e-6 && buy_signal) {
                     constexpr Side entry_side = Side::BID;
-                    std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> entry_quotes{{
-                        make_quote(Exchange::BINANCE, binance_book, run_binance, entry_side),
-                        make_quote(Exchange::KRAKEN, kraken_book, run_kraken, entry_side),
-                        make_quote(Exchange::OKX, okx_book, run_okx, entry_side),
-                        make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, entry_side),
-                    }};
+                    std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> entry_quotes{
+                        {
+                            make_quote(Exchange::BINANCE, binance_book, run_binance, entry_side),
+                            make_quote(Exchange::KRAKEN, kraken_book, run_kraken, entry_side),
+                            make_quote(Exchange::OKX, okx_book, run_okx, entry_side),
+                            make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, entry_side),
+                        }
+                    };
                     const RoutingDecision entry_decision =
-                        sor.route(entry_side, target_qty, entry_quotes);
+                            sor.route(entry_side, target_qty, entry_quotes);
                     submit_decision(entry_decision, entry_side, target_qty, "alpha_entry");
                     shadow_exit_loop = static_cast<int64_t>(shadow_loop_index) +
                                        (alpha_signal.horizon_ticks > 0 ? alpha_signal.horizon_ticks : 1);
                 }
             } else {
-                std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venue_quotes{{
-                    make_quote(Exchange::BINANCE, binance_book, run_binance, Side::BID),
-                    make_quote(Exchange::KRAKEN, kraken_book, run_kraken, Side::BID),
-                    make_quote(Exchange::OKX, okx_book, run_okx, Side::BID),
-                    make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, Side::BID),
-                }};
+                std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venue_quotes{
+                    {
+                        make_quote(Exchange::BINANCE, binance_book, run_binance, Side::BID),
+                        make_quote(Exchange::KRAKEN, kraken_book, run_kraken, Side::BID),
+                        make_quote(Exchange::OKX, okx_book, run_okx, Side::BID),
+                        make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, Side::BID),
+                    }
+                };
 
                 const RoutingDecision decision =
-                    sor.route_with_alpha(Side::BID, 0.5, alpha_signal, venue_quotes);
+                        sor.route_with_alpha(Side::BID, 0.5, alpha_signal, venue_quotes);
                 if (!decision.blocked_by_alpha) {
                     submit_decision(decision, Side::BID, 0.5, "alpha_entry");
                 }
@@ -544,20 +551,22 @@ auto main(int argc, char** argv) -> int {
             const double final_position = shadow_engine.net_position();
             if (final_position > 1e-9) {
                 constexpr Side exit_side = Side::ASK;
-                std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> exit_quotes{{
-                    make_quote(Exchange::BINANCE, binance_book, run_binance, exit_side),
-                    make_quote(Exchange::KRAKEN, kraken_book, run_kraken, exit_side),
-                    make_quote(Exchange::OKX, okx_book, run_okx, exit_side),
-                    make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, exit_side),
-                }};
+                std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> exit_quotes{
+                    {
+                        make_quote(Exchange::BINANCE, binance_book, run_binance, exit_side),
+                        make_quote(Exchange::KRAKEN, kraken_book, run_kraken, exit_side),
+                        make_quote(Exchange::OKX, okx_book, run_okx, exit_side),
+                        make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, exit_side),
+                    }
+                };
                 const RoutingDecision exit_decision =
-                    sor.route(exit_side, final_position, exit_quotes);
-                const auto final_submit = [&](const RoutingDecision& decision) {
+                        sor.route(exit_side, final_position, exit_quotes);
+                const auto final_submit = [&](const RoutingDecision &decision) {
                     for (size_t i = 0; i < decision.child_count; ++i) {
-                        const auto& child = decision.children[i];
-                        BookManager* child_book =
-                            book_for_exchange(child.exchange, binance_book, kraken_book, okx_book,
-                                              coinbase_book);
+                        const auto &child = decision.children[i];
+                        BookManager *child_book =
+                                book_for_exchange(child.exchange, binance_book, kraken_book, okx_book,
+                                                  coinbase_book);
                         if (child_book == nullptr) {
                             continue;
                         }
@@ -569,20 +578,20 @@ auto main(int argc, char** argv) -> int {
                                                              exit_side, child.quantity,
                                                              limit_price, next_id++);
                         switch (child.exchange) {
-                        case Exchange::BINANCE:
-                            (void)shadow_engine.binance_connector().submit_order(order);
-                            break;
-                        case Exchange::KRAKEN:
-                            (void)shadow_engine.kraken_connector().submit_order(order);
-                            break;
-                        case Exchange::OKX:
-                            (void)shadow_engine.okx_connector().submit_order(order);
-                            break;
-                        case Exchange::COINBASE:
-                            (void)shadow_engine.coinbase_connector().submit_order(order);
-                            break;
-                        default:
-                            break;
+                            case Exchange::BINANCE:
+                                (void) shadow_engine.binance_connector().submit_order(order);
+                                break;
+                            case Exchange::KRAKEN:
+                                (void) shadow_engine.kraken_connector().submit_order(order);
+                                break;
+                            case Exchange::OKX:
+                                (void) shadow_engine.okx_connector().submit_order(order);
+                                break;
+                            case Exchange::COINBASE:
+                                (void) shadow_engine.coinbase_connector().submit_order(order);
+                                break;
+                            default:
+                                break;
                         }
                     }
                 };
@@ -595,7 +604,7 @@ auto main(int argc, char** argv) -> int {
         LOG_INFO("trading_engine shutdown complete");
 
         return 0;
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         LOG_ERROR("trading_engine fatal error", "what", ex.what());
     } catch (...) {
         LOG_ERROR("trading_engine fatal error", "what", "unknown exception");

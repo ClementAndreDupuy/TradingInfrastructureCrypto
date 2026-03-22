@@ -24,6 +24,13 @@ def run(cmd: list[str]) -> tuple[bool, str]:
     return res.returncode == 0, out.strip()
 
 
+def pkg_config_cflags(module: str) -> list[str]:
+    ok, out = run(["pkg-config", "--cflags-only-I", module])
+    if not ok or not out:
+        return []
+    return out.split()
+
+
 def has_pkg_config(module: str) -> Check:
     ok, out = run(["pkg-config", "--exists", module])
     if ok:
@@ -32,13 +39,17 @@ def has_pkg_config(module: str) -> Check:
     return Check(module, False, out or "pkg-config module not found")
 
 
-def has_header(header: str) -> Check:
+def has_header(header: str, include_flags: list[str] | None = None) -> Check:
     compiler = shutil.which("c++") or shutil.which("g++") or shutil.which("clang++")
     if not compiler:
         return Check(header, False, "no C++ compiler found in PATH")
     src = f"#include <{header}>\nint main(){{return 0;}}\n"
+    cmd = [compiler, "-x", "c++", "-std=c++17", "-"]
+    if include_flags:
+        cmd.extend(include_flags)
+    cmd.append("-fsyntax-only")
     proc = subprocess.run(
-        [compiler, "-x", "c++", "-std=c++17", "-", "-fsyntax-only"],
+        cmd,
         input=src,
         text=True,
         capture_output=True,
@@ -55,7 +66,7 @@ def main() -> int:
         Check("pkg-config", shutil.which("pkg-config") is not None, "binary in PATH" if shutil.which("pkg-config") else "missing"),
         has_pkg_config("libwebsockets"),
         has_pkg_config("libcurl"),
-        has_header("nlohmann/json.hpp"),
+        has_header("nlohmann/json.hpp", include_flags=pkg_config_cflags("nlohmann_json")),
     ]
 
     failed = [c for c in checks if not c.ok]

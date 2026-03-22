@@ -1,10 +1,6 @@
 #include "kraken_connector.hpp"
 
-#if __has_include(<nlohmann/json.hpp>)
 #include <nlohmann/json.hpp>
-#else
-#include "../../common/json.hpp"
-#endif
 
 #include "../../common/symbol_mapper.hpp"
 

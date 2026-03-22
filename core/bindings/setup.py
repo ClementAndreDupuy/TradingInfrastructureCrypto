@@ -1,19 +1,3 @@
-"""
-Build script for the trading_core pybind11 extension module.
-
-Usage (from repo root):
-    pip3 install pybind11 numpy
-    python3 core/bindings/setup.py build_ext --inplace
-
-The resulting trading_core.so lands in core/bindings/ and can be imported as:
-    import sys; sys.path.insert(0, 'core/bindings')
-    import trading_core
-
-Prefer the CMake + scikit-build-core path for production builds:
-    pip install scikit-build-core pybind11
-    pip install -e . --no-build-isolation
-"""
-
 import os
 import subprocess
 import sys
@@ -84,8 +68,10 @@ _require_pkg(
     "apt install libssl-dev  /  brew install openssl@3",
 )
 
-# nlohmann_json is header-only and optional via pkg-config; missing is non-fatal
-# if the header is reachable via the system include path.
+_require_pkg(
+    "nlohmann_json",
+    "apt install nlohmann-json3-dev  /  brew install nlohmann-json",
+)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -97,11 +83,11 @@ _core = os.path.join(_root, "core")
 
 include_dirs: list[str] = [pybind11.get_include(), _core]
 library_dirs: list[str] = []
-libraries:    list[str] = []
+libraries: list[str] = []
 
 # Release-quality flags; -std=c++17 is required — setuptools does not set it.
 extra_compile_args: list[str] = ["-std=c++17", "-O2", "-fPIC", "-fvisibility=hidden", "-DNDEBUG"]
-extra_link_args:    list[str] = []
+extra_link_args: list[str] = []
 
 # libwebsockets
 _parse_flags(
@@ -133,9 +119,9 @@ def _dedup(lst: list) -> list:
     return [x for x in lst if not (x in seen or seen.add(x))]
 
 
-include_dirs    = _dedup(include_dirs)
-library_dirs    = _dedup(library_dirs)
-libraries       = _dedup(libraries)
+include_dirs = _dedup(include_dirs)
+library_dirs = _dedup(library_dirs)
+libraries = _dedup(libraries)
 extra_link_args = _dedup(extra_link_args)
 
 # ── Diagnostics ───────────────────────────────────────────────────────────────

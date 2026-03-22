@@ -7,62 +7,62 @@
 #include <cstddef>
 
 namespace trading {
+    struct VenueQuote {
+        Exchange exchange = Exchange::UNKNOWN;
+        double best_bid = 0.0;
+        double best_ask = 0.0;
+        double depth_qty = 0.0;
+        double taker_fee_bps = 0.0;
+        double latency_penalty_bps = 0.0;
+        double risk_penalty_bps = 0.0;
+        double fill_probability = 0.5;
+        double queue_ahead_qty = 0.0;
+        double toxicity_bps = 0.0;
+        bool healthy = false;
+    };
 
-struct VenueQuote {
-    Exchange exchange = Exchange::UNKNOWN;
-    double best_bid = 0.0;
-    double best_ask = 0.0;
-    double depth_qty = 0.0;
-    double taker_fee_bps = 0.0;
-    double latency_penalty_bps = 0.0;
-    double risk_penalty_bps = 0.0;
-    double fill_probability = 0.5;
-    double queue_ahead_qty = 0.0;
-    double toxicity_bps = 0.0;
-    bool healthy = false;
-};
+    struct RoutingRegime {
+        double fill_weight_bps = 4.0;
+        double queue_weight_bps = 0.6;
+        double toxicity_weight = 1.0;
+    };
 
-struct RoutingRegime {
-    double fill_weight_bps = 4.0;
-    double queue_weight_bps = 0.6;
-    double toxicity_weight = 1.0;
-};
+    struct ChildOrder {
+        Exchange exchange = Exchange::UNKNOWN;
+        double quantity = 0.0;
+        double limit_price = 0.0;
+    };
 
-struct ChildOrder {
-    Exchange exchange = Exchange::UNKNOWN;
-    double quantity = 0.0;
-    double limit_price = 0.0;
-};
+    struct RoutingDecision {
+        std::array<ChildOrder, 8> children{};
+        size_t child_count = 0;
+        bool blocked_by_alpha = false;
+    };
 
-struct RoutingDecision {
-    std::array<ChildOrder, 8> children{};
-    size_t child_count = 0;
-    bool blocked_by_alpha = false;
-};
+    struct RoutingConstraints {
+        double alpha_min_signal_bps = 3.0;
+        double alpha_risk_max = 0.65;
+        double alpha_qty_scale = 0.10;
+    };
 
-struct RoutingConstraints {
-    double alpha_min_signal_bps = 3.0;
-    double alpha_risk_max = 0.65;
-    double alpha_qty_scale = 0.10;
-};
+    class SmartOrderRouter {
+    public:
+        static constexpr size_t MAX_VENUES = 4;
 
-class SmartOrderRouter {
-  public:
-    static constexpr size_t MAX_VENUES = 4;
+        static RoutingDecision route(Side side, double quantity,
+                                     const std::array<VenueQuote, MAX_VENUES> &venues) noexcept;
 
-    static RoutingDecision route(Side side, double quantity,
-                                 const std::array<VenueQuote, MAX_VENUES>& venues) noexcept;
+        static RoutingDecision route_with_alpha(Side side, double base_quantity,
+                                                const AlphaSignal &alpha_signal,
+                                                const std::array<VenueQuote, MAX_VENUES> &venues,
+                                                const RoutingConstraints &cfg = {}) noexcept;
 
-    static RoutingDecision route_with_alpha(Side side, double base_quantity,
-                                            const AlphaSignal& alpha_signal,
-                                            const std::array<VenueQuote, MAX_VENUES>& venues,
-                                            const RoutingConstraints& cfg = {}) noexcept;
+    private:
+        static double effective_price_bps(const VenueQuote &v, Side side) noexcept;
 
-  private:
-    static double effective_price_bps(const VenueQuote& v, Side side) noexcept;
-    static RoutingRegime infer_regime(const std::array<VenueQuote, MAX_VENUES>& venues) noexcept;
-    static double score_venue_bps(const VenueQuote& v, Side side,
-                                  const RoutingRegime& regime) noexcept;
-};
+        static RoutingRegime infer_regime(const std::array<VenueQuote, MAX_VENUES> &venues) noexcept;
 
+        static double score_venue_bps(const VenueQuote &v, Side side,
+                                      const RoutingRegime &regime) noexcept;
+    };
 }

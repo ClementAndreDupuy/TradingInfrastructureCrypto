@@ -8,6 +8,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(BINDINGS_LIBWEBSOCKETS REQUIRED libwebsockets)
 find_package(CURL QUIET)
 find_package(OpenSSL QUIET)
+find_package(nlohmann_json REQUIRED)
 
 pybind11_add_module(trading_core MODULE
     bindings.cpp
@@ -28,6 +29,7 @@ target_link_directories(trading_core PRIVATE
 
 target_link_libraries(trading_core PRIVATE
     trading_common
+    nlohmann_json::nlohmann_json
     ${BINDINGS_LIBWEBSOCKETS_LIBRARIES}
 )
 if(CURL_FOUND)

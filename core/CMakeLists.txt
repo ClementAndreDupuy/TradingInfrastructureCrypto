@@ -19,13 +19,9 @@ if(NOT TARGET CURL::libcurl)
     endif()
 endif()
 
-# nlohmann/json: prefer system package, fall back to vendored core/common/json.hpp.
+# nlohmann/json is required.
 # Install: sudo apt install nlohmann-json3-dev
-find_package(nlohmann_json QUIET)
-if(NOT nlohmann_json_FOUND)
-    message(STATUS "nlohmann/json not found; using vendored core/common/json.hpp")
-    add_library(nlohmann_json::nlohmann_json INTERFACE IMPORTED)
-endif()
+find_package(nlohmann_json REQUIRED)
 
 # Common types library (header-only)
 add_library(trading_common INTERFACE)
@@ -138,6 +134,7 @@ add_library(execution
 target_link_libraries(execution
     trading_common
     CURL::libcurl
+    nlohmann_json::nlohmann_json
 )
 
 if(OpenSSL_FOUND)

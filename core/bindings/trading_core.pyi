@@ -1,11 +1,3 @@
-"""
-Type stubs for the trading_core pybind11 extension (v1.0.0).
-
-Requires: pybind11>=2.11, Python>=3.10, libwebsockets>=4.0
-Build: pip install -e . --no-build-isolation
-       OR python3 bindings/setup.py build_ext --inplace
-"""
-
 from __future__ import annotations
 
 from enum import IntEnum
@@ -14,12 +6,6 @@ from typing import Callable, TypeVar
 import numpy as np
 
 __version__: str
-
-# ── Enums ──────────────────────────────────────────────────────────────────────
-# All enums are C++ enum class (scoped).  Access via qualified name only:
-#   trading_core.Exchange.BINANCE   ✓
-#   trading_core.BINANCE            ✗  (not exported to module namespace)
-
 
 class Exchange(IntEnum):
     BINANCE: int
@@ -61,10 +47,10 @@ class VenueSymbols:
     All fields are read-only strings in the format expected by each exchange.
     """
 
-    binance: str      # e.g. "BTCUSDT"
-    okx: str          # e.g. "BTC-USDT"
-    coinbase: str     # e.g. "BTC-USDT"
-    kraken_ws: str    # e.g. "BTC/USDT"
+    binance: str  # e.g. "BTCUSDT"
+    okx: str  # e.g. "BTC-USDT"
+    coinbase: str  # e.g. "BTC-USDT"
+    kraken_ws: str  # e.g. "BTC/USDT"
     kraken_rest: str  # e.g. "BTC/USDT"
 
     def for_exchange(self, exchange: Exchange) -> str:
@@ -109,10 +95,12 @@ class PriceLevel:
     """
 
     price: float  # Absolute price in quote currency (e.g. USD)
-    size: float   # Quantity at this price level (in base currency)
+    size: float  # Quantity at this price level (in base currency)
 
     def __init__(self, price: float = ..., size: float = ...) -> None: ...
+
     def __eq__(self, other: object) -> bool: ...
+
     def __repr__(self) -> str: ...
 
 
@@ -124,15 +112,17 @@ class Delta:
     Timestamps are nanoseconds since Unix epoch (PTP-synced where available).
     """
 
-    side: Side                    # Which side of the book is updated
-    price: float                  # Price level being updated
-    size: float                   # New size at this level (0.0 = remove level)
-    sequence: int                 # Exchange sequence number for gap detection
-    timestamp_exchange_ns: int    # Exchange-reported event time (ns since epoch)
-    timestamp_local_ns: int       # Local receipt timestamp (ns since epoch)
+    side: Side  # Which side of the book is updated
+    price: float  # Price level being updated
+    size: float  # New size at this level (0.0 = remove level)
+    sequence: int  # Exchange sequence number for gap detection
+    timestamp_exchange_ns: int  # Exchange-reported event time (ns since epoch)
+    timestamp_local_ns: int  # Local receipt timestamp (ns since epoch)
 
     def __init__(self) -> None: ...
+
     def __eq__(self, other: object) -> bool: ...
+
     def __repr__(self) -> str: ...
 
 
@@ -144,17 +134,18 @@ class Snapshot:
     Timestamps are nanoseconds since Unix epoch (PTP-synced where available).
     """
 
-    symbol: str                   # Trading pair (e.g. "BTCUSDT", "XBT/USD")
-    exchange: Exchange            # Source exchange
-    sequence: int                 # Snapshot sequence number
-    bids: list[PriceLevel]        # Bid levels, best (highest) first
-    asks: list[PriceLevel]        # Ask levels, best (lowest) first
-    checksum: int                 # Optional exchange-provided checksum
-    checksum_present: bool        # True when checksum field is valid
-    timestamp_exchange_ns: int    # Exchange-reported timestamp (ns since epoch)
-    timestamp_local_ns: int       # Local receipt timestamp (ns since epoch)
+    symbol: str  # Trading pair (e.g. "BTCUSDT", "XBT/USD")
+    exchange: Exchange  # Source exchange
+    sequence: int  # Snapshot sequence number
+    bids: list[PriceLevel]  # Bid levels, best (highest) first
+    asks: list[PriceLevel]  # Ask levels, best (lowest) first
+    checksum: int  # Optional exchange-provided checksum
+    checksum_present: bool  # True when checksum field is valid
+    timestamp_exchange_ns: int  # Exchange-reported timestamp (ns since epoch)
+    timestamp_local_ns: int  # Local receipt timestamp (ns since epoch)
 
     def __init__(self) -> None: ...
+
     def __repr__(self) -> str: ...
 
 
@@ -201,11 +192,11 @@ class OrderBook:
         ...
 
     def __init__(
-        self,
-        symbol: str,
-        exchange: Exchange,
-        tick_size: float = 1.0,
-        max_levels: int = 20000,
+            self,
+            symbol: str,
+            exchange: Exchange,
+            tick_size: float = 1.0,
+            max_levels: int = 20000,
     ) -> None: ...
 
     def apply_snapshot(self, snapshot: Snapshot) -> Result:
@@ -217,10 +208,15 @@ class OrderBook:
         ...
 
     def get_best_bid(self) -> float: ...
+
     def get_best_ask(self) -> float: ...
+
     def get_mid_price(self) -> float: ...
+
     def get_spread(self) -> float: ...
+
     def get_sequence(self) -> int: ...
+
     def is_initialized(self) -> bool: ...
 
     def get_top_levels(self, n: int) -> tuple[list[PriceLevel], list[PriceLevel]]:
@@ -285,12 +281,6 @@ class KillSwitch:
     def reason_to_string(reason: KillReason) -> str: ...
 
 
-# ── Feed Handler Base Interface ────────────────────────────────────────────────
-#
-# Both BinanceFeedHandler and KrakenFeedHandler expose this identical interface.
-# Use this as a type annotation when writing exchange-agnostic code:
-#
-#   def attach_book(handler: _FeedHandlerBase, book: OrderBook) -> None: ...
 
 _FH = TypeVar("_FH", bound="_FeedHandlerBase")
 
@@ -375,10 +365,10 @@ class _FeedHandlerBase:
     def __enter__(self: _FH) -> _FH: ...
 
     def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: object,
+            self,
+            exc_type: type[BaseException] | None,
+            exc_val: BaseException | None,
+            exc_tb: object,
     ) -> bool: ...
 
 
@@ -389,43 +379,40 @@ class BinanceFeedHandler(_FeedHandlerBase):
     """Binance spot order book feed handler using the diff-depth WebSocket stream."""
 
     def __init__(
-        self,
-        symbol: str,
-        api_url: str = "https://api.binance.com",
-        ws_url: str = "wss://stream.binance.com:9443/ws",
+            self,
+            symbol: str,
+            api_url: str = "https://api.binance.com",
+            ws_url: str = "wss://stream.binance.com:9443/ws",
     ) -> None: ...
 
 
 class KrakenFeedHandler(_FeedHandlerBase):
     """Kraken order book feed handler using the WebSocket v2 book channel."""
-
     def __init__(
-        self,
-        symbol: str,
-        api_key: str = "",
-        api_secret: str = "",
-        api_url: str = "https://api.kraken.com",
-        ws_url: str = "wss://ws.kraken.com/v2",
+            self,
+            symbol: str,
+            api_key: str = "",
+            api_secret: str = "",
+            api_url: str = "https://api.kraken.com",
+            ws_url: str = "wss://ws.kraken.com/v2",
     ) -> None: ...
 
 
 class OkxFeedHandler(_FeedHandlerBase):
     """OKX order book feed handler using the WebSocket v5 public channel."""
-
     def __init__(
-        self,
-        symbol: str,
-        api_url: str = "https://www.okx.com",
-        ws_url: str = "wss://ws.okx.com:8443/ws/v5/public",
+            self,
+            symbol: str,
+            api_url: str = "https://www.okx.com",
+            ws_url: str = "wss://ws.okx.com:8443/ws/v5/public",
     ) -> None: ...
 
 
 class CoinbaseFeedHandler(_FeedHandlerBase):
     """Coinbase Advanced Trade order book feed handler using the WebSocket channel."""
-
     def __init__(
-        self,
-        symbol: str,
-        ws_url: str = "wss://advanced-trade-ws.coinbase.com",
-        api_url: str = "https://api.exchange.coinbase.com",
+            self,
+            symbol: str,
+            ws_url: str = "wss://advanced-trade-ws.coinbase.com",
+            api_url: str = "https://api.exchange.coinbase.com",
     ) -> None: ...
