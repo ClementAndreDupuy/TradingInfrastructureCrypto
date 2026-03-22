@@ -235,12 +235,11 @@ namespace {
         metadata.expected_edge_bps = signal.signal_bps - intent.expected_cost_bps;
         metadata.max_shortfall_bps = intent.max_shortfall_bps;
         metadata.decision_ts_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                          std::chrono::system_clock::now().time_since_epoch())
-                                          .count();
+                    std::chrono::system_clock::now().time_since_epoch())
+                .count();
         metadata.urgency = intent.urgency;
         return metadata;
     }
-
 } // namespace
 
 auto main(int argc, char **argv) -> int {
@@ -562,18 +561,18 @@ auto main(int argc, char **argv) -> int {
             portfolio_snapshot.global_position = opts.mode == "shadow" ? shadow_engine.net_position() : 0.0;
             if (portfolio_snapshot.global_position > 1e-9)
                 portfolio_snapshot.oldest_inventory_age_ms = std::max<int64_t>(
-                    0, alpha_signal.horizon_ticks) * opts.loop_interval_ms;
+                                                                 0, alpha_signal.horizon_ticks) * opts.loop_interval_ms;
             const PortfolioIntent intent =
-                intent_engine.evaluate(alpha_signal, regime_signal, portfolio_snapshot, bid_quotes);
+                    intent_engine.evaluate(alpha_signal, regime_signal, portfolio_snapshot, bid_quotes);
             const ShadowIntentMetadata intent_metadata =
-                build_intent_metadata(alpha_signal, portfolio_snapshot.global_position, intent);
+                    build_intent_metadata(alpha_signal, portfolio_snapshot.global_position, intent);
             const std::string reason_codes = join_reason_codes(intent);
 
             const auto now = std::chrono::steady_clock::now();
             const bool should_log_portfolio_intent =
-                portfolio_log_state.last_log_time == std::chrono::steady_clock::time_point{} ||
-                portfolio_intent_changed(portfolio_log_state, intent_metadata, reason_codes, intent) ||
-                now - portfolio_log_state.last_log_time >= portfolio_log_heartbeat;
+                    portfolio_log_state.last_log_time == std::chrono::steady_clock::time_point{} ||
+                    portfolio_intent_changed(portfolio_log_state, intent_metadata, reason_codes, intent) ||
+                    now - portfolio_log_state.last_log_time >= portfolio_log_heartbeat;
 
             if (should_log_portfolio_intent) {
                 update_portfolio_intent_log_state(portfolio_log_state, intent_metadata, reason_codes,

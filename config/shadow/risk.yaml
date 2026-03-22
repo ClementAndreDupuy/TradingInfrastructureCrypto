@@ -1,12 +1,4 @@
-# Arbitrage risk limits — shadow environment
-# Identical code path to live; all limits tighter than dev to catch surprises.
-# Run >= 2 weeks in shadow before promoting to live.
-
 arb_risk:
-  # ── Position limits ──────────────────────────────────────────────────────────
-  max_abs_position_per_symbol:  0.1        # 10% of dev — start tiny
-  max_cross_exchange_exposure:  0.2
-
   # ── Notional limits (USD) ────────────────────────────────────────────────────
   max_notional_per_symbol:      5000.0
   max_notional_per_exchange:    10000.0
@@ -24,12 +16,7 @@ arb_risk:
   max_orders_per_second:        5          # conservative for shadow
   max_orders_per_minute:        100
 
-  # ── Arbitrage-specific ───────────────────────────────────────────────────────
-  min_spread_bps:               8.0        # higher than dev — only trade clear arbs
-  min_profit_usd:               1.00       # double dev minimum
-  max_book_age_ms:              250        # tighter staleness check
-  max_open_arb_legs:            5
-
+  # ── Orderbook ──────────────────────────────────────────────────────────────
   target_range_usd:             50.0      # Depth range used to size per-venue book grids
 
   # ── Flash crash / book corruption guard ──────────────────────────────────────
@@ -45,18 +32,6 @@ arb_risk:
     OKX:      8.0
     COINBASE: 6.0
     KRAKEN:   10.0
-
-  # ── Perp futures ─────────────────────────────────────────────────────────────
-  perp_arb:
-    binance_perp_maker_fee_bps:  2.0
-    binance_perp_taker_fee_bps:  5.0
-    kraken_futures_maker_fee_bps: 2.0
-    kraken_futures_taker_fee_bps: 5.0
-    taker_threshold_bps:  12.0
-    mm_spread_target_bps:  6.0
-    quote_ttl_ms:         500
-    hedge_timeout_ms:    2000
-    default_qty_btc:     0.001
 
   # ── Dead man's switch ────────────────────────────────────────────────────────
   heartbeat_timeout_ms:         3000       # tighter than dev

@@ -116,7 +116,7 @@ namespace trading {
             if (alpha_signal.signal_bps >= cfg_.min_entry_signal_bps && edge_positive) {
                 const double alpha_scale = std::clamp(
                     (alpha_signal.signal_bps - expected_cost_bps) /
-                        std::max(cfg_.min_entry_signal_bps, 1.0),
+                    std::max(cfg_.min_entry_signal_bps, 1.0),
                     0.0, 1.0);
                 const double risk_scale = std::clamp(1.0 - alpha_signal.risk_score, 0.0, 1.0);
                 const double health_scale = healthy_venues < SmartOrderRouter::MAX_VENUES
@@ -181,7 +181,7 @@ namespace trading {
             const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> &venues) noexcept {
             double best_cost = 0.0;
             bool found = false;
-            for (const auto &venue : venues) {
+            for (const auto &venue: venues) {
                 if (!venue.healthy || venue.depth_qty <= 0.0)
                     continue;
                 const double cost = venue.taker_fee_bps + venue.latency_penalty_bps +
@@ -198,7 +198,7 @@ namespace trading {
         [[nodiscard]] static size_t count_healthy_venues(
             const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> &venues) noexcept {
             size_t count = 0;
-            for (const auto &venue : venues) {
+            for (const auto &venue: venues) {
                 if (venue.healthy && venue.depth_qty > 0.0)
                     ++count;
             }

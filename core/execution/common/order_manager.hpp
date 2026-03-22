@@ -106,9 +106,11 @@ namespace trading {
 
         double position() const noexcept { return position_; }
         double realized_pnl() const noexcept { return ledger_.snapshot().realized_pnl; }
+
         void update_mid_price(const char *symbol, Exchange exchange, double mid_price) noexcept {
             ledger_.update_mid_price(symbol, exchange, mid_price);
         }
+
         PositionLedgerSnapshot ledger_snapshot() const noexcept { return ledger_.snapshot(); }
 
         uint32_t active_order_count() const noexcept {

@@ -41,8 +41,8 @@ namespace trading {
     public:
         static constexpr size_t MAX_VENUES = 4;
 
-        void on_order_submitted(const Order& order) noexcept {
-            auto* venue = find_or_create_venue(order.exchange, order.symbol);
+        void on_order_submitted(const Order &order) noexcept {
+            auto *venue = find_or_create_venue(order.exchange, order.symbol);
             if (!venue)
                 return;
             if (order.side == Side::BID)
@@ -52,8 +52,8 @@ namespace trading {
             copy_symbol(symbol_, order.symbol);
         }
 
-        void on_order_closed(const Order& order, double remaining_qty) noexcept {
-            auto* venue = find_venue(order.exchange, order.symbol);
+        void on_order_closed(const Order &order, double remaining_qty) noexcept {
+            auto *venue = find_venue(order.exchange, order.symbol);
             if (!venue)
                 return;
             const double qty = std::max(0.0, remaining_qty);
@@ -63,8 +63,8 @@ namespace trading {
                 venue->pending_ask_qty = std::max(0.0, venue->pending_ask_qty - qty);
         }
 
-        void on_fill(const Order& order, const FillUpdate& fill) noexcept {
-            auto* venue = find_or_create_venue(order.exchange, order.symbol);
+        void on_fill(const Order &order, const FillUpdate &fill) noexcept {
+            auto *venue = find_or_create_venue(order.exchange, order.symbol);
             if (!venue)
                 return;
 
@@ -77,8 +77,8 @@ namespace trading {
             apply_inventory_fill(*venue, order.side, fill.fill_qty, fill.fill_price);
         }
 
-        void update_mid_price(const char* symbol, Exchange exchange, double mid_price) noexcept {
-            auto* venue = find_or_create_venue(exchange, symbol);
+        void update_mid_price(const char *symbol, Exchange exchange, double mid_price) noexcept {
+            auto *venue = find_or_create_venue(exchange, symbol);
             if (!venue)
                 return;
             venue->mid_price = mid_price;
@@ -89,7 +89,7 @@ namespace trading {
             PositionLedgerSnapshot out;
             copy_symbol(out.symbol, symbol_);
 
-            for (const auto& venue : venues_) {
+            for (const auto &venue: venues_) {
                 if (!venue.active)
                     continue;
 
@@ -128,7 +128,7 @@ namespace trading {
         std::array<VenuePosition, MAX_VENUES> venues_{};
         char symbol_[16] = {};
 
-        static void copy_symbol(char (&dst)[16], const char* src) noexcept {
+        static void copy_symbol(char (&dst)[16], const char *src) noexcept {
             if (!src) {
                 dst[0] = '\0';
                 return;
@@ -137,8 +137,8 @@ namespace trading {
             dst[sizeof(dst) - 1] = '\0';
         }
 
-        VenuePosition* find_venue(Exchange exchange, const char* symbol) noexcept {
-            for (auto& venue : venues_) {
+        VenuePosition *find_venue(Exchange exchange, const char *symbol) noexcept {
+            for (auto &venue: venues_) {
                 if (venue.active && venue.exchange == exchange &&
                     std::strncmp(venue.symbol, symbol, sizeof(venue.symbol)) == 0)
                     return &venue;
@@ -146,11 +146,11 @@ namespace trading {
             return nullptr;
         }
 
-        VenuePosition* find_or_create_venue(Exchange exchange, const char* symbol) noexcept {
-            if (auto* existing = find_venue(exchange, symbol))
+        VenuePosition *find_or_create_venue(Exchange exchange, const char *symbol) noexcept {
+            if (auto *existing = find_venue(exchange, symbol))
                 return existing;
 
-            for (auto& venue : venues_) {
+            for (auto &venue: venues_) {
                 if (venue.active)
                     continue;
                 venue = {};
@@ -166,14 +166,14 @@ namespace trading {
             return (value > 0.0) - (value < 0.0);
         }
 
-        static int64_t inventory_age_ms(const VenuePosition& venue) noexcept {
+        static int64_t inventory_age_ms(const VenuePosition &venue) noexcept {
             if (!venue.has_inventory_age || venue.position == 0.0)
                 return 0;
             using namespace std::chrono;
             return duration_cast<milliseconds>(steady_clock::now() - venue.opened_at).count();
         }
 
-        static double compute_unrealized_pnl(const VenuePosition& venue) noexcept {
+        static double compute_unrealized_pnl(const VenuePosition &venue) noexcept {
             if (venue.position == 0.0 || venue.avg_entry_price <= 0.0 || venue.mid_price <= 0.0)
                 return 0.0;
             if (venue.position > 0.0)
@@ -181,7 +181,7 @@ namespace trading {
             return (venue.avg_entry_price - venue.mid_price) * (-venue.position);
         }
 
-        PositionLedgerVenueSnapshot build_venue_snapshot(const VenuePosition& venue) const noexcept {
+        PositionLedgerVenueSnapshot build_venue_snapshot(const VenuePosition &venue) const noexcept {
             PositionLedgerVenueSnapshot out;
             out.exchange = venue.exchange;
             copy_symbol(out.symbol, venue.symbol);
@@ -201,7 +201,7 @@ namespace trading {
             double weighted_notional = 0.0;
             double total_qty = 0.0;
             int net_sign = 0;
-            for (const auto& venue : venues_) {
+            for (const auto &venue: venues_) {
                 if (!venue.active || venue.position == 0.0 || venue.avg_entry_price <= 0.0)
                     continue;
                 const int sign = position_sign(venue.position);
@@ -217,7 +217,7 @@ namespace trading {
             return weighted_notional / total_qty;
         }
 
-        static void apply_inventory_fill(VenuePosition& venue, Side side, double qty,
+        static void apply_inventory_fill(VenuePosition &venue, Side side, double qty,
                                          double price) noexcept {
             if (qty <= 0.0 || price <= 0.0)
                 return;
@@ -234,7 +234,7 @@ namespace trading {
                 const double total_qty = abs_prior + abs_fill;
                 venue.avg_entry_price = total_qty > 0.0
                                             ? ((venue.avg_entry_price * abs_prior) + (price * abs_fill)) /
-                                                  total_qty
+                                              total_qty
                                             : 0.0;
                 venue.position = new_position;
                 if (prior_position == 0.0 && new_position != 0.0) {
