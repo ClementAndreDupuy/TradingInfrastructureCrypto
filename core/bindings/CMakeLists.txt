@@ -12,9 +12,15 @@ find_package(OpenSSL QUIET)
 pybind11_add_module(trading_core MODULE
     bindings.cpp
     ${CMAKE_SOURCE_DIR}/core/feeds/binance/binance_feed_handler.cpp
+    ${CMAKE_SOURCE_DIR}/core/feeds/binance/binance_feed_processing.cpp
     ${CMAKE_SOURCE_DIR}/core/feeds/coinbase/coinbase_feed_handler.cpp
+    ${CMAKE_SOURCE_DIR}/core/feeds/coinbase/coinbase_feed_handler_runtime.cpp
+    ${CMAKE_SOURCE_DIR}/core/feeds/coinbase/coinbase_feed_processing.cpp
     ${CMAKE_SOURCE_DIR}/core/feeds/kraken/kraken_feed_handler.cpp
+    ${CMAKE_SOURCE_DIR}/core/feeds/kraken/kraken_feed_handler_processing.cpp
     ${CMAKE_SOURCE_DIR}/core/feeds/okx/okx_feed_handler.cpp
+    ${CMAKE_SOURCE_DIR}/core/feeds/okx/okx_feed_handler_processing.cpp
+    ${CMAKE_SOURCE_DIR}/core/feeds/common/feed_handler_utils.cpp
 )
 
 target_include_directories(trading_core PRIVATE
