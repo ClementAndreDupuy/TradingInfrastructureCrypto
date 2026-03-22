@@ -208,6 +208,7 @@ namespace {
         metadata.urgency = intent.urgency;
         return metadata;
     }
+
 } // namespace
 
 auto main(int argc, char **argv) -> int {
@@ -612,9 +613,15 @@ auto main(int argc, char **argv) -> int {
                 const RoutingDecision exit_decision =
                         sor.route(exit_side, final_position, exit_quotes);
                 const auto final_submit = [&](const RoutingDecision &decision) {
+                    PortfolioIntent final_intent;
+                    final_intent.target_global_position = 0.0;
+                    final_intent.position_delta = -final_position;
+                    final_intent.flatten_now = true;
+                    final_intent.expected_cost_bps = 6.0;
+                    final_intent.max_shortfall_bps = 7.5;
+                    final_intent.urgency = ShadowUrgency::AGGRESSIVE;
                     const ShadowIntentMetadata final_metadata =
-                            build_intent_metadata("flatten", "session_end", last_alpha_signal,
-                                                  final_position, 0.0, 6.0, 7.5);
+                            build_intent_metadata(last_alpha_signal, final_position, final_intent);
                     for (size_t i = 0; i < decision.child_count; ++i) {
                         const auto &child = decision.children[i];
                         BookManager *child_book =
