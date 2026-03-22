@@ -293,7 +293,7 @@ def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
             pretrain_spatial(model, train_loader, cfg.pretrain_epochs, cfg.lr, device, cfg.adv_noise_std)
         optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
         scheduler = _make_warmup_cosine_scheduler(optimizer, warmup_epochs=cfg.lr_warmup_epochs, total_epochs=cfg.epochs)
-        scaler = torch.cuda.amp.GradScaler(enabled=cfg.use_amp and device.type == "cuda")
+        scaler = torch.amp.GradScaler('cuda',enabled=cfg.use_amp and device.type == "cuda")
         best_selection_loss = float("inf")
         best_state = None
         epochs_no_improve = 0

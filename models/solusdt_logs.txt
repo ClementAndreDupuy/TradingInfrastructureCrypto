@@ -1,0 +1,671 @@
+(.venv) clementandredupuy@Mac ThamesRiverTrading % ./deploy/run_shadow.sh --venues OKX,KRAKEN --symbol SOLUSDT
+[2026-03-22T08:29:54Z] [shadow] [INFO] Starting python shadow session with python3.11 (symbol=SOLUSDT, exchanges=OKX,KRAKEN, signals -> /tmp/trt_ipc/neural_alpha_signal.bin, log=/Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl)
+[2026-03-22T08:29:54Z] [shadow] [INFO] Starting C++ shadow runner symbol=SOLUSDT venues=OKX,KRAKEN duration=2000s interval=1000ms
+2026-03-22 08:29:54.230990958 [INFO ] [Binance] FeedHandler created symbol=SOLUSDT
+2026-03-22 08:29:54.231015083 [INFO ] [Kraken] FeedHandler created symbol=SOLUSDT
+2026-03-22 08:29:54.231026000 [INFO ] [OKX] FeedHandler created symbol=SOLUSDT inst_id=SOL-USDT
+2026-03-22 08:29:54.231036958 [INFO ] [Coinbase] FeedHandler created symbol=SOLUSDT
+2026-03-22 08:29:54.286584467 [INFO ] [Kraken] Tick size fetched symbol=SOLUSDT tick_size=0.01
+2026-03-22 08:29:54.531780082 [INFO ] [OKX] Tick size fetched symbol=SOLUSDT tick_size=0.01
+2026-03-22 08:29:54.531796457 [INFO ] Grid configuration target_range_usd=50 binance_tick=1 binance_levels=50 binance_range_usd=50 kraken_tick=0.01 kraken_levels=5000 kraken_range_usd=50 okx_tick=0.01 okx_levels=5000 okx_range_usd=50 coinbase_tick=1 coinbase_le
+2026-03-22 08:29:54.532188916 [INFO ] [Kraken] Starting feed handler symbol=SOLUSDT
+2026-03-22 08:29:54.552260658 [INFO ] [Kraken] Tick size fetched symbol=SOLUSDT tick_size=0.01
+[2026/03/22 08:29:54:5527] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+[2026/03/22 08:29:54:5583] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/22 08:29:54:5583] W: ssh pvo "ops" is mandatory
+[2026/03/22 08:29:54:5583] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/22 08:29:54:5583] W: handler_server_protocol_init: requires 'upload-dir' pvo
+2026-03-22 08:29:54.736025379 [INFO ] [Kraken] WebSocket established, waiting for snapshot symbol=SOLUSDT
+2026-03-22 08:29:54.859268083 [INFO ] [OrderBook] Grid bounds symbol=SOLUSDT exchange=KRAKEN tick_size=0.01 capacity_levels=5000 active_levels=5000 base=62.09 top=112.09 dynamic_range_from_snapshot=false
+2026-03-22 08:29:54.859272208 [INFO ] [OrderBook] Snapshot applied symbol=SOLUSDT sequence=0 base_price=62.09 bids=100 asks=100
+2026-03-22 08:29:54.859301793 [INFO ] [Kraken] Feed handler started symbol=SOLUSDT
+2026-03-22 08:29:54.859302668 [INFO ] [OKX] Starting feed handler symbol=SOLUSDT
+2026-03-22 08:29:55.071570145 [INFO ] [OKX] Tick size fetched symbol=SOLUSDT tick_size=0.01
+[2026/03/22 08:29:55:0716] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+[2026/03/22 08:29:55:0721] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/22 08:29:55:0721] W: ssh pvo "ops" is mandatory
+[2026/03/22 08:29:55:0721] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/22 08:29:55:0721] W: handler_server_protocol_init: requires 'upload-dir' pvo
+2026-03-22 08:29:55.764397003 [INFO ] [OKX] WebSocket established symbol=SOLUSDT
+2026-03-22 08:29:56.381324860 [INFO ] [OrderBook] Grid bounds symbol=SOLUSDT exchange=OKX tick_size=0.01 capacity_levels=5000 active_levels=5000 base=62.08 top=112.08 dynamic_range_from_snapshot=false
+2026-03-22 08:29:56.381341110 [INFO ] [OrderBook] Snapshot applied symbol=SOLUSDT sequence=29646502629 base_price=62.08 bids=400 asks=400
+2026-03-22 08:29:56.381358777 [INFO ] [OKX] Applied buffered deltas applied=0 skipped=0
+2026-03-22 08:29:56.381363735 [INFO ] [OKX] WS snapshot applied symbol=SOLUSDT seq=29646502629
+2026-03-22 08:29:56.381370235 [INFO ] [OKX] feed handler started symbol=SOLUSDT
+2026-03-22 08:29:56.381374527 [WARN ] venue credential missing venue=OKX field=api_key
+2026-03-22 08:29:56.381374860 [WARN ] venue credential missing venue=OKX field=api_secret
+2026-03-22 08:29:56.381375152 [WARN ] venue credential missing venue=OKX field=api_passphrase
+2026-03-22 08:29:56.381749445 [INFO ] trading_engine started mode=shadow venues=OKX,KRAKEN symbol=SOLUSDT
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=0.7562  val=59.9120  sel=59.9120
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   2/3  train=0.5944  val=72.5117  sel=72.5117
+  epoch   1/3  train=1.1183  val=1.1817  sel=1.1817
+  epoch   3/3  train=0.5279  val=71.6188  sel=71.6188
+  Fold 1 best selection score: 59.9120
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   2/3  train=0.9439  val=1.0984  sel=1.0984
+  epoch   3/3  train=0.8996  val=1.1025  sel=1.1025
+  Fold 1 best selection score: 1.0984
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=0.8879  val=0.5816  sel=0.5816
+  epoch   1/3  train=0.9868  val=0.7863  sel=0.7863
+  epoch   2/3  train=0.5921  val=0.5684  sel=0.5684
+  epoch   2/3  train=0.7143  val=0.7732  sel=0.7732
+  epoch   3/3  train=0.4799  val=0.5836  sel=0.5836
+  Fold 2 best selection score: 0.5684
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=1.3673  val=129.5501  sel=129.5501
+  epoch   2/3  train=1.0895  val=137.7726  sel=137.7726
+  epoch   3/3  train=0.6243  val=0.7122  sel=0.7122
+  Fold 2 best selection score: 0.7122
+  epoch   3/3  train=0.9746  val=137.6113  sel=137.6113
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  Fold 1 best selection score: 129.5501
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=2.2054  val=2.3722  sel=2.3722
+  epoch   2/3  train=1.8646  val=2.2153  sel=2.2153
+  epoch   1/3  train=1.8526  val=0.9679  sel=0.9679
+  epoch   3/3  train=1.7514  val=2.1749  sel=2.1749
+  Fold 1 best selection score: 2.1749
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   2/3  train=1.2948  val=0.9494  sel=0.9494
+  epoch   1/3  train=1.9462  val=1.6102  sel=1.6102
+  epoch   3/3  train=1.0384  val=0.9264  sel=0.9264
+  Fold 2 best selection score: 0.9264
+  epoch   2/3  train=1.4214  val=1.4961  sel=1.4961
+[Shadow] continuous retrain triggered processed_ticks=4216 window_ticks=1000
+  epoch   3/3  train=1.2371  val=1.4774  sel=1.4774
+  Fold 2 best selection score: 1.4774
+[Shadow] continuous retrain triggered processed_ticks=4293 window_ticks=1000
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=326.1145  val=253.5919  sel=253.5919
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   2/3  train=249.2441  val=239.7621  sel=239.7621
+  epoch   1/3  train=294.7389  val=248.4933  sel=248.4933
+  epoch   3/3  train=241.0073  val=237.7235  sel=237.7235
+  Fold 1 best selection score: 237.7235
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   2/3  train=246.0143  val=238.4672  sel=238.4672
+  epoch   3/3  train=239.8541  val=236.8565  sel=236.8565
+  Fold 1 best selection score: 236.8565
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=0.8768  val=1.2208  sel=1.2208
+  epoch   1/3  train=0.9268  val=0.9853  sel=0.9853
+  epoch   2/3  train=0.6775  val=1.2457  sel=1.2457
+  epoch   2/3  train=0.6912  val=0.9867  sel=0.9867
+  epoch   3/3  train=0.6532  val=1.2056  sel=1.2056
+  Fold 2 best selection score: 1.2056
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=585.6129  val=500.4115  sel=500.4115
+  epoch   3/3  train=0.6375  val=1.0083  sel=1.0083
+  Fold 2 best selection score: 0.9853
+  epoch   2/3  train=503.4486  val=479.4448  sel=479.4448
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=585.8275  val=499.5346  sel=499.5346
+  epoch   3/3  train=487.4810  val=475.7641  sel=475.7641
+  Fold 1 best selection score: 475.7641
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   2/3  train=503.6786  val=478.9345  sel=478.9345
+  epoch   3/3  train=487.3983  val=475.3514  sel=475.3514
+  Fold 1 best selection score: 475.3514
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=2.2295  val=2.5204  sel=2.5204
+  epoch   1/3  train=2.1785  val=2.1405  sel=2.1405
+  epoch   2/3  train=1.6169  val=2.5769  sel=2.5769
+  epoch   2/3  train=1.6012  val=2.1004  sel=2.1004
+  epoch   3/3  train=1.4337  val=2.5497  sel=2.5497
+  Fold 2 best selection score: 2.5204
+  epoch   3/3  train=1.3848  val=2.1218  sel=2.1218
+[Shadow] continuous retrain completed processed_ticks=4216
+  Fold 2 best selection score: 2.1004
+[Shadow] continuous retrain triggered processed_ticks=9208 window_ticks=1000
+[Shadow] continuous retrain completed processed_ticks=4293
+[Shadow] continuous retrain triggered processed_ticks=9211 window_ticks=1000
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=1.4343  val=1.5663  sel=1.5663
+  epoch   1/3  train=1.1028  val=1.4406  sel=1.4406
+  epoch   2/3  train=0.7311  val=1.2291  sel=1.2291
+  epoch   2/3  train=0.6564  val=1.7567  sel=1.7567
+  epoch   3/3  train=0.6227  val=1.3504  sel=1.3504
+  Fold 1 best selection score: 1.2291
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   3/3  train=0.5487  val=2.4258  sel=2.4258
+  Fold 1 best selection score: 1.4406
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=1.0981  val=0.8215  sel=0.8215
+  epoch   1/3  train=0.9296  val=0.8997  sel=0.8997
+  epoch   2/3  train=0.7205  val=0.9340  sel=0.9340
+  epoch   2/3  train=0.6168  val=1.0954  sel=1.0954
+  epoch   3/3  train=0.5779  val=1.0466  sel=1.0466
+  Fold 2 best selection score: 0.8215
+  epoch   3/3  train=0.5155  val=1.1425  sel=1.1425
+  Fold 2 best selection score: 0.8997
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=1.9137  val=3.1925  sel=3.1925
+  epoch   1/3  train=1.8879  val=3.2525  sel=3.2525
+  epoch   2/3  train=1.5339  val=3.8599  sel=3.8599
+  epoch   2/3  train=1.5110  val=3.8536  sel=3.8536
+  epoch   3/3  train=1.3515  val=4.2798  sel=4.2798
+  Fold 1 best selection score: 3.1925
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   3/3  train=1.3137  val=4.4031  sel=4.4031
+  Fold 1 best selection score: 3.2525
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=1.8513  val=1.4912  sel=1.4912
+  epoch   1/3  train=1.8500  val=1.5648  sel=1.5648
+  epoch   2/3  train=1.4180  val=1.5493  sel=1.5493
+  epoch   2/3  train=1.4062  val=1.7322  sel=1.7322
+  epoch   3/3  train=1.2064  val=1.6585  sel=1.6585
+  Fold 2 best selection score: 1.4912
+  epoch   3/3  train=1.1879  val=1.8550  sel=1.8550
+  Fold 2 best selection score: 1.5648
+[Shadow] continuous retrain completed processed_ticks=9211
+[Shadow] ticks=2  mean_effective=-106.04bps  mean_raw=-27.73bps  std_effective=106.04bps  IC=0.0000  ICIR=0.000  confidence_gate=1  horizon_gate=0  safe_mode_gate=0  ts_issues=0
+[Shadow] continuous retrain triggered processed_ticks=13286 window_ticks=1000
+[Shadow] continuous retrain completed processed_ticks=9208
+[Shadow] ticks=2  mean_effective=-52.50bps  mean_raw=27.73bps  std_effective=52.50bps  IC=0.0000  ICIR=0.000  confidence_gate=1  horizon_gate=0  safe_mode_gate=0  ts_issues=0
+[Shadow] continuous retrain triggered processed_ticks=13316 window_ticks=1000
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=0.6015  val=0.5341  sel=0.5341
+  epoch   1/3  train=0.6103  val=0.5283  sel=0.5283
+  epoch   2/3  train=0.5423  val=0.5512  sel=0.5512
+  epoch   2/3  train=0.5259  val=0.5396  sel=0.5396
+  epoch   3/3  train=0.5098  val=0.5558  sel=0.5558
+  Fold 1 best selection score: 0.5341
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   3/3  train=0.4994  val=0.5597  sel=0.5597
+  Fold 1 best selection score: 0.5283
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=0.5373  val=0.5391  sel=0.5391
+  epoch   1/3  train=0.5225  val=0.5676  sel=0.5676
+  epoch   2/3  train=0.4421  val=0.6061  sel=0.6061
+  epoch   2/3  train=0.4346  val=0.6717  sel=0.6717
+  epoch   3/3  train=0.3869  val=0.7870  sel=0.7870
+  Fold 2 best selection score: 0.5391
+  epoch   3/3  train=0.3800  val=0.7586  sel=0.7586
+  Fold 2 best selection score: 0.5676
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=1.3517  val=1.2654  sel=1.2654
+  epoch   1/3  train=1.3475  val=1.2345  sel=1.2345
+  epoch   2/3  train=1.1353  val=1.2883  sel=1.2883
+  epoch   2/3  train=1.1178  val=1.2395  sel=1.2395
+  epoch   3/3  train=1.0371  val=1.2654  sel=1.2654
+  Fold 1 best selection score: 1.2654
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   3/3  train=1.0055  val=1.2115  sel=1.2115
+  Fold 1 best selection score: 1.2115
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=1.2537  val=1.1390  sel=1.1390
+  epoch   1/3  train=1.2624  val=1.2029  sel=1.2029
+  epoch   2/3  train=0.9589  val=1.2432  sel=1.2432
+  epoch   2/3  train=0.9662  val=1.5465  sel=1.5465
+  epoch   3/3  train=0.8346  val=1.3411  sel=1.3411
+  Fold 2 best selection score: 1.1390
+  epoch   3/3  train=0.8325  val=1.8420  sel=1.8420
+[Shadow] continuous retrain completed processed_ticks=13316
+  Fold 2 best selection score: 1.2029
+[Shadow] continuous retrain triggered processed_ticks=18157 window_ticks=1000
+[Shadow] continuous retrain completed processed_ticks=13286
+[Shadow] continuous retrain triggered processed_ticks=18181 window_ticks=1000
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=1.2515  val=1.8571  sel=1.8571
+  epoch   1/3  train=1.2641  val=1.6540  sel=1.6540
+  epoch   2/3  train=0.7688  val=4.8529  sel=4.8529
+  epoch   2/3  train=0.9814  val=1.4875  sel=1.4875
+  epoch   3/3  train=0.6763  val=5.1019  sel=5.1019
+  Fold 1 best selection score: 1.8571
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   3/3  train=0.9389  val=1.6397  sel=1.6397
+  Fold 1 best selection score: 1.4875
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=1.0415  val=0.6745  sel=0.6745
+  epoch   1/3  train=1.1088  val=0.6442  sel=0.6442
+  epoch   2/3  train=0.5993  val=0.5999  sel=0.5999
+  epoch   2/3  train=0.6588  val=0.5166  sel=0.5166
+  epoch   3/3  train=0.5101  val=0.6703  sel=0.6703
+  Fold 2 best selection score: 0.5999
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   3/3  train=0.5109  val=0.5328  sel=0.5328
+  Fold 2 best selection score: 0.5166
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=1.9612  val=4.0850  sel=4.0850
+  epoch   1/3  train=1.9689  val=3.5908  sel=3.5908
+  epoch   2/3  train=1.6685  val=6.0832  sel=6.0832
+  epoch   2/3  train=1.6766  val=4.6572  sel=4.6572
+  epoch   3/3  train=1.5097  val=6.0847  sel=6.0847
+  Fold 1 best selection score: 4.0850
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   3/3  train=1.4990  val=5.2989  sel=5.2989
+  Fold 1 best selection score: 3.5908
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=1.8174  val=1.2454  sel=1.2454
+  epoch   1/3  train=1.7925  val=1.1058  sel=1.1058
+  epoch   2/3  train=1.2567  val=1.1253  sel=1.1253
+  epoch   2/3  train=1.2836  val=0.9904  sel=0.9904
+  epoch   3/3  train=1.0806  val=1.1216  sel=1.1216
+  Fold 2 best selection score: 1.1216
+[Shadow] continuous retrain completed processed_ticks=18157
+[Shadow] ticks=4  mean_effective=-26.25bps  mean_raw=15.05bps  std_effective=45.47bps  IC=0.0000  ICIR=0.000  confidence_gate=3  horizon_gate=0  safe_mode_gate=0  ts_issues=0
+[Shadow] continuous retrain triggered processed_ticks=22469 window_ticks=1000
+  epoch   3/3  train=1.0899  val=0.9814  sel=0.9814
+  Fold 2 best selection score: 0.9814
+[Shadow] continuous retrain completed processed_ticks=18181
+[Shadow] ticks=4  mean_effective=-53.02bps  mean_raw=-43.82bps  std_effective=91.83bps  IC=0.0000  ICIR=0.000  confidence_gate=3  horizon_gate=0  safe_mode_gate=0  ts_issues=0
+[Shadow] continuous retrain triggered processed_ticks=22481 window_ticks=1000
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=0.5611  val=0.6303  sel=0.6303
+  epoch   1/3  train=0.5695  val=0.6080  sel=0.6080
+  epoch   2/3  train=0.5050  val=0.6146  sel=0.6146
+  epoch   2/3  train=0.4958  val=0.8053  sel=0.8053
+  epoch   3/3  train=0.4619  val=0.6223  sel=0.6223
+  Fold 1 best selection score: 0.6146
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   3/3  train=0.4370  val=0.8370  sel=0.8370
+  Fold 1 best selection score: 0.6080
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=0.8617  val=0.6519  sel=0.6519
+  epoch   1/3  train=0.8996  val=0.6103  sel=0.6103
+  epoch   2/3  train=0.5035  val=0.7109  sel=0.7109
+  epoch   2/3  train=0.5101  val=0.6331  sel=0.6331
+  epoch   3/3  train=0.4291  val=0.7498  sel=0.7498
+  Fold 2 best selection score: 0.6519
+  epoch   3/3  train=0.4363  val=0.7233  sel=0.7233
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  Fold 2 best selection score: 0.6103
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=1.3714  val=1.4717  sel=1.4717
+  epoch   1/3  train=1.3652  val=1.4391  sel=1.4391
+  epoch   2/3  train=1.1213  val=1.6298  sel=1.6298
+  epoch   2/3  train=1.1070  val=1.4994  sel=1.4994
+  epoch   3/3  train=1.0275  val=1.7108  sel=1.7108
+  Fold 1 best selection score: 1.4717
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   3/3  train=1.0104  val=1.5539  sel=1.5539
+  Fold 1 best selection score: 1.4391
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=1.6576  val=1.2849  sel=1.2849
+  epoch   1/3  train=1.6806  val=1.2978  sel=1.2978
+  epoch   2/3  train=1.1389  val=1.2852  sel=1.2852
+  epoch   2/3  train=1.1605  val=1.2973  sel=1.2973
+  epoch   3/3  train=0.9609  val=1.2986  sel=1.2986
+  Fold 2 best selection score: 1.2849
+  epoch   3/3  train=0.9661  val=1.2910  sel=1.2910
+  Fold 2 best selection score: 1.2910
+[Shadow] continuous retrain completed processed_ticks=22469
+[Shadow] continuous retrain completed processed_ticks=22481
+[Shadow] ticks=15  mean_effective=-7.00bps  mean_raw=51.40bps  std_effective=26.19bps  IC=-0.0746  ICIR=0.000  confidence_gate=14  horizon_gate=0  safe_mode_gate=0  ts_issues=1
+[Shadow] continuous retrain triggered processed_ticks=26497 window_ticks=1000
+[Shadow] continuous retrain triggered processed_ticks=26523 window_ticks=1000
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=1.2619  val=2.2157  sel=2.2157
+  epoch   1/3  train=1.2474  val=1.1776  sel=1.1776
+  epoch   2/3  train=0.8831  val=2.2488  sel=2.2488
+  epoch   2/3  train=0.9153  val=1.5554  sel=1.5554
+  epoch   3/3  train=0.7365  val=2.5092  sel=2.5091
+  Fold 1 best selection score: 2.2157
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   3/3  train=0.8121  val=1.6244  sel=1.6244
+  Fold 1 best selection score: 1.1776
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=0.9595  val=0.5340  sel=0.5340
+  epoch   1/3  train=1.0644  val=1.0525  sel=1.0525
+  epoch   2/3  train=0.7068  val=0.8394  sel=0.8394
+  epoch   2/3  train=0.5393  val=0.4495  sel=0.4495
+  epoch   3/3  train=0.5744  val=0.8355  sel=0.8355
+  Fold 2 best selection score: 0.8355
+  epoch   3/3  train=0.4576  val=0.4152  sel=0.4152
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  Fold 2 best selection score: 0.4152
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=2.0315  val=2.8735  sel=2.8735
+  epoch   1/3  train=2.0365  val=2.6360  sel=2.6360
+  epoch   2/3  train=1.8166  val=3.2069  sel=3.2069
+  epoch   2/3  train=1.8476  val=2.6546  sel=2.6546
+  epoch   3/3  train=1.6469  val=3.3563  sel=3.3563
+  Fold 1 best selection score: 2.8735
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   3/3  train=1.6993  val=2.7811  sel=2.7811
+  Fold 1 best selection score: 2.6360
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=1.8467  val=1.9825  sel=1.9825
+  epoch   1/3  train=1.8424  val=1.7535  sel=1.7535
+  epoch   2/3  train=1.3791  val=1.6677  sel=1.6677
+  epoch   2/3  train=1.3626  val=1.1454  sel=1.1454
+  epoch   3/3  train=1.1760  val=1.4719  sel=1.4719
+  Fold 2 best selection score: 1.4719
+[Shadow] continuous retrain completed processed_ticks=26497
+[Shadow] ticks=15  mean_effective=-14.14bps  mean_raw=-30.49bps  std_effective=52.90bps  IC=0.5513  ICIR=0.000  confidence_gate=14  horizon_gate=0  safe_mode_gate=0  ts_issues=0
+[Shadow] continuous retrain triggered processed_ticks=30883 window_ticks=1000
+  epoch   3/3  train=1.1597  val=1.0580  sel=1.0580
+  Fold 2 best selection score: 1.0580
+[Shadow] continuous retrain completed processed_ticks=26523
+[Shadow] continuous retrain triggered processed_ticks=31098 window_ticks=1000
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=1.1504  val=0.7641  sel=0.7641
+  epoch   1/3  train=1.3874  val=0.8588  sel=0.8588
+  epoch   2/3  train=0.8676  val=0.6583  sel=0.6583
+  epoch   2/3  train=0.6650  val=0.5953  sel=0.5953
+  epoch   3/3  train=0.7582  val=0.6590  sel=0.6590
+  Fold 1 best selection score: 0.6583
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   3/3  train=0.5255  val=0.6394  sel=0.6394
+  Fold 1 best selection score: 0.5953
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=0.9365  val=0.5930  sel=0.5930
+  epoch   1/3  train=0.8646  val=0.8921  sel=0.8921
+  epoch   2/3  train=0.5636  val=0.6322  sel=0.6322
+  epoch   2/3  train=0.4313  val=1.0475  sel=1.0475
+  epoch   3/3  train=0.4609  val=0.6269  sel=0.6269
+  Fold 2 best selection score: 0.5930
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=1.9185  val=1.3929  sel=1.3929
+  epoch   3/3  train=0.3881  val=1.0712  sel=1.0712
+  epoch   2/3  train=1.6134  val=1.2156  sel=1.2156
+  Fold 2 best selection score: 0.8921
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   3/3  train=1.4607  val=1.2182  sel=1.2182
+  Fold 1 best selection score: 1.2156
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=1.9167  val=1.4878  sel=1.4878
+  epoch   2/3  train=1.5702  val=1.4650  sel=1.4650
+  epoch   1/3  train=1.7286  val=1.5690  sel=1.5690
+  epoch   3/3  train=1.3926  val=1.4573  sel=1.4573
+  Fold 1 best selection score: 1.4573
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   2/3  train=1.2529  val=1.6513  sel=1.6513
+  epoch   1/3  train=1.7048  val=1.5117  sel=1.5117
+  epoch   3/3  train=1.0534  val=1.7920  sel=1.7920
+  Fold 2 best selection score: 1.5690
+[Shadow] continuous retrain completed processed_ticks=30883
+[Shadow] continuous retrain triggered processed_ticks=35167 window_ticks=1000
+  epoch   2/3  train=1.1656  val=1.4689  sel=1.4689
+  epoch   3/3  train=0.9578  val=1.5824  sel=1.5824
+  Fold 2 best selection score: 1.4689
+[Shadow] continuous retrain completed processed_ticks=31098
+[Shadow] ticks=17  mean_effective=-6.18bps  mean_raw=47.10bps  std_effective=24.71bps  IC=0.0081  ICIR=0.000  confidence_gate=15  horizon_gate=1  safe_mode_gate=0  ts_issues=1
+[Shadow] continuous retrain triggered processed_ticks=35231 window_ticks=1000
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=0.6522  val=0.6747  sel=0.6747
+  epoch   1/3  train=1.1538  val=1.2848  sel=1.2848
+  epoch   2/3  train=0.5914  val=0.6881  sel=0.6881
+  epoch   2/3  train=1.0001  val=1.2788  sel=1.2788
+  epoch   3/3  train=0.5558  val=0.6337  sel=0.6337
+  Fold 1 best selection score: 0.6337
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   3/3  train=0.9923  val=1.3209  sel=1.3209
+  Fold 1 best selection score: 1.2788
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=0.9399  val=8.4001  sel=8.4001
+  epoch   1/3  train=0.9217  val=9.7922  sel=9.7922
+  epoch   2/3  train=0.6123  val=9.6926  sel=9.6926
+  epoch   2/3  train=0.5001  val=11.3616  sel=11.3616
+  epoch   3/3  train=0.5519  val=10.2504  sel=10.2504
+  Fold 2 best selection score: 8.4001
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   1/3  train=1.4903  val=1.4016  sel=1.4016
+  epoch   3/3  train=0.4548  val=11.3764  sel=11.3764
+  Fold 2 best selection score: 9.7922
+  epoch   2/3  train=1.2406  val=1.3175  sel=1.3175
+Device: cpu
+
+============================================================
+Fold 1/2  train=375 test=125 ticks
+  epoch   3/3  train=1.1442  val=1.3226  sel=1.3226
+  Fold 1 best selection score: 1.3175
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   1/3  train=2.8798  val=2.8186  sel=2.8186
+  epoch   2/3  train=2.2470  val=2.7813  sel=2.7813
+  epoch   1/3  train=1.7358  val=12.7729  sel=12.7729
+  epoch   3/3  train=2.0687  val=2.6977  sel=2.6977
+  Fold 1 best selection score: 2.6977
+
+============================================================
+Fold 2/2  train=875 test=125 ticks
+  epoch   2/3  train=1.2329  val=18.1229  sel=18.1229
+  epoch   1/3  train=1.7296  val=11.0655  sel=11.0655
+  epoch   3/3  train=1.0511  val=18.7994  sel=18.7994
+  Fold 2 best selection score: 12.7729
+[Shadow] continuous retrain completed processed_ticks=35167
+[Shadow] ticks=17  mean_effective=-12.48bps  mean_raw=-23.70bps  std_effective=49.90bps  IC=0.5508  ICIR=0.000  confidence_gate=16  horizon_gate=0  safe_mode_gate=0  ts_issues=0
+  epoch   2/3  train=1.2297  val=15.8309  sel=15.8309
+  epoch   3/3  train=1.0578  val=16.7872  sel=16.7872
+  Fold 2 best selection score: 11.0655
+[Shadow] continuous retrain completed processed_ticks=35231
+2026-03-22 08:36:55.369756463 [INFO ] order submitted child=0 venue=KRAKEN qty=0.4 result=255
+2026-03-22 08:36:55.369758338 [ERROR] [KillSwitch] Kill switch triggered reason=CIRCUIT_BREAKER
+2026-03-22 08:36:55.369759171 [ERROR] Global risk breach check=CONCENTRATION_CAP symbol=SOLUSDT exchange=OKX signed_notional=34.864
+2026-03-22 08:36:55.369759338 [WARN ] global-risk blocked submit venue=OKX
+2026-03-22 08:36:56.369777123 [INFO ] [Kraken] Stopping feed handler symbol=SOLUSDT
+2026-03-22 08:36:56.372617378 [INFO ] [OKX] Stopping feed handler symbol=SOLUSDT
+2026-03-22 08:36:56.374654131 [INFO ] trading_engine shutdown complete
+[2026-03-22T08:36:56Z] [shadow] [INFO] Completed shadow run window
+[2026-03-22T08:36:56Z] [shadow] [INFO] Final shadow session statistics from /Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl
+============================================================
+  Shadow Session Report
+============================================================
+
+── Signal statistics ────────────────────────────────────────
+  Signals generated   : 48
+  Session duration    : 5.5 min
+  Mean signal         : -2.9711 bps
+  Signal std          : 42.3321 bps
+  Max |signal|        : 212.0755 bps
+  Mean raw signal     : 26.0221 bps
+  Raw signal std      : 69.2393 bps
+  Avg risk score      : 0.0284
+
+── Alpha quality ────────────────────────────────────────────
+  Realised IC         : 0.1084
+  ICIR (annualised)   : 23.9789
+  Safe-mode events    : 0  (0.0% of ticks)
+  Gated events        : 45  (93.8% of ticks)
+
+── Regime distribution (session avg) ────────────────────────
+  p_calm              : 0.146
+  p_trending          : 0.290
+  p_shock             : 0.417
+  p_illiquid          : 0.147
+
+── Readiness check ──────────────────────────────────────────
+  Run >= 2 weeks before promoting to live.
+  IC should be consistently positive (> 0.02).
+  Safe-mode rate should remain below 10%.
+  ICIR (annualised) target: > 0.5.
+
+============================================================
+(.venv) clementandredupuy@Mac ThamesRiverTrading % [Shadow] ticks=30  mean_effective=8.55bps  mean_raw=56.13bps  std_effective=41.11bps  IC=-0.0115  ICIR=0.000  confidence_gate=15  horizon_gate=9  safe_mode_gate=0  ts_issues=1
+[Shadow] ticks=75  mean_effective=-2.83bps  mean_raw=-14.53bps  std_effective=24.32bps  IC=0.0086  ICIR=-0.763  confidence_gate=72  horizon_gate=2  safe_mode_gate=0  ts_issues=1
+[Shadow] ticks=90  mean_effective=36.65bps  mean_raw=70.42bps  std_effective=74.82bps  IC=-0.0434  ICIR=6.235  confidence_gate=19  horizon_gate=42  safe_mode_gate=12  ts_issues=1
+[Shadow] ticks=135  mean_effective=-1.57bps  mean_raw=43.65bps  std_effective=18.18bps  IC=-0.0253  ICIR=9.333  confidence_gate=108  horizon_gate=26  safe_mode_gate=30  ts_issues=1
+[Shadow] ticks=150  mean_effective=27.33bps  mean_raw=59.09bps  std_effective=61.51bps  IC=-0.0158  ICIR=2.412  confidence_gate=30  horizon_gate=68  safe_mode_gate=30  ts_issues=1
+[Shadow] ticks=195  mean_effective=-1.09bps  mean_raw=59.83bps  std_effective=15.15bps  IC=-0.0368  ICIR=-0.092  confidence_gate=154  horizon_gate=40  safe_mode_gate=30  ts_issues=1
+[Shadow] ticks=210  mean_effective=20.44bps  mean_raw=40.98bps  std_effective=53.51bps  IC=0.0246  ICIR=11.029  confidence_gate=73  horizon_gate=81  safe_mode_gate=30  ts_issues=1
+[Shadow] ticks=255  mean_effective=-0.83bps  mean_raw=53.40bps  std_effective=13.25bps  IC=-0.0320  ICIR=-12.063  confidence_gate=207  horizon_gate=47  safe_mode_gate=61  ts_issues=1
+[Shadow] continuous retrain triggered processed_ticks=39167 window_ticks=1000
+[Shadow] ticks=270  mean_effective=15.90bps  mean_raw=39.68bps  std_effective=47.95bps  IC=0.0211  ICIR=9.143  confidence_gate=82  horizon_gate=132  safe_mode_gate=30  ts_issues=1
+[Shadow] continuous retrain triggered processed_ticks=39231 window_ticks=1000

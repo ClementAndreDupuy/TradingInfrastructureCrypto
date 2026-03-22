@@ -115,8 +115,6 @@ auto make_quote(trading::Exchange exchange, const trading::BookManager& book,
     const double bid = book.best_bid();
     const double ask = book.best_ask();
 
-    // TODO: source taker fees, latency/risk penalties, and fill-probability from
-    //       per-venue config rather than using hardcoded placeholder values.
     return {
         exchange, bid, ask, 0.40, 5.0, 0.5, 0.2, 0.70, 0.20, 0.4, true,
     };
@@ -157,7 +155,7 @@ auto main(int argc, char** argv) -> int {
         OkxFeedHandler okx_feed(opts.symbol);
         CoinbaseFeedHandler coinbase_feed(opts.symbol);
 
-        constexpr double k_target_range_usd  = 2'000.0;
+        constexpr double k_target_range_usd  = 50.0;
         auto levels_for_tick  = [](double tick) -> size_t {
             return static_cast<size_t>(k_target_range_usd / tick);
         };

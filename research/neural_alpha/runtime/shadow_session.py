@@ -37,7 +37,6 @@ import os
 import signal
 import struct
 import time
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -78,60 +77,6 @@ _DATA_FMT = "=ddq"
 _DATA_OFFSET = 8
 _REGIME_SIGNAL_FILE = "/tmp/trt_ipc/regime_signal.bin"
 _MAX_EXCHANGE_JUMP_NS = 60 * 1000000000
-_LEGACY_ALPHA_OPTIONAL_KEYS = frozenset({
-    "spatial_enc.pool.0.weight",
-    "spatial_enc.pool.0.bias",
-    "spatial_enc.pool.1.weight",
-    "spatial_enc.pool.1.bias",
-    "fusion.3.weight",
-    "fusion.3.bias",
-})
-_LEGACY_ALPHA_KEY_RENAMES = {
-    "spatial_enc.pool.weight": "spatial_enc.pool.1.weight",
-    "spatial_enc.pool.bias": "spatial_enc.pool.1.bias",
-}
-
-
-def _normalise_legacy_checkpoint_keys(state: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-    normalised = dict(state)
-    for legacy_key, new_key in _LEGACY_ALPHA_KEY_RENAMES.items():
-        if legacy_key in normalised and new_key not in normalised:
-            normalised[new_key] = normalised.pop(legacy_key)
-    return normalised
-
-
-def _load_model_state_with_compat(
-    model: CryptoAlphaNet,
-    state: dict[str, torch.Tensor],
-    *,
-    checkpoint_path: str,
-    allow_legacy_missing: bool = False,
-) -> None:
-    state = _normalise_legacy_checkpoint_keys(state)
-    incompatible = model.load_state_dict(state, strict=False)
-    missing = set(incompatible.missing_keys)
-    unexpected = set(incompatible.unexpected_keys)
-
-    allowed_missing = _LEGACY_ALPHA_OPTIONAL_KEYS if allow_legacy_missing else frozenset()
-    disallowed_missing = missing - allowed_missing
-    if disallowed_missing or unexpected:
-        details: list[str] = []
-        if disallowed_missing:
-            details.append(f"missing keys: {sorted(disallowed_missing)}")
-        if unexpected:
-            details.append(f"unexpected keys: {sorted(unexpected)}")
-        raise RuntimeError(
-            f"Checkpoint {checkpoint_path} is incompatible with {model.__class__.__name__}: "
-            + "; ".join(details)
-        )
-
-    if missing:
-        warnings.warn(
-            f"Loaded legacy checkpoint {checkpoint_path} with default initialisers for missing keys: {sorted(missing)}",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-
 
 @dataclass
 class VenueRuntimeStats:
@@ -368,18 +313,13 @@ class NeuralAlphaShadowSession:
     def load_model(self, path: str) -> None:
         model = self._build_model(self.cfg.d_spatial, self.cfg.d_temporal)
         state = torch.load(path, map_location=self._device, weights_only=True)
-        _load_model_state_with_compat(model, state, checkpoint_path=path)
+        model.load_state_dict(state)
         self._model = model
 
     def load_secondary_model(self, path: str) -> None:
         model = self._build_model(d_spatial=32, d_temporal=64, n_temp_layers=1)
         state = torch.load(path, map_location=self._device, weights_only=True)
-        _load_model_state_with_compat(
-            model,
-            state,
-            checkpoint_path=path,
-            allow_legacy_missing=True,
-        )
+        model.load_state_dict(state)
         self._secondary_model = model
         self._canary = EnsembleCanary(
             window=self.cfg.canary_window,
