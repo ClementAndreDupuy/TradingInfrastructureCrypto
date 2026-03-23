@@ -4,9 +4,14 @@ import mmap
 import struct
 import time
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 import numpy as np
 import polars as pl
+
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 _EPS = 1e-12
 
@@ -271,7 +276,7 @@ def train_regime_model_from_df(
     n_degenerate = int(np.sum(raw_scales < 1e-08))
     if n_degenerate > len(raw_scales) // 2:
         print(
-            f"[REGIME] Flat training data ({n_degenerate}/{len(raw_scales)} features near-zero variance) — anchoring artifact to calm regime."
+            f"[{_utcnow()}] [Regime] flat training data ({n_degenerate}/{len(raw_scales)} features near-zero variance) — anchoring artifact to calm regime."
         )
         return _calm_anchored_fallback(feat, cfg, raw_scales)
     scales = np.where(raw_scales < 1e-08, 1.0, raw_scales)
@@ -294,7 +299,8 @@ def train_regime_model_from_df(
         scales=scales.tolist(),
     )
     spread_means = [round(float(means[i][1]), 6) for i in range(cfg.n_regimes)]
-    print(f"[Regime] trained  names={regime_names}  spread_means={spread_means}")
+    spread_range = round(max(spread_means) - min(spread_means), 6)
+    print(f"[{_utcnow()}] [Regime] trained  names={regime_names}  spread_means={spread_means}  spread_range={spread_range}")
     return (artifact, distribution)
 
 
