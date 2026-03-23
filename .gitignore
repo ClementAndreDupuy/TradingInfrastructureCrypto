@@ -48,7 +48,6 @@ config/dev/secrets.yaml
 data/
 
 # Logs
-*.log
 
 # Model weights (tracked via artifacts, not git)
 models/*.pt
