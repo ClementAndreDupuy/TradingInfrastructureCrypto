@@ -43,6 +43,120 @@ def load_jsonl(path: str) -> list[dict[str, Any]]:
     return rows
 
 
+def analyse_venue_priority(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    venue_rows: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        exchange = str(row.get("exchange", "UNKNOWN"))
+        if exchange == "UNKNOWN":
+            continue
+        venue_rows.setdefault(exchange, []).append(row)
+
+    if not venue_rows:
+        return {"venues": {}, "leader_changes": 0, "most_improved": "UNKNOWN", "most_degraded": "UNKNOWN"}
+
+    venues: dict[str, dict[str, float | int | str]] = {}
+    leader_changes = 0
+
+    for exchange, exchange_rows in venue_rows.items():
+        ordered = sorted(exchange_rows, key=lambda row: int(row.get("ts_ns", 0)))
+        event_count = len(ordered)
+        fills = [row for row in ordered if row.get("event") == "FILL"]
+        cancels = [row for row in ordered if row.get("event") == "CANCELED"]
+        rejects = [row for row in ordered if row.get("event") == "REJECTED"]
+        terminal = len(fills) + len(cancels) + len(rejects)
+        fill_probability = len(fills) / terminal if terminal else 0.0
+        passive_fills = [row for row in fills if bool(row.get("maker", False))]
+        taker_fills = [row for row in fills if not bool(row.get("maker", False))]
+        passive_markout = float(np.mean([float(row.get("markout_bps", 0.0)) for row in passive_fills])) if passive_fills else 0.0
+        taker_markout = float(np.mean([float(row.get("markout_bps", 0.0)) for row in taker_fills])) if taker_fills else 0.0
+        reject_rate = len(rejects) / terminal if terminal else 0.0
+        if terminal:
+            cancel_latency_ms = float(np.mean([
+                float(row.get("hold_time_ms", row.get("latency_ms", 0.0))) for row in cancels
+            ])) if cancels else 0.0
+        else:
+            cancel_latency_ms = 0.0
+        base_score = (
+            fill_probability * 8.0
+            + passive_markout * 1.5
+            + taker_markout
+            - reject_rate * 10.0
+            - min(cancel_latency_ms / 1000.0, 5.0)
+        )
+        split = max(1, event_count // 2)
+        early = ordered[:split]
+        late = ordered[-split:]
+
+        def score_window(window: list[dict[str, Any]]) -> float:
+            if not window:
+                return 0.0
+            wfills = [row for row in window if row.get("event") == "FILL"]
+            wcancels = [row for row in window if row.get("event") == "CANCELED"]
+            wrejects = [row for row in window if row.get("event") == "REJECTED"]
+            wterminal = len(wfills) + len(wcancels) + len(wrejects)
+            wfill_probability = len(wfills) / wterminal if wterminal else 0.0
+            wpassive = [row for row in wfills if bool(row.get("maker", False))]
+            wtaker = [row for row in wfills if not bool(row.get("maker", False))]
+            wpassive_markout = float(np.mean([float(row.get("markout_bps", 0.0)) for row in wpassive])) if wpassive else 0.0
+            wtaker_markout = float(np.mean([float(row.get("markout_bps", 0.0)) for row in wtaker])) if wtaker else 0.0
+            wreject_rate = len(wrejects) / wterminal if wterminal else 0.0
+            wcancel_latency_ms = float(np.mean([
+                float(row.get("hold_time_ms", row.get("latency_ms", 0.0))) for row in wcancels
+            ])) if wcancels else 0.0
+            return (
+                wfill_probability * 8.0
+                + wpassive_markout * 1.5
+                + wtaker_markout
+                - wreject_rate * 10.0
+                - min(wcancel_latency_ms / 1000.0, 5.0)
+            )
+
+        early_score = score_window(early)
+        late_score = score_window(late)
+        score_delta = late_score - early_score
+        reason_parts: list[str] = []
+        if fill_probability >= 0.7:
+            reason_parts.append("strong fill probability")
+        elif fill_probability <= 0.35:
+            reason_parts.append("weak fill probability")
+        if passive_markout > 0.0:
+            reason_parts.append("positive passive markout")
+        elif passive_markout < 0.0:
+            reason_parts.append("negative passive markout")
+        if reject_rate >= 0.1:
+            reason_parts.append("elevated rejects")
+        if cancel_latency_ms >= 250.0:
+            reason_parts.append("slow cancels")
+        if not reason_parts:
+            reason_parts.append("mixed execution quality")
+        venues[exchange] = {
+            "score": round(base_score, 4),
+            "early_score": round(early_score, 4),
+            "late_score": round(late_score, 4),
+            "score_delta": round(score_delta, 4),
+            "fill_probability": round(fill_probability, 4),
+            "passive_markout_bps": round(passive_markout, 4),
+            "taker_markout_bps": round(taker_markout, 4),
+            "reject_rate": round(reject_rate, 4),
+            "cancel_latency_ms": round(cancel_latency_ms, 4),
+            "event_count": event_count,
+            "reason": ", ".join(reason_parts),
+        }
+
+    ranking = sorted(venues.items(), key=lambda item: float(item[1]["score"]), reverse=True)
+    early_leader = max(venues.items(), key=lambda item: float(item[1]["early_score"]))[0]
+    late_leader = max(venues.items(), key=lambda item: float(item[1]["late_score"]))[0]
+    leader_changes = 0 if early_leader == late_leader else 1
+    most_improved = max(venues.items(), key=lambda item: float(item[1]["score_delta"]))[0]
+    most_degraded = min(venues.items(), key=lambda item: float(item[1]["score_delta"]))[0]
+    return {
+        "venues": dict(ranking),
+        "leader_changes": leader_changes,
+        "most_improved": most_improved,
+        "most_degraded": most_degraded,
+    }
+
+
 def analyse_decisions(rows: list[dict[str, Any]]) -> dict[str, Any]:
     fills = [r for r in rows if r.get("event") == "FILL"]
     cancels = [r for r in rows if r.get("event") == "CANCELED"]
@@ -189,6 +303,7 @@ def analyse_decisions(rows: list[dict[str, Any]]) -> dict[str, Any]:
         },
         "venue_contribution": venue_contribution,
         "venue_worst": venue_worst,
+        "venue_priority": analyse_venue_priority(rows),
     }
 
 
@@ -378,6 +493,22 @@ def print_report(
         f"  Worst venue            : {dec.get('venue_worst', 'UNKNOWN')}",
         "",
     ]
+    venue_priority = dec.get("venue_priority", {})
+    if venue_priority.get("venues"):
+        lines.append("── Adaptive venue priority ──────────────────────────────────")
+        lines.append(
+            f"  Leader changes         : {venue_priority.get('leader_changes', 0)}"
+            f"  improved={venue_priority.get('most_improved', 'UNKNOWN')}"
+            f"  degraded={venue_priority.get('most_degraded', 'UNKNOWN')}"
+        )
+        for venue, stats in venue_priority.get("venues", {}).items():
+            lines.append(
+                f"  {venue:10s}  score={stats['score']:.3f}  Δ={stats['score_delta']:+.3f}"
+                f"  fill={stats['fill_probability']:.0%}  passive={stats['passive_markout_bps']:.3f}bps"
+                f"  taker={stats['taker_markout_bps']:.3f}bps  rejects={stats['reject_rate']:.1%}"
+                f"  cancel={stats['cancel_latency_ms']:.1f}ms  reason={stats['reason']}"
+            )
+        lines.append("")
     if dec.get("exchanges"):
         lines.append("── Per-exchange breakdown ───────────────────────────────────")
         for exchange, stats in dec["exchanges"].items():

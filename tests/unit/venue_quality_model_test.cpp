@@ -76,5 +76,39 @@ TEST(VenueQualityModelTest, SchedulerUsesAdaptiveVenuePenalty) {
               model.snapshot(Exchange::KRAKEN).composite_penalty_bps);
 }
 
+TEST(VenueQualityModelTest, RoutingRemainsStableUnderShortTermNoise) {
+    VenueQualityModel model;
+    ChildOrderScheduler scheduler;
+    auto venues = make_scheduler_venues();
+    const ParentExecutionPlan plan = make_plan();
+
+    size_t kraken_wins = 0;
+    for (int i = 0; i < 32; ++i) {
+        model.observe_fill_probability(Exchange::KRAKEN, i % 2 == 0 ? 0.88 : 0.82);
+        model.observe_markout(Exchange::KRAKEN, true, i % 2 == 0 ? 0.8 : 0.2);
+        model.observe_reject(Exchange::KRAKEN, false);
+        model.observe_cancel_latency(Exchange::KRAKEN, std::chrono::microseconds(1200 + (i % 3) * 200));
+        model.observe_health(Exchange::KRAKEN, true);
+
+        model.observe_fill_probability(Exchange::BINANCE, i % 2 == 0 ? 0.55 : 0.45);
+        model.observe_markout(Exchange::BINANCE, true, i % 2 == 0 ? -0.9 : -0.2);
+        model.observe_reject(Exchange::BINANCE, i % 5 == 0);
+        model.observe_cancel_latency(Exchange::BINANCE, std::chrono::microseconds(4000 + (i % 4) * 500));
+        model.observe_health(Exchange::BINANCE, true);
+
+        auto iteration_venues = venues;
+        model.apply(iteration_venues);
+        const SchedulerDecision decision = scheduler.schedule(plan, 300, 0, iteration_venues);
+        ASSERT_EQ(decision.routing.child_count, 1u);
+        if (decision.routing.children[0].exchange == Exchange::KRAKEN) {
+            ++kraken_wins;
+        }
+    }
+
+    EXPECT_GE(kraken_wins, 28u);
+    EXPECT_GT(model.snapshot(Exchange::KRAKEN).composite_fill_probability,
+              model.snapshot(Exchange::BINANCE).composite_fill_probability);
+}
+
 }
 }
