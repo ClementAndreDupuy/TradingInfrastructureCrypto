@@ -159,10 +159,10 @@ namespace {
     auto make_quote(trading::Exchange exchange, const trading::BookManager &book,
                     bool enabled, trading::Side side = trading::Side::BID) -> trading::VenueQuote {
         if (!enabled) {
-            return {exchange, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
+            return {exchange, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false, false};
         }
         if (!book.is_ready()) {
-            return {exchange, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
+            return {exchange, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false, true};
         }
 
         const double bid = book.best_bid();
@@ -170,7 +170,7 @@ namespace {
         const double side_depth = top_opposite_depth(book, side);
 
         return {
-            exchange, bid, ask, side_depth, 5.0, 0.5, 0.2, 0.70, 0.20, 0.4, side_depth > 0.0,
+            exchange, bid, ask, side_depth, 5.0, 0.5, 0.2, 0.70, 0.20, 0.4, side_depth > 0.0, true,
         };
     }
 
@@ -641,7 +641,8 @@ auto main(int argc, char **argv) -> int {
             };
 
             for (const auto &quote: bid_quotes) {
-                venue_quality_model.observe_health(quote.exchange, quote.healthy);
+                if (quote.enabled)
+                    venue_quality_model.observe_health(quote.exchange, quote.healthy);
             }
             venue_quality_model.apply(bid_quotes);
             venue_quality_model.apply(ask_quotes);
@@ -678,6 +679,8 @@ auto main(int argc, char **argv) -> int {
                 now - last_venue_quality_log >= portfolio_log_heartbeat) {
                 last_venue_quality_log = now;
                 for (const auto &quote: bid_quotes) {
+                    if (!quote.enabled)
+                        continue;
                     const VenueQualitySnapshot snap = venue_quality_model.snapshot(quote.exchange);
                     LOG_INFO("venue quality", "exchange", exchange_to_string(quote.exchange),
                              "fill_probability", snap.composite_fill_probability,
@@ -695,9 +698,18 @@ auto main(int argc, char **argv) -> int {
             if (should_log_portfolio_intent) {
                 update_portfolio_intent_log_state(portfolio_log_state, intent_metadata, reason_codes,
                                                   intent, now);
+                const size_t log_enabled_venues = std::count_if(
+                    bid_quotes.begin(), bid_quotes.end(),
+                    [](const VenueQuote &q) { return q.enabled; });
+                const size_t log_healthy_venues = std::count_if(
+                    bid_quotes.begin(), bid_quotes.end(),
+                    [](const VenueQuote &q) { return q.enabled && q.healthy && q.depth_qty > 0.0; });
                 LOG_INFO("portfolio intent", "intent", intent_metadata.intent, "reason",
                          intent_metadata.reason, "reason_codes", reason_codes.c_str(),
                          "signal_bps", alpha_signal.signal_bps, "risk_score", alpha_signal.risk_score,
+                         "p_shock", regime_signal.p_shock, "p_illiquid", regime_signal.p_illiquid,
+                         "healthy_venues", static_cast<unsigned long long>(log_healthy_venues),
+                         "enabled_venues", static_cast<unsigned long long>(log_enabled_venues),
                          "current_position", portfolio_snapshot.global_position, "target_position",
                          intent.target_global_position, "position_delta", intent.position_delta,
                          "expected_cost_bps", intent.expected_cost_bps, "max_shortfall_bps",

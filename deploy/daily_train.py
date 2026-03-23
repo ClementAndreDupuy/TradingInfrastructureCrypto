@@ -296,6 +296,17 @@ def run() -> dict:
     log.info("Data quality gates passed.")
 
     # 3. Train
+    def _train_event_callback(event: dict) -> None:
+        log.info(
+            "training fold=%d epoch=%d/%d train_loss=%.4f val_loss=%.4f sel=%.4f",
+            event["fold"],
+            event["epoch"],
+            event["total_epochs"],
+            event["train_loss"],
+            event["val_loss"],
+            event["selection_loss"],
+        )
+
     cfg = TrainerConfig(
         epochs=EPOCHS,
         n_folds=4,
@@ -308,6 +319,7 @@ def run() -> dict:
         lr_warmup_epochs=3,
         early_stop_patience=5,
         log_every_epochs=1,
+        event_callback=_train_event_callback,
     )
     log.info("Starting walk-forward training (%d folds)…", cfg.n_folds)
     fold_results = walk_forward_train(df, cfg)

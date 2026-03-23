@@ -70,8 +70,11 @@ namespace trading {
             const double current_position = clamp_position(ledger.global_position);
             const double expected_cost_bps = estimate_expected_cost_bps(venues);
             const size_t healthy_venues = count_healthy_venues(venues);
-            const double health_ratio = static_cast<double>(healthy_venues) /
-                                        static_cast<double>(SmartOrderRouter::MAX_VENUES);
+            const size_t enabled_venues = count_enabled_venues(venues);
+            const double health_ratio = enabled_venues > 0
+                                            ? static_cast<double>(healthy_venues) /
+                                                  static_cast<double>(enabled_venues)
+                                            : 1.0;
             out.expected_cost_bps = expected_cost_bps;
 
             if (healthy_venues == 0) {
@@ -101,7 +104,7 @@ namespace trading {
                 append_reason(out, PortfolioIntentReasonCode::ILLIQUID_REGIME);
             if (stale_inventory)
                 append_reason(out, PortfolioIntentReasonCode::STALE_INVENTORY);
-            if (healthy_venues < SmartOrderRouter::MAX_VENUES)
+            if (enabled_venues > 0 && healthy_venues < enabled_venues)
                 append_reason(out, PortfolioIntentReasonCode::HEALTH_DEGRADED);
 
             if (risk_off || negative_reversal || shock_regime) {
@@ -119,7 +122,7 @@ namespace trading {
                     std::max(cfg_.min_entry_signal_bps, 1.0),
                     0.0, 1.0);
                 const double risk_scale = std::clamp(1.0 - alpha_signal.risk_score, 0.0, 1.0);
-                const double health_scale = healthy_venues < SmartOrderRouter::MAX_VENUES
+                const double health_scale = (enabled_venues > 0 && healthy_venues < enabled_venues)
                                                 ? cfg_.health_reduce_ratio
                                                 : 1.0;
                 const double regime_scale = std::clamp(
@@ -199,7 +202,17 @@ namespace trading {
             const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> &venues) noexcept {
             size_t count = 0;
             for (const auto &venue: venues) {
-                if (venue.healthy && venue.depth_qty > 0.0)
+                if (venue.enabled && venue.healthy && venue.depth_qty > 0.0)
+                    ++count;
+            }
+            return count;
+        }
+
+        [[nodiscard]] static size_t count_enabled_venues(
+            const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> &venues) noexcept {
+            size_t count = 0;
+            for (const auto &venue: venues) {
+                if (venue.enabled)
                     ++count;
             }
             return count;
