@@ -209,9 +209,8 @@ namespace {
 
     auto build_live_portfolio_snapshot(const std::string &symbol, const BookManager &binance_book,
                                        const BookManager &kraken_book, const BookManager &okx_book,
-                                       const BookManager &coinbase_book, BinanceConnector &binance,
-                                       KrakenConnector &kraken, OkxConnector &okx,
-                                       CoinbaseConnector &coinbase, bool run_binance,
+                                       const BookManager &coinbase_book,
+                                       const ReconciliationService &reconciliation, bool run_binance,
                                        bool run_kraken, bool run_okx,
                                        bool run_coinbase) -> PositionLedgerSnapshot {
         PositionLedgerSnapshot snapshot;
@@ -233,19 +232,20 @@ namespace {
         apply_mid_price(okx_book);
         apply_mid_price(coinbase_book);
 
-        const auto add_position = [&](auto &connector, Exchange exchange, bool enabled) {
-            if (!enabled || !connector.is_connected())
+        const auto add_position = [&](Exchange exchange, bool enabled) {
+            if (!enabled)
                 return;
-            ReconciliationSnapshot venue_snapshot;
-            if (connector.fetch_reconciliation_snapshot(venue_snapshot) != ConnectorResult::OK)
+            const ReconciliationSnapshot *venue_snapshot =
+                    reconciliation.latest_snapshot_for(exchange);
+            if (!venue_snapshot)
                 return;
-            snapshot.global_position += matching_position_qty(venue_snapshot, exchange, symbol);
+            snapshot.global_position += matching_position_qty(*venue_snapshot, exchange, symbol);
         };
 
-        add_position(binance, Exchange::BINANCE, run_binance);
-        add_position(kraken, Exchange::KRAKEN, run_kraken);
-        add_position(okx, Exchange::OKX, run_okx);
-        add_position(coinbase, Exchange::COINBASE, run_coinbase);
+        add_position(Exchange::BINANCE, run_binance);
+        add_position(Exchange::KRAKEN, run_kraken);
+        add_position(Exchange::OKX, run_okx);
+        add_position(Exchange::COINBASE, run_coinbase);
 
         return snapshot;
     }
@@ -600,9 +600,9 @@ auto main(int argc, char **argv) -> int {
                     opts.mode == "shadow"
                             ? PositionLedgerSnapshot{}
                             : build_live_portfolio_snapshot(opts.symbol, binance_book, kraken_book,
-                                                           okx_book, coinbase_book, binance, kraken,
-                                                           okx, coinbase, run_binance, run_kraken,
-                                                           run_okx, run_coinbase);
+                                                           okx_book, coinbase_book, reconciliation,
+                                                           run_binance, run_kraken, run_okx,
+                                                           run_coinbase);
             if (opts.mode == "shadow") {
                 std::strncpy(portfolio_snapshot.symbol, opts.symbol.c_str(),
                              sizeof(portfolio_snapshot.symbol) - 1);

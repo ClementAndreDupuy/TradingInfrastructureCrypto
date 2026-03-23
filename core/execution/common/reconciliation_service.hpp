@@ -149,6 +149,13 @@ namespace trading {
 
         const VenueState *state_for(Exchange exchange) const { return find_state(exchange); }
 
+        const ReconciliationSnapshot *latest_snapshot_for(Exchange exchange) const noexcept {
+            const size_t idx = index_for(exchange);
+            if (idx == MAX_CONNECTORS || !has_latest_snapshot_[idx])
+                return nullptr;
+            return &latest_snapshots_[idx];
+        }
+
         void set_cancel_all_hook(RemediationHook hook) { cancel_all_hook_ = std::move(hook); }
 
         void set_risk_halt_hook(RemediationHook hook) { risk_halt_hook_ = std::move(hook); }
@@ -214,6 +221,8 @@ namespace trading {
                     apply_decision(i, decision, reconnect_phase);
                     return res;
                 }
+                latest_snapshots_[i] = snapshot;
+                has_latest_snapshot_[i] = true;
                 reset_snapshot_failures(i);
 
                 ReconciliationSnapshot canonical_snapshot;
@@ -661,8 +670,10 @@ namespace trading {
         std::array<LiveConnectorBase *, MAX_CONNECTORS> connectors_{};
         std::array<VenueState, MAX_CONNECTORS> states_{};
         std::array<ReconciliationSnapshot, MAX_CONNECTORS> canonical_snapshots_{};
+        std::array<ReconciliationSnapshot, MAX_CONNECTORS> latest_snapshots_{};
         std::array<CanonicalSnapshotFetcher, MAX_CONNECTORS> canonical_snapshot_fetchers_{};
         std::array<bool, MAX_CONNECTORS> has_canonical_snapshot_{};
+        std::array<bool, MAX_CONNECTORS> has_latest_snapshot_{};
         std::array<bool, MAX_CONNECTORS> reconnect_required_{};
         RemediationHook cancel_all_hook_;
         RemediationHook risk_halt_hook_;
