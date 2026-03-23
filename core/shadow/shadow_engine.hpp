@@ -2,8 +2,8 @@
 
 #include "../common/logging.hpp"
 #include "../common/types.hpp"
-#include "../execution/common/exchange_connector.hpp"
-#include "../execution/common/order_manager.hpp"
+#include "../execution/common/connectors/exchange_connector.hpp"
+#include "../execution/common/orders/order_manager.hpp"
 #include "../feeds/common/book_manager.hpp"
 
 #include <array>

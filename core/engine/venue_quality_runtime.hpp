@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../execution/common/venue_quality_model.hpp"
+#include "../execution/common/quality/venue_quality_model.hpp"
 
 #include <algorithm>
 #include <array>

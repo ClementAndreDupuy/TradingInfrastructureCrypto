@@ -6,7 +6,7 @@
 #include "../ipc/regime_signal.hpp"
 #include "../risk/circuit_breaker.hpp"
 #include "../risk/kill_switch.hpp"
-#include "common/order_manager.hpp"
+#include "common/orders/order_manager.hpp"
 
 #include <chrono>
 #include <cmath>

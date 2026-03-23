@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../../common/logging.hpp"
-#include "exchange_connector.hpp"
-#include "position_ledger.hpp"
+#include "../../../common/logging.hpp"
+#include "../connectors/exchange_connector.hpp"
+#include "../portfolio/position_ledger.hpp"
 
 #include <algorithm>
 #include <array>

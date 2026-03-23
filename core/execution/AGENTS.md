@@ -6,9 +6,17 @@ Position tracking is centralized in `OrderManager`. Token selling occurs through
 
 ---
 
+## Common Layout
+
+- `common/connectors/` — connector interfaces, idempotency, and venue order ID bookkeeping
+- `common/orders/` — order lifecycle, parent plans, and child scheduling
+- `common/portfolio/` — multi-venue inventory state and intent generation
+- `common/reconciliation/` — snapshot types and drift detection
+- `common/quality/` — adaptive venue quality scoring
+
 ## Position Management
 
-### OrderManager (`common/order_manager.hpp`)
+### OrderManager (`common/orders/order_manager.hpp`)
 
 - `position_` (double) holds the net position: positive = long, negative = short
 - Orders are stored in a **pre-allocated pool of 64 `ManagedOrder` slots** (no heap allocation at runtime)
@@ -87,10 +95,10 @@ On fill: `entry_price_` resets to 0, `stop_id_` clears, and the position is full
 
 | Component | File | Role |
 |---|---|---|
-| `ReconciliationService` | `common/reconciliation_service.hpp` | Detects position drift vs. exchange snapshots; triggers `RISK_HALT_RECOMMENDED` if mismatch > 1e-6 |
-| `IdempotencyJournal` | `common/idempotency_journal.hpp` | Journals all SUBMIT/CANCEL ops to disk; suppresses duplicate submissions after crashes |
-| `VenueOrderMap` | `common/venue_order_map.hpp` | Bidirectional `client_order_id` ↔ `venue_order_id` mapping (capacity: 512 entries) |
-| `cancel_all()` | `common/exchange_connector.hpp` | Emergency flattening of all positions on a symbol |
+| `ReconciliationService` | `common/reconciliation/reconciliation_service.hpp` | Detects position drift vs. exchange snapshots; triggers `RISK_HALT_RECOMMENDED` if mismatch > 1e-6 |
+| `IdempotencyJournal` | `common/connectors/idempotency_journal.hpp` | Journals all SUBMIT/CANCEL ops to disk; suppresses duplicate submissions after crashes |
+| `VenueOrderMap` | `common/connectors/venue_order_map.hpp` | Bidirectional `client_order_id` ↔ `venue_order_id` mapping (capacity: 512 entries) |
+| `cancel_all()` | `common/connectors/exchange_connector.hpp` | Emergency flattening of all positions on a symbol |
 
 ### Mismatch classes detected by ReconciliationService
 - `MISSING_ORDER` — order exists locally but not on exchange
@@ -103,7 +111,7 @@ On fill: `entry_price_` resets to 0, `stop_id_` clears, and the position is full
 
 ## Exchange Connectivity
 
-`ExchangeConnector` (`common/exchange_connector.hpp`) is the abstract interface:
+`ExchangeConnector` (`common/connectors/exchange_connector.hpp`) is the abstract interface:
 ```cpp
 virtual ConnectorResult submit_order(const Order& order) = 0;
 virtual ConnectorResult cancel_order(uint64_t client_order_id) = 0;
@@ -111,7 +119,7 @@ virtual ConnectorResult cancel_all(const char* symbol) = 0;
 virtual ConnectorResult query_order(uint64_t client_order_id, FillUpdate& status) = 0;
 ```
 
-`LiveConnectorBase` (`common/live_connector_base.hpp`) implements the shared submission flow:
+`LiveConnectorBase` (`common/connectors/live_connector_base.hpp`) implements the shared submission flow:
 1. Checks idempotency journal for duplicates
 2. Calls venue-specific `submit_to_venue()` with retries
 3. Records ACK or FAIL in the journal
@@ -162,11 +170,11 @@ NeuralAlphaMarketMaker.on_fill()
 
 | File | Purpose |
 |---|---|
-| `common/order_manager.hpp` | Core position tracking & order lifecycle |
+| `common/orders/order_manager.hpp` | Core position tracking & order lifecycle |
 | `market_maker.hpp` | Quote skewing, stop-limits, position flattening |
 | `router/smart_order_router.cpp` | Multi-venue sell routing & scoring |
-| `common/reconciliation_service.hpp` | Drift detection & safety halts |
-| `common/live_connector_base.hpp` | Exchange API abstraction with idempotency |
-| `common/venue_order_map.hpp` | Client ↔ venue order ID mapping |
-| `common/exchange_connector.hpp` | Abstract connector interface |
-| `common/idempotency_journal.hpp` | Crash-safe operation journaling |
+| `common/reconciliation/reconciliation_service.hpp` | Drift detection & safety halts |
+| `common/connectors/live_connector_base.hpp` | Exchange API abstraction with idempotency |
+| `common/connectors/venue_order_map.hpp` | Client ↔ venue order ID mapping |
+| `common/connectors/exchange_connector.hpp` | Abstract connector interface |
+| `common/connectors/idempotency_journal.hpp` | Crash-safe operation journaling |

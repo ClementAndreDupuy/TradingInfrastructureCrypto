@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../common/logging.hpp"
+#include "../../../common/logging.hpp"
 
 #include <array>
 #include <cstdint>

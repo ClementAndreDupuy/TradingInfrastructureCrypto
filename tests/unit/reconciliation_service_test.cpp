@@ -3,7 +3,7 @@
 #include "core/execution/coinbase/coinbase_connector.hpp"
 #include "core/execution/kraken/kraken_connector.hpp"
 #include "core/execution/okx/okx_connector.hpp"
-#include "core/execution/common/reconciliation_service.hpp"
+#include "core/execution/common/reconciliation/reconciliation_service.hpp"
 
 #include <gtest/gtest.h>
 

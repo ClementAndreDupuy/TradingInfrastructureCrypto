@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../common/live_connector_base.hpp"
+#include "../common/connectors/live_connector_base.hpp"
 
 namespace trading {
     class KrakenConnector : public LiveConnectorBase {
