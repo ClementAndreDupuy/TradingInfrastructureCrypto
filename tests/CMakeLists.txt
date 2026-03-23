@@ -177,6 +177,27 @@ set_tests_properties(PortfolioIntentEngineTest PROPERTIES
     LABELS "unit;execution"
 )
 
+add_executable(parent_order_manager_test
+    unit/parent_order_manager_test.cpp
+)
+
+target_link_libraries(parent_order_manager_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(parent_order_manager_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME ParentOrderManagerTest COMMAND parent_order_manager_test)
+set_tests_properties(ParentOrderManagerTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;execution"
+)
+
 # Live connectors contract tests (mock transport)
 add_executable(live_connectors_test
     unit/live_connectors_test.cpp
