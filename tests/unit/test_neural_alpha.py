@@ -796,6 +796,28 @@ class TestShadowTimestampMetrics:
         assert diagnostics["exchange_non_monotonic"] == 1
         assert diagnostics["local_non_monotonic"] == 1
 
+    def test_timestamp_quality_allows_large_cross_venue_clock_offsets(self) -> None:
+        records = [
+            {
+                "event_index": 1,
+                "session_elapsed_ns": 1,
+                "timestamp_exchange_ns": 10,
+                "timestamp_local_ns": 100,
+                "exchange": "BINANCE",
+            },
+            {
+                "event_index": 2,
+                "session_elapsed_ns": 2,
+                "timestamp_exchange_ns": 10 + 120 * 1_000_000_000,
+                "timestamp_local_ns": 101,
+                "exchange": "OKX",
+            },
+        ]
+
+        diagnostics = _summarise_timestamp_quality(records)
+
+        assert diagnostics["has_timestamp_issues"] is False
+
 
     def test_analyse_ops_events_uses_shadow_health_summary(self) -> None:
         ops = analyse_ops_events([

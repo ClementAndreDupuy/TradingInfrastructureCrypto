@@ -1,4 +1,5 @@
 #include "core/execution/common/portfolio/portfolio_intent_engine.hpp"
+#include "core/execution/common/orders/parent_order_manager.hpp"
 
 #include <gtest/gtest.h>
 
@@ -113,6 +114,23 @@ TEST(PortfolioIntentEngineTest, NoHealthyVenuesTriggersFlattenReason) {
     EXPECT_DOUBLE_EQ(intent.target_global_position, 0.0);
     EXPECT_DOUBLE_EQ(intent.position_delta, -0.40);
     EXPECT_EQ(intent.primary_reason(), PortfolioIntentReasonCode::NO_HEALTHY_VENUES);
+}
+
+TEST(ParentOrderManagerTest, SmallerSameDirectionTargetCapsRemainingQty) {
+    ParentOrderManager manager;
+    const auto now = std::chrono::steady_clock::now();
+
+    const ParentPlanUpdateResult created =
+            manager.update_target(0.40, ShadowUrgency::AGGRESSIVE, now);
+    ASSERT_TRUE(created.plan.active());
+    EXPECT_DOUBLE_EQ(created.plan.remaining_qty, 0.40);
+
+    const ParentPlanUpdateResult updated =
+            manager.update_target(0.02, ShadowUrgency::AGGRESSIVE, now + std::chrono::milliseconds(1));
+    ASSERT_TRUE(updated.plan.active());
+    EXPECT_EQ(updated.action, ParentPlanAction::UPDATED);
+    EXPECT_DOUBLE_EQ(updated.plan.total_qty, 0.02);
+    EXPECT_DOUBLE_EQ(updated.plan.remaining_qty, 0.02);
 }
 
 } 
