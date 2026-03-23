@@ -8,6 +8,7 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -18,6 +19,20 @@ namespace trading {
         PASSIVE = 0,
         BALANCED = 1,
         AGGRESSIVE = 2,
+    };
+
+    enum class ShadowRunMode : uint8_t {
+        LEGACY = 0,
+        TARGET_POSITION = 1,
+    };
+
+    enum class ShadowExecutionState : uint8_t {
+        FLAT = 0,
+        ENTERING = 1,
+        HOLDING = 2,
+        REDUCING = 3,
+        FLATTENING = 4,
+        HALTED = 5,
     };
 
     struct ShadowIntentMetadata {
@@ -68,6 +83,96 @@ namespace trading {
             c.log_path[sizeof(c.log_path) - 1] = '\0';
             return c;
         }
+    };
+
+    struct ShadowStateTransition {
+        ShadowExecutionState previous = ShadowExecutionState::FLAT;
+        ShadowExecutionState current = ShadowExecutionState::FLAT;
+        char reason[48] = "init";
+        double current_position = 0.0;
+        double target_position = 0.0;
+        bool changed = false;
+    };
+
+    class ShadowStateMachine {
+    public:
+        ShadowStateTransition evaluate(double current_position, double target_position,
+                                       bool flatten_now, bool halted,
+                                       const char *reason) noexcept {
+            ShadowStateTransition out;
+            out.previous = state_;
+            out.current = next_state(current_position, target_position, flatten_now, halted);
+            out.current_position = current_position;
+            out.target_position = target_position;
+            copy_reason(out.reason, reason);
+            out.changed = out.previous != out.current;
+            state_ = out.current;
+            return out;
+        }
+
+        [[nodiscard]] ShadowExecutionState state() const noexcept { return state_; }
+
+        static const char *to_string(ShadowExecutionState state) noexcept {
+            switch (state) {
+                case ShadowExecutionState::FLAT:
+                    return "FLAT";
+                case ShadowExecutionState::ENTERING:
+                    return "ENTERING";
+                case ShadowExecutionState::HOLDING:
+                    return "HOLDING";
+                case ShadowExecutionState::REDUCING:
+                    return "REDUCING";
+                case ShadowExecutionState::FLATTENING:
+                    return "FLATTENING";
+                case ShadowExecutionState::HALTED:
+                    return "HALTED";
+            }
+            return "FLAT";
+        }
+
+    private:
+        static void copy_reason(char (&dst)[48], const char *src) noexcept {
+            if (!src) {
+                dst[0] = '\0';
+                return;
+            }
+            std::strncpy(dst, src, sizeof(dst) - 1);
+            dst[sizeof(dst) - 1] = '\0';
+        }
+
+        static ShadowExecutionState next_state(double current_position, double target_position,
+                                               bool flatten_now, bool halted) noexcept {
+            constexpr double k_pos_epsilon = 1e-6;
+            if (halted)
+                return ShadowExecutionState::HALTED;
+            if (flatten_now)
+                return std::abs(current_position) <= k_pos_epsilon
+                               ? ShadowExecutionState::FLAT
+                               : ShadowExecutionState::FLATTENING;
+            if (std::abs(current_position) <= k_pos_epsilon &&
+                std::abs(target_position) <= k_pos_epsilon) {
+                return ShadowExecutionState::FLAT;
+            }
+            const double current_abs = std::abs(current_position);
+            const double target_abs = std::abs(target_position);
+            const bool same_direction =
+                    current_abs <= k_pos_epsilon || target_abs <= k_pos_epsilon ||
+                    ((current_position > 0.0) == (target_position > 0.0));
+            if (current_abs <= k_pos_epsilon && target_abs > k_pos_epsilon)
+                return ShadowExecutionState::ENTERING;
+            if (!same_direction)
+                return ShadowExecutionState::FLATTENING;
+            const double delta = target_abs - current_abs;
+            if (delta > k_pos_epsilon)
+                return ShadowExecutionState::ENTERING;
+            if (delta < -k_pos_epsilon)
+                return target_abs <= k_pos_epsilon ? ShadowExecutionState::FLATTENING
+                                                   : ShadowExecutionState::REDUCING;
+            return current_abs > k_pos_epsilon ? ShadowExecutionState::HOLDING
+                                               : ShadowExecutionState::FLAT;
+        }
+
+        ShadowExecutionState state_ = ShadowExecutionState::FLAT;
     };
 
     struct ShadowOrder {
@@ -550,10 +655,17 @@ namespace trading {
         ShadowEngine(BookManager &binance_book, BookManager &kraken_book,
                      BookManager &okx_book, BookManager &coinbase_book,
                      const ShadowConfig &cfg = {})
-            : binance_shadow_(Exchange::BINANCE, cfg, binance_book),
+            : cfg_(cfg),
+              binance_shadow_(Exchange::BINANCE, cfg, binance_book),
               kraken_shadow_(Exchange::KRAKEN, cfg, kraken_book),
               okx_shadow_(Exchange::OKX, cfg, okx_book),
               coinbase_shadow_(Exchange::COINBASE, cfg, coinbase_book) {
+            log_fp_ = std::fopen(cfg.log_path, "a");
+        }
+
+        ~ShadowEngine() {
+            if (log_fp_)
+                std::fclose(log_fp_);
         }
 
         ShadowConnector &binance_connector() { return binance_shadow_; }
@@ -588,6 +700,17 @@ namespace trading {
                    + okx_shadow_.net_position() + coinbase_shadow_.net_position();
         }
 
+        ShadowStateTransition update_state(double target_position, bool flatten_now,
+                                           bool halted, const char *reason) noexcept {
+            ShadowStateTransition transition =
+                    state_machine_.evaluate(net_position(), target_position, flatten_now, halted, reason);
+            if (transition.changed)
+                log_transition(transition);
+            return transition;
+        }
+
+        [[nodiscard]] ShadowExecutionState state() const noexcept { return state_machine_.state(); }
+
         void log_summary() const {
             LOG_INFO("Shadow session summary",
                      "exact_session_pnl", net_pnl(),
@@ -595,6 +718,7 @@ namespace trading {
                      "net_position", net_position(),
                      "total_fills", total_fills(),
                      "opened_positions", opened_positions(),
+                     "state", ShadowStateMachine::to_string(state_machine_.state()),
                      "bin_opened", binance_shadow_.opened_positions(),
                      "kra_opened", kraken_shadow_.opened_positions(),
                      "okx_opened", okx_shadow_.opened_positions(),
@@ -606,6 +730,26 @@ namespace trading {
         }
 
     private:
+        void log_transition(const ShadowStateTransition &transition) noexcept {
+            if (!log_fp_)
+                return;
+            using namespace std::chrono;
+            const auto ts_ns =
+                    duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
+            std::fprintf(log_fp_,
+                         "{\"event\":\"STATE_TRANSITION\",\"ts_ns\":%lld,\"from\":\"%s\","
+                         "\"to\":\"%s\",\"reason\":\"%s\",\"current_position\":%.6f,"
+                         "\"target_position\":%.6f}\n",
+                         (long long) ts_ns,
+                         ShadowStateMachine::to_string(transition.previous),
+                         ShadowStateMachine::to_string(transition.current), transition.reason,
+                         transition.current_position, transition.target_position);
+            std::fflush(log_fp_);
+        }
+
+        ShadowConfig cfg_{};
+        std::FILE *log_fp_ = nullptr;
+        ShadowStateMachine state_machine_{};
         ShadowConnector binance_shadow_;
         ShadowConnector kraken_shadow_;
         ShadowConnector okx_shadow_;

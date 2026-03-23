@@ -39,7 +39,16 @@ namespace {
         std::string venues = "BINANCE,KRAKEN,OKX,COINBASE";
         std::string symbol = "BTCUSDT";
         int loop_interval_ms = 500;
+        trading::ShadowRunMode shadow_run_mode = trading::ShadowRunMode::TARGET_POSITION;
+        bool shadow_ab_compare = false;
     };
+
+    auto parse_shadow_run_mode(const std::string &value) -> trading::ShadowRunMode {
+        if (value == "legacy") {
+            return trading::ShadowRunMode::LEGACY;
+        }
+        return trading::ShadowRunMode::TARGET_POSITION;
+    }
 
     auto parse_args(int argc, char **argv) -> CliOptions {
         CliOptions out;
@@ -58,6 +67,10 @@ namespace {
                     LOG_WARN("parse_args: invalid --loop-interval-ms value, using default", "value",
                              argv[i], "default_ms", out.loop_interval_ms);
                 }
+            } else if (arg == "--shadow-run-mode" && i + 1 < argc) {
+                out.shadow_run_mode = parse_shadow_run_mode(argv[++i]);
+            } else if (arg == "--shadow-ab-compare") {
+                out.shadow_ab_compare = true;
             }
         }
         return out;
@@ -210,6 +223,10 @@ namespace {
                 .count();
         metadata.urgency = intent.urgency;
         return metadata;
+    }
+
+    auto shadow_run_mode_to_string(trading::ShadowRunMode mode) -> const char * {
+        return mode == trading::ShadowRunMode::LEGACY ? "legacy" : "target_position";
     }
 } // namespace
 
@@ -397,7 +414,9 @@ auto main(int argc, char **argv) -> int {
         constexpr auto portfolio_log_heartbeat = std::chrono::seconds(15);
 
         LOG_INFO("trading_engine started", "mode", opts.mode.c_str(), "venues", opts.venues.c_str(),
-                 "symbol", opts.symbol.c_str());
+                 "symbol", opts.symbol.c_str(), "shadow_run_mode",
+                 shadow_run_mode_to_string(opts.shadow_run_mode), "shadow_ab_compare",
+                 opts.shadow_ab_compare ? 1 : 0);
 
         while (g_running.load(std::memory_order_acquire)) {
             if (kill_switch.is_active()) {
@@ -567,18 +586,43 @@ auto main(int argc, char **argv) -> int {
                          "urgency", static_cast<int>(intent.urgency));
             }
 
-            const auto plan_update =
-                    parent_manager.update_target(intent.position_delta, intent.urgency, now);
-            const ParentExecutionPlan active_plan = plan_update.plan;
-            if (plan_update.action != ParentPlanAction::NONE && active_plan.active() &&
-                active_plan.remaining_qty > 1e-6) {
-                const auto &scheduler_quotes = active_plan.side == Side::BID ? bid_quotes : ask_quotes;
-                const SchedulerDecision scheduled =
-                        child_scheduler.schedule(active_plan, alpha_signal.horizon_ticks,
-                                                 portfolio_snapshot.oldest_inventory_age_ms,
-                                                 scheduler_quotes);
-                submit_decision(scheduled, active_plan.side, active_plan.remaining_qty, intent_metadata,
-                                reason_codes);
+            if (opts.mode == "shadow") {
+                const bool halted = kill_switch.is_active() ||
+                                    circuit_breaker.check_consecutive_losses() !=
+                                            CircuitCheckResult::OK;
+                const ShadowStateTransition transition = shadow_engine.update_state(
+                        intent.target_global_position, intent.flatten_now, halted,
+                        reason_codes.c_str());
+                if (transition.changed) {
+                    LOG_INFO("shadow state transition", "from",
+                             ShadowStateMachine::to_string(transition.previous), "to",
+                             ShadowStateMachine::to_string(transition.current), "reason",
+                             transition.reason, "current_pos", transition.current_position,
+                             "target_pos", transition.target_position, "run_mode",
+                             shadow_run_mode_to_string(opts.shadow_run_mode));
+                }
+            }
+
+            if (opts.mode != "shadow" || opts.shadow_run_mode == ShadowRunMode::TARGET_POSITION) {
+                const auto plan_update =
+                        parent_manager.update_target(intent.position_delta, intent.urgency, now);
+                const ParentExecutionPlan active_plan = plan_update.plan;
+                if (plan_update.action != ParentPlanAction::NONE && active_plan.active() &&
+                    active_plan.remaining_qty > 1e-6) {
+                    const auto &scheduler_quotes =
+                            active_plan.side == Side::BID ? bid_quotes : ask_quotes;
+                    const SchedulerDecision scheduled =
+                            child_scheduler.schedule(active_plan, alpha_signal.horizon_ticks,
+                                                     portfolio_snapshot.oldest_inventory_age_ms,
+                                                     scheduler_quotes);
+                    submit_decision(scheduled, active_plan.side, active_plan.remaining_qty,
+                                    intent_metadata, reason_codes);
+                }
+            } else if (opts.shadow_ab_compare) {
+                LOG_INFO("shadow legacy comparison tick", "state",
+                         ShadowStateMachine::to_string(shadow_engine.state()), "current_position",
+                         portfolio_snapshot.global_position, "target_position",
+                         intent.target_global_position, "reason_codes", reason_codes.c_str());
             }
 
             const auto reconciliation_now = std::chrono::steady_clock::now();

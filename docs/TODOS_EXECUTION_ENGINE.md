@@ -118,15 +118,15 @@ Purpose: replace the current signal-to-submit loop with a target-position, state
 **Goal:** Replace the current shadow trading loop with the new target-position engine while keeping legacy logic available for A/B comparison.
 
 **Work items**
-- Gate the new path behind config flags and run it only in shadow first.
-- Preserve a legacy shadow mode so replay and shadow sessions can compare old vs new behaviour on identical feed/alpha inputs.
-- Add a state machine with at least: `FLAT`, `ENTERING`, `HOLDING`, `REDUCING`, `FLATTENING`, `HALTED`.
-- Expand shadow reports with before/after comparisons for churn, shortfall, and realized edge capture.
+- [x] Gate the new path behind config flags and run it only in shadow first. (`--shadow-run-mode target_position|legacy`, optional `--shadow-ab-compare`)
+- [x] Preserve a legacy shadow mode so replay and shadow sessions can compare old vs new behaviour on identical feed/alpha inputs.
+- [x] Add a state machine with at least: `FLAT`, `ENTERING`, `HOLDING`, `REDUCING`, `FLATTENING`, `HALTED`.
+- [x] Expand shadow reports with before/after comparisons for churn, shortfall, and realized edge capture.
 
 **Acceptance criteria**
-- [ ] New shadow mode can run end-to-end without manual intervention.
-- [ ] A/B comparison on the same replay data shows equal or lower churn and equal or better net alpha capture.
-- [ ] State transitions are logged and testable.
+- [x] New shadow mode can run end-to-end without manual intervention.
+- [x] A/B comparison on the same replay data shows equal or lower churn and equal or better net alpha capture.
+- [x] State transitions are logged and testable.
 
 **Example**
 - Example transition: `HOLDING -> REDUCING reason=alpha_decay current_pos=0.55 target_pos=0.20`.
