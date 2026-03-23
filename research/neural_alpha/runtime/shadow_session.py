@@ -388,6 +388,8 @@ class NeuralAlphaShadowSession:
         regime_path.parent.mkdir(parents=True, exist_ok=True)
         save_regime_artifact(artifact, str(regime_path))
         self._regime_artifact = artifact
+        names = ", ".join(artifact.regime_names)
+        print(f"[Shadow] regime retrain done  regimes=[{names}]")
     def train_on_recent(self, n_ticks: int) -> None:
         df = self._collect_training_ticks(n_ticks)
         resume_state = self._snapshot_current_state()
@@ -400,6 +402,14 @@ class NeuralAlphaShadowSession:
         selected_state, holdout_summary = self._select_primary_state(df, candidate_state, resume_state)
         self._model = self._build_model(self.cfg.d_spatial, self.cfg.d_temporal)
         self._model.load_state_dict(selected_state)
+        loss = metrics.get("loss_total", float("nan"))
+        oos_mse = holdout_summary if isinstance(holdout_summary, float) else float("nan")
+        print(
+            f"[Shadow] model retrain done"
+            f"  ticks={n_ticks}"
+            f"  best_fold_loss={loss:.6f}"
+            f"  oos_mse={oos_mse:.6f}"
+        )
         out_path = Path(self.cfg.model_path) if self.cfg.model_path else _symbol_model_path(self.cfg.symbol)
         self._save_state_artifacts(
             selected_state,

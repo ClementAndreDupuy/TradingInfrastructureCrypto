@@ -62,18 +62,18 @@ namespace trading {
         }
     };
 
-    static constexpr size_t LOG_MSG_SIZE = 224;
+    static constexpr size_t LOG_MSG_SIZE = 496;
 
-    struct alignas(256) LogEntry {
+    struct alignas(512) LogEntry {
         uint64_t tsc;
         LogLevel level;
         char msg[LOG_MSG_SIZE];
-        char _pad[256 - sizeof(uint64_t) - sizeof(LogLevel) - LOG_MSG_SIZE];
+        char _pad[512 - sizeof(uint64_t) - sizeof(LogLevel) - LOG_MSG_SIZE];
     };
 
-    static_assert(sizeof(LogEntry) == 256, "LogEntry must be 256 bytes");
+    static_assert(sizeof(LogEntry) == 512, "LogEntry must be 512 bytes");
 
-    static constexpr size_t LOG_RING_SIZE = 4096;
+    static constexpr size_t LOG_RING_SIZE = 2048;
 
     struct LogRing {
         alignas(64) std::atomic<uint64_t> head{0};

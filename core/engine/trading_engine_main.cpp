@@ -492,6 +492,7 @@ auto main(int argc, char **argv) -> int {
         AlphaSignal last_alpha_signal{};
         PortfolioIntentLogState portfolio_log_state;
         constexpr auto portfolio_log_heartbeat = std::chrono::seconds(15);
+        auto venue_quality_log_heartbeat = std::chrono::seconds(60);
         auto last_venue_quality_log = std::chrono::steady_clock::time_point{};
 
         LOG_INFO("trading_engine started", "mode", opts.mode.c_str(), "venues", opts.venues.c_str(),
@@ -676,7 +677,7 @@ auto main(int argc, char **argv) -> int {
                     now - portfolio_log_state.last_log_time >= portfolio_log_heartbeat;
 
             if (last_venue_quality_log == std::chrono::steady_clock::time_point{} ||
-                now - last_venue_quality_log >= portfolio_log_heartbeat) {
+                now - last_venue_quality_log >= venue_quality_log_heartbeat) {
                 last_venue_quality_log = now;
                 for (const auto &quote: bid_quotes) {
                     if (!quote.enabled)

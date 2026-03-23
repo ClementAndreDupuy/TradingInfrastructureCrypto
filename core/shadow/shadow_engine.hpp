@@ -254,12 +254,6 @@ namespace trading {
                 return ConnectorResult::OK;
             }
 
-            if (order.tif == TimeInForce::IOC && !fillable_now) {
-                emit_cancel(*slot);
-                slot->active = false;
-                return ConnectorResult::OK;
-            }
-
             slot->is_maker = true;
             log_order(*slot, "RESTING");
             return ConnectorResult::OK;
@@ -334,6 +328,7 @@ namespace trading {
         }
 
         double total_pnl() const noexcept { return total_pnl_.load(std::memory_order_acquire); }
+        double gross_notional() const noexcept { return gross_notional_.load(std::memory_order_acquire); }
         uint64_t total_fills() const noexcept { return total_fills_.load(std::memory_order_acquire); }
 
         uint64_t opened_positions() const noexcept {
@@ -366,6 +361,7 @@ namespace trading {
         ShadowIntentMetadata next_intent_{};
 
         std::atomic<double> total_pnl_{0.0};
+        std::atomic<double> gross_notional_{0.0};
         std::atomic<uint64_t> total_fills_{0};
         std::atomic<uint64_t> opened_positions_{0};
         std::atomic<double> net_position_{0.0};
@@ -442,6 +438,8 @@ namespace trading {
 
             const double old_pnl = total_pnl_.load(std::memory_order_acquire);
             total_pnl_.store(old_pnl + contrib, std::memory_order_release);
+            const double old_notional = gross_notional_.load(std::memory_order_acquire);
+            gross_notional_.store(old_notional + fill_px * fill_qty, std::memory_order_release);
             total_fills_.fetch_add(1, std::memory_order_relaxed);
             const double position_delta = (s.side == Side::BID) ? fill_qty : -fill_qty;
             const double old_position = net_position_.load(std::memory_order_acquire);
@@ -680,6 +678,11 @@ namespace trading {
                    + okx_shadow_.total_pnl() + coinbase_shadow_.total_pnl();
         }
 
+        double gross_notional() const noexcept {
+            return binance_shadow_.gross_notional() + kraken_shadow_.gross_notional()
+                   + okx_shadow_.gross_notional() + coinbase_shadow_.gross_notional();
+        }
+
         uint64_t total_fills() const noexcept {
             return binance_shadow_.total_fills() + kraken_shadow_.total_fills()
                    + okx_shadow_.total_fills() + coinbase_shadow_.total_fills();
@@ -707,9 +710,13 @@ namespace trading {
         [[nodiscard]] ShadowExecutionState state() const noexcept { return state_machine_.state(); }
 
         void log_summary() const {
+            const double gn = gross_notional();
+            const double pnl_pct = gn > 0.0 ? (net_pnl() / gn) * 100.0 : 0.0;
             LOG_INFO("Shadow session summary",
-                     "exact_session_pnl", net_pnl(),
-                     "net_pnl", net_pnl(),
+                     "session_pnl_usd", net_pnl(),
+                     "net_pnl_usd", net_pnl(),
+                     "net_pnl_pct", pnl_pct,
+                     "gross_notional_usd", gn,
                      "net_position", net_position(),
                      "total_fills", total_fills(),
                      "opened_positions", opened_positions(),

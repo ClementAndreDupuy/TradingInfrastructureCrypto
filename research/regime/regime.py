@@ -293,6 +293,8 @@ def train_regime_model_from_df(
         variances=variances.tolist(),
         scales=scales.tolist(),
     )
+    spread_means = [round(float(means[i][1]), 6) for i in range(cfg.n_regimes)]
+    print(f"[Regime] trained  names={regime_names}  spread_means={spread_means}")
     return (artifact, distribution)
 
 
