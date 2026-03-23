@@ -1,4 +1,5 @@
 #include "../common/logging.hpp"
+#include "../common/symbol_mapper.hpp"
 #include "../execution/binance/binance_connector.hpp"
 #include "../execution/coinbase/coinbase_connector.hpp"
 #include "../execution/common/child_order_scheduler.hpp"
@@ -31,6 +32,7 @@
 #include <exception>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <thread>
 
 namespace {
@@ -189,6 +191,63 @@ namespace {
         if (intent.position_delta < -1e-9)
             return "reduce";
         return "hold";
+    }
+
+
+    auto matching_position_qty(const ReconciliationSnapshot &snapshot, Exchange exchange,
+                               const std::string &symbol) -> double {
+        const std::string venue_symbol = SymbolMapper::map_for_exchange(exchange, symbol);
+        double quantity = 0.0;
+        for (size_t i = 0; i < snapshot.positions.size; ++i) {
+            const auto &position = snapshot.positions.items[i];
+            if (std::string_view(position.symbol) != std::string_view(venue_symbol))
+                continue;
+            quantity += position.quantity;
+        }
+        return quantity;
+    }
+
+    auto build_live_portfolio_snapshot(const std::string &symbol, const BookManager &binance_book,
+                                       const BookManager &kraken_book, const BookManager &okx_book,
+                                       const BookManager &coinbase_book,
+                                       const ReconciliationService &reconciliation, bool run_binance,
+                                       bool run_kraken, bool run_okx,
+                                       bool run_coinbase) -> PositionLedgerSnapshot {
+        PositionLedgerSnapshot snapshot;
+        std::strncpy(snapshot.symbol, symbol.c_str(), sizeof(snapshot.symbol) - 1);
+        snapshot.symbol[sizeof(snapshot.symbol) - 1] = '\0';
+
+        const auto apply_mid_price = [&snapshot](const BookManager &book) {
+            if (!book.is_ready())
+                return;
+            const double bid = book.best_bid();
+            const double ask = book.best_ask();
+            if (bid <= 0.0 || ask <= 0.0)
+                return;
+            snapshot.mid_price = 0.5 * (bid + ask);
+        };
+
+        apply_mid_price(binance_book);
+        apply_mid_price(kraken_book);
+        apply_mid_price(okx_book);
+        apply_mid_price(coinbase_book);
+
+        const auto add_position = [&](Exchange exchange, bool enabled) {
+            if (!enabled)
+                return;
+            const ReconciliationSnapshot *venue_snapshot =
+                    reconciliation.latest_snapshot_for(exchange);
+            if (!venue_snapshot)
+                return;
+            snapshot.global_position += matching_position_qty(*venue_snapshot, exchange, symbol);
+        };
+
+        add_position(Exchange::BINANCE, run_binance);
+        add_position(Exchange::KRAKEN, run_kraken);
+        add_position(Exchange::OKX, run_okx);
+        add_position(Exchange::COINBASE, run_coinbase);
+
+        return snapshot;
     }
 
     auto build_intent_metadata(const trading::AlphaSignal &signal,
@@ -537,8 +596,19 @@ auto main(int argc, char **argv) -> int {
                 }
             };
 
-            PositionLedgerSnapshot portfolio_snapshot;
-            portfolio_snapshot.global_position = opts.mode == "shadow" ? shadow_engine.net_position() : 0.0;
+            PositionLedgerSnapshot portfolio_snapshot =
+                    opts.mode == "shadow"
+                            ? PositionLedgerSnapshot{}
+                            : build_live_portfolio_snapshot(opts.symbol, binance_book, kraken_book,
+                                                           okx_book, coinbase_book, reconciliation,
+                                                           run_binance, run_kraken, run_okx,
+                                                           run_coinbase);
+            if (opts.mode == "shadow") {
+                std::strncpy(portfolio_snapshot.symbol, opts.symbol.c_str(),
+                             sizeof(portfolio_snapshot.symbol) - 1);
+                portfolio_snapshot.symbol[sizeof(portfolio_snapshot.symbol) - 1] = '\0';
+                portfolio_snapshot.global_position = shadow_engine.net_position();
+            }
             if (portfolio_snapshot.global_position > 1e-9)
                 portfolio_snapshot.oldest_inventory_age_ms = std::max<int64_t>(
                                                                  0, alpha_signal.horizon_ticks) * opts.loop_interval_ms;

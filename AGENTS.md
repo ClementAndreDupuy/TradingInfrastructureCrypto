@@ -136,8 +136,14 @@ Use this as a lightweight operating checklist for future agent sessions.
 
 ## Known Issues Fixed
 
+### Execution-engine phases 0-6 complete (2026-03-23)
+- **`docs/TODOS_EXECUTION_ENGINE.md`** — The roadmap now records Phases 0 through 6 as complete so future work starts from Phase 7 adaptive venue quality modelling instead of reopening finished execution-engine milestones.
+
+### Phase 6 live target-position cutover (2026-03-23)
+- **`core/engine/trading_engine_main.cpp`** + **`docs/TODOS_EXECUTION_ENGINE.md`** — Live execution now consumes cached reconciliation snapshots, feeds the same target-position loop used in shadow with actual live inventory, and the roadmap no longer assumes a canary rollout or legacy live fallback path.
+
 ### Phase 5 shadow state machine rollout (2026-03-23)
-- **`core/engine/trading_engine_main.cpp`** + **`core/shadow/shadow_engine.hpp`** — Shadow execution now runs only the new target-position engine in shadow mode, logs testable `STATE_TRANSITION` events for `FLAT`/`ENTERING`/`HOLDING`/`REDUCING`/`FLATTENING`/`HALTED`, and keeps the scheduler shadow-only until Phase 6 live canary work begins.
+- **`core/engine/trading_engine_main.cpp`** + **`core/shadow/shadow_engine.hpp`** — Shadow execution now runs only the new target-position engine in shadow mode and logs testable `STATE_TRANSITION` events for `FLAT`/`ENTERING`/`HOLDING`/`REDUCING`/`FLATTENING`/`HALTED`.
 - **`research/backtest/shadow_metrics.py`** — Shadow reporting now includes state-transition counts alongside churn, shortfall, and realized edge capture metrics for the new engine path.
 
 ### Execution connector remediation (2026-03-19)
