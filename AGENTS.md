@@ -44,11 +44,9 @@ Development guidelines of the project.
 [Development guidelines](/docs/DEVELOPMENT_GUIDELINES.md)
 
 ## Project TODOs
-All the project todos should be placed in the TODO file below, ranked by priority and severity. For the execution-engine rebuild, keep the dedicated phased roadmap in `/docs/TODOS_EXECUTION_ENGINE.md` updated with clear acceptance criteria and examples, and update this `AGENTS.md` in the same commit whenever that roadmap changes.
+All project todos should be placed in the TODO file below, ranked by priority and severity. The execution-engine rebuild is complete, so keep any follow-up execution work tracked directly in `/docs/TODOS.md` and update this `AGENTS.md` in the same commit whenever execution-operating guidance changes.
 
 [TODOS file](/docs/TODOS.md)
-
-[Execution engine roadmap](/docs/TODOS_EXECUTION_ENGINE.md)
 
 ## Components
 
@@ -130,21 +128,28 @@ Use this as a lightweight operating checklist for future agent sessions.
    - Update scoped `AGENTS.md` whenever new conventions are introduced.
    - Prefer replay/integration validation whenever touching book/feed/risk paths.
 
-5. **Execution-engine roadmap hygiene**:
-   - Any change to the phased execution-engine plan must update both `docs/TODOS_EXECUTION_ENGINE.md` and this `AGENTS.md` in the same commit.
-   - Do not mark a roadmap phase complete unless every acceptance criterion in the roadmap file is satisfied.
+5. **Execution follow-up hygiene**:
+   - Track any new execution-engine follow-up items directly in `docs/TODOS.md` with concrete acceptance criteria.
+   - Update this `AGENTS.md` in the same commit whenever execution-operating guidance changes.
 
 ## Known Issues Fixed
 
+### Execution-engine roadmap retirement (2026-03-23)
+- **`docs/TODOS.md`** + **`AGENTS.md`** — The phased execution-engine roadmap has been retired because the rebuild is complete, and any new execution follow-up now belongs in the shared prioritized TODO list instead of a separate roadmap file.
+
+### Phase 7 adaptive venue quality completion (2026-03-23)
+- **`tests/unit/venue_quality_model_test.cpp`** — Phase 7 now includes a noisy-input scheduler regression that verifies adaptive venue scoring stays stable and continues to prefer the better venue under short-term execution noise.
+- **`research/backtest/shadow_metrics.py`** + **`tests/unit/test_shadow_metrics.py`** — Shadow reports now summarize adaptive venue-priority changes, including fill probability, passive/taker markout, reject rate, cancel latency, and explicit reasons each venue improved or degraded over the run.
+
 ### Phase 7 adaptive venue quality groundwork (2026-03-23)
 - **`core/execution/common/venue_quality_model.hpp`** + **`core/execution/router/smart_order_router.[hpp/cpp]`** — Routing now applies bounded adaptive venue penalties derived from rolling fill probability, markout, reject rate, cancel latency, and venue health so scheduler decisions can respond to changing venue quality without oscillating on every noisy sample.
-- **`core/engine/trading_engine_main.cpp`** + **`docs/TODOS_EXECUTION_ENGINE.md`** — The engine now emits periodic `venue quality` snapshots for post-trade analysis, and the roadmap records that Phase 7 groundwork is in place while leaving the phase open until replay/shadow evidence satisfies the remaining acceptance criteria.
+- **`core/engine/trading_engine_main.cpp`** — The engine now emits periodic `venue quality` snapshots for post-trade analysis, which Phase 7 completion reporting now explains in shadow metrics output.
 
 ### Execution-engine phases 0-6 complete (2026-03-23)
-- **`docs/TODOS_EXECUTION_ENGINE.md`** — The roadmap now records Phases 0 through 6 as complete so future work starts from Phase 7 adaptive venue quality modelling instead of reopening finished execution-engine milestones.
+- **`core/engine/trading_engine_main.cpp`** — The execution-engine rebuild reached adaptive venue quality modelling after Phases 0 through 6 completed, so future work starts from incremental execution follow-up rather than roadmap migration work.
 
 ### Phase 6 live target-position cutover (2026-03-23)
-- **`core/engine/trading_engine_main.cpp`** + **`docs/TODOS_EXECUTION_ENGINE.md`** — Live execution now consumes cached reconciliation snapshots, feeds the same target-position loop used in shadow with actual live inventory, and the roadmap no longer assumes a canary rollout or legacy live fallback path.
+- **`core/engine/trading_engine_main.cpp`** — Live execution now consumes cached reconciliation snapshots and feeds the same target-position loop used in shadow with actual live inventory.
 
 ### Phase 5 shadow state machine rollout (2026-03-23)
 - **`core/engine/trading_engine_main.cpp`** + **`core/shadow/shadow_engine.hpp`** — Shadow execution now runs only the new target-position engine in shadow mode and logs testable `STATE_TRANSITION` events for `FLAT`/`ENTERING`/`HOLDING`/`REDUCING`/`FLATTENING`/`HALTED`.
