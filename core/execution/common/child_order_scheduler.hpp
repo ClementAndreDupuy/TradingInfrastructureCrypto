@@ -230,15 +230,16 @@ namespace trading {
             const double score = SmartOrderRouter::expected_shortfall_bps(
                 venue, side, regime, best_px, inventory_age_penalty_bps(style, inventory_age_ms));
             if (style == ChildExecutionStyle::PASSIVE_JOIN) {
-                return score - (0.5 * venue.taker_fee_bps);
+                return score - (0.5 * venue.taker_fee_bps) + venue.passive_markout_bps;
             }
             if (style == ChildExecutionStyle::PASSIVE_IMPROVE) {
-                return score - (0.25 * venue.taker_fee_bps) + 0.10 * venue.queue_ahead_qty;
+                return score - (0.25 * venue.taker_fee_bps) + 0.10 * venue.queue_ahead_qty +
+                       venue.passive_markout_bps;
             }
             if (style == ChildExecutionStyle::SWEEP) {
-                return score - 0.20 * venue.latency_penalty_bps;
+                return score - 0.20 * venue.latency_penalty_bps + venue.taker_markout_bps;
             }
-            return score;
+            return score + venue.taker_markout_bps;
         }
 
         [[nodiscard]] TimeInForce tif_for_style(ChildExecutionStyle style) const noexcept {

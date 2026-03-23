@@ -136,6 +136,10 @@ Use this as a lightweight operating checklist for future agent sessions.
 
 ## Known Issues Fixed
 
+### Phase 7 adaptive venue quality groundwork (2026-03-23)
+- **`core/execution/common/venue_quality_model.hpp`** + **`core/execution/router/smart_order_router.[hpp/cpp]`** — Routing now applies bounded adaptive venue penalties derived from rolling fill probability, markout, reject rate, cancel latency, and venue health so scheduler decisions can respond to changing venue quality without oscillating on every noisy sample.
+- **`core/engine/trading_engine_main.cpp`** + **`docs/TODOS_EXECUTION_ENGINE.md`** — The engine now emits periodic `venue quality` snapshots for post-trade analysis, and the roadmap records that Phase 7 groundwork is in place while leaving the phase open until replay/shadow evidence satisfies the remaining acceptance criteria.
+
 ### Execution-engine phases 0-6 complete (2026-03-23)
 - **`docs/TODOS_EXECUTION_ENGINE.md`** — The roadmap now records Phases 0 through 6 as complete so future work starts from Phase 7 adaptive venue quality modelling instead of reopening finished execution-engine milestones.
 

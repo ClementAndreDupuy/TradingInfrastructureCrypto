@@ -155,10 +155,10 @@ Purpose: replace the current signal-to-submit loop with a target-position, state
 **Goal:** Continuously re-estimate venue quality so routing reflects actual realized markout and fill quality.
 
 **Work items**
-- Add a `VenueQualityModel` with rolling fill probability, passive/taker markout, reject rate, cancel latency, and venue health penalties.
-- Feed its outputs into the scheduler/router scoring path.
-- Bound adaptation speed to avoid unstable oscillations.
-- Persist summary snapshots for post-trade analysis.
+- [x] Add a `VenueQualityModel` with rolling fill probability, passive/taker markout, reject rate, cancel latency, and venue health penalties.
+- [x] Feed its outputs into the scheduler/router scoring path.
+- [x] Bound adaptation speed to avoid unstable oscillations.
+- [x] Persist summary snapshots for post-trade analysis via periodic venue-quality logs.
 
 **Acceptance criteria**
 - [ ] Venue scores change in response to measured execution outcomes, not hard-coded constants alone.
@@ -167,6 +167,7 @@ Purpose: replace the current signal-to-submit loop with a target-position, state
 
 **Example**
 - Example: `OKX passive_markout_100ms=-1.8bps => reduce passive posting weight; KRAKEN fill_prob=0.82 => increase passive preference`.
+- Current implementation status: adaptive venue-quality penalties now flow into the scheduler/router and emit `venue quality` snapshots, but the phase remains open until replay/shadow reports prove the new ranking logic is stable under live-like noise.
 
 ---
 

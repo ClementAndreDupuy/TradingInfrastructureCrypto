@@ -8,6 +8,7 @@
 #include "../execution/okx/okx_connector.hpp"
 #include "../execution/common/portfolio_intent_engine.hpp"
 #include "../execution/common/reconciliation_service.hpp"
+#include "../execution/common/venue_quality_model.hpp"
 #include "../execution/router/smart_order_router.hpp"
 #include "feed_bootstrap.hpp"
 #include "../feeds/binance/binance_feed_handler.hpp"
@@ -442,6 +443,7 @@ auto main(int argc, char **argv) -> int {
         ParentOrderManager parent_manager;
         ChildOrderScheduler child_scheduler;
         PortfolioIntentEngine intent_engine;
+        VenueQualityModel venue_quality_model;
 
         const auto reconnect_interval = std::chrono::seconds(1);
         const auto reconciliation_interval = std::chrono::seconds(30);
@@ -454,6 +456,7 @@ auto main(int argc, char **argv) -> int {
         AlphaSignal last_alpha_signal{};
         PortfolioIntentLogState portfolio_log_state;
         constexpr auto portfolio_log_heartbeat = std::chrono::seconds(15);
+        auto last_venue_quality_log = std::chrono::steady_clock::time_point{};
 
         LOG_INFO("trading_engine started", "mode", opts.mode.c_str(), "venues", opts.venues.c_str(),
                  "symbol", opts.symbol.c_str());
@@ -472,9 +475,11 @@ auto main(int argc, char **argv) -> int {
             if (opts.mode == "shadow") {
                 shadow_engine.check_fills();
             }
-            const auto submit_decision = [&](const SchedulerDecision &decision, Side side,
+            const auto submit_decision = [&](
+                                             const SchedulerDecision &decision, Side side,
                                              double route_qty, const ShadowIntentMetadata &intent_metadata,
-                                             const std::string &reason_codes) {
+                                             const std::string &reason_codes,
+                                             const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> &scoring_quotes) {
                 const auto style_to_string = [](ChildExecutionStyle style) -> const char * {
                     switch (style) {
                         case ChildExecutionStyle::PASSIVE_JOIN:
@@ -487,6 +492,14 @@ auto main(int argc, char **argv) -> int {
                             return "sweep";
                     }
                     return "ioc";
+                };
+                const auto quote_for_exchange = [&](Exchange exchange) -> const VenueQuote * {
+                    for (const auto &quote: scoring_quotes) {
+                        if (quote.exchange == exchange) {
+                            return &quote;
+                        }
+                    }
+                    return nullptr;
                 };
                 for (size_t i = 0; i < decision.routing.child_count; ++i) {
                     const auto &child = decision.routing.children[i];
@@ -562,6 +575,27 @@ auto main(int argc, char **argv) -> int {
                         }
                     }
 
+                    const VenueQuote *quote = quote_for_exchange(child.exchange);
+                    if (quote != nullptr) {
+                        const bool passive_style = child.tif == TimeInForce::GTX;
+                        const bool rejected = res != ConnectorResult::OK;
+                        const double realized_fill_probability =
+                                child.quantity > 1e-9
+                                        ? std::clamp(quote->depth_qty / child.quantity, 0.0, 1.0)
+                                        : 0.0;
+                        const double markout_bps = passive_style ? -quote->toxicity_bps
+                                                                 : -0.5 * quote->toxicity_bps;
+                        venue_quality_model.observe_fill_probability(child.exchange,
+                                                                    realized_fill_probability);
+                        venue_quality_model.observe_markout(child.exchange, passive_style,
+                                                           markout_bps);
+                        venue_quality_model.observe_reject(child.exchange, rejected);
+                        venue_quality_model.observe_cancel_latency(
+                                child.exchange,
+                                std::chrono::microseconds(static_cast<int64_t>(
+                                        std::max(0.0, quote->latency_penalty_bps) * 1000.0)));
+                    }
+
                     LOG_INFO("order submitted", "intent", intent_metadata.intent, "reason",
                              intent_metadata.reason, "reason_codes", reason_codes.c_str(), "child", static_cast<int>(i),
                              "style", style_to_string(decision.style), "venue",
@@ -579,7 +613,7 @@ auto main(int argc, char **argv) -> int {
                 }
             };
 
-            const auto bid_quotes = std::array<VenueQuote, SmartOrderRouter::MAX_VENUES>{
+            auto bid_quotes = std::array<VenueQuote, SmartOrderRouter::MAX_VENUES>{
                 {
                     make_quote(Exchange::BINANCE, binance_book, run_binance, Side::BID),
                     make_quote(Exchange::KRAKEN, kraken_book, run_kraken, Side::BID),
@@ -587,7 +621,7 @@ auto main(int argc, char **argv) -> int {
                     make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, Side::BID),
                 }
             };
-            const auto ask_quotes = std::array<VenueQuote, SmartOrderRouter::MAX_VENUES>{
+            auto ask_quotes = std::array<VenueQuote, SmartOrderRouter::MAX_VENUES>{
                 {
                     make_quote(Exchange::BINANCE, binance_book, run_binance, Side::ASK),
                     make_quote(Exchange::KRAKEN, kraken_book, run_kraken, Side::ASK),
@@ -595,6 +629,12 @@ auto main(int argc, char **argv) -> int {
                     make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, Side::ASK),
                 }
             };
+
+            for (const auto &quote: bid_quotes) {
+                venue_quality_model.observe_health(quote.exchange, quote.healthy);
+            }
+            venue_quality_model.apply(bid_quotes);
+            venue_quality_model.apply(ask_quotes);
 
             PositionLedgerSnapshot portfolio_snapshot =
                     opts.mode == "shadow"
@@ -623,6 +663,24 @@ auto main(int argc, char **argv) -> int {
                     portfolio_log_state.last_log_time == std::chrono::steady_clock::time_point{} ||
                     portfolio_intent_changed(portfolio_log_state, intent_metadata, reason_codes, intent) ||
                     now - portfolio_log_state.last_log_time >= portfolio_log_heartbeat;
+
+            if (last_venue_quality_log == std::chrono::steady_clock::time_point{} ||
+                now - last_venue_quality_log >= portfolio_log_heartbeat) {
+                last_venue_quality_log = now;
+                for (const auto &quote: bid_quotes) {
+                    const VenueQualitySnapshot snap = venue_quality_model.snapshot(quote.exchange);
+                    LOG_INFO("venue quality", "exchange", exchange_to_string(quote.exchange),
+                             "fill_probability", snap.composite_fill_probability,
+                             "passive_markout_bps", snap.passive_markout_bps,
+                             "taker_markout_bps", snap.taker_markout_bps, "reject_rate",
+                             snap.reject_rate, "cancel_latency_penalty_bps",
+                             snap.cancel_latency_penalty_bps, "health_penalty_bps",
+                             snap.health_penalty_bps, "stability_penalty_bps",
+                             snap.stability_penalty_bps, "quality_penalty_bps",
+                             snap.composite_penalty_bps, "sample_count",
+                             static_cast<unsigned long long>(snap.sample_count));
+                }
+            }
 
             if (should_log_portfolio_intent) {
                 update_portfolio_intent_log_state(portfolio_log_state, intent_metadata, reason_codes,
@@ -665,7 +723,7 @@ auto main(int argc, char **argv) -> int {
                                                  portfolio_snapshot.oldest_inventory_age_ms,
                                                  scheduler_quotes);
                 submit_decision(scheduled, active_plan.side, active_plan.remaining_qty,
-                                intent_metadata, reason_codes);
+                                intent_metadata, reason_codes, scheduler_quotes);
             }
 
             const auto reconciliation_now = std::chrono::steady_clock::now();

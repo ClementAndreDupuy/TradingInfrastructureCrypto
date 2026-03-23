@@ -19,6 +19,14 @@ namespace trading {
         double queue_ahead_qty = 0.0;
         double toxicity_bps = 0.0;
         bool healthy = false;
+        double adaptive_fill_probability = -1.0;
+        double passive_markout_bps = 0.0;
+        double taker_markout_bps = 0.0;
+        double reject_rate = 0.0;
+        double cancel_latency_penalty_bps = 0.0;
+        double health_penalty_bps = 0.0;
+        double stability_penalty_bps = 0.0;
+        double quality_penalty_bps = 0.0;
     };
 
     struct RoutingRegime {
