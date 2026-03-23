@@ -1,0 +1,339 @@
+(.venv) clementandredupuy@Mac ThamesRiverTrading % ./deploy/run_shadow.sh --venues OKX,KRAKEN,BINANCE --symbol ETHUSDT
+[2026-03-23T21:01:56Z] [shadow] [INFO] Starting python shadow session with python3.11 (symbol=ETHUSDT, exchanges=OKX,KRAKEN,BINANCE, signals -> /tmp/trt_ipc/neural_alpha_signal.bin, log=/Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl)
+[2026-03-23T21:01:56Z] [shadow] [INFO] Starting C++ shadow runner symbol=ETHUSDT venues=OKX,KRAKEN,BINANCE duration=4000s interval=1000ms
+2026-03-23 21:01:56.672430834 [INFO ] [Binance] FeedHandler created symbol=ETHUSDT
+2026-03-23 21:01:56.672452834 [INFO ] [Kraken] FeedHandler created symbol=ETHUSDT
+2026-03-23 21:01:56.672457792 [INFO ] [OKX] FeedHandler created symbol=ETHUSDT inst_id=ETH-USDT
+2026-03-23 21:01:56.672462542 [INFO ] [Coinbase] FeedHandler created symbol=ETHUSDT
+2026-03-23 21:01:56.958290730 [INFO ] [Binance] Tick size fetched symbol=ETHUSDT tick_size=0.01
+2026-03-23 21:01:57.017426163 [INFO ] [Kraken] Tick size fetched symbol=ETHUSDT tick_size=0.01
+2026-03-23 21:01:57.288989119 [INFO ] [OKX] Tick size fetched symbol=ETHUSDT tick_size=0.01
+2026-03-23 21:01:57.289003452 [INFO ] Grid configuration target_range_usd=250 binance_tick=0.01 binance_levels=25000 binance_range_usd=250 kraken_tick=0.01 kraken_levels=25000 kraken_range_usd=250 okx_tick=0.01 okx_levels=25000 okx_range_usd=250 coinbase_tick=1 coinbase_levels=250 coinbase_range_usd=250
+2026-03-23 21:01:57.290591497 [INFO ] [Binance] Starting feed handler symbol=ETHUSDT
+2026-03-23 21:01:57.526448934 [INFO ] [Binance] Tick size fetched symbol=ETHUSDT tick_size=0.01
+[2026/03/23 21:01:57:5265] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+[2026/03/23 21:01:57:5290] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/23 21:01:57:5291] W: ssh pvo "ops" is mandatory
+[2026/03/23 21:01:57:5291] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/23 21:01:57:5291] W: handler_server_protocol_init: requires 'upload-dir' pvo
+2026-03-23 21:01:58.574879113 [INFO ] [Binance] WebSocket established, fetching snapshot symbol=ETHUSDT
+2026-03-23 21:01:58.574884113 [INFO ] [Binance] Fetching snapshot symbol=ETHUSDT
+2026-03-23 21:01:58.899140657 [INFO ] [OrderBook] Grid bounds symbol=ETHUSDT exchange=BINANCE tick_size=0.01 capacity_levels=25000 active_levels=25000 base=2037.34 top=2287.34 dynamic_range_from_snapshot=false
+2026-03-23 21:01:58.899295241 [INFO ] [OrderBook] Snapshot applied symbol=ETHUSDT sequence=73716700677 base_price=2037.34 bids=5000 asks=5000
+2026-03-23 21:01:58.899379700 [INFO ] [Binance] Snapshot received symbol=ETHUSDT sequence=73716700677 bids=5000 asks=5000 snapshot_latency_ms=299
+2026-03-23 21:01:58.904965125 [INFO ] [Binance] No buffered bridge delta required sequence=73716700677 skipped=0
+2026-03-23 21:01:58.904976875 [INFO ] [Binance] Feed handler started symbol=ETHUSDT
+2026-03-23 21:01:58.904977917 [INFO ] [Kraken] Starting feed handler symbol=ETHUSDT
+2026-03-23 21:01:58.936352720 [INFO ] [Kraken] Tick size fetched symbol=ETHUSDT tick_size=0.01
+[2026/03/23 21:01:58:9364] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+[2026/03/23 21:01:58:9368] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/23 21:01:58:9368] W: ssh pvo "ops" is mandatory
+[2026/03/23 21:01:58:9368] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/23 21:01:58:9368] W: handler_server_protocol_init: requires 'upload-dir' pvo
+2026-03-23 21:01:59.115890772 [INFO ] [Kraken] WebSocket established, waiting for snapshot symbol=ETHUSDT
+2026-03-23 21:01:59.235570181 [INFO ] [OrderBook] Grid bounds symbol=ETHUSDT exchange=KRAKEN tick_size=0.01 capacity_levels=25000 active_levels=25000 base=2037.13 top=2287.13 dynamic_range_from_snapshot=false
+2026-03-23 21:01:59.235574640 [INFO ] [OrderBook] Snapshot applied symbol=ETHUSDT sequence=0 base_price=2037.13 bids=100 asks=100
+2026-03-23 21:01:59.235656598 [INFO ] [Kraken] Feed handler started symbol=ETHUSDT
+2026-03-23 21:01:59.235657515 [INFO ] [OKX] Starting feed handler symbol=ETHUSDT
+[2026/03/23 21:01:59:4365] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+2026-03-23 21:01:59.436490935 [INFO ] [OKX] Tick size fetched symbol=ETHUSDT tick_size=0.01
+[2026/03/23 21:01:59:4369] W: callback_lws_sshd_demo: Can't open /etc/lws-test-sshd-server-key
+[2026/03/23 21:01:59:4369] W: ssh pvo "ops" is mandatory
+[2026/03/23 21:01:59:4369] W: callback_raw_test: Missing pvo "fifo-path", raw file fd testing disabled
+[2026/03/23 21:01:59:4369] W: handler_server_protocol_init: requires 'upload-dir' pvo
+2026-03-23 21:02:00.191641287 [INFO ] [OKX] WebSocket established symbol=ETHUSDT
+2026-03-23 21:02:00.672519054 [INFO ] [OrderBook] Grid bounds symbol=ETHUSDT exchange=OKX tick_size=0.01 capacity_levels=25000 active_levels=25000 base=2037.26 top=2287.26 dynamic_range_from_snapshot=false
+2026-03-23 21:02:00.672531804 [INFO ] [OrderBook] Snapshot applied symbol=ETHUSDT sequence=68121706441 base_price=2037.26 bids=400 asks=400
+2026-03-23 21:02:00.672612595 [INFO ] [OKX] Applied buffered deltas applied=0 skipped=0
+2026-03-23 21:02:00.672619137 [INFO ] [OKX] feed handler started symbol=ETHUSDT
+2026-03-23 21:02:00.672631595 [WARN ] venue credential missing venue=OKX field=api_key
+2026-03-23 21:02:00.672631929 [WARN ] venue credential missing venue=OKX field=api_secret
+2026-03-23 21:02:00.672632220 [WARN ] venue credential missing venue=OKX field=api_passphrase
+2026-03-23 21:02:00.673220471 [INFO ] trading_engine started mode=shadow venues=OKX,KRAKEN,BINANCE symbol=ETHUSDT
+2026-03-23 21:02:00.673731722 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-23 21:02:00.673733097 [INFO ] venue quality exchange=KRAKEN fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-23 21:02:00.673734306 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-23 21:02:00.673738431 [INFO ] portfolio intent intent=hold reason=risk_off,shock_regime reason_codes=risk_off,shock_regime signal_bps=0 risk_score=0.866074 p_shock=1 p_illiquid=0 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+2026-03-23 21:02:01.674180444 [INFO ] portfolio intent intent=hold reason=negative_reversal reason_codes=negative_reversal signal_bps=-254.088 risk_score=0.354956 p_shock=0.00045001 p_illiquid=6.52393e-12 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+2026-03-23 21:02:03.676179141 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0.428933 p_shock=0.000957368 p_illiquid=9.79835e-07 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=1
+2026-03-23 21:02:05.682207845 [INFO ] portfolio intent intent=hold reason=shock_regime reason_codes=shock_regime signal_bps=0 risk_score=0.0217563 p_shock=1 p_illiquid=1.36724e-35 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+2026-03-23 21:02:07.684788625 [INFO ] portfolio intent intent=hold reason=risk_off reason_codes=risk_off signal_bps=0 risk_score=0.760849 p_shock=7.57838e-05 p_illiquid=1.10218e-09 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+2026-03-23 21:02:08.685412348 [INFO ] portfolio intent intent=hold reason=negative_reversal reason_codes=negative_reversal signal_bps=-445.126 risk_score=0.476714 p_shock=0.00198714 p_illiquid=2.65554e-14 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+2026-03-23 21:02:09.686261530 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0.574562 p_shock=0.000210645 p_illiquid=9.94035e-08 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=2
+2026-03-23 21:02:10.688988631 [INFO ] portfolio intent intent=hold reason=illiquid_regime reason_codes=illiquid_regime signal_bps=0 risk_score=0.317978 p_shock=0.000310047 p_illiquid=0.99903 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=0
+2026-03-23 21:02:11.689479812 [INFO ] portfolio intent intent=hold reason=risk_off reason_codes=risk_off signal_bps=0 risk_score=0.880378 p_shock=2.29049e-05 p_illiquid=1.42445e-11 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+[Shadow] continuous retrain started processed_ticks=4149 window_ticks=1000
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.564168  oos_mse=nan
+[Regime] trained  names=['trending', 'calm', 'illiquid', 'shock']  spread_means=[0.514138, 3.217326, 1.018078, 1.002452]
+[Shadow] regime retrain done  regimes=[trending, calm, illiquid, shock]
+[Shadow] continuous retrain completed processed_ticks=165444
+[Shadow] ticks=45  mean_effective=20.13bps  mean_raw=3.88bps  std_effective=102.87bps  IC=0.0991  ICIR=9.655  confidence_gate=39  horizon_gate=4  safe_mode_gate=0  ts_issues=1
+2026-03-23 21:02:24.713557818 [INFO ] portfolio intent intent=hold reason=illiquid_regime reason_codes=illiquid_regime signal_bps=0 risk_score=0.44683 p_shock=8.62151e-21 p_illiquid=0.999939 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=7.7 flatten_now=0 urgency=2
+2026-03-23 21:02:25.714071581 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0.0900976 p_shock=3.81109e-07 p_illiquid=4.55986e-09 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=7.7 flatten_now=0 urgency=2
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.703612  oos_mse=nan
+2026-03-23 21:02:32.725393818 [INFO ] portfolio intent intent=hold reason=risk_off reason_codes=risk_off signal_bps=0 risk_score=0.653673 p_shock=1.57237e-09 p_illiquid=4.08988e-06 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+2026-03-23 21:02:33.725912124 [INFO ] portfolio intent intent=hold reason=illiquid_regime reason_codes=illiquid_regime signal_bps=0 risk_score=0.150785 p_shock=4.70873e-98 p_illiquid=1 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=7.7 flatten_now=0 urgency=2
+2026-03-23 21:02:34.728976809 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0.449652 p_shock=9.81259e-07 p_illiquid=2.11952e-09 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=1
+[Regime] trained  names=['illiquid', 'calm', 'shock', 'trending']  spread_means=[3.082978, 0.098939, 0.924223, 0.905742]
+[Shadow] regime retrain done  regimes=[illiquid, calm, shock, trending]
+[Shadow] continuous retrain completed processed_ticks=4149
+[Shadow] continuous retrain started processed_ticks=9935 window_ticks=1000
+2026-03-23 21:02:35.734420874 [INFO ] portfolio intent intent=hold reason=risk_off reason_codes=risk_off signal_bps=0 risk_score=0.710312 p_shock=5.45785e-06 p_illiquid=7.3356e-09 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+2026-03-23 21:02:36.734858346 [INFO ] portfolio intent intent=hold reason=illiquid_regime reason_codes=illiquid_regime signal_bps=0 risk_score=0.101108 p_shock=3.31858e-21 p_illiquid=0.999452 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=7.7 flatten_now=0 urgency=2
+2026-03-23 21:02:37.735369319 [INFO ] portfolio intent intent=hold reason=risk_off reason_codes=risk_off signal_bps=0 risk_score=0.685104 p_shock=0.000140744 p_illiquid=2.53985e-09 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+2026-03-23 21:02:38.738707880 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0.0585672 p_shock=3.65621e-07 p_illiquid=1.39222e-11 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=7.7 flatten_now=0 urgency=2
+[Shadow] continuous retrain started processed_ticks=169586 window_ticks=1000
+2026-03-23 21:02:53.775637475 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0.365852 p_shock=3.67336e-05 p_illiquid=2.66553e-10 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=7.7 flatten_now=0 urgency=2
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.636022  oos_mse=nan
+2026-03-23 21:03:00.790176342 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-23 21:03:00.790177509 [INFO ] venue quality exchange=KRAKEN fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-23 21:03:00.790178509 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+[Regime] trained  names=['shock', 'trending', 'illiquid', 'calm']  spread_means=[1.913584, 0.372231, 1.811438, 0.238141]
+[Shadow] regime retrain done  regimes=[shock, trending, illiquid, calm]
+[Shadow] continuous retrain completed processed_ticks=9935
+[Shadow] continuous retrain started processed_ticks=15938 window_ticks=1000
+2026-03-23 21:03:02.796677380 [INFO ] portfolio intent intent=hold reason=risk_off reason_codes=risk_off signal_bps=0 risk_score=0.742353 p_shock=1.51305e-11 p_illiquid=4.07419e-11 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.630060  oos_mse=nan
+[Regime] trained  names=['shock', 'trending', 'calm', 'illiquid']  spread_means=[0.437213, 1.310545, 0.109549, 1.711357]
+[Shadow] regime retrain done  regimes=[shock, trending, calm, illiquid]
+[Shadow] continuous retrain completed processed_ticks=169586
+[Shadow] continuous retrain started processed_ticks=176420 window_ticks=1000
+2026-03-23 21:03:17.825786587 [INFO ] portfolio intent intent=hold reason=risk_off reason_codes=risk_off signal_bps=0 risk_score=0.833697 p_shock=1.1986e-26 p_illiquid=0.000216036 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.576497  oos_mse=nan
+[Regime] trained  names=['trending', 'calm', 'shock', 'illiquid']  spread_means=[0.875771, 0.642783, 1.429167, 1.275383]
+[Shadow] regime retrain done  regimes=[trending, calm, shock, illiquid]
+[Shadow] continuous retrain completed processed_ticks=15938
+[Shadow] continuous retrain started processed_ticks=22196 window_ticks=1000
+2026-03-23 21:03:27.856181147 [INFO ] portfolio intent intent=hold reason=risk_off,illiquid_regime reason_codes=risk_off,illiquid_regime signal_bps=0 risk_score=0.882366 p_shock=0.0102815 p_illiquid=0.989672 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.709523  oos_mse=nan
+2026-03-23 21:03:42.899363044 [INFO ] portfolio intent intent=hold reason=risk_off,illiquid_regime reason_codes=risk_off,illiquid_regime signal_bps=0 risk_score=0.882366 p_shock=0.0102815 p_illiquid=0.989672 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+[Regime] trained  names=['trending', 'illiquid', 'shock', 'calm']  spread_means=[1.078207, 3.206951, 1.425719, 0.177492]
+[Shadow] regime retrain done  regimes=[trending, illiquid, shock, calm]
+[Shadow] continuous retrain completed processed_ticks=176420
+[Shadow] ticks=63  mean_effective=14.38bps  mean_raw=2.91bps  std_effective=87.41bps  IC=0.0778  ICIR=2.366  confidence_gate=57  horizon_gate=4  safe_mode_gate=0  ts_issues=1
+[Shadow] continuous retrain started processed_ticks=184745 window_ticks=1000
+2026-03-23 21:03:45.904006758 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0.00169234 p_shock=0 p_illiquid=3.3953e-10 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=7.7 flatten_now=0 urgency=2
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.992667  oos_mse=nan
+[Regime] trained  names=['calm', 'illiquid', 'shock', 'trending']  spread_means=[0.689065, 2.117602, 1.438042, 1.404852]
+[Shadow] regime retrain done  regimes=[calm, illiquid, shock, trending]
+[Shadow] continuous retrain completed processed_ticks=22196
+[Shadow] ticks=16  mean_effective=-94.25bps  mean_raw=-9.39bps  std_effective=220.05bps  IC=-0.7548  ICIR=0.000  confidence_gate=13  horizon_gate=0  safe_mode_gate=0  ts_issues=0
+[Shadow] continuous retrain started processed_ticks=30001 window_ticks=1000
+2026-03-23 21:04:00.942798565 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-23 21:04:00.942799690 [INFO ] venue quality exchange=KRAKEN fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-23 21:04:00.942800690 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-23 21:04:00.942804773 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0.0101388 p_shock=1.84896e-06 p_illiquid=1.70871e-08 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=0
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.835565  oos_mse=nan
+2026-03-23 21:04:15.979833827 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0.0101388 p_shock=1.84896e-06 p_illiquid=1.70871e-08 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=0
+[Regime] trained  names=['trending', 'calm', 'shock', 'illiquid']  spread_means=[1.482568, 4.229028, 0.437046, 1.498455]
+[Shadow] regime retrain done  regimes=[trending, calm, shock, illiquid]
+[Shadow] continuous retrain completed processed_ticks=184745
+[Shadow] continuous retrain started processed_ticks=194197 window_ticks=1000
+2026-03-23 21:04:16.983378096 [INFO ] portfolio intent intent=hold reason=shock_regime reason_codes=shock_regime signal_bps=60.504 risk_score=0.00274532 p_shock=1 p_illiquid=2.61182e-07 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.678830  oos_mse=nan
+[Regime] trained  names=['illiquid', 'trending', 'calm', 'shock']  spread_means=[3.400474, 1.76344, 0.967589, 1.980663]
+[Shadow] regime retrain done  regimes=[illiquid, trending, calm, shock]
+[Shadow] continuous retrain completed processed_ticks=30001
+[Shadow] continuous retrain started processed_ticks=40001 window_ticks=1000
+2026-03-23 21:04:32.015344975 [INFO ] portfolio intent intent=hold reason=illiquid_regime reason_codes=illiquid_regime signal_bps=0 risk_score=0.00379703 p_shock=1.0608e-07 p_illiquid=1 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=0
+[Shadow] model retrain done  ticks=1000  best_fold_loss=3.563207  oos_mse=nan
+2026-03-23 21:04:47.040501467 [INFO ] portfolio intent intent=hold reason=illiquid_regime reason_codes=illiquid_regime signal_bps=0 risk_score=0.00379703 p_shock=1.0608e-07 p_illiquid=1 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=0
+[Regime] trained  names=['shock', 'calm', 'illiquid', 'trending']  spread_means=[1.516665, 3.626261, 1.763379, 1.516665]
+[Shadow] regime retrain done  regimes=[shock, calm, illiquid, trending]
+[Shadow] continuous retrain completed processed_ticks=194197
+[Shadow] ticks=65  mean_effective=14.86bps  mean_raw=2.51bps  std_effective=86.26bps  IC=0.0942  ICIR=8.237  confidence_gate=58  horizon_gate=4  safe_mode_gate=0  ts_issues=1
+[Shadow] continuous retrain started processed_ticks=203724 window_ticks=1000
+2026-03-23 21:04:48.045967906 [INFO ] portfolio intent intent=hold reason=shock_regime reason_codes=shock_regime signal_bps=0 risk_score=0.0268132 p_shock=0.999997 p_illiquid=2.74975e-06 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.662771  oos_mse=nan
+2026-03-23 21:05:01.075974839 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-23 21:05:01.075976297 [INFO ] venue quality exchange=KRAKEN fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-23 21:05:01.075977589 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+[Regime] trained  names=['trending', 'illiquid', 'calm', 'shock']  spread_means=[1.419295, 1.419295, 4.231255, 1.424189]
+[Shadow] regime retrain done  regimes=[trending, illiquid, calm, shock]
+[Shadow] continuous retrain completed processed_ticks=40001
+[Shadow] continuous retrain started processed_ticks=49329 window_ticks=1000
+2026-03-23 21:05:03.079287162 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0.594694 p_shock=3.99731e-64 p_illiquid=2.56816e-10 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=2
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.671430  oos_mse=nan
+[Regime] trained  names=['shock', 'illiquid', 'calm', 'trending']  spread_means=[0.603782, 0.604822, 2.874461, 0.603782]
+[Shadow] regime retrain done  regimes=[shock, illiquid, calm, trending]
+[Shadow] continuous retrain completed processed_ticks=203724
+2026-03-23 21:05:18.114310213 [INFO ] portfolio intent intent=hold reason=negative_reversal,illiquid_regime reason_codes=negative_reversal,illiquid_regime signal_bps=-232.055 risk_score=0.0115559 p_shock=0 p_illiquid=1 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+[Shadow] continuous retrain started processed_ticks=212684 window_ticks=1000
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.667140  oos_mse=nan
+[Regime] trained  names=['illiquid', 'trending', 'shock', 'calm']  spread_means=[1.703367, 1.703367, 4.530957, 1.703367]
+[Shadow] regime retrain done  regimes=[illiquid, trending, shock, calm]
+[Shadow] continuous retrain completed processed_ticks=49329
+[Shadow] continuous retrain started processed_ticks=58368 window_ticks=1000
+2026-03-23 21:05:33.157880069 [INFO ] portfolio intent intent=enter_long reason=alpha_positive reason_codes=alpha_positive signal_bps=184.42 risk_score=0.0223839 p_shock=6.11886e-21 p_illiquid=7.42376e-10 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0.764587 position_delta=0.764587 expected_cost_bps=6.7 max_shortfall_bps=7.7 flatten_now=0 urgency=2
+2026-03-23 21:05:33.159223780 [INFO ] shadow state transition from=FLAT to=ENTERING reason=alpha_positive current_pos=0 target_pos=0.764587
+2026-03-23 21:05:33.159395947 [INFO ] order submitted intent=enter_long reason=alpha_positive reason_codes=alpha_positive child=0 style=sweep venue=BINANCE side=BID qty=0.764587 route_qty=0.764587 limit_px=2158.96 result=0 target_position=0.764587 current_position=0 urgency=2 expected_cost_bps=6.7 expected_edge_bps=177.72 max_shortfall_bps=7.7 expected_shortfall_bps=10.12
+2026-03-23 21:05:34.165160011 [INFO ] portfolio intent intent=hold reason=alpha_positive reason_codes=alpha_positive signal_bps=184.42 risk_score=0.0223839 p_shock=6.11886e-21 p_illiquid=7.42376e-10 healthy_venues=3 enabled_venues=3 current_position=0.764587 target_position=0.764587 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=7.7 flatten_now=0 urgency=2
+2026-03-23 21:05:34.165172511 [INFO ] shadow state transition from=ENTERING to=HOLDING reason=alpha_positive current_pos=0.764587 target_pos=0.764587
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.682715  oos_mse=nan
+2026-03-23 21:05:49.194891845 [INFO ] portfolio intent intent=hold reason=alpha_positive reason_codes=alpha_positive signal_bps=184.42 risk_score=0.0223839 p_shock=6.11886e-21 p_illiquid=7.42376e-10 healthy_venues=3 enabled_venues=3 current_position=0.764587 target_position=0.764587 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=7.7 flatten_now=0 urgency=2
+[Regime] trained  names=['calm', 'shock', 'trending', 'illiquid']  spread_means=[1.078489, 1.117248, 2.527096, 3.939995]
+[Shadow] regime retrain done  regimes=[calm, shock, trending, illiquid]
+[Shadow] continuous retrain completed processed_ticks=212684
+[Shadow] ticks=67  mean_effective=10.96bps  mean_raw=2.65bps  std_effective=90.10bps  IC=0.1027  ICIR=8.237  confidence_gate=59  horizon_gate=4  safe_mode_gate=0  ts_issues=1
+[Shadow] continuous retrain started processed_ticks=222081 window_ticks=1000
+2026-03-23 21:05:53.201049409 [INFO ] portfolio intent intent=flatten reason=stale_inventory,alpha_decay reason_codes=stale_inventory,alpha_decay signal_bps=0 risk_score=0.00324719 p_shock=0.00011804 p_illiquid=3.56867e-29 healthy_venues=3 enabled_venues=3 current_position=0.764587 target_position=0 position_delta=-0.764587 expected_cost_bps=6.7 max_shortfall_bps=7.7 flatten_now=1 urgency=2
+2026-03-23 21:05:53.201718952 [INFO ] shadow state transition from=HOLDING to=FLATTENING reason=stale_inventory,alpha_decay current_pos=0.764587 target_pos=0
+2026-03-23 21:05:53.201886743 [INFO ] order submitted intent=flatten reason=stale_inventory,alpha_decay reason_codes=stale_inventory,alpha_decay child=0 style=ioc venue=BINANCE side=ASK qty=0.764587 route_qty=0.764587 limit_px=2159.2 result=0 target_position=0 current_position=0.764587 urgency=2 expected_cost_bps=6.7 expected_edge_bps=-6.7 max_shortfall_bps=7.7 expected_shortfall_bps=9.96739
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.674151  oos_mse=nan
+2026-03-23 21:05:54.205629429 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0.00324719 p_shock=0.00011804 p_illiquid=3.56867e-29 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=0
+2026-03-23 21:05:54.205644221 [INFO ] shadow state transition from=FLATTENING to=FLAT reason=none current_pos=0 target_pos=0
+[Regime] trained  names=['illiquid', 'trending', 'shock', 'calm']  spread_means=[2.770785, 0.801288, 1.396278, 0.223608]
+[Shadow] regime retrain done  regimes=[illiquid, trending, shock, calm]
+[Shadow] continuous retrain completed processed_ticks=58368
+[Shadow] ticks=20  mean_effective=-66.18bps  mean_raw=-7.35bps  std_effective=207.76bps  IC=-0.3446  ICIR=0.000  confidence_gate=16  horizon_gate=0  safe_mode_gate=0  ts_issues=1
+[Shadow] continuous retrain started processed_ticks=64764 window_ticks=1000
+2026-03-23 21:06:01.217460251 [INFO ] venue quality exchange=BINANCE fill_probability=0.768425 passive_markout_bps=0 taker_markout_bps=-0.0103192 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0.00773937 quality_penalty_bps=0.934038 sample_count=8
+2026-03-23 21:06:01.217461584 [INFO ] venue quality exchange=KRAKEN fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-23 21:06:01.217462751 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-23 21:06:09.233469468 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0.143864 p_shock=0.000738002 p_illiquid=0 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=0
+[Shadow] model retrain done  ticks=1000  best_fold_loss=2.046782  oos_mse=nan
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.731568  oos_mse=nan
+2026-03-23 21:06:24.272206733 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0.143864 p_shock=0.000738002 p_illiquid=0 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=0
+[Regime] trained  names=['calm', 'illiquid', 'shock', 'trending']  spread_means=[3.567957, 0.651386, 0.931821, 0.631055]
+[Shadow] regime retrain done  regimes=[calm, illiquid, shock, trending]
+[Shadow] continuous retrain completed processed_ticks=222081
+[Shadow] continuous retrain started processed_ticks=230024 window_ticks=1000
+2026-03-23 21:06:28.275906667 [INFO ] portfolio intent intent=hold reason=risk_off reason_codes=risk_off signal_bps=0 risk_score=0.858945 p_shock=2.07703e-16 p_illiquid=0.000133493 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+[Regime] trained  names=['shock', 'calm', 'trending', 'illiquid']  spread_means=[0.954247, 0.070633, 1.15478, 3.034798]
+[Shadow] regime retrain done  regimes=[shock, calm, trending, illiquid]
+[Shadow] continuous retrain completed processed_ticks=64764
+[Shadow] continuous retrain started processed_ticks=72119 window_ticks=1000
+2026-03-23 21:06:29.276406473 [INFO ] portfolio intent intent=hold reason=shock_regime reason_codes=shock_regime signal_bps=0 risk_score=0.214678 p_shock=1 p_illiquid=2.05176e-102 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+2026-03-23 21:06:44.322027084 [INFO ] portfolio intent intent=hold reason=shock_regime reason_codes=shock_regime signal_bps=0 risk_score=0.214678 p_shock=1 p_illiquid=2.05176e-102 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+[Shadow] model retrain done  ticks=1000  best_fold_loss=1.087434  oos_mse=nan
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.662223  oos_mse=nan
+2026-03-23 21:06:59.350242706 [INFO ] portfolio intent intent=hold reason=shock_regime reason_codes=shock_regime signal_bps=0 risk_score=0.214678 p_shock=1 p_illiquid=2.05176e-102 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+2026-03-23 21:07:01.357183203 [INFO ] venue quality exchange=BINANCE fill_probability=0.768425 passive_markout_bps=0 taker_markout_bps=-0.0103192 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0.00773937 quality_penalty_bps=0.934038 sample_count=8
+2026-03-23 21:07:01.357184578 [INFO ] venue quality exchange=KRAKEN fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-23 21:07:01.357185619 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+[Regime] trained  names=['calm', 'shock', 'trending', 'illiquid']  spread_means=[1.017493, 2.20877, 0.702697, 2.365601]
+[Shadow] regime retrain done  regimes=[calm, shock, trending, illiquid]
+[Shadow] continuous retrain completed processed_ticks=230024
+[Shadow] ticks=69  mean_effective=18.73bps  mean_raw=2.61bps  std_effective=110.30bps  IC=0.1143  ICIR=8.204  confidence_gate=60  horizon_gate=4  safe_mode_gate=0  ts_issues=1
+[Shadow] continuous retrain started processed_ticks=239370 window_ticks=1000
+2026-03-23 21:07:03.359235732 [INFO ] portfolio intent intent=enter_long reason=alpha_positive reason_codes=alpha_positive signal_bps=558.348 risk_score=0.008658 p_shock=2.28667e-17 p_illiquid=9.76376e-39 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0.786207 position_delta=0.786207 expected_cost_bps=6.7 max_shortfall_bps=7.7 flatten_now=0 urgency=2
+2026-03-23 21:07:03.359957650 [INFO ] shadow state transition from=FLAT to=ENTERING reason=alpha_positive current_pos=0 target_pos=0.786207
+2026-03-23 21:07:03.360119901 [INFO ] order submitted intent=enter_long reason=alpha_positive reason_codes=alpha_positive child=0 style=ioc venue=BINANCE side=BID qty=0.786207 route_qty=0.786207 limit_px=2159.34 result=0 target_position=0.786207 current_position=0 urgency=2 expected_cost_bps=6.7 expected_edge_bps=551.648 max_shortfall_bps=7.7 expected_shortfall_bps=8.0597
+[Regime] trained  names=['illiquid', 'trending', 'calm', 'shock']  spread_means=[1.59435, 0.112398, 0.112398, 1.396728]
+[Shadow] regime retrain done  regimes=[illiquid, trending, calm, shock]
+[Shadow] continuous retrain completed processed_ticks=72119
+[Shadow] continuous retrain started processed_ticks=81465 window_ticks=1000
+2026-03-23 21:07:04.365866465 [INFO ] portfolio intent intent=flatten reason=risk_off,illiquid_regime reason_codes=risk_off,illiquid_regime signal_bps=0 risk_score=0.928374 p_shock=9.97858e-05 p_illiquid=0.9999 healthy_venues=3 enabled_venues=3 current_position=0.786207 target_position=0 position_delta=-0.786207 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=1 urgency=2
+2026-03-23 21:07:04.365875923 [INFO ] shadow state transition from=ENTERING to=FLATTENING reason=risk_off,illiquid_regime current_pos=0.786207 target_pos=0
+2026-03-23 21:07:04.366201674 [INFO ] order submitted intent=flatten reason=risk_off,illiquid_regime reason_codes=risk_off,illiquid_regime child=0 style=sweep venue=BINANCE side=ASK qty=0.786207 route_qty=0.786207 limit_px=2159.33 result=0 target_position=0 current_position=0.786207 urgency=2 expected_cost_bps=6.7 expected_edge_bps=-6.7 max_shortfall_bps=9.2 expected_shortfall_bps=7.77304
+2026-03-23 21:07:05.366989439 [INFO ] portfolio intent intent=hold reason=risk_off,illiquid_regime reason_codes=risk_off,illiquid_regime signal_bps=0 risk_score=0.928374 p_shock=9.97858e-05 p_illiquid=0.9999 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+2026-03-23 21:07:05.366999147 [INFO ] shadow state transition from=FLATTENING to=FLAT reason=risk_off,illiquid_regime current_pos=0 target_pos=0
+2026-03-23 21:07:20.398887401 [INFO ] portfolio intent intent=hold reason=risk_off,illiquid_regime reason_codes=risk_off,illiquid_regime signal_bps=0 risk_score=0.928374 p_shock=9.97858e-05 p_illiquid=0.9999 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.567732  oos_mse=nan
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.667719  oos_mse=nan
+2026-03-23 21:07:35.439900127 [INFO ] portfolio intent intent=hold reason=risk_off,illiquid_regime reason_codes=risk_off,illiquid_regime signal_bps=0 risk_score=0.928374 p_shock=9.97858e-05 p_illiquid=0.9999 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=-0 expected_cost_bps=6.7 max_shortfall_bps=9.2 flatten_now=0 urgency=2
+[Regime] trained  names=['calm', 'trending', 'illiquid', 'shock']  spread_means=[3.297558, 0.755103, 1.23035, 0.869928]
+[Shadow] regime retrain done  regimes=[calm, trending, illiquid, shock]
+[Shadow] continuous retrain completed processed_ticks=81465
+[Shadow] ticks=23  mean_effective=-57.55bps  mean_raw=-6.85bps  std_effective=195.02bps  IC=-0.3501  ICIR=0.000  confidence_gate=17  horizon_gate=2  safe_mode_gate=0  ts_issues=1
+[Shadow] continuous retrain started processed_ticks=89831 window_ticks=1000
+2026-03-23 21:07:39.445053606 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0.177141 p_shock=2.01901e-05 p_illiquid=3.32055e-149 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=0
+[Regime] trained  names=['shock', 'illiquid', 'calm', 'trending']  spread_means=[1.196375, 1.96446, 0.847644, 1.08004]
+[Shadow] regime retrain done  regimes=[shock, illiquid, calm, trending]
+[Shadow] continuous retrain completed processed_ticks=239370
+[Shadow] continuous retrain started processed_ticks=247887 window_ticks=1000
+2026-03-23 21:07:40.450524629 [INFO ] portfolio intent intent=enter_long reason=alpha_positive reason_codes=alpha_positive signal_bps=146.929 risk_score=0.00346966 p_shock=7.44447e-166 p_illiquid=2.28335e-137 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0.794458 position_delta=0.794458 expected_cost_bps=6.7 max_shortfall_bps=7.7 flatten_now=0 urgency=2
+2026-03-23 21:07:40.451256339 [INFO ] shadow state transition from=FLAT to=ENTERING reason=alpha_positive current_pos=0 target_pos=0.794458
+2026-03-23 21:07:40.451394006 [INFO ] order submitted intent=enter_long reason=alpha_positive reason_codes=alpha_positive child=0 style=ioc venue=BINANCE side=BID qty=0.5474 route_qty=0.794458 limit_px=2159.57 result=0 target_position=0.794458 current_position=0 urgency=2 expected_cost_bps=6.7 expected_edge_bps=140.229 max_shortfall_bps=7.7 expected_shortfall_bps=7.03345
+2026-03-23 21:07:41.457154653 [INFO ] portfolio intent intent=reduce reason=stale_inventory,alpha_positive reason_codes=stale_inventory,alpha_positive signal_bps=146.929 risk_score=0.00346966 p_shock=7.44447e-166 p_illiquid=2.28335e-137 healthy_venues=3 enabled_venues=3 current_position=0.19418 target_position=0.09709 position_delta=-0.09709 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=2
+2026-03-23 21:07:41.457162570 [INFO ] shadow state transition from=ENTERING to=REDUCING reason=stale_inventory,alpha_positive current_pos=0.19418 target_pos=0.09709
+2026-03-23 21:07:41.457311862 [INFO ] order submitted intent=reduce reason=stale_inventory,alpha_positive reason_codes=stale_inventory,alpha_positive child=0 style=ioc venue=BINANCE side=ASK qty=0.09709 route_qty=0.09709 limit_px=2159.56 result=0 target_position=0.09709 current_position=0.19418 urgency=2 expected_cost_bps=6.7 expected_edge_bps=140.229 max_shortfall_bps=9.7 expected_shortfall_bps=9.97356
+2026-03-23 21:07:42.463270261 [INFO ] portfolio intent intent=reduce reason=stale_inventory,alpha_positive reason_codes=stale_inventory,alpha_positive signal_bps=146.929 risk_score=0.00346966 p_shock=7.44447e-166 p_illiquid=2.28335e-137 healthy_venues=3 enabled_venues=3 current_position=0.45031 target_position=0.225155 position_delta=-0.225155 expected_cost_bps=6.7 max_shortfall_bps=8.7 flatten_now=0 urgency=2
+2026-03-23 21:07:42.463421261 [INFO ] order submitted intent=reduce reason=stale_inventory,alpha_positive reason_codes=stale_inventory,alpha_positive child=0 style=ioc venue=BINANCE side=ASK qty=0.225155 route_qty=0.225155 limit_px=2159.56 result=0 target_position=0.225155 current_position=0.45031 urgency=2 expected_cost_bps=6.7 expected_edge_bps=140.229 max_shortfall_bps=8.7 expected_shortfall_bps=9.16294
+2026-03-23 21:07:43.469127951 [INFO ] portfolio intent intent=reduce reason=stale_inventory,alpha_positive reason_codes=stale_inventory,alpha_positive signal_bps=146.929 risk_score=0.00346966 p_shock=7.44447e-166 p_illiquid=2.28335e-137 healthy_venues=3 enabled_venues=3 current_position=0.225155 target_position=0.112577 position_delta=-0.112577 expected_cost_bps=6.7 max_shortfall_bps=8.7 flatten_now=0 urgency=2
+2026-03-23 21:07:43.469284784 [INFO ] order submitted intent=reduce reason=stale_inventory,alpha_positive reason_codes=stale_inventory,alpha_positive child=0 style=ioc venue=BINANCE side=ASK qty=0.112577 route_qty=0.112577 limit_px=2159.56 result=0 target_position=0.112577 current_position=0.225155 urgency=2 expected_cost_bps=6.7 expected_edge_bps=140.229 max_shortfall_bps=8.7 expected_shortfall_bps=8.94682
+2026-03-23 21:07:44.474974556 [INFO ] portfolio intent intent=reduce reason=stale_inventory,alpha_positive reason_codes=stale_inventory,alpha_positive signal_bps=146.929 risk_score=0.00346966 p_shock=7.44447e-166 p_illiquid=2.28335e-137 healthy_venues=3 enabled_venues=3 current_position=0.112577 target_position=0.0562887 position_delta=-0.0562887 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=2
+2026-03-23 21:07:44.475121307 [INFO ] order submitted intent=reduce reason=stale_inventory,alpha_positive reason_codes=stale_inventory,alpha_positive child=0 style=ioc venue=BINANCE side=ASK qty=0.0562887 route_qty=0.0562887 limit_px=2159.56 result=0 target_position=0.0562887 current_position=0.112577 urgency=2 expected_cost_bps=6.7 expected_edge_bps=140.229 max_shortfall_bps=9.7 expected_shortfall_bps=8.80303
+2026-03-23 21:07:45.480817371 [INFO ] portfolio intent intent=reduce reason=stale_inventory,alpha_positive reason_codes=stale_inventory,alpha_positive signal_bps=146.929 risk_score=0.00346966 p_shock=7.44447e-166 p_illiquid=2.28335e-137 healthy_venues=3 enabled_venues=3 current_position=0.0562887 target_position=0.0281444 position_delta=-0.0281444 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=2
+2026-03-23 21:07:45.480966663 [INFO ] order submitted intent=reduce reason=stale_inventory,alpha_positive reason_codes=stale_inventory,alpha_positive child=0 style=ioc venue=BINANCE side=ASK qty=0.0562887 route_qty=0.0562887 limit_px=2159.56 result=0 target_position=0.0281444 current_position=0.0562887 urgency=2 expected_cost_bps=6.7 expected_edge_bps=140.229 max_shortfall_bps=9.7 expected_shortfall_bps=8.70753
+2026-03-23 21:07:46.486994437 [INFO ] portfolio intent intent=enter_long reason=alpha_positive reason_codes=alpha_positive signal_bps=146.929 risk_score=0.00346966 p_shock=7.44447e-166 p_illiquid=2.28335e-137 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0.794458 position_delta=0.794458 expected_cost_bps=6.7 max_shortfall_bps=7.7 flatten_now=0 urgency=2
+2026-03-23 21:07:46.487009354 [INFO ] shadow state transition from=REDUCING to=ENTERING reason=alpha_positive current_pos=0 target_pos=0.794458
+2026-03-23 21:07:46.487159562 [INFO ] order submitted intent=enter_long reason=alpha_positive reason_codes=alpha_positive child=0 style=ioc venue=BINANCE side=BID qty=0.4005 route_qty=0.794458 limit_px=2159.57 result=0 target_position=0.794458 current_position=0 urgency=2 expected_cost_bps=6.7 expected_edge_bps=140.229 max_shortfall_bps=7.7 expected_shortfall_bps=6.32479
+2026-03-23 21:07:47.492602126 [INFO ] portfolio intent intent=reduce reason=stale_inventory,alpha_positive reason_codes=stale_inventory,alpha_positive signal_bps=146.929 risk_score=0.00346966 p_shock=7.44447e-166 p_illiquid=2.28335e-137 healthy_venues=3 enabled_venues=3 current_position=0.110005 target_position=0.0550025 position_delta=-0.0550025 expected_cost_bps=6.7 max_shortfall_bps=9.7 flatten_now=0 urgency=2
+2026-03-23 21:07:47.492611501 [INFO ] shadow state transition from=ENTERING to=REDUCING reason=stale_inventory,alpha_positive current_pos=0.110005 target_pos=0.0550025
+2026-03-23 21:07:47.492614168 [ERROR] [KillSwitch] Kill switch triggered reason=CIRCUIT_BREAKER
+2026-03-23 21:07:47.492614960 [ERROR] Global risk breach check=VENUE_CAP symbol=ETHUSDT exchange=BINANCE signed_notional=-118.781
+2026-03-23 21:07:47.492615168 [WARN ] global-risk blocked submit venue=BINANCE
+2026-03-23 21:07:48.493163307 [INFO ] [Binance] Stopping feed handler symbol=ETHUSDT
+2026-03-23 21:07:48.494755852 [INFO ] [Kraken] Stopping feed handler symbol=ETHUSDT
+2026-03-23 21:07:48.495550103 [INFO ] [OKX] Stopping feed handler symbol=ETHUSDT
+2026-03-23 21:07:48.498782775 [INFO ] Shadow session summary session_pnl_usd=-272.477 net_pnl_usd=-272.477 net_pnl_pct=-2.63145 gross_notional_usd=10354.6 net_position=0.12628 total_fills=15 opened_positions=12 state=REDUCING bin_opened=11 kra_opened=0 okx_opened=1 cb_opened=0 bin_active=1 kra_active=0 okx_active=0 cb_active=0
+2026-03-23 21:07:48.498783233 [INFO ] trading_engine shutdown complete
+[2026-03-23T21:07:48Z] [shadow] [INFO] Completed shadow run window
+[2026-03-23T21:07:48Z] [shadow] [INFO] Final shadow session statistics from /Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl
+============================================================
+  Shadow Session Report
+============================================================
+
+── Signal statistics ────────────────────────────────────────
+  Signals generated   : 160
+  Session duration    : 17.6 min
+  Mean signal         : 5.9902 bps
+  Signal std          : 146.8254 bps
+  Max |signal|        : 824.0403 bps
+  Mean raw signal     : 5.4912 bps
+  Raw signal std      : 63.4399 bps
+  Avg risk score      : 0.2625
+
+── Alpha quality ────────────────────────────────────────────
+  Realised IC         : 0.0012
+  ICIR (annualised)   : 4.5271
+  Safe-mode events    : 0  (0.0% of ticks)
+  Gated events        : 142  (88.8% of ticks)
+
+── Regime distribution (session avg) ────────────────────────
+  p_calm              : 0.170
+  p_trending          : 0.383
+  p_shock             : 0.199
+  p_illiquid          : 0.248
+
+── Readiness check ──────────────────────────────────────────
+  Run >= 2 weeks before promoting to live.
+  IC should be consistently positive (> 0.02).
+  Safe-mode rate should remain below 10%.
+  ICIR (annualised) target: > 0.5.
+
+============================================================
+(.venv) clementandredupuy@Mac ThamesRiverTrading % [Shadow] model retrain done  ticks=1000  best_fold_loss=0.584604  oos_mse=nan
+[Shadow] model retrain done  ticks=1000  best_fold_loss=0.720631  oos_mse=nan
+[Regime] trained  names=['trending', 'calm', 'shock', 'illiquid']  spread_means=[1.081118, 3.913071, 1.177392, 1.152466]
+[Shadow] regime retrain done  regimes=[trending, calm, shock, illiquid]
+[Shadow] continuous retrain completed processed_ticks=89831
+[Regime] trained  names=['calm', 'illiquid', 'shock', 'trending']  spread_means=[3.571649, 1.22622, 1.110887, 1.051612]
+[Shadow] regime retrain done  regimes=[calm, illiquid, shock, trending]
+[Shadow] continuous retrain completed processed_ticks=247887
+[Shadow] ticks=71  mean_effective=18.36bps  mean_raw=2.47bps  std_effective=111.32bps  IC=0.1209  ICIR=8.204  confidence_gate=60  horizon_gate=4  safe_mode_gate=0  ts_issues=1
+[Shadow] ticks=132  mean_effective=19.30bps  mean_raw=3.79bps  std_effective=96.02bps  IC=0.1048  ICIR=20.626  confidence_gate=102  horizon_gate=18  safe_mode_gate=1  ts_issues=1
+[Shadow] ticks=90  mean_effective=-14.71bps  mean_raw=0.50bps  std_effective=101.73bps  IC=-0.0822  ICIR=-4.481  confidence_gate=79  horizon_gate=7  safe_mode_gate=6  ts_issues=1
+[Shadow] ticks=192  mean_effective=13.75bps  mean_raw=3.80bps  std_effective=80.06bps  IC=0.0995  ICIR=4.020  confidence_gate=119  horizon_gate=30  safe_mode_gate=30  ts_issues=1
+[Shadow] ticks=190  mean_effective=-6.97bps  mean_raw=0.77bps  std_effective=70.40bps  IC=-0.0871  ICIR=-167.325  confidence_gate=178  horizon_gate=7  safe_mode_gate=82  ts_issues=1
+[Shadow] ticks=252  mean_effective=11.26bps  mean_raw=4.45bps  std_effective=70.04bps  IC=0.0965  ICIR=1.271  confidence_gate=121  horizon_gate=58  safe_mode_gate=30  ts_issues=1
+[Shadow] ticks=312  mean_effective=9.35bps  mean_raw=4.84bps  std_effective=63.08bps  IC=0.0956  ICIR=-4.739  confidence_gate=121  horizon_gate=105  safe_mode_gate=30  ts_issues=1
+[Shadow] ticks=290  mean_effective=-4.56bps  mean_raw=-0.74bps  std_effective=57.08bps  IC=-0.0954  ICIR=-20.439  confidence_gate=251  horizon_gate=24  safe_mode_gate=182  ts_issues=1
+
+(.venv) clementandredupuy@Mac ThamesRiverTrading % [Shadow] ticks=372  mean_effective=8.09bps  mean_raw=4.82bps  std_effective=57.85bps  IC=0.0931  ICIR=-5.988  confidence_gate=121  horizon_gate=134  safe_mode_gate=45  ts_issues=1
+[Shadow] ticks=432  mean_effective=7.12bps  mean_raw=5.19bps  std_effective=53.75bps  IC=0.0831  ICIR=-7.365  confidence_gate=122  horizon_gate=171  safe_mode_gate=84  ts_issues=1
+[Shadow] ticks=390  mean_effective=-3.39bps  mean_raw=-1.30bps  std_effective=49.26bps  IC=-0.0845  ICIR=-9.367  confidence_gate=335  horizon_gate=32  safe_mode_gate=269  ts_issues=1
+[Shadow] ticks=490  mean_effective=6.28bps  mean_raw=5.35bps  std_effective=50.52bps  IC=0.0853  ICIR=-6.245  confidence_gate=124  horizon_gate=224  safe_mode_gate=142  ts_issues=1
+[Shadow] ticks=487  mean_effective=-2.71bps  mean_raw=-2.53bps  std_effective=44.10bps  IC=-0.1214  ICIR=-10.625  confidence_gate=429  horizon_gate=32  safe_mode_gate=304  ts_issues=1
+[Shadow] ticks=550  mean_effective=5.76bps  mean_raw=5.56bps  std_effective=47.72bps  IC=0.0919  ICIR=-3.872  confidence_gate=124  horizon_gate=267  safe_mode_gate=176  ts_issues=1
+[Shadow] ticks=610  mean_effective=5.23bps  mean_raw=5.62bps  std_effective=45.35bps  IC=0.0886  ICIR=-0.985  confidence_gate=124  horizon_gate=314  safe_mode_gate=230  ts_issues=1
+[Shadow] ticks=583  mean_effective=-2.26bps  mean_raw=-2.50bps  std_effective=40.32bps  IC=-0.1204  ICIR=-21.460  confidence_gate=511  horizon_gate=41  safe_mode_gate=400  ts_issues=1
+[Shadow] ticks=670  mean_effective=4.88bps  mean_raw=5.60bps  std_effective=43.29bps  IC=0.0900  ICIR=-1.177  confidence_gate=124  horizon_gate=351  safe_mode_gate=266  ts_issues=1
+[Shadow] ticks=730  mean_effective=4.67bps  mean_raw=5.66bps  std_effective=41.49bps  IC=0.0919  ICIR=-1.177  confidence_gate=131  horizon_gate=382  safe_mode_gate=266  ts_issues=1
+[Shadow] ticks=683  mean_effective=-1.93bps  mean_raw=-2.47bps  std_effective=37.26bps  IC=-0.1216  ICIR=-33.889  confidence_gate=610  horizon_gate=41  safe_mode_gate=500  ts_issues=1
+[Shadow] ticks=790  mean_effective=4.52bps  mean_raw=5.72bps  std_effective=39.89bps  IC=0.0904  ICIR=1.831  confidence_gate=131  horizon_gate=416  safe_mode_gate=266  ts_issues=1
+[Shadow] ticks=782  mean_effective=-1.69bps  mean_raw=-2.66bps  std_effective=34.83bps  IC=-0.1251  ICIR=-24.175  confidence_gate=671  horizon_gate=79  safe_mode_gate=599  ts_issues=1
+
+(.venv) clementandredupuy@Mac ThamesRiverTrading % [Shadow] ticks=848  mean_effective=4.31bps  mean_raw=5.75bps  std_effective=38.52bps  IC=0.0910  ICIR=5.432  confidence_gate=131  horizon_gate=458  safe_mode_gate=266  ts_issues=1
+(.venv) clementandredupuy@Mac ThamesRiverTrading %

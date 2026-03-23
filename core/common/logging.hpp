@@ -78,7 +78,7 @@ namespace trading {
     struct LogRing {
         alignas(64) std::atomic<uint64_t> head{0};
         alignas(64) std::atomic<uint64_t> tail{0}; // writer advances tail
-        alignas(256) LogEntry entries[LOG_RING_SIZE];
+        alignas(512) LogEntry entries[LOG_RING_SIZE];
     };
 
     class AsyncLogger {
