@@ -35,6 +35,7 @@ namespace trading {
         double shock_flatten_threshold = 0.60;
         double illiquid_reduce_threshold = 0.55;
         int64_t stale_inventory_ms = 5000;
+        double stale_inventory_alpha_hold_bps = 10.0;
         double health_reduce_ratio = 0.50;
         bool long_only = true;
     };
@@ -134,7 +135,8 @@ namespace trading {
                 append_reason(out, PortfolioIntentReasonCode::ALPHA_DECAY);
             }
 
-            if (illiquid_regime || stale_inventory) {
+            const bool alpha_strong = alpha_signal.signal_bps >= cfg_.stale_inventory_alpha_hold_bps;
+            if (illiquid_regime || (stale_inventory && !alpha_strong)) {
                 target = std::min(target, current_position * 0.5);
             }
 

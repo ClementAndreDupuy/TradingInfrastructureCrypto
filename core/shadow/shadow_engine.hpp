@@ -371,6 +371,14 @@ namespace trading {
             return net_position_;
         }
 
+        int64_t inventory_age_ms() const noexcept {
+            std::lock_guard<std::mutex> lk(pnl_mu_);
+            if (net_position_ == 0.0 || position_opened_at_ns_ == 0)
+                return 0;
+            const int64_t now_ns_val = now_ns();
+            return (now_ns_val - position_opened_at_ns_) / 1'000'000LL;
+        }
+
         uint32_t active_orders() const noexcept {
             uint32_t n = 0;
             for (const auto &s: orders_)
@@ -402,11 +410,12 @@ namespace trading {
         // Position and PnL state — updated together under pnl_mu_ so reads see a
         // consistent snapshot even from a monitoring thread.
         mutable std::mutex pnl_mu_;
-        double net_position_  = 0.0;   // signed position in base asset
-        double avg_entry_price_ = 0.0; // VWAP cost basis for open position
-        double realized_pnl_  = 0.0;  // gross realized (before fees)
-        double total_fees_    = 0.0;  // cumulative fees paid
-        double net_cashflow_  = 0.0;  // sell_proceeds - buy_costs - fees
+        double net_position_     = 0.0;
+        double avg_entry_price_  = 0.0;
+        double realized_pnl_     = 0.0;
+        double total_fees_       = 0.0;
+        double net_cashflow_     = 0.0;
+        int64_t position_opened_at_ns_ = 0;
 
         // Requires pnl_mu_ held by caller.
         double compute_unrealized_pnl_locked() const noexcept {
@@ -429,17 +438,17 @@ namespace trading {
             const int    fill_sign   = (signed_qty > 0.0) - (signed_qty < 0.0);
 
             if (prior_sign == 0 || prior_sign == fill_sign) {
-                // Opening or adding to existing position — update VWAP cost basis.
                 const double abs_prior = std::abs(prior_pos);
                 const double total_qty = abs_prior + fill_qty;
                 avg_entry_price_ = total_qty > 0.0
                                        ? (avg_entry_price_ * abs_prior + fill_px * fill_qty) / total_qty
                                        : 0.0;
                 net_position_ = prior_pos + signed_qty;
+                if (prior_sign == 0)
+                    position_opened_at_ns_ = now_ns();
                 return;
             }
 
-            // Reducing or reversing — crystallise realized PnL on the closing portion.
             const double closing_qty = std::min(std::abs(prior_pos), fill_qty);
             if (prior_pos > 0.0)
                 realized_pnl_ += (fill_px - avg_entry_price_) * closing_qty;
@@ -450,11 +459,11 @@ namespace trading {
 
             if (net_position_ == 0.0) {
                 avg_entry_price_ = 0.0;
+                position_opened_at_ns_ = 0;
             } else if ((net_position_ > 0.0) != (prior_pos > 0.0)) {
-                // Direction flipped — reset cost basis to fill price for the excess qty.
                 avg_entry_price_ = fill_px;
+                position_opened_at_ns_ = now_ns();
             }
-            // Partial close in same direction: avg_entry_price_ unchanged.
         }
 
         bool is_immediately_fillable(const ShadowOrder &s) const noexcept {
@@ -820,6 +829,13 @@ namespace trading {
         double net_position() const noexcept {
             return binance_shadow_.net_position() + kraken_shadow_.net_position()
                    + okx_shadow_.net_position() + coinbase_shadow_.net_position();
+        }
+
+        int64_t inventory_age_ms() const noexcept {
+            return std::max({binance_shadow_.inventory_age_ms(),
+                             kraken_shadow_.inventory_age_ms(),
+                             okx_shadow_.inventory_age_ms(),
+                             coinbase_shadow_.inventory_age_ms()});
         }
 
         ShadowStateTransition update_state(double target_position, bool flatten_now,

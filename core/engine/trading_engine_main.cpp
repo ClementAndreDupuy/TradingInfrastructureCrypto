@@ -660,10 +660,8 @@ auto main(int argc, char **argv) -> int {
                              sizeof(portfolio_snapshot.symbol) - 1);
                 portfolio_snapshot.symbol[sizeof(portfolio_snapshot.symbol) - 1] = '\0';
                 portfolio_snapshot.global_position = shadow_engine.net_position();
+                portfolio_snapshot.oldest_inventory_age_ms = shadow_engine.inventory_age_ms();
             }
-            if (portfolio_snapshot.global_position > 1e-9)
-                portfolio_snapshot.oldest_inventory_age_ms = std::max<int64_t>(
-                                                                 0, alpha_signal.horizon_ticks) * opts.loop_interval_ms;
             const PortfolioIntent intent =
                     intent_engine.evaluate(alpha_signal, regime_signal, portfolio_snapshot, bid_quotes);
             const ShadowIntentMetadata intent_metadata =
