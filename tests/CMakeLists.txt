@@ -198,6 +198,27 @@ set_tests_properties(ParentOrderManagerTest PROPERTIES
     LABELS "unit;execution"
 )
 
+add_executable(child_order_scheduler_test
+    unit/child_order_scheduler_test.cpp
+)
+
+target_link_libraries(child_order_scheduler_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(child_order_scheduler_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME ChildOrderSchedulerTest COMMAND child_order_scheduler_test)
+set_tests_properties(ChildOrderSchedulerTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;execution"
+)
+
 # Live connectors contract tests (mock transport)
 add_executable(live_connectors_test
     unit/live_connectors_test.cpp
