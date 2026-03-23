@@ -391,10 +391,6 @@ class NeuralAlphaShadowSession:
     def _train_regime_on_data(self, df: pl.DataFrame) -> None:
         regime_path = Path(self.cfg.regime_model_path)
         artifact, _ = train_regime_model_from_df(df, RegimeConfig())
-        # Reject degenerate artifacts where regimes are not meaningfully separated.
-        # Spread (feature index 1) should have at least 0.3 bps difference between
-        # the calmest and most-spread regime; otherwise the HMM converged to a
-        # trivial solution and would produce unreliable shock/illiquid signals.
         spread_means = [float(m[1]) for m in artifact.means]
         spread_range = max(spread_means) - min(spread_means)
         if spread_range < 0.3:

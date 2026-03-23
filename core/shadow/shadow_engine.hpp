@@ -328,32 +328,26 @@ namespace trading {
             }
         }
 
-        // Realized PnL from closed portions of trades (gross, before fees).
         double realized_pnl() const noexcept {
             std::lock_guard<std::mutex> lk(pnl_mu_);
             return realized_pnl_;
         }
 
-        // Mark-to-mid unrealized PnL on the current open position.
         double unrealized_pnl() const noexcept {
             std::lock_guard<std::mutex> lk(pnl_mu_);
             return compute_unrealized_pnl_locked();
         }
 
-        // Total fees paid across all fills.
         double total_fees() const noexcept {
             std::lock_guard<std::mutex> lk(pnl_mu_);
             return total_fees_;
         }
 
-        // Net cashflow: sell proceeds minus buy costs minus fees.
-        // Equals (realized_pnl - fees) when flat; includes open-position cost basis when not flat.
         double net_cashflow() const noexcept {
             std::lock_guard<std::mutex> lk(pnl_mu_);
             return net_cashflow_;
         }
 
-        // Economic PnL: realized (net of fees) + unrealized mark-to-mid.
         double total_pnl() const noexcept {
             std::lock_guard<std::mutex> lk(pnl_mu_);
             return (realized_pnl_ - total_fees_) + compute_unrealized_pnl_locked();
@@ -402,13 +396,10 @@ namespace trading {
         std::array<ShadowOrder, MAX_SHADOW_ORDERS> orders_{};
         ShadowIntentMetadata next_intent_{};
 
-        // Counters safe to update/read independently — kept as atomics.
         std::atomic<double> gross_notional_{0.0};
         std::atomic<uint64_t> total_fills_{0};
         std::atomic<uint64_t> opened_positions_{0};
 
-        // Position and PnL state — updated together under pnl_mu_ so reads see a
-        // consistent snapshot even from a monitoring thread.
         mutable std::mutex pnl_mu_;
         double net_position_     = 0.0;
         double avg_entry_price_  = 0.0;
@@ -417,7 +408,6 @@ namespace trading {
         double net_cashflow_     = 0.0;
         int64_t position_opened_at_ns_ = 0;
 
-        // Requires pnl_mu_ held by caller.
         double compute_unrealized_pnl_locked() const noexcept {
             if (net_position_ == 0.0 || avg_entry_price_ <= 0.0)
                 return 0.0;
@@ -429,8 +419,6 @@ namespace trading {
                        : (avg_entry_price_ - mid) * (-net_position_);
         }
 
-        // Update avg_entry_price_, realized_pnl_, and net_position_ for a single fill.
-        // Requires pnl_mu_ held by caller.
         void apply_position_fill_locked(Side side, double fill_qty, double fill_px) noexcept {
             const double signed_qty  = (side == Side::BID) ? fill_qty : -fill_qty;
             const double prior_pos   = net_position_;
@@ -534,18 +522,15 @@ namespace trading {
             const double fee_bps = fee_for(s);
             const double fee = (fee_bps / 10000.0) * fill_px * fill_qty;
 
-            // Cashflow sign: BUY costs cash (negative), SELL brings cash (positive), both net of fees.
             const double cash_sign = (s.side == Side::ASK) ? 1.0 : -1.0;
             const double cashflow  = cash_sign * fill_px * fill_qty - fee;
 
-            // Atomic single-field counters — no ordering dependency with each other.
             const double old_notional = gross_notional_.load(std::memory_order_acquire);
             gross_notional_.store(old_notional + fill_px * fill_qty, std::memory_order_release);
             total_fills_.fetch_add(1, std::memory_order_relaxed);
             if (opened_position)
                 opened_positions_.fetch_add(1, std::memory_order_relaxed);
 
-            // Coordinated position + PnL update under lock so readers see a consistent state.
             {
                 std::lock_guard<std::mutex> lk(pnl_mu_);
                 net_cashflow_ += cashflow;
@@ -785,7 +770,6 @@ namespace trading {
             coinbase_shadow_.check_fills();
         }
 
-        // Economic PnL: (gross realized - fees) + unrealized mark-to-mid.
         double net_pnl() const noexcept {
             return binance_shadow_.total_pnl() + kraken_shadow_.total_pnl()
                    + okx_shadow_.total_pnl() + coinbase_shadow_.total_pnl();
