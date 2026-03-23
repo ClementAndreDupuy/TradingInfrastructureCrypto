@@ -8,7 +8,9 @@
 #include "../execution/okx/okx_connector.hpp"
 #include "../execution/common/portfolio_intent_engine.hpp"
 #include "../execution/common/reconciliation_service.hpp"
+#include "../execution/common/venue_quality_model.hpp"
 #include "../execution/router/smart_order_router.hpp"
+#include "venue_quality_runtime.hpp"
 #include "feed_bootstrap.hpp"
 #include "../feeds/binance/binance_feed_handler.hpp"
 #include "../feeds/coinbase/coinbase_feed_handler.hpp"
@@ -435,6 +437,40 @@ auto main(int argc, char **argv) -> int {
             }
         }
 
+        VenueQualityModel venue_quality_model;
+        engine::VenueQualityRuntime venue_quality_runtime(venue_quality_model);
+
+        const auto mid_price_for_exchange = [&](Exchange exchange) -> double {
+            switch (exchange) {
+                case Exchange::BINANCE:
+                    return binance_book.mid_price();
+                case Exchange::KRAKEN:
+                    return kraken_book.mid_price();
+                case Exchange::OKX:
+                    return okx_book.mid_price();
+                case Exchange::COINBASE:
+                    return coinbase_book.mid_price();
+                default:
+                    return 0.0;
+            }
+        };
+
+        const auto bind_fill_handler = [&](Exchange exchange, ExchangeConnector &connector) {
+            connector.on_fill = [&](const FillUpdate &update) {
+                venue_quality_runtime.on_fill(exchange, update, std::chrono::steady_clock::now(),
+                                              mid_price_for_exchange);
+            };
+        };
+
+        bind_fill_handler(Exchange::BINANCE, binance);
+        bind_fill_handler(Exchange::KRAKEN, kraken);
+        bind_fill_handler(Exchange::OKX, okx);
+        bind_fill_handler(Exchange::COINBASE, coinbase);
+        bind_fill_handler(Exchange::BINANCE, shadow_engine.binance_connector());
+        bind_fill_handler(Exchange::KRAKEN, shadow_engine.kraken_connector());
+        bind_fill_handler(Exchange::OKX, shadow_engine.okx_connector());
+        bind_fill_handler(Exchange::COINBASE, shadow_engine.coinbase_connector());
+
         AlphaSignalReader alpha_reader;
         alpha_reader.open();
         RegimeSignalReader regime_reader;
@@ -454,6 +490,7 @@ auto main(int argc, char **argv) -> int {
         AlphaSignal last_alpha_signal{};
         PortfolioIntentLogState portfolio_log_state;
         constexpr auto portfolio_log_heartbeat = std::chrono::seconds(15);
+        auto last_venue_quality_log = std::chrono::steady_clock::time_point{};
 
         LOG_INFO("trading_engine started", "mode", opts.mode.c_str(), "venues", opts.venues.c_str(),
                  "symbol", opts.symbol.c_str());
@@ -472,7 +509,8 @@ auto main(int argc, char **argv) -> int {
             if (opts.mode == "shadow") {
                 shadow_engine.check_fills();
             }
-            const auto submit_decision = [&](const SchedulerDecision &decision, Side side,
+            const auto submit_decision = [&](
+                                             const SchedulerDecision &decision, Side side,
                                              double route_qty, const ShadowIntentMetadata &intent_metadata,
                                              const std::string &reason_codes) {
                 const auto style_to_string = [](ChildExecutionStyle style) -> const char * {
@@ -502,9 +540,11 @@ auto main(int argc, char **argv) -> int {
                         continue;
                     }
 
-                    const Order child_order =
+                    Order child_order =
                             make_child_order(opts.symbol.c_str(), child.exchange, side, child.quantity,
                                              child.limit_price, child.tif, next_id++);
+                    child_order.submit_ts_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count();
 
                     const double signed_notional = child.quantity * child_order.price *
                                                    (side == Side::BID ? 1.0 : -1.0);
@@ -562,6 +602,8 @@ auto main(int argc, char **argv) -> int {
                         }
                     }
 
+                    venue_quality_runtime.on_submit(child_order, res, std::chrono::steady_clock::now());
+
                     LOG_INFO("order submitted", "intent", intent_metadata.intent, "reason",
                              intent_metadata.reason, "reason_codes", reason_codes.c_str(), "child", static_cast<int>(i),
                              "style", style_to_string(decision.style), "venue",
@@ -579,7 +621,7 @@ auto main(int argc, char **argv) -> int {
                 }
             };
 
-            const auto bid_quotes = std::array<VenueQuote, SmartOrderRouter::MAX_VENUES>{
+            auto bid_quotes = std::array<VenueQuote, SmartOrderRouter::MAX_VENUES>{
                 {
                     make_quote(Exchange::BINANCE, binance_book, run_binance, Side::BID),
                     make_quote(Exchange::KRAKEN, kraken_book, run_kraken, Side::BID),
@@ -587,7 +629,7 @@ auto main(int argc, char **argv) -> int {
                     make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, Side::BID),
                 }
             };
-            const auto ask_quotes = std::array<VenueQuote, SmartOrderRouter::MAX_VENUES>{
+            auto ask_quotes = std::array<VenueQuote, SmartOrderRouter::MAX_VENUES>{
                 {
                     make_quote(Exchange::BINANCE, binance_book, run_binance, Side::ASK),
                     make_quote(Exchange::KRAKEN, kraken_book, run_kraken, Side::ASK),
@@ -595,6 +637,12 @@ auto main(int argc, char **argv) -> int {
                     make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, Side::ASK),
                 }
             };
+
+            for (const auto &quote: bid_quotes) {
+                venue_quality_model.observe_health(quote.exchange, quote.healthy);
+            }
+            venue_quality_model.apply(bid_quotes);
+            venue_quality_model.apply(ask_quotes);
 
             PositionLedgerSnapshot portfolio_snapshot =
                     opts.mode == "shadow"
@@ -623,6 +671,24 @@ auto main(int argc, char **argv) -> int {
                     portfolio_log_state.last_log_time == std::chrono::steady_clock::time_point{} ||
                     portfolio_intent_changed(portfolio_log_state, intent_metadata, reason_codes, intent) ||
                     now - portfolio_log_state.last_log_time >= portfolio_log_heartbeat;
+
+            if (last_venue_quality_log == std::chrono::steady_clock::time_point{} ||
+                now - last_venue_quality_log >= portfolio_log_heartbeat) {
+                last_venue_quality_log = now;
+                for (const auto &quote: bid_quotes) {
+                    const VenueQualitySnapshot snap = venue_quality_model.snapshot(quote.exchange);
+                    LOG_INFO("venue quality", "exchange", exchange_to_string(quote.exchange),
+                             "fill_probability", snap.composite_fill_probability,
+                             "passive_markout_bps", snap.passive_markout_bps,
+                             "taker_markout_bps", snap.taker_markout_bps, "reject_rate",
+                             snap.reject_rate, "cancel_latency_penalty_bps",
+                             snap.cancel_latency_penalty_bps, "health_penalty_bps",
+                             snap.health_penalty_bps, "stability_penalty_bps",
+                             snap.stability_penalty_bps, "quality_penalty_bps",
+                             snap.composite_penalty_bps, "sample_count",
+                             static_cast<unsigned long long>(snap.sample_count));
+                }
+            }
 
             if (should_log_portfolio_intent) {
                 update_portfolio_intent_log_state(portfolio_log_state, intent_metadata, reason_codes,
@@ -752,29 +818,33 @@ auto main(int argc, char **argv) -> int {
                         if (limit_price <= 0.0) {
                             continue;
                         }
-                        const Order order = make_child_order(opts.symbol.c_str(), child.exchange,
-                                                             exit_side, child.quantity,
-                                                             limit_price, child.tif, next_id++);
+                        Order order = make_child_order(opts.symbol.c_str(), child.exchange,
+                                                       exit_side, child.quantity,
+                                                       limit_price, child.tif, next_id++);
+                        order.submit_ts_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count();
+                        ConnectorResult res = ConnectorResult::ERROR_UNKNOWN;
                         switch (child.exchange) {
                             case Exchange::BINANCE:
                                 shadow_engine.binance_connector().set_intent_metadata(final_metadata);
-                                (void) shadow_engine.binance_connector().submit_order(order);
+                                res = shadow_engine.binance_connector().submit_order(order);
                                 break;
                             case Exchange::KRAKEN:
                                 shadow_engine.kraken_connector().set_intent_metadata(final_metadata);
-                                (void) shadow_engine.kraken_connector().submit_order(order);
+                                res = shadow_engine.kraken_connector().submit_order(order);
                                 break;
                             case Exchange::OKX:
                                 shadow_engine.okx_connector().set_intent_metadata(final_metadata);
-                                (void) shadow_engine.okx_connector().submit_order(order);
+                                res = shadow_engine.okx_connector().submit_order(order);
                                 break;
                             case Exchange::COINBASE:
                                 shadow_engine.coinbase_connector().set_intent_metadata(final_metadata);
-                                (void) shadow_engine.coinbase_connector().submit_order(order);
+                                res = shadow_engine.coinbase_connector().submit_order(order);
                                 break;
                             default:
                                 break;
                         }
+                        venue_quality_runtime.on_submit(order, res, std::chrono::steady_clock::now());
                     }
                 };
                 final_submit(exit_decision);

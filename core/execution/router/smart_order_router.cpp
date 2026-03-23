@@ -118,7 +118,9 @@ namespace trading {
             }
             healthy_count += 1.0;
             total_toxicity += venue_quote.toxicity_bps;
-            total_fill += venue_quote.fill_probability;
+            total_fill += venue_quote.adaptive_fill_probability >= 0.0
+                              ? venue_quote.adaptive_fill_probability
+                              : venue_quote.fill_probability;
         }
 
         RoutingRegime regime;
@@ -155,13 +157,17 @@ namespace trading {
     auto SmartOrderRouter::score_venue_bps(const VenueQuote &venue_quote, Side side,
                                            const RoutingRegime &regime) noexcept -> double {
         const double base_cost = effective_price_bps(venue_quote, side);
-        const double clipped_fill = (venue_quote.fill_probability < k_min_fill_probability)
+        const double effective_fill_probability =
+            venue_quote.adaptive_fill_probability >= 0.0 ? venue_quote.adaptive_fill_probability
+                                                         : venue_quote.fill_probability;
+        const double clipped_fill = (effective_fill_probability < k_min_fill_probability)
                                         ? k_min_fill_probability
-                                        : venue_quote.fill_probability;
+                                        : effective_fill_probability;
         const double fill_penalty = regime.fill_weight_bps * (1.0 - clipped_fill);
         const double queue_penalty = regime.queue_weight_bps * venue_quote.queue_ahead_qty;
         const double toxicity_penalty = regime.toxicity_weight * venue_quote.toxicity_bps;
-        return base_cost + fill_penalty + queue_penalty + toxicity_penalty;
+        return base_cost + fill_penalty + queue_penalty + toxicity_penalty +
+               venue_quote.taker_markout_bps + venue_quote.quality_penalty_bps;
     }
 
     auto SmartOrderRouter::expected_shortfall_bps(const VenueQuote &venue_quote, Side side,
