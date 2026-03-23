@@ -31,6 +31,7 @@ namespace trading {
         Exchange exchange = Exchange::UNKNOWN;
         double quantity = 0.0;
         double limit_price = 0.0;
+        TimeInForce tif = TimeInForce::GTC;
     };
 
     struct RoutingDecision {
@@ -57,12 +58,15 @@ namespace trading {
                                                 const std::array<VenueQuote, MAX_VENUES> &venues,
                                                 const RoutingConstraints &cfg = {}) noexcept;
 
-    private:
         static double effective_price_bps(const VenueQuote &v, Side side) noexcept;
 
         static RoutingRegime infer_regime(const std::array<VenueQuote, MAX_VENUES> &venues) noexcept;
 
         static double score_venue_bps(const VenueQuote &v, Side side,
                                       const RoutingRegime &regime) noexcept;
+
+        static double expected_shortfall_bps(const VenueQuote &v, Side side,
+                                             const RoutingRegime &regime, double best_px_bps,
+                                             double inventory_age_penalty_bps) noexcept;
     };
 }

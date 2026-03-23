@@ -1,6 +1,8 @@
 #include "../common/logging.hpp"
 #include "../execution/binance/binance_connector.hpp"
 #include "../execution/coinbase/coinbase_connector.hpp"
+#include "../execution/common/child_order_scheduler.hpp"
+#include "../execution/common/parent_order_manager.hpp"
 #include "../execution/kraken/kraken_connector.hpp"
 #include "../execution/okx/okx_connector.hpp"
 #include "../execution/common/portfolio_intent_engine.hpp"
@@ -123,14 +125,15 @@ namespace {
     }
 
     auto make_child_order(const char *symbol, trading::Exchange exchange, trading::Side side,
-                          double qty, double price, uint64_t client_order_id) -> trading::Order {
+                          double qty, double price, trading::TimeInForce tif,
+                          uint64_t client_order_id) -> trading::Order {
         trading::Order order;
         std::strncpy(order.symbol, symbol, sizeof(order.symbol) - 1);
         order.symbol[sizeof(order.symbol) - 1] = '\0';
         order.exchange = exchange;
         order.side = side;
         order.type = trading::OrderType::LIMIT;
-        order.tif = trading::TimeInForce::IOC;
+        order.tif = tif;
         order.quantity = qty;
         order.price = price;
         order.client_order_id = client_order_id;
@@ -145,38 +148,6 @@ namespace {
             return asks.empty() ? 0.0 : asks.front().size;
         }
         return bids.empty() ? 0.0 : bids.front().size;
-    }
-
-    auto price_for_quantity(const trading::BookManager &book, trading::Side side, double qty) -> double {
-        std::vector<trading::PriceLevel> bids;
-        std::vector<trading::PriceLevel> asks;
-        book.get_top_levels(8, bids, asks);
-        const auto &levels = side == trading::Side::BID ? asks : bids;
-        double cumulative = 0.0;
-        for (const auto &level: levels) {
-            cumulative += level.size;
-            if (cumulative + 1e-12 >= qty) {
-                return level.price;
-            }
-        }
-        return levels.empty() ? 0.0 : levels.back().price;
-    }
-
-    auto book_for_exchange(trading::Exchange exchange, trading::BookManager &binance_book,
-                           trading::BookManager &kraken_book, trading::BookManager &okx_book,
-                           trading::BookManager &coinbase_book) -> trading::BookManager * {
-        switch (exchange) {
-            case trading::Exchange::BINANCE:
-                return &binance_book;
-            case trading::Exchange::KRAKEN:
-                return &kraken_book;
-            case trading::Exchange::OKX:
-                return &okx_book;
-            case trading::Exchange::COINBASE:
-                return &coinbase_book;
-            default:
-                return nullptr;
-        }
     }
 
     auto make_quote(trading::Exchange exchange, const trading::BookManager &book,
@@ -409,7 +380,8 @@ auto main(int argc, char **argv) -> int {
         alpha_reader.open();
         RegimeSignalReader regime_reader;
         regime_reader.open();
-        SmartOrderRouter sor;
+        ParentOrderManager parent_manager;
+        ChildOrderScheduler child_scheduler;
         PortfolioIntentEngine intent_engine;
 
         const auto reconnect_interval = std::chrono::seconds(1);
@@ -441,25 +413,31 @@ auto main(int argc, char **argv) -> int {
             if (opts.mode == "shadow") {
                 shadow_engine.check_fills();
             }
-            const auto submit_decision = [&](const RoutingDecision &decision, Side side,
+            const auto submit_decision = [&](const SchedulerDecision &decision, Side side,
                                              double route_qty, const ShadowIntentMetadata &intent_metadata,
                                              const std::string &reason_codes) {
-                for (size_t i = 0; i < decision.child_count; ++i) {
-                    const auto &child = decision.children[i];
+                const auto style_to_string = [](ChildExecutionStyle style) -> const char * {
+                    switch (style) {
+                        case ChildExecutionStyle::PASSIVE_JOIN:
+                            return "passive_join";
+                        case ChildExecutionStyle::PASSIVE_IMPROVE:
+                            return "passive_improve";
+                        case ChildExecutionStyle::IOC:
+                            return "ioc";
+                        case ChildExecutionStyle::SWEEP:
+                            return "sweep";
+                    }
+                    return "ioc";
+                };
+                for (size_t i = 0; i < decision.routing.child_count; ++i) {
+                    const auto &child = decision.routing.children[i];
 
                     if (circuit_breaker.check_order_rate() != CircuitCheckResult::OK) {
                         LOG_WARN("circuit-breaker: order rate limit reached, halting submissions");
                         break;
                     }
 
-                    BookManager *child_book =
-                            book_for_exchange(child.exchange, binance_book, kraken_book, okx_book,
-                                              coinbase_book);
-                    if (child_book == nullptr) {
-                        continue;
-                    }
-                    const double limit_price = price_for_quantity(*child_book, side, child.quantity);
-                    if (limit_price <= 0.0) {
+                    if (child.limit_price <= 0.0) {
                         LOG_WARN("shadow routing skipped due to missing LOB depth", "venue",
                                  exchange_to_string(child.exchange), "qty", child.quantity);
                         continue;
@@ -467,7 +445,7 @@ auto main(int argc, char **argv) -> int {
 
                     const Order child_order =
                             make_child_order(opts.symbol.c_str(), child.exchange, side, child.quantity,
-                                             limit_price, next_id++);
+                                             child.limit_price, child.tif, next_id++);
 
                     const double signed_notional = child.quantity * child_order.price *
                                                    (side == Side::BID ? 1.0 : -1.0);
@@ -527,7 +505,8 @@ auto main(int argc, char **argv) -> int {
 
                     LOG_INFO("order submitted", "intent", intent_metadata.intent, "reason",
                              intent_metadata.reason, "reason_codes", reason_codes.c_str(), "child", static_cast<int>(i),
-                             "venue", exchange_to_string(child.exchange), "side",
+                             "style", style_to_string(decision.style), "venue",
+                             exchange_to_string(child.exchange), "side",
                              side == Side::BID ? "BID" : "ASK", "qty", child.quantity,
                              "route_qty", route_qty, "limit_px", child_order.price, "result",
                              static_cast<int>(res), "target_position",
@@ -536,7 +515,8 @@ auto main(int argc, char **argv) -> int {
                              static_cast<int>(intent_metadata.urgency), "expected_cost_bps",
                              intent_metadata.expected_cost_bps, "expected_edge_bps",
                              intent_metadata.expected_edge_bps, "max_shortfall_bps",
-                             intent_metadata.max_shortfall_bps);
+                             intent_metadata.max_shortfall_bps, "expected_shortfall_bps",
+                             decision.expected_shortfall_bps);
                 }
             };
 
@@ -587,14 +567,17 @@ auto main(int argc, char **argv) -> int {
                          "urgency", static_cast<int>(intent.urgency));
             }
 
-            if (intent.position_delta > 1e-6) {
-                const RoutingDecision entry_decision = sor.route(Side::BID, intent.position_delta, bid_quotes);
-                submit_decision(entry_decision, Side::BID, intent.position_delta, intent_metadata,
-                                reason_codes);
-            } else if (intent.position_delta < -1e-6) {
-                const double reduce_qty = std::abs(intent.position_delta);
-                const RoutingDecision exit_decision = sor.route(Side::ASK, reduce_qty, ask_quotes);
-                submit_decision(exit_decision, Side::ASK, reduce_qty, intent_metadata,
+            const auto plan_update =
+                    parent_manager.update_target(intent.position_delta, intent.urgency, now);
+            const ParentExecutionPlan active_plan = plan_update.plan;
+            if (plan_update.action != ParentPlanAction::NONE && active_plan.active() &&
+                active_plan.remaining_qty > 1e-6) {
+                const auto &scheduler_quotes = active_plan.side == Side::BID ? bid_quotes : ask_quotes;
+                const SchedulerDecision scheduled =
+                        child_scheduler.schedule(active_plan, alpha_signal.horizon_ticks,
+                                                 portfolio_snapshot.oldest_inventory_age_ms,
+                                                 scheduler_quotes);
+                submit_decision(scheduled, active_plan.side, active_plan.remaining_qty, intent_metadata,
                                 reason_codes);
             }
 
@@ -657,9 +640,16 @@ auto main(int argc, char **argv) -> int {
                         make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, exit_side),
                     }
                 };
-                const RoutingDecision exit_decision =
-                        sor.route(exit_side, final_position, exit_quotes);
-                const auto final_submit = [&](const RoutingDecision &decision) {
+                ParentExecutionPlan exit_plan;
+                exit_plan.side = exit_side;
+                exit_plan.total_qty = final_position;
+                exit_plan.remaining_qty = final_position;
+                exit_plan.urgency = ShadowUrgency::AGGRESSIVE;
+                exit_plan.allow_aggressive = true;
+                exit_plan.state = ParentPlanState::WORKING;
+                const SchedulerDecision exit_decision =
+                        child_scheduler.schedule(exit_plan, 1, 0, exit_quotes);
+                const auto final_submit = [&](const SchedulerDecision &decision) {
                     PortfolioIntent final_intent;
                     final_intent.target_global_position = 0.0;
                     final_intent.position_delta = -final_position;
@@ -669,21 +659,15 @@ auto main(int argc, char **argv) -> int {
                     final_intent.urgency = ShadowUrgency::AGGRESSIVE;
                     const ShadowIntentMetadata final_metadata =
                             build_intent_metadata(last_alpha_signal, final_position, final_intent);
-                    for (size_t i = 0; i < decision.child_count; ++i) {
-                        const auto &child = decision.children[i];
-                        BookManager *child_book =
-                                book_for_exchange(child.exchange, binance_book, kraken_book, okx_book,
-                                                  coinbase_book);
-                        if (child_book == nullptr) {
-                            continue;
-                        }
-                        const double limit_price = price_for_quantity(*child_book, exit_side, child.quantity);
+                    for (size_t i = 0; i < decision.routing.child_count; ++i) {
+                        const auto &child = decision.routing.children[i];
+                        const double limit_price = child.limit_price;
                         if (limit_price <= 0.0) {
                             continue;
                         }
                         const Order order = make_child_order(opts.symbol.c_str(), child.exchange,
                                                              exit_side, child.quantity,
-                                                             limit_price, next_id++);
+                                                             limit_price, child.tif, next_id++);
                         switch (child.exchange) {
                             case Exchange::BINANCE:
                                 shadow_engine.binance_connector().set_intent_metadata(final_metadata);

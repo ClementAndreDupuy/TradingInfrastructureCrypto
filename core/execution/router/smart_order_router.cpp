@@ -29,19 +29,27 @@ namespace trading {
             return (side == Side::BID) ? venue_quote.best_ask : venue_quote.best_bid;
         }
 
+        auto lower_price_is_better(Side side) noexcept -> bool { return side == Side::BID; }
+
         auto find_best_price(Side side,
                              const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> &venues) -> double {
-            double best_px = k_infinite_price;
+            double best_px = 0.0;
+            bool found = false;
             for (const auto &venue_quote: venues) {
                 if (!venue_quote.healthy || venue_quote.depth_qty <= 0.0) {
                     continue;
                 }
                 const double quote_price = quote_price_for_side(venue_quote, side);
-                if (quote_price > 0.0 && quote_price < best_px) {
+                if (quote_price <= 0.0) {
+                    continue;
+                }
+                if (!found || (lower_price_is_better(side) ? quote_price < best_px
+                                                           : quote_price > best_px)) {
                     best_px = quote_price;
+                    found = true;
                 }
             }
-            return best_px;
+            return found ? best_px : k_infinite_price;
         }
 
         auto find_best_venue_index(const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> &venues,
@@ -59,18 +67,8 @@ namespace trading {
                     continue;
                 }
 
-                const double quote_px = quote_price_for_side(venue_quote, side);
-                const double base_cost = venue_quote.taker_fee_bps + venue_quote.latency_penalty_bps +
-                                         venue_quote.risk_penalty_bps;
-                const double clipped_fill = (venue_quote.fill_probability < k_min_fill_probability)
-                                                ? k_min_fill_probability
-                                                : venue_quote.fill_probability;
-                const double fill_penalty = regime.fill_weight_bps * (1.0 - clipped_fill);
-                const double queue_penalty = regime.queue_weight_bps * venue_quote.queue_ahead_qty;
-                const double toxicity_penalty = regime.toxicity_weight * venue_quote.toxicity_bps;
-                const double px_penalty_bps = ((quote_px - best_px) / best_px) * 1e4;
-                const double score =
-                        base_cost + fill_penalty + queue_penalty + toxicity_penalty + px_penalty_bps;
+                const double score = SmartOrderRouter::expected_shortfall_bps(
+                    venue_quote, side, regime, best_px, 0.0);
                 if (score < best_score) {
                     best_score = score;
                     best_idx = static_cast<int>(i);
@@ -89,6 +87,7 @@ namespace trading {
             child.exchange = winner.exchange;
             child.quantity = clip;
             child.limit_price = quote_price_for_side(winner, side);
+            child.tif = TimeInForce::IOC;
             out.children[out.child_count++] = child;
 
             remaining -= clip;
@@ -98,7 +97,7 @@ namespace trading {
 
     auto SmartOrderRouter::effective_price_bps(const VenueQuote &venue_quote,
                                                Side side) noexcept -> double {
-        const double quote_price = (side == Side::BID) ? venue_quote.best_ask : venue_quote.best_bid;
+        const double quote_price = quote_price_for_side(venue_quote, side);
         if (quote_price <= 0.0) {
             return 1e12;
         }
@@ -165,6 +164,20 @@ namespace trading {
         return base_cost + fill_penalty + queue_penalty + toxicity_penalty;
     }
 
+    auto SmartOrderRouter::expected_shortfall_bps(const VenueQuote &venue_quote, Side side,
+                                                  const RoutingRegime &regime, double best_px,
+                                                  double inventory_age_penalty_bps) noexcept -> double {
+        const double quote_px = quote_price_for_side(venue_quote, side);
+        if (quote_px <= 0.0 || best_px <= 0.0) {
+            return k_infinite_price;
+        }
+        const double price_penalty_bps =
+                lower_price_is_better(side) ? ((quote_px - best_px) / best_px) * 1e4
+                                            : ((best_px - quote_px) / best_px) * 1e4;
+        return score_venue_bps(venue_quote, side, regime) + price_penalty_bps +
+               inventory_age_penalty_bps;
+    }
+
     auto SmartOrderRouter::route(Side side, double quantity,
                                  const std::array<VenueQuote, MAX_VENUES> &venues) noexcept
         -> RoutingDecision {
@@ -201,8 +214,8 @@ namespace trading {
         }
 
         const bool direction_allowed =
-                (side == Side::BID && alpha_signal.signal_bps >= cfg.alpha_min_signal_bps) ||
-                (side == Side::ASK && alpha_signal.signal_bps <= -cfg.alpha_min_signal_bps);
+            (side == Side::BID && alpha_signal.signal_bps >= cfg.alpha_min_signal_bps) ||
+            (side == Side::ASK && alpha_signal.signal_bps <= -cfg.alpha_min_signal_bps);
         if (!direction_allowed) {
             out.blocked_by_alpha = true;
             return out;
