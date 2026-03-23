@@ -189,6 +189,69 @@ TEST(ShadowEngineTest, FillLogIncludesPhaseZeroDiagnostics) {
     EXPECT_TRUE(found_fill);
 }
 
+TEST(ShadowEngineTest, StateMachineTransitionsAcrossPhaseFiveStates) {
+    ShadowStateMachine machine;
+
+    const ShadowStateTransition entering = machine.evaluate(0.0, 0.55, false, false, "alpha_entry");
+    EXPECT_TRUE(entering.changed);
+    EXPECT_EQ(entering.previous, ShadowExecutionState::FLAT);
+    EXPECT_EQ(entering.current, ShadowExecutionState::ENTERING);
+
+    const ShadowStateTransition holding = machine.evaluate(0.55, 0.55, false, false, "hold_target");
+    EXPECT_TRUE(holding.changed);
+    EXPECT_EQ(holding.current, ShadowExecutionState::HOLDING);
+
+    const ShadowStateTransition reducing = machine.evaluate(0.55, 0.20, false, false, "alpha_decay");
+    EXPECT_TRUE(reducing.changed);
+    EXPECT_EQ(reducing.current, ShadowExecutionState::REDUCING);
+
+    const ShadowStateTransition flattening = machine.evaluate(0.20, 0.0, true, false, "flatten_now");
+    EXPECT_TRUE(flattening.changed);
+    EXPECT_EQ(flattening.current, ShadowExecutionState::FLATTENING);
+
+    const ShadowStateTransition halted = machine.evaluate(0.20, 0.0, false, true, "risk_halt");
+    EXPECT_TRUE(halted.changed);
+    EXPECT_EQ(halted.current, ShadowExecutionState::HALTED);
+}
+
+TEST(ShadowEngineTest, ShadowEngineLogsStateTransitions) {
+    BookManager binance_book("BTCUSDT", Exchange::BINANCE, 1.0, 2048);
+    BookManager kraken_book("BTCUSDT", Exchange::KRAKEN, 1.0, 2048);
+    BookManager okx_book("BTCUSDT", Exchange::OKX, 1.0, 2048);
+    BookManager coinbase_book("BTCUSDT", Exchange::COINBASE, 1.0, 2048);
+    binance_book.snapshot_handler()(make_snapshot(Exchange::BINANCE, 100.0, 5.0, 100.5, 5.0));
+    kraken_book.snapshot_handler()(make_snapshot(Exchange::KRAKEN, 100.0, 5.0, 100.5, 5.0));
+    okx_book.snapshot_handler()(make_snapshot(Exchange::OKX, 100.0, 5.0, 100.5, 5.0));
+    coinbase_book.snapshot_handler()(make_snapshot(Exchange::COINBASE, 100.0, 5.0, 100.5, 5.0));
+
+    ShadowConfig cfg;
+    std::strncpy(cfg.log_path, "/tmp/shadow_phase5_state_test.jsonl", sizeof(cfg.log_path) - 1);
+    std::remove(cfg.log_path);
+
+    {
+        ShadowEngine engine(binance_book, kraken_book, okx_book, coinbase_book, cfg);
+        const ShadowStateTransition entering = engine.update_state(0.50, false, false, "alpha_entry");
+        EXPECT_EQ(entering.current, ShadowExecutionState::ENTERING);
+        const ShadowStateTransition holding = engine.update_state(0.0, false, false, "flat_idle");
+        EXPECT_EQ(holding.current, ShadowExecutionState::FLAT);
+    }
+
+    std::ifstream handle(cfg.log_path);
+    ASSERT_TRUE(handle.is_open());
+    std::string line;
+    bool found_transition = false;
+    while (std::getline(handle, line)) {
+        if (line.find("\"event\":\"STATE_TRANSITION\"") == std::string::npos)
+            continue;
+        found_transition = true;
+        EXPECT_NE(line.find("\"from\":\"FLAT\""), std::string::npos);
+        EXPECT_NE(line.find("\"to\":\"ENTERING\""), std::string::npos);
+        EXPECT_NE(line.find("\"reason\":\"alpha_entry\""), std::string::npos);
+        break;
+    }
+    EXPECT_TRUE(found_transition);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

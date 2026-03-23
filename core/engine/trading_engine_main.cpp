@@ -567,18 +567,35 @@ auto main(int argc, char **argv) -> int {
                          "urgency", static_cast<int>(intent.urgency));
             }
 
+            if (opts.mode == "shadow") {
+                const bool halted = kill_switch.is_active() ||
+                                    circuit_breaker.check_consecutive_losses() !=
+                                            CircuitCheckResult::OK;
+                const ShadowStateTransition transition = shadow_engine.update_state(
+                        intent.target_global_position, intent.flatten_now, halted,
+                        reason_codes.c_str());
+                if (transition.changed) {
+                    LOG_INFO("shadow state transition", "from",
+                             ShadowStateMachine::to_string(transition.previous), "to",
+                             ShadowStateMachine::to_string(transition.current), "reason",
+                             transition.reason, "current_pos", transition.current_position,
+                             "target_pos", transition.target_position);
+                }
+            }
+
             const auto plan_update =
                     parent_manager.update_target(intent.position_delta, intent.urgency, now);
             const ParentExecutionPlan active_plan = plan_update.plan;
             if (plan_update.action != ParentPlanAction::NONE && active_plan.active() &&
                 active_plan.remaining_qty > 1e-6) {
-                const auto &scheduler_quotes = active_plan.side == Side::BID ? bid_quotes : ask_quotes;
+                const auto &scheduler_quotes =
+                        active_plan.side == Side::BID ? bid_quotes : ask_quotes;
                 const SchedulerDecision scheduled =
                         child_scheduler.schedule(active_plan, alpha_signal.horizon_ticks,
                                                  portfolio_snapshot.oldest_inventory_age_ms,
                                                  scheduler_quotes);
-                submit_decision(scheduled, active_plan.side, active_plan.remaining_qty, intent_metadata,
-                                reason_codes);
+                submit_decision(scheduled, active_plan.side, active_plan.remaining_qty,
+                                intent_metadata, reason_codes);
             }
 
             const auto reconciliation_now = std::chrono::steady_clock::now();

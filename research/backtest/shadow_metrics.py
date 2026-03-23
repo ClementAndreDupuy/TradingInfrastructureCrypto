@@ -48,6 +48,7 @@ def analyse_decisions(rows: list[dict[str, Any]]) -> dict[str, Any]:
     cancels = [r for r in rows if r.get("event") == "CANCELED"]
     rejects = [r for r in rows if r.get("event") == "REJECTED"]
     resting = [r for r in rows if r.get("event") == "RESTING"]
+    transitions = [r for r in rows if r.get("event") == "STATE_TRANSITION"]
     terminal_orders = len(fills) + len(cancels) + len(rejects)
     fill_rate = len(fills) / terminal_orders if terminal_orders else 0.0
     total_orders = terminal_orders + len(resting)
@@ -164,6 +165,8 @@ def analyse_decisions(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "total_cancels": len(cancels),
         "total_rejects": len(rejects),
         "total_resting": len(resting),
+        "state_transition_count": len(transitions),
+        "state_transitions": transitions,
         "fill_rate": fill_rate,
         "net_pnl_usd": net_pnl,
         "max_drawdown_usd": max_dd,
@@ -344,7 +347,12 @@ def fill_rate_check(shadow_fill_rate: float, backtest_fill_rate: float, toleranc
     }
 
 
-def print_report(dec: dict[str, Any], sig: dict[str, Any], ops: dict[str, Any], out_path: str | None = None) -> None:
+def print_report(
+    dec: dict[str, Any],
+    sig: dict[str, Any],
+    ops: dict[str, Any],
+    out_path: str | None = None,
+) -> None:
     lines = [
         "=" * 60,
         "  Shadow Validation Report",
@@ -366,6 +374,7 @@ def print_report(dec: dict[str, Any], sig: dict[str, Any], ops: dict[str, Any], 
         f"  Edge at entry          : {dec.get('edge_at_entry_bps', 0.0):.4f} bps",
         f"  Spread paid/captured   : {dec.get('spread_paid_bps', 0.0):.4f} / {dec.get('spread_captured_bps', 0.0):.4f} bps",
         f"  Avg hold / inv age     : {dec.get('avg_hold_ms', 0.0):.2f} / {dec.get('avg_inventory_age_ms', 0.0):.2f} ms",
+        f"  State transitions      : {dec.get('state_transition_count', 0)}",
         f"  Worst venue            : {dec.get('venue_worst', 'UNKNOWN')}",
         "",
     ]
