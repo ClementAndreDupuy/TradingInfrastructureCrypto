@@ -137,8 +137,8 @@ Use this as a lightweight operating checklist for future agent sessions.
 ## Known Issues Fixed
 
 ### Phase 5 shadow state machine rollout (2026-03-23)
-- **`core/engine/trading_engine_main.cpp`** + **`core/shadow/shadow_engine.hpp`** — Shadow execution now supports `--shadow-run-mode target_position|legacy`, logs testable `STATE_TRANSITION` events for `FLAT`/`ENTERING`/`HOLDING`/`REDUCING`/`FLATTENING`/`HALTED`, and keeps the target-position scheduler shadow-only until Phase 6 live canary work begins.
-- **`research/backtest/shadow_metrics.py`** — Shadow reporting now includes state-transition counts plus optional legacy-vs-target-position A/B comparison output for churn, shortfall, edge capture, and net alpha deltas.
+- **`core/engine/trading_engine_main.cpp`** + **`core/shadow/shadow_engine.hpp`** — Shadow execution now runs only the new target-position engine in shadow mode, logs testable `STATE_TRANSITION` events for `FLAT`/`ENTERING`/`HOLDING`/`REDUCING`/`FLATTENING`/`HALTED`, and keeps the scheduler shadow-only until Phase 6 live canary work begins.
+- **`research/backtest/shadow_metrics.py`** — Shadow reporting now includes state-transition counts alongside churn, shortfall, and realized edge capture metrics for the new engine path.
 
 ### Execution connector remediation (2026-03-19)
 - **`core/execution/okx/okx_connector.cpp`** + **`core/execution/live_connector_base.hpp`** — OKX private REST auth now sends the documented passphrase header, spot/swap order placement includes venue-correct `tdMode` and client IDs, cancel/query/amend requests are instrument-scoped with `instId` plus `ordId`/`clOrdId`, and `cancel_all()` is now explicitly unsupported instead of calling `cancel-batch-orders` with an undocumented payload.

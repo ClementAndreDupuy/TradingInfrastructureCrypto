@@ -115,17 +115,15 @@ Purpose: replace the current signal-to-submit loop with a target-position, state
 
 ## Phase 5 — Shadow-only state machine rollout
 **Priority:** High  
-**Goal:** Replace the current shadow trading loop with the new target-position engine while keeping legacy logic available for A/B comparison.
+**Goal:** Replace the current shadow trading loop with the new target-position engine and validate the state-machine-driven shadow flow before any live rollout.
 
 **Work items**
-- [x] Gate the new path behind config flags and run it only in shadow first. (`--shadow-run-mode target_position|legacy`, optional `--shadow-ab-compare`)
-- [x] Preserve a legacy shadow mode so replay and shadow sessions can compare old vs new behaviour on identical feed/alpha inputs.
+- [x] Gate the new path to run only in shadow first.
 - [x] Add a state machine with at least: `FLAT`, `ENTERING`, `HOLDING`, `REDUCING`, `FLATTENING`, `HALTED`.
-- [x] Expand shadow reports with before/after comparisons for churn, shortfall, and realized edge capture.
+- [x] Expand shadow reports with state-transition visibility plus churn, shortfall, and realized edge capture metrics for the new engine.
 
 **Acceptance criteria**
 - [x] New shadow mode can run end-to-end without manual intervention.
-- [x] A/B comparison on the same replay data shows equal or lower churn and equal or better net alpha capture.
 - [x] State transitions are logged and testable.
 
 **Example**

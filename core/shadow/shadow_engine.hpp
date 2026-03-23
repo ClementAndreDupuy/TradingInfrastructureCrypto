@@ -21,11 +21,6 @@ namespace trading {
         AGGRESSIVE = 2,
     };
 
-    enum class ShadowRunMode : uint8_t {
-        LEGACY = 0,
-        TARGET_POSITION = 1,
-    };
-
     enum class ShadowExecutionState : uint8_t {
         FLAT = 0,
         ENTERING = 1,

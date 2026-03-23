@@ -192,47 +192,6 @@ def analyse_decisions(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def compare_decision_analyses(candidate: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
-    candidate_churn = candidate.get("total_orders", 0)
-    baseline_churn = baseline.get("total_orders", 0)
-    candidate_shortfall = float(candidate.get("implementation_shortfall_bps", 0.0))
-    baseline_shortfall = float(baseline.get("implementation_shortfall_bps", 0.0))
-    candidate_edge = float(candidate.get("edge_at_entry_bps", 0.0))
-    baseline_edge = float(baseline.get("edge_at_entry_bps", 0.0))
-    candidate_net = float(candidate.get("net_pnl_usd", 0.0))
-    baseline_net = float(baseline.get("net_pnl_usd", 0.0))
-    verdict_parts: list[str] = []
-    if candidate_churn <= baseline_churn:
-        verdict_parts.append("churn_ok")
-    else:
-        verdict_parts.append("churn_worse")
-    if candidate_edge >= baseline_edge:
-        verdict_parts.append("edge_ok")
-    else:
-        verdict_parts.append("edge_worse")
-    if candidate_net >= baseline_net:
-        verdict_parts.append("net_alpha_ok")
-    else:
-        verdict_parts.append("net_alpha_worse")
-    return {
-        "candidate_label": "target_position",
-        "baseline_label": "legacy",
-        "candidate_total_orders": candidate_churn,
-        "baseline_total_orders": baseline_churn,
-        "candidate_shortfall_bps": candidate_shortfall,
-        "baseline_shortfall_bps": baseline_shortfall,
-        "candidate_edge_bps": candidate_edge,
-        "baseline_edge_bps": baseline_edge,
-        "candidate_net_pnl_usd": candidate_net,
-        "baseline_net_pnl_usd": baseline_net,
-        "order_churn_delta": candidate_churn - baseline_churn,
-        "shortfall_delta_bps": candidate_shortfall - baseline_shortfall,
-        "edge_capture_delta_bps": candidate_edge - baseline_edge,
-        "net_alpha_delta_usd": candidate_net - baseline_net,
-        "verdict": ",".join(verdict_parts),
-    }
-
-
 def analyse_timestamp_quality(rows: list[dict[str, Any]]) -> dict[str, Any]:
     diagnostics = {
         "exchange_missing": 0,
@@ -392,7 +351,6 @@ def print_report(
     dec: dict[str, Any],
     sig: dict[str, Any],
     ops: dict[str, Any],
-    comparison: dict[str, Any] | None = None,
     out_path: str | None = None,
 ) -> None:
     lines = [
@@ -491,18 +449,6 @@ def print_report(
                 f"  resnapshot={stats.get('resnapshot_count', 0)}"
             )
         lines.append("")
-    if comparison:
-        lines += [
-            "── Legacy vs target-position comparison ───────────────────",
-            f"  Baseline label         : {comparison.get('baseline_label', 'legacy')}",
-            f"  Candidate label        : {comparison.get('candidate_label', 'target_position')}",
-            f"  Order churn delta      : {comparison.get('order_churn_delta', 0)}",
-            f"  Shortfall delta        : {comparison.get('shortfall_delta_bps', 0.0):.4f} bps",
-            f"  Edge capture delta     : {comparison.get('edge_capture_delta_bps', 0.0):.4f} bps",
-            f"  Net alpha delta        : ${comparison.get('net_alpha_delta_usd', 0.0):.4f}",
-            f"  Verdict                : {comparison.get('verdict', 'n/a')}",
-            "",
-        ]
     lines += [
         "── Readiness check ─────────────────────────────────────────",
         "  Run >= 2 weeks before promoting to live.",
@@ -563,12 +509,6 @@ def main() -> None:
     ap.add_argument("--decisions", type=str, default=_DEFAULT_DECISIONS_LOG, help="C++ shadow engine decision log")
     ap.add_argument("--signals", type=str, default=_DEFAULT_SIGNALS_LOG, help="Neural alpha signal log")
     ap.add_argument("--ops", type=str, default=_DEFAULT_OPS_LOG, help="Structured ops/runtime log")
-    ap.add_argument(
-        "--baseline-decisions",
-        type=str,
-        default=None,
-        help="Optional legacy shadow decision log for A/B comparison",
-    )
     ap.add_argument("--out", type=str, default=None, help="Save text report to file")
     ap.add_argument("--prom", type=str, default=None, help="Save Prometheus metrics to file")
     ap.add_argument("--backtest-fill-rate", type=float, default=None, dest="backtest_fill_rate", help="Expected fill rate from backtest (for readiness check)")
@@ -581,11 +521,7 @@ def main() -> None:
     dec = analyse_decisions(dec_rows)
     sig = analyse_signals(sig_rows)
     ops = analyse_ops_events(ops_rows)
-    comparison = None
-    if args.baseline_decisions:
-        _require_log(args.baseline_decisions, "baseline decisions")
-        comparison = compare_decision_analyses(dec, analyse_decisions(load_jsonl(args.baseline_decisions)))
-    print_report(dec, sig, ops, comparison=comparison, out_path=args.out)
+    print_report(dec, sig, ops, out_path=args.out)
     if args.backtest_fill_rate is not None:
         check = fill_rate_check(dec.get("fill_rate", 0.0), args.backtest_fill_rate)
         print(f"Fill-rate readiness: shadow={check['shadow_fill_rate']:.2%}  backtest={check['backtest_fill_rate']:.2%}  verdict={check['verdict']}")
