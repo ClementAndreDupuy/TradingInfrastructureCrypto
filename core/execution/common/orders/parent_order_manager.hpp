@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../shadow/shadow_engine.hpp"
-#include "../../common/types.hpp"
+#include "../../../shadow/shadow_engine.hpp"
+#include "../../../common/types.hpp"
 
 #include <algorithm>
 #include <array>

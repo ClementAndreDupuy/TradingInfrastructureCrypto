@@ -1,10 +1,10 @@
 #pragma once
 
-#include "../../common/logging.hpp"
-#include "../../common/rest_client.hpp"
+#include "../../../common/logging.hpp"
+#include "../../../common/rest_client.hpp"
 #include "exchange_connector.hpp"
 #include "idempotency_journal.hpp"
-#include "reconciliation_types.hpp"
+#include "../reconciliation/reconciliation_types.hpp"
 #include "venue_order_map.hpp"
 
 #include <atomic>

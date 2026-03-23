@@ -142,7 +142,7 @@ Use this as a lightweight operating checklist for future agent sessions.
 - **`research/backtest/shadow_metrics.py`** + **`tests/unit/test_shadow_metrics.py`** — Shadow reports now summarize adaptive venue-priority changes, including fill probability, passive/taker markout, reject rate, cancel latency, and explicit reasons each venue improved or degraded over the run.
 
 ### Phase 7 adaptive venue quality groundwork (2026-03-23)
-- **`core/execution/common/venue_quality_model.hpp`** + **`core/execution/router/smart_order_router.[hpp/cpp]`** — Routing now applies bounded adaptive venue penalties derived from rolling fill probability, markout, reject rate, cancel latency, and venue health so scheduler decisions can respond to changing venue quality without oscillating on every noisy sample.
+- **`core/execution/common/quality/venue_quality_model.hpp`** + **`core/execution/router/smart_order_router.[hpp/cpp]`** — Routing now applies bounded adaptive venue penalties derived from rolling fill probability, markout, reject rate, cancel latency, and venue health so scheduler decisions can respond to changing venue quality without oscillating on every noisy sample.
 - **`core/engine/trading_engine_main.cpp`** — The engine now emits periodic `venue quality` snapshots for post-trade analysis, which Phase 7 completion reporting now explains in shadow metrics output.
 
 ### Execution-engine phases 0-6 complete (2026-03-23)

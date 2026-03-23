@@ -1,5 +1,5 @@
-#include "core/execution/common/venue_quality_model.hpp"
-#include "core/execution/common/child_order_scheduler.hpp"
+#include "core/execution/common/quality/venue_quality_model.hpp"
+#include "core/execution/common/orders/child_order_scheduler.hpp"
 
 #include <gtest/gtest.h>
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../common/logging.hpp"
-#include "live_connector_base.hpp"
+#include "../../../common/logging.hpp"
+#include "../connectors/live_connector_base.hpp"
 #include "reconciliation_types.hpp"
 
 #include <array>
