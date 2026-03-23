@@ -146,7 +146,6 @@ def _summarise_timestamp_quality(records: list[dict[str, Any]]) -> dict[str, int
         "local_monotonic": True,
         "event_index_monotonic": True,
     }
-    prev_exchange: int | None = None
     prev_local: int | None = None
     prev_event_index: int | None = None
     prev_venue_exchange_ts: dict[str, int] = {}
@@ -159,11 +158,6 @@ def _summarise_timestamp_quality(records: list[dict[str, Any]]) -> dict[str, int
             diagnostics["exchange_missing"] = int(diagnostics["exchange_missing"]) + 1
         if local_ts <= 0:
             diagnostics["local_missing"] = int(diagnostics["local_missing"]) + 1
-        if prev_exchange is not None and exchange_ts > 0:
-            diagnostics["max_exchange_jump_ns"] = max(int(diagnostics["max_exchange_jump_ns"]), abs(exchange_ts - prev_exchange))
-            if exchange_ts < prev_exchange:
-                diagnostics["exchange_non_monotonic"] = int(diagnostics["exchange_non_monotonic"]) + 1
-                diagnostics["exchange_monotonic"] = False
         if prev_local is not None and local_ts > 0:
             diagnostics["max_local_gap_ns"] = max(int(diagnostics["max_local_gap_ns"]), abs(local_ts - prev_local))
             if local_ts < prev_local:
@@ -176,11 +170,13 @@ def _summarise_timestamp_quality(records: list[dict[str, Any]]) -> dict[str, int
         if previous_venue_ts is not None and exchange_ts > 0 and previous_venue_ts > 0:
             jump = abs(exchange_ts - previous_venue_ts)
             diagnostics["max_exchange_jump_ns"] = max(int(diagnostics["max_exchange_jump_ns"]), jump)
-            if jump > _MAX_EXCHANGE_JUMP_NS:
+            if exchange_ts < previous_venue_ts:
+                diagnostics["exchange_non_monotonic"] = int(diagnostics["exchange_non_monotonic"]) + 1
+                diagnostics["exchange_monotonic"] = False
+            elif jump > _MAX_EXCHANGE_JUMP_NS:
                 diagnostics["cross_venue_exchange_jumps"] = int(diagnostics["cross_venue_exchange_jumps"]) + 1
         if exchange_ts > 0:
             prev_venue_exchange_ts[venue] = exchange_ts
-            prev_exchange = exchange_ts
         if local_ts > 0:
             prev_local = local_ts
         prev_event_index = event_index
@@ -418,13 +414,14 @@ class NeuralAlphaShadowSession:
         self._model.load_state_dict(selected_state)
         loss = metrics.get("loss_total", float("nan"))
         _raw_oos = holdout_summary.get("challenger") if isinstance(holdout_summary, dict) else None
-        oos_mse = float("nan") if _raw_oos is None else float(_raw_oos)
+        oos_mse = None if _raw_oos is None else float(_raw_oos)
         selected = holdout_summary.get("selected", "challenger") if isinstance(holdout_summary, dict) else "challenger"
+        oos_mse_text = "n/a" if oos_mse is None or not np.isfinite(oos_mse) else f"{oos_mse:.6f}"
         print(
             f"[{_utcnow()}] [Shadow] model retrain done"
             f"  ticks={n_ticks}"
             f"  best_fold_loss={loss:.6f}"
-            f"  oos_mse={oos_mse:.6f}"
+            f"  oos_mse={oos_mse_text}"
             f"  selected={selected}"
         )
         out_path = Path(self.cfg.model_path) if self.cfg.model_path else _symbol_model_path(self.cfg.symbol)
@@ -610,6 +607,7 @@ class NeuralAlphaShadowSession:
         raw_sigs_bps, effective_sigs_bps = _extract_signal_series(self._signal_records)
         ic, icir = self._compute_ic_metrics()
         diagnostics = _summarise_timestamp_quality(self._signal_records)
+        ts_quality = "warn" if diagnostics["has_timestamp_issues"] else "ok"
         print(
             f"[{_utcnow()}] [Shadow] ticks={len(self._signal_records)}"
             f"  mean_effective={float(np.mean(effective_sigs_bps)):.2f}bps"
@@ -619,7 +617,7 @@ class NeuralAlphaShadowSession:
             f"  confidence_gate={self._gating_reason_counts['confidence_gate']}"
             f"  horizon_gate={self._gating_reason_counts['horizon_disagreement_gate']}"
             f"  safe_mode_gate={self._gating_reason_counts['safe_mode_gate']}"
-            f"  ts_issues={int(diagnostics['has_timestamp_issues'])}"
+            f"  ts_quality={ts_quality}"
         )
     def _maybe_continuous_train(self) -> None:
         if self.cfg.continuous_train_every_ticks <= 0:

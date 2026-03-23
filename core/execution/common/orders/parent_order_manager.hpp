@@ -120,13 +120,20 @@ namespace trading {
 
             const bool urgency_changed = plan_.urgency != urgency;
             const bool deadline_extended = effective_deadline > plan_.deadline + cfg_.min_deadline_extension;
+            const double capped_remaining_qty = std::min(plan_.remaining_qty, requested_qty);
+            const bool quantity_changed =
+                    std::abs(plan_.total_qty - requested_qty) >= k_qty_epsilon ||
+                    std::abs(plan_.remaining_qty - capped_remaining_qty) >= k_qty_epsilon;
+            plan_.total_qty = std::max(plan_.filled_qty, requested_qty);
+            plan_.remaining_qty = std::max(0.0, capped_remaining_qty);
             plan_.urgency = urgency;
             plan_.deadline = std::max(plan_.deadline, effective_deadline);
             plan_.allow_passive = urgency != ShadowUrgency::AGGRESSIVE;
             plan_.allow_aggressive = true;
             ++plan_.revision;
-            result.action = urgency_changed || deadline_extended ? ParentPlanAction::UPDATED
-                                                                 : ParentPlanAction::NONE;
+            result.action = urgency_changed || deadline_extended || quantity_changed
+                                    ? ParentPlanAction::UPDATED
+                                    : ParentPlanAction::NONE;
             result.plan = plan_;
             return result;
         }

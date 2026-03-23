@@ -195,6 +195,7 @@ namespace trading {
     class ShadowConnector : public ExchangeConnector {
     public:
         static constexpr size_t MAX_SHADOW_ORDERS = 256;
+        static constexpr double POSITION_EPSILON = 1e-6;
 
         explicit ShadowConnector(Exchange ex, const ShadowConfig &cfg, BookManager &book)
             : ex_(ex), cfg_(cfg), book_(book) {
@@ -367,7 +368,7 @@ namespace trading {
 
         int64_t inventory_age_ms() const noexcept {
             std::lock_guard<std::mutex> lk(pnl_mu_);
-            if (net_position_ == 0.0 || position_opened_at_ns_ == 0)
+            if (std::abs(net_position_) <= POSITION_EPSILON || position_opened_at_ns_ == 0)
                 return 0;
             const int64_t now_ns_val = now_ns();
             return (now_ns_val - position_opened_at_ns_) / 1'000'000LL;
@@ -444,6 +445,8 @@ namespace trading {
                 realized_pnl_ += (avg_entry_price_ - fill_px) * closing_qty;
 
             net_position_ = prior_pos + signed_qty;
+            if (std::abs(net_position_) <= POSITION_EPSILON)
+                net_position_ = 0.0;
 
             if (net_position_ == 0.0) {
                 avg_entry_price_ = 0.0;

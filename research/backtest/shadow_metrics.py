@@ -329,7 +329,6 @@ def analyse_timestamp_quality(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "max_exchange_jump_ns": 0,
         "max_local_gap_ns": 0,
     }
-    prev_exchange = None
     prev_local = None
     prev_event_index = None
     prev_by_exchange: dict[str, int] = {}
@@ -342,10 +341,6 @@ def analyse_timestamp_quality(rows: list[dict[str, Any]]) -> dict[str, Any]:
             diagnostics["exchange_missing"] += 1
         if local_ts <= 0:
             diagnostics["local_missing"] += 1
-        if prev_exchange is not None and exchange_ts > 0:
-            diagnostics["max_exchange_jump_ns"] = max(diagnostics["max_exchange_jump_ns"], abs(exchange_ts - prev_exchange))
-            if exchange_ts < prev_exchange:
-                diagnostics["exchange_non_monotonic"] += 1
         if prev_local is not None and local_ts > 0:
             diagnostics["max_local_gap_ns"] = max(diagnostics["max_local_gap_ns"], abs(local_ts - prev_local))
             if local_ts < prev_local:
@@ -356,10 +351,11 @@ def analyse_timestamp_quality(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if prev_exchange_ts is not None and exchange_ts > 0:
             jump = abs(exchange_ts - prev_exchange_ts)
             diagnostics["max_exchange_jump_ns"] = max(diagnostics["max_exchange_jump_ns"], jump)
-            if jump > _MAX_EXCHANGE_JUMP_NS:
+            if exchange_ts < prev_exchange_ts:
+                diagnostics["exchange_non_monotonic"] += 1
+            elif jump > _MAX_EXCHANGE_JUMP_NS:
                 diagnostics["cross_venue_timestamp_jumps"] += 1
         if exchange_ts > 0:
-            prev_exchange = exchange_ts
             prev_by_exchange[exchange] = exchange_ts
         if local_ts > 0:
             prev_local = local_ts
