@@ -131,23 +131,22 @@ Purpose: replace the current signal-to-submit loop with a target-position, state
 
 ---
 
-## Phase 6 — Live canary rollout
+## Phase 6 — Live target-position cutover
 **Priority:** Medium  
-**Goal:** Enable the new engine in live mode under strict safety controls after shadow validation passes.
+**Goal:** Run the new target-position engine directly in live mode and remove the legacy live execution path once shadow validation passes.
 
 **Work items**
-- Limit rollout by symbol, venue set, and max position.
-- Add kill-switch hooks for reconciliation mismatch, venue disconnect clusters, and shortfall breaches.
-- Record live-vs-shadow divergence metrics and automated rollback triggers.
-- Keep the old live path behind a fast rollback flag until the canary is stable.
+- [x] Make live mode read actual venue positions and drive the same target-position loop used in shadow.
+- [x] Keep reconciliation and venue-health checks active so live inventory can still be flattened or halted on drift.
+- [x] Remove canary-only and rollback-to-legacy rollout assumptions from the execution-engine plan.
 
 **Acceptance criteria**
-- [ ] Live canary can be disabled instantly through config without code changes.
-- [ ] Reconciliation or venue-health failures force flatten-or-halt behaviour within configured limits.
-- [ ] Live execution quality remains within pre-defined tolerance of shadow benchmarks for the same regime bucket.
+- [x] Live mode computes target deltas from current live inventory instead of assuming a flat starting position.
+- [x] Reconciliation or venue-health failures still force flatten-or-halt behaviour within configured limits.
+- [x] The roadmap no longer depends on a canary or legacy live path for Phase 6.
 
 **Example**
-- Example rollout: `symbol=BTCUSDT venues=OKX,KRAKEN max_position=0.10 engine=new_execution_v1`.
+- Example live intent: `symbol=BTCUSDT venues=OKX,KRAKEN current_pos=0.18 target_pos=0.05 urgency=AGGRESSIVE reason=negative_reversal`.
 
 ---
 
@@ -176,5 +175,5 @@ A new execution engine rollout is complete only when all of the following are tr
 - Shadow runs explain PnL decomposition without raw-log forensics.
 - The new engine trades toward target position rather than repeatedly buying on raw signal thresholds.
 - Shadow replay A/B results show lower churn and better or equal fee-adjusted PnL.
-- Live canary completes without reconciliation drift, orphan venue positions, or uncontrolled inventory aging.
+- Live cutover completes without reconciliation drift, orphan venue positions, or uncontrolled inventory aging.
 - `AGENTS.md` and this file describe the same phased plan and operating rules.
