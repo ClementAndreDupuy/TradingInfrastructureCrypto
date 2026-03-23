@@ -74,6 +74,7 @@ class ShadowSessionConfig:
     safe_mode_ticks: int = 120
     continuous_train_every_ticks: int = 1000
     continuous_train_window_ticks: int = 2000
+    regime_retrain_every_ticks: int = 5000
     canary_ic_margin: float = 0.02
     canary_icir_floor: float = 0.0
     canary_window: int = 200
@@ -216,6 +217,7 @@ class NeuralAlphaShadowSession:
         self._bridge.open()
         self._processed_ticks = 0
         self._last_continuous_train_tick = 0
+        self._last_regime_train_tick = 0
         self._session_event_index = 0
         self._session_wall_start_ns = time.time_ns()
         self._session_steady_start_ns = time.monotonic_ns()
@@ -446,7 +448,6 @@ class NeuralAlphaShadowSession:
         )
         secondary_path = Path(self.cfg.secondary_model_path) if self.cfg.secondary_model_path else _symbol_model_path(self.cfg.symbol, "secondary")
         self._best_effort(lambda: self._train_secondary_on_data(df, secondary_path))
-        self._best_effort(lambda: self._train_regime_on_data(df))
     def _build_inference_inputs(self) -> tuple[torch.Tensor, torch.Tensor] | None:
         if self._model is None or len(self._ring) < self.cfg.seq_len:
             return None
@@ -638,6 +639,19 @@ class NeuralAlphaShadowSession:
             print(f"[{_utcnow()}] [Shadow] continuous retrain completed processed_ticks={self._processed_ticks}")
         except Exception as exc:
             print(f"[{_utcnow()}] [Shadow] continuous retrain failed processed_ticks={self._processed_ticks}: {exc}")
+    def _maybe_regime_retrain(self) -> None:
+        if self.cfg.regime_retrain_every_ticks <= 0:
+            return
+        ticks_since_retrain = self._processed_ticks - self._last_regime_train_tick
+        if ticks_since_retrain < self.cfg.regime_retrain_every_ticks:
+            return
+        train_window = max(self.cfg.seq_len * 4, self.cfg.continuous_train_window_ticks)
+        try:
+            df = self._collect_training_ticks(train_window)
+            self._train_regime_on_data(df)
+            self._last_regime_train_tick = self._processed_ticks
+        except Exception as exc:
+            print(f"[{_utcnow()}] [Shadow] regime retrain failed processed_ticks={self._processed_ticks}: {exc}")
     def _update_quality_guards(self, signal_info: dict[str, Any]) -> None:
         if not self._signal_records:
             return
@@ -672,6 +686,7 @@ class NeuralAlphaShadowSession:
                 if len(self._ring) > self._max_ring:
                     self._ring = self._ring[-self._max_ring :]
                 self._maybe_continuous_train()
+                self._maybe_regime_retrain()
                 signal_info = self._infer()
                 if signal_info is None:
                     self._publisher.publish(0.0, 0.0, 0.0, 0)

@@ -245,6 +245,25 @@ def _calm_anchored_fallback(
     return (artifact, distribution)
 
 
+def _canonical_sort_states(
+    labels: np.ndarray,
+    initial: np.ndarray,
+    transition: np.ndarray,
+    means: np.ndarray,
+    variances: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    order = np.argsort(means[:, 0])
+    inv = np.empty_like(order)
+    inv[order] = np.arange(len(order))
+    return (
+        inv[labels],
+        initial[order],
+        transition[np.ix_(order, order)],
+        means[order],
+        variances[order],
+    )
+
+
 def _semantic_regime_names(raw_means: np.ndarray) -> list[str]:
     n = raw_means.shape[0]
     names = [f"regime_{i}" for i in range(n)]
@@ -282,6 +301,9 @@ def train_regime_model_from_df(
     scales = np.where(raw_scales < 1e-08, 1.0, raw_scales)
     x = x_raw / scales
     (labels, initial, transition, means, variances) = _fit_hmm(x, cfg)
+    (labels, initial, transition, means, variances) = _canonical_sort_states(
+        labels, initial, transition, means, variances
+    )
     regime_names = _semantic_regime_names(means)
     counts = np.bincount(labels, minlength=cfg.n_regimes)
     distribution = {
@@ -316,6 +338,9 @@ def train_regime_model_from_ipc(
     scales = np.where(scales < 1e-08, 1.0, scales)
     x = x_raw / scales
     (labels, initial, transition, means, variances) = _fit_hmm(x, cfg)
+    (labels, initial, transition, means, variances) = _canonical_sort_states(
+        labels, initial, transition, means, variances
+    )
     regime_names = _semantic_regime_names(means)
     counts = np.bincount(labels, minlength=cfg.n_regimes)
     distribution = {
