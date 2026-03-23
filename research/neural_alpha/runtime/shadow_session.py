@@ -33,6 +33,7 @@ _DIRECTION_GATE = 0.55
 _HORIZON_CANDIDATES = (1, 10, 100, 500)
 _GATING_KEYS = ("confidence_gate", "horizon_disagreement_gate", "safe_mode_gate")
 FetchFn = Callable[[str], dict[str, Any] | None]
+_FETCHERS = {"BINANCE": _fetch_binance_l5, "KRAKEN": _fetch_kraken_l5, "OKX": _fetch_okx_l5, "COINBASE": _fetch_coinbase_l5}
 @dataclass
 class VenueRuntimeStats:
     ticks_received: int = 0
@@ -229,14 +230,12 @@ class NeuralAlphaShadowSession:
             return None
     def _build_model(self, d_spatial: int = 64, d_temporal: int = 128, n_temp_layers: int = 3) -> CryptoAlphaNet:
         return CryptoAlphaNet(d_spatial=d_spatial, d_temporal=d_temporal, n_temp_layers=n_temp_layers, seq_len=self.cfg.seq_len).to(self._device).eval()
-    def _load_weights(self, path: str) -> dict[str, torch.Tensor]:
-        return torch.load(path, map_location=self._device, weights_only=True)
     def load_model(self, path: str) -> None:
         self._model = self._build_model(self.cfg.d_spatial, self.cfg.d_temporal)
-        self._model.load_state_dict(self._load_weights(path))
+        self._model.load_state_dict(torch.load(path, map_location=self._device, weights_only=True))
     def load_secondary_model(self, path: str) -> None:
         self._secondary_model = self._build_model(d_spatial=32, d_temporal=64, n_temp_layers=1)
-        self._secondary_model.load_state_dict(self._load_weights(path))
+        self._secondary_model.load_state_dict(torch.load(path, map_location=self._device, weights_only=True))
         self._reset_canary()
     def _reset_canary(self) -> None:
         self._canary = EnsembleCanary(
@@ -300,9 +299,6 @@ class NeuralAlphaShadowSession:
         )
     def _snapshot_current_state(self) -> dict[str, torch.Tensor] | None:
         return None if self._model is None else {key: value.detach().cpu().clone() for key, value in self._model.state_dict().items()}
-    def _select_best_fold(self, fold_results: list[dict[str, Any]]) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
-        best = min(fold_results, key=lambda fold: fold["metrics"].get("loss_total", 1_000_000_000.0))
-        return best["model_state"], dict(best.get("metrics", {}))
     def _save_state_artifacts(self, state_dict: dict[str, torch.Tensor], out_path: Path, meta: dict[str, Any]) -> None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_out = out_path.with_suffix(out_path.suffix + ".tmp")
@@ -377,7 +373,8 @@ class NeuralAlphaShadowSession:
         )
         if not fold_results:
             return
-        state, _ = self._select_best_fold(fold_results)
+        best = min(fold_results, key=lambda fold: fold["metrics"].get("loss_total", 1_000_000_000.0))
+        state = best["model_state"]
         out_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_out = out_path.with_suffix(out_path.suffix + ".tmp")
         torch.save(state, tmp_out)
@@ -397,7 +394,9 @@ class NeuralAlphaShadowSession:
         fold_results = walk_forward_train(df, self._primary_trainer_config(resume_state, self._training_folds(df)))
         if not fold_results:
             return
-        candidate_state, metrics = self._select_best_fold(fold_results)
+        best = min(fold_results, key=lambda fold: fold["metrics"].get("loss_total", 1_000_000_000.0))
+        candidate_state = best["model_state"]
+        metrics = dict(best.get("metrics", {}))
         selected_state, holdout_summary = self._select_primary_state(df, candidate_state, resume_state)
         self._model = self._build_model(self.cfg.d_spatial, self.cfg.d_temporal)
         self._model.load_state_dict(selected_state)
@@ -511,8 +510,6 @@ class NeuralAlphaShadowSession:
         rollback_path = self._registry.rollback_to_previous_champion(reason=reason)
         if rollback_path and Path(rollback_path).exists():
             self._best_effort(lambda: self.load_model(rollback_path))
-    def _fetchers(self) -> dict[str, FetchFn]:
-        return {"BINANCE": _fetch_binance_l5, "KRAKEN": _fetch_kraken_l5, "OKX": _fetch_okx_l5, "COINBASE": _fetch_coinbase_l5}
     def _rest_fallback_tick(self, exchange: str, fetcher: FetchFn | None) -> dict[str, Any] | None:
         if fetcher is None:
             return None
@@ -525,7 +522,6 @@ class NeuralAlphaShadowSession:
         return {**row, "exchange": exchange, "tick_source": "rest_fallback"}
     def _fetch_tick(self) -> list[dict[str, Any]]:
         bridge_ticks = self._bridge.read_new_ticks()
-        fetchers = self._fetchers()
         grouped_ticks: dict[str, list[dict[str, Any]]] = {exchange: [] for exchange in self._venue_stats}
         for tick in bridge_ticks:
             exchange = str(tick.get("exchange", "UNKNOWN")).upper()
@@ -545,13 +541,13 @@ class NeuralAlphaShadowSession:
             stats.last_source = "bridge_unavailable" if not stats.startup_confirmed else "bridge_resnapshot"
             if stats.startup_confirmed:
                 stats.resnapshot_count += 1
-            fallback_tick = self._rest_fallback_tick(exchange, fetchers.get(exchange))
+            fallback_tick = self._rest_fallback_tick(exchange, _FETCHERS.get(exchange))
             if fallback_tick is not None:
                 rest_ticks.append(fallback_tick)
         if bridge_ticks or rest_ticks:
             return bridge_ticks + rest_ticks
         for exchange in self._venue_stats:
-            fallback_tick = self._rest_fallback_tick(exchange, fetchers.get(exchange))
+            fallback_tick = self._rest_fallback_tick(exchange, _FETCHERS.get(exchange))
             if fallback_tick is not None:
                 rest_ticks.append(fallback_tick)
         return rest_ticks
@@ -685,17 +681,13 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     add("--canary-icir-floor", type=float, default=0.0, dest="canary_icir_floor", help="Min ensemble ICIR before canary fires"); add("--canary-window", type=int, default=200, dest="canary_window"); add("--canary-min-samples", type=int, default=60, dest="canary_min_samples")
     add("--require-full-model-stack", action=argparse.BooleanOptionalAction, default=True, dest="require_full_model_stack", help="Require primary + secondary alpha models and regime artifact before entering production shadow mode.")
     return parser
-def _build_config(args: argparse.Namespace) -> ShadowSessionConfig:
-    return ShadowSessionConfig(model_path=args.model_path, secondary_model_path=args.secondary_model_path, log_path=args.log_path, interval_ms=args.interval_ms, duration_s=args.duration, report_interval_s=args.report_interval_s, seq_len=args.seq_len, d_spatial=args.d_spatial, d_temporal=args.d_temporal, train_ticks=args.train_ticks, train_epochs=args.train_epochs, symbol=args.symbol, exchanges=[exchange.strip().upper() for exchange in args.exchanges.split(",") if exchange.strip()], signal_file=args.signal_file, lob_feed_path=args.lob_feed_path, regime_signal_file=args.regime_signal_file, regime_model_path=args.regime_model_path, registry_path=args.registry_path, drift_window=args.drift_window, drift_min_samples=args.drift_min_samples, drift_ic_floor=args.drift_ic_floor, safe_mode_ticks=args.safe_mode_ticks, continuous_train_every_ticks=args.continuous_train_every_ticks, continuous_train_window_ticks=args.continuous_train_window_ticks, canary_ic_margin=args.canary_ic_margin, canary_icir_floor=args.canary_icir_floor, canary_window=args.canary_window, canary_min_samples=args.canary_min_samples, require_full_model_stack=args.require_full_model_stack)
-def _load_runtime_models(session: NeuralAlphaShadowSession, cfg: ShadowSessionConfig) -> None:
+def _prepare_runtime_models(session: NeuralAlphaShadowSession, cfg: ShadowSessionConfig) -> None:
     primary_model_path = Path(cfg.model_path) if cfg.model_path else _symbol_model_path(cfg.symbol, "latest")
     secondary_model_path = Path(cfg.secondary_model_path) if cfg.secondary_model_path else _symbol_model_path(cfg.symbol, "secondary")
     if primary_model_path.exists():
         session.load_model(str(primary_model_path))
     if secondary_model_path.exists():
         session.load_secondary_model(str(secondary_model_path))
-def _prepare_runtime_models(session: NeuralAlphaShadowSession, cfg: ShadowSessionConfig) -> None:
-    _load_runtime_models(session, cfg)
     if session._missing_model_stack() and cfg.train_ticks > 0:
         session.train_on_recent(cfg.train_ticks)
     missing = session._missing_model_stack()
@@ -707,7 +699,38 @@ def _prepare_runtime_models(session: NeuralAlphaShadowSession, cfg: ShadowSessio
             "Research production stack requires a trained model. Collect more ticks before starting, set --train-ticks, or use --no-require-full-model-stack for non-production debugging."
         )
 def main() -> None:
-    cfg = _build_config(_build_arg_parser().parse_args())
+    args = _build_arg_parser().parse_args()
+    cfg = ShadowSessionConfig(
+        model_path=args.model_path,
+        secondary_model_path=args.secondary_model_path,
+        log_path=args.log_path,
+        interval_ms=args.interval_ms,
+        duration_s=args.duration,
+        report_interval_s=args.report_interval_s,
+        seq_len=args.seq_len,
+        d_spatial=args.d_spatial,
+        d_temporal=args.d_temporal,
+        train_ticks=args.train_ticks,
+        train_epochs=args.train_epochs,
+        symbol=args.symbol,
+        exchanges=[exchange.strip().upper() for exchange in args.exchanges.split(",") if exchange.strip()],
+        signal_file=args.signal_file,
+        lob_feed_path=args.lob_feed_path,
+        regime_signal_file=args.regime_signal_file,
+        regime_model_path=args.regime_model_path,
+        registry_path=args.registry_path,
+        drift_window=args.drift_window,
+        drift_min_samples=args.drift_min_samples,
+        drift_ic_floor=args.drift_ic_floor,
+        safe_mode_ticks=args.safe_mode_ticks,
+        continuous_train_every_ticks=args.continuous_train_every_ticks,
+        continuous_train_window_ticks=args.continuous_train_window_ticks,
+        canary_ic_margin=args.canary_ic_margin,
+        canary_icir_floor=args.canary_icir_floor,
+        canary_window=args.canary_window,
+        canary_min_samples=args.canary_min_samples,
+        require_full_model_stack=args.require_full_model_stack,
+    )
     session = NeuralAlphaShadowSession(cfg)
     def _handle_sigint(sig: int, frame: object) -> None:
         del sig, frame
