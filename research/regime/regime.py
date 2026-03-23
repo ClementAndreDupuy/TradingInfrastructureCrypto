@@ -4,9 +4,14 @@ import mmap
 import struct
 import time
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 import numpy as np
 import polars as pl
+
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 _EPS = 1e-12
 
@@ -240,6 +245,25 @@ def _calm_anchored_fallback(
     return (artifact, distribution)
 
 
+def _canonical_sort_states(
+    labels: np.ndarray,
+    initial: np.ndarray,
+    transition: np.ndarray,
+    means: np.ndarray,
+    variances: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    order = np.argsort(means[:, 0])
+    inv = np.empty_like(order)
+    inv[order] = np.arange(len(order))
+    return (
+        inv[labels],
+        initial[order],
+        transition[np.ix_(order, order)],
+        means[order],
+        variances[order],
+    )
+
+
 def _semantic_regime_names(raw_means: np.ndarray) -> list[str]:
     n = raw_means.shape[0]
     names = [f"regime_{i}" for i in range(n)]
@@ -271,12 +295,15 @@ def train_regime_model_from_df(
     n_degenerate = int(np.sum(raw_scales < 1e-08))
     if n_degenerate > len(raw_scales) // 2:
         print(
-            f"[REGIME] Flat training data ({n_degenerate}/{len(raw_scales)} features near-zero variance) — anchoring artifact to calm regime."
+            f"[{_utcnow()}] [Regime] flat training data ({n_degenerate}/{len(raw_scales)} features near-zero variance) — anchoring artifact to calm regime."
         )
         return _calm_anchored_fallback(feat, cfg, raw_scales)
     scales = np.where(raw_scales < 1e-08, 1.0, raw_scales)
     x = x_raw / scales
     (labels, initial, transition, means, variances) = _fit_hmm(x, cfg)
+    (labels, initial, transition, means, variances) = _canonical_sort_states(
+        labels, initial, transition, means, variances
+    )
     regime_names = _semantic_regime_names(means)
     counts = np.bincount(labels, minlength=cfg.n_regimes)
     distribution = {
@@ -294,7 +321,8 @@ def train_regime_model_from_df(
         scales=scales.tolist(),
     )
     spread_means = [round(float(means[i][1]), 6) for i in range(cfg.n_regimes)]
-    print(f"[Regime] trained  names={regime_names}  spread_means={spread_means}")
+    spread_range = round(max(spread_means) - min(spread_means), 6)
+    print(f"[{_utcnow()}] [Regime] trained  names={regime_names}  spread_means={spread_means}  spread_range={spread_range}")
     return (artifact, distribution)
 
 
@@ -310,6 +338,9 @@ def train_regime_model_from_ipc(
     scales = np.where(scales < 1e-08, 1.0, scales)
     x = x_raw / scales
     (labels, initial, transition, means, variances) = _fit_hmm(x, cfg)
+    (labels, initial, transition, means, variances) = _canonical_sort_states(
+        labels, initial, transition, means, variances
+    )
     regime_names = _semantic_regime_names(means)
     counts = np.bincount(labels, minlength=cfg.n_regimes)
     distribution = {

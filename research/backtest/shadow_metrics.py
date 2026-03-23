@@ -166,8 +166,17 @@ def analyse_decisions(rows: list[dict[str, Any]]) -> dict[str, Any]:
     terminal_orders = len(fills) + len(cancels) + len(rejects)
     fill_rate = len(fills) / terminal_orders if terminal_orders else 0.0
     total_orders = terminal_orders + len(resting)
-    pnl_series = [float(r.get("cumulative_pnl", 0.0)) for r in fills]
-    net_pnl = pnl_series[-1] if pnl_series else 0.0
+    # cumulative_realized_pnl is the new field (gross realized before fees).
+    # Fall back to cumulative_pnl for logs produced by older engine builds,
+    # which stored net cashflow there.
+    realized_pnl_series = [
+        float(r.get("cumulative_realized_pnl", r.get("cumulative_pnl", 0.0))) for r in fills
+    ]
+    cashflow_series = [
+        float(r.get("cumulative_cashflow", r.get("cumulative_pnl", 0.0))) for r in fills
+    ]
+    net_realized_pnl = realized_pnl_series[-1] if realized_pnl_series else 0.0
+    net_cashflow = cashflow_series[-1] if cashflow_series else 0.0
     exchanges: dict[str, dict[str, Any]] = {}
     total_fees = 0.0
     total_shortfall = 0.0
@@ -252,7 +261,7 @@ def analyse_decisions(rows: list[dict[str, Any]]) -> dict[str, Any]:
                     open_lots.pop(0)
     max_dd = 0.0
     peak = 0.0
-    for pnl in pnl_series:
+    for pnl in realized_pnl_series:
         if pnl > peak:
             peak = pnl
         dd = pnl - peak
@@ -282,7 +291,9 @@ def analyse_decisions(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "state_transition_count": len(transitions),
         "state_transitions": transitions,
         "fill_rate": fill_rate,
-        "net_pnl_usd": net_pnl,
+        "net_realized_pnl_usd": net_realized_pnl,
+        "net_cashflow_usd": net_cashflow,
+        "net_pnl_usd": net_realized_pnl,  # kept for backward-compat with downstream consumers
         "max_drawdown_usd": max_dd,
         "total_volume": fill_qty,
         "exchanges": exchanges,
@@ -480,7 +491,8 @@ def print_report(
         f"  Rejects                : {dec.get('total_rejects', 0)}",
         f"  Resting (open)         : {dec.get('total_resting', 0)}",
         f"  Fill rate              : {dec.get('fill_rate', 0.0):.2%}",
-        f"  Net P&L                : ${dec.get('net_pnl_usd', 0.0):.4f}",
+        f"  Realized P&L (gross)   : ${dec.get('net_realized_pnl_usd', 0.0):.4f}",
+        f"  Net cashflow           : ${dec.get('net_cashflow_usd', dec.get('net_pnl_usd', 0.0)):.4f}",
         f"  Fee drag               : ${dec.get('fee_drag_usd', 0.0):.4f}",
         f"  Max drawdown           : ${dec.get('max_drawdown_usd', 0.0):.4f}",
         f"  Total volume (qty)     : {dec.get('total_volume', 0.0):.6f}",
@@ -601,9 +613,12 @@ def write_prometheus(dec: dict[str, Any], sig: dict[str, Any], ops: dict[str, An
         "# HELP shadow_fill_rate Fraction of shadow orders that filled",
         "# TYPE shadow_fill_rate gauge",
         f"shadow_fill_rate {dec.get('fill_rate', 0.0):.6f}",
-        "# HELP shadow_net_pnl_usd Cumulative net P&L in USD",
-        "# TYPE shadow_net_pnl_usd gauge",
-        f"shadow_net_pnl_usd {dec.get('net_pnl_usd', 0.0):.6f}",
+        "# HELP shadow_net_realized_pnl_usd Cumulative gross realized P&L in USD (before fees)",
+        "# TYPE shadow_net_realized_pnl_usd gauge",
+        f"shadow_net_realized_pnl_usd {dec.get('net_realized_pnl_usd', dec.get('net_pnl_usd', 0.0)):.6f}",
+        "# HELP shadow_net_cashflow_usd Net cashflow in USD (sell proceeds - buy costs - fees)",
+        "# TYPE shadow_net_cashflow_usd gauge",
+        f"shadow_net_cashflow_usd {dec.get('net_cashflow_usd', dec.get('net_pnl_usd', 0.0)):.6f}",
         "# HELP shadow_max_drawdown_usd Maximum drawdown in USD",
         "# TYPE shadow_max_drawdown_usd gauge",
         f"shadow_max_drawdown_usd {dec.get('max_drawdown_usd', 0.0):.6f}",

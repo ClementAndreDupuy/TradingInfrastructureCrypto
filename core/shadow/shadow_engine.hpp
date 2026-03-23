@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <vector>
 
 namespace trading {
@@ -327,7 +328,31 @@ namespace trading {
             }
         }
 
-        double total_pnl() const noexcept { return total_pnl_.load(std::memory_order_acquire); }
+        double realized_pnl() const noexcept {
+            std::lock_guard<std::mutex> lk(pnl_mu_);
+            return realized_pnl_;
+        }
+
+        double unrealized_pnl() const noexcept {
+            std::lock_guard<std::mutex> lk(pnl_mu_);
+            return compute_unrealized_pnl_locked();
+        }
+
+        double total_fees() const noexcept {
+            std::lock_guard<std::mutex> lk(pnl_mu_);
+            return total_fees_;
+        }
+
+        double net_cashflow() const noexcept {
+            std::lock_guard<std::mutex> lk(pnl_mu_);
+            return net_cashflow_;
+        }
+
+        double total_pnl() const noexcept {
+            std::lock_guard<std::mutex> lk(pnl_mu_);
+            return (realized_pnl_ - total_fees_) + compute_unrealized_pnl_locked();
+        }
+
         double gross_notional() const noexcept { return gross_notional_.load(std::memory_order_acquire); }
         uint64_t total_fills() const noexcept { return total_fills_.load(std::memory_order_acquire); }
 
@@ -335,7 +360,18 @@ namespace trading {
             return opened_positions_.load(std::memory_order_acquire);
         }
 
-        double net_position() const noexcept { return net_position_.load(std::memory_order_acquire); }
+        double net_position() const noexcept {
+            std::lock_guard<std::mutex> lk(pnl_mu_);
+            return net_position_;
+        }
+
+        int64_t inventory_age_ms() const noexcept {
+            std::lock_guard<std::mutex> lk(pnl_mu_);
+            if (net_position_ == 0.0 || position_opened_at_ns_ == 0)
+                return 0;
+            const int64_t now_ns_val = now_ns();
+            return (now_ns_val - position_opened_at_ns_) / 1'000'000LL;
+        }
 
         uint32_t active_orders() const noexcept {
             uint32_t n = 0;
@@ -360,11 +396,63 @@ namespace trading {
         std::array<ShadowOrder, MAX_SHADOW_ORDERS> orders_{};
         ShadowIntentMetadata next_intent_{};
 
-        std::atomic<double> total_pnl_{0.0};
         std::atomic<double> gross_notional_{0.0};
         std::atomic<uint64_t> total_fills_{0};
         std::atomic<uint64_t> opened_positions_{0};
-        std::atomic<double> net_position_{0.0};
+
+        mutable std::mutex pnl_mu_;
+        double net_position_     = 0.0;
+        double avg_entry_price_  = 0.0;
+        double realized_pnl_     = 0.0;
+        double total_fees_       = 0.0;
+        double net_cashflow_     = 0.0;
+        int64_t position_opened_at_ns_ = 0;
+
+        double compute_unrealized_pnl_locked() const noexcept {
+            if (net_position_ == 0.0 || avg_entry_price_ <= 0.0)
+                return 0.0;
+            const double mid = book_.mid_price();
+            if (mid <= 0.0)
+                return 0.0;
+            return net_position_ > 0.0
+                       ? (mid - avg_entry_price_) * net_position_
+                       : (avg_entry_price_ - mid) * (-net_position_);
+        }
+
+        void apply_position_fill_locked(Side side, double fill_qty, double fill_px) noexcept {
+            const double signed_qty  = (side == Side::BID) ? fill_qty : -fill_qty;
+            const double prior_pos   = net_position_;
+            const int    prior_sign  = (prior_pos > 0.0) - (prior_pos < 0.0);
+            const int    fill_sign   = (signed_qty > 0.0) - (signed_qty < 0.0);
+
+            if (prior_sign == 0 || prior_sign == fill_sign) {
+                const double abs_prior = std::abs(prior_pos);
+                const double total_qty = abs_prior + fill_qty;
+                avg_entry_price_ = total_qty > 0.0
+                                       ? (avg_entry_price_ * abs_prior + fill_px * fill_qty) / total_qty
+                                       : 0.0;
+                net_position_ = prior_pos + signed_qty;
+                if (prior_sign == 0)
+                    position_opened_at_ns_ = now_ns();
+                return;
+            }
+
+            const double closing_qty = std::min(std::abs(prior_pos), fill_qty);
+            if (prior_pos > 0.0)
+                realized_pnl_ += (fill_px - avg_entry_price_) * closing_qty;
+            else
+                realized_pnl_ += (avg_entry_price_ - fill_px) * closing_qty;
+
+            net_position_ = prior_pos + signed_qty;
+
+            if (net_position_ == 0.0) {
+                avg_entry_price_ = 0.0;
+                position_opened_at_ns_ = 0;
+            } else if ((net_position_ > 0.0) != (prior_pos > 0.0)) {
+                avg_entry_price_ = fill_px;
+                position_opened_at_ns_ = now_ns();
+            }
+        }
 
         bool is_immediately_fillable(const ShadowOrder &s) const noexcept {
             if (s.type == OrderType::MARKET)
@@ -433,19 +521,21 @@ namespace trading {
 
             const double fee_bps = fee_for(s);
             const double fee = (fee_bps / 10000.0) * fill_px * fill_qty;
-            const double sign = (s.side == Side::ASK) ? 1.0 : -1.0;
-            const double contrib = sign * fill_px * fill_qty - sign * fee;
 
-            const double old_pnl = total_pnl_.load(std::memory_order_acquire);
-            total_pnl_.store(old_pnl + contrib, std::memory_order_release);
+            const double cash_sign = (s.side == Side::ASK) ? 1.0 : -1.0;
+            const double cashflow  = cash_sign * fill_px * fill_qty - fee;
+
             const double old_notional = gross_notional_.load(std::memory_order_acquire);
             gross_notional_.store(old_notional + fill_px * fill_qty, std::memory_order_release);
             total_fills_.fetch_add(1, std::memory_order_relaxed);
-            const double position_delta = (s.side == Side::BID) ? fill_qty : -fill_qty;
-            const double old_position = net_position_.load(std::memory_order_acquire);
-            net_position_.store(old_position + position_delta, std::memory_order_release);
-            if (opened_position) {
+            if (opened_position)
                 opened_positions_.fetch_add(1, std::memory_order_relaxed);
+
+            {
+                std::lock_guard<std::mutex> lk(pnl_mu_);
+                net_cashflow_ += cashflow;
+                total_fees_   += fee;
+                apply_position_fill_locked(s.side, fill_qty, fill_px);
             }
 
             log_fill(s, fill_px, fill_qty, fee_bps, fee);
@@ -529,12 +619,19 @@ namespace trading {
                       double fee) {
             if (!log_fp_)
                 return;
+            double snap_cashflow = 0.0, snap_realized = 0.0;
+            {
+                std::lock_guard<std::mutex> lk(pnl_mu_);
+                snap_cashflow = net_cashflow_;
+                snap_realized = realized_pnl_;
+            }
             std::fprintf(log_fp_,
                          "{\"event\":\"FILL\",\"ts_ns\":%lld,\"exchange\":\"%s\","
                          "\"symbol\":\"%s\",\"side\":\"%s\",\"maker\":%s,"
                          "\"fill_px\":%.2f,\"qty\":%.6f,\"cum_qty\":%.6f,"
                          "\"fee_bps\":%.2f,\"fee_usd\":%.6f,"
-                         "\"cumulative_pnl\":%.6f,\"client_oid\":%llu,"
+                         "\"cumulative_cashflow\":%.6f,\"cumulative_realized_pnl\":%.6f,"
+                         "\"client_oid\":%llu,"
                          "\"intent\":\"%s\",\"reason\":\"%s\",\"signal_bps\":%.4f,"
                          "\"risk_score\":%.4f,\"target_position\":%.6f,"
                          "\"current_position\":%.6f,\"expected_cost_bps\":%.4f,"
@@ -545,7 +642,7 @@ namespace trading {
                          (long long) now_ns(), exchange_to_string(s.exchange), s.symbol,
                          s.side == Side::BID ? "BID" : "ASK", s.is_maker ? "true" : "false", fill_px,
                          fill_qty, s.filled_qty, fee_bps, fee,
-                         total_pnl_.load(std::memory_order_relaxed),
+                         snap_cashflow, snap_realized,
                          (unsigned long long) s.client_order_id, s.intent.intent, s.intent.reason,
                          s.intent.signal_bps, s.intent.risk_score, s.intent.target_position,
                          s.intent.current_position, s.intent.expected_cost_bps,
@@ -678,6 +775,26 @@ namespace trading {
                    + okx_shadow_.total_pnl() + coinbase_shadow_.total_pnl();
         }
 
+        double realized_pnl() const noexcept {
+            return binance_shadow_.realized_pnl() + kraken_shadow_.realized_pnl()
+                   + okx_shadow_.realized_pnl() + coinbase_shadow_.realized_pnl();
+        }
+
+        double unrealized_pnl() const noexcept {
+            return binance_shadow_.unrealized_pnl() + kraken_shadow_.unrealized_pnl()
+                   + okx_shadow_.unrealized_pnl() + coinbase_shadow_.unrealized_pnl();
+        }
+
+        double total_fees() const noexcept {
+            return binance_shadow_.total_fees() + kraken_shadow_.total_fees()
+                   + okx_shadow_.total_fees() + coinbase_shadow_.total_fees();
+        }
+
+        double net_cashflow() const noexcept {
+            return binance_shadow_.net_cashflow() + kraken_shadow_.net_cashflow()
+                   + okx_shadow_.net_cashflow() + coinbase_shadow_.net_cashflow();
+        }
+
         double gross_notional() const noexcept {
             return binance_shadow_.gross_notional() + kraken_shadow_.gross_notional()
                    + okx_shadow_.gross_notional() + coinbase_shadow_.gross_notional();
@@ -698,6 +815,13 @@ namespace trading {
                    + okx_shadow_.net_position() + coinbase_shadow_.net_position();
         }
 
+        int64_t inventory_age_ms() const noexcept {
+            return std::max({binance_shadow_.inventory_age_ms(),
+                             kraken_shadow_.inventory_age_ms(),
+                             okx_shadow_.inventory_age_ms(),
+                             coinbase_shadow_.inventory_age_ms()});
+        }
+
         ShadowStateTransition update_state(double target_position, bool flatten_now,
                                            bool halted, const char *reason) noexcept {
             ShadowStateTransition transition =
@@ -710,16 +834,24 @@ namespace trading {
         [[nodiscard]] ShadowExecutionState state() const noexcept { return state_machine_.state(); }
 
         void log_summary() const {
-            const double gn = gross_notional();
-            const double pnl_pct = gn > 0.0 ? (net_pnl() / gn) * 100.0 : 0.0;
+            const double gn          = gross_notional();
+            const double rpnl        = realized_pnl();
+            const double upnl        = unrealized_pnl();
+            const double fees        = total_fees();
+            const double total_pnl   = net_pnl();          // (realized - fees) + unrealized
+            const double cashflow    = net_cashflow();
+            const double pnl_pct     = gn > 0.0 ? (total_pnl / gn) * 100.0 : 0.0;
             LOG_INFO("Shadow session summary",
-                     "session_pnl_usd", net_pnl(),
-                     "net_pnl_usd", net_pnl(),
-                     "net_pnl_pct", pnl_pct,
+                     "realized_pnl_usd",   rpnl,
+                     "unrealized_pnl_usd", upnl,
+                     "fees_paid_usd",      fees,
+                     "total_pnl_usd",      total_pnl,
+                     "total_pnl_pct",      pnl_pct,
+                     "net_cashflow_usd",   cashflow,
                      "gross_notional_usd", gn,
-                     "net_position", net_position(),
-                     "total_fills", total_fills(),
-                     "opened_positions", opened_positions(),
+                     "net_position",       net_position(),
+                     "total_fills",        total_fills(),
+                     "opened_positions",   opened_positions(),
                      "state", ShadowStateMachine::to_string(state_machine_.state()),
                      "bin_opened", binance_shadow_.opened_positions(),
                      "kra_opened", kraken_shadow_.opened_positions(),

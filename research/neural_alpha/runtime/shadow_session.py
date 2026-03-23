@@ -7,6 +7,7 @@ import signal
 import struct
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 import numpy as np
@@ -21,6 +22,9 @@ from ..models.model import CryptoAlphaNet
 from ..models.trainer import TrainerConfig, walk_forward_train
 from ..operations.governance import ChampionChallengerRegistry, DriftGuard, EnsembleCanary
 from ..pipeline import _fetch_binance_l5, _fetch_coinbase_l5, _fetch_kraken_l5, _fetch_okx_l5, collect_from_core_bridge
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
 _SIGNAL_FILE = "/tmp/trt_ipc/neural_alpha_signal.bin"
 _SIGNAL_SIZE = 48
 _SEQ_FMT = "=Q"
@@ -70,6 +74,7 @@ class ShadowSessionConfig:
     safe_mode_ticks: int = 120
     continuous_train_every_ticks: int = 1000
     continuous_train_window_ticks: int = 2000
+    regime_retrain_every_ticks: int = 5000
     canary_ic_margin: float = 0.02
     canary_icir_floor: float = 0.0
     canary_window: int = 200
@@ -212,6 +217,7 @@ class NeuralAlphaShadowSession:
         self._bridge.open()
         self._processed_ticks = 0
         self._last_continuous_train_tick = 0
+        self._last_regime_train_tick = 0
         self._session_event_index = 0
         self._session_wall_start_ns = time.time_ns()
         self._session_steady_start_ns = time.monotonic_ns()
@@ -385,11 +391,19 @@ class NeuralAlphaShadowSession:
     def _train_regime_on_data(self, df: pl.DataFrame) -> None:
         regime_path = Path(self.cfg.regime_model_path)
         artifact, _ = train_regime_model_from_df(df, RegimeConfig())
+        spread_means = [float(m[1]) for m in artifact.means]
+        spread_range = max(spread_means) - min(spread_means)
+        if spread_range < 0.3:
+            print(
+                f"[{_utcnow()}] [Shadow] regime retrain skipped — degenerate clusters"
+                f"  spread_range={spread_range:.4f} (< 0.3 threshold)"
+            )
+            return
         regime_path.parent.mkdir(parents=True, exist_ok=True)
         save_regime_artifact(artifact, str(regime_path))
         self._regime_artifact = artifact
         names = ", ".join(artifact.regime_names)
-        print(f"[Shadow] regime retrain done  regimes=[{names}]")
+        print(f"[{_utcnow()}] [Shadow] regime retrain done  regimes=[{names}]")
     def train_on_recent(self, n_ticks: int) -> None:
         df = self._collect_training_ticks(n_ticks)
         resume_state = self._snapshot_current_state()
@@ -403,12 +417,15 @@ class NeuralAlphaShadowSession:
         self._model = self._build_model(self.cfg.d_spatial, self.cfg.d_temporal)
         self._model.load_state_dict(selected_state)
         loss = metrics.get("loss_total", float("nan"))
-        oos_mse = holdout_summary if isinstance(holdout_summary, float) else float("nan")
+        _raw_oos = holdout_summary.get("challenger") if isinstance(holdout_summary, dict) else None
+        oos_mse = float("nan") if _raw_oos is None else float(_raw_oos)
+        selected = holdout_summary.get("selected", "challenger") if isinstance(holdout_summary, dict) else "challenger"
         print(
-            f"[Shadow] model retrain done"
+            f"[{_utcnow()}] [Shadow] model retrain done"
             f"  ticks={n_ticks}"
             f"  best_fold_loss={loss:.6f}"
             f"  oos_mse={oos_mse:.6f}"
+            f"  selected={selected}"
         )
         out_path = Path(self.cfg.model_path) if self.cfg.model_path else _symbol_model_path(self.cfg.symbol)
         self._save_state_artifacts(
@@ -427,7 +444,6 @@ class NeuralAlphaShadowSession:
         )
         secondary_path = Path(self.cfg.secondary_model_path) if self.cfg.secondary_model_path else _symbol_model_path(self.cfg.symbol, "secondary")
         self._best_effort(lambda: self._train_secondary_on_data(df, secondary_path))
-        self._best_effort(lambda: self._train_regime_on_data(df))
     def _build_inference_inputs(self) -> tuple[torch.Tensor, torch.Tensor] | None:
         if self._model is None or len(self._ring) < self.cfg.seq_len:
             return None
@@ -595,7 +611,7 @@ class NeuralAlphaShadowSession:
         ic, icir = self._compute_ic_metrics()
         diagnostics = _summarise_timestamp_quality(self._signal_records)
         print(
-            f"[Shadow] ticks={len(self._signal_records)}"
+            f"[{_utcnow()}] [Shadow] ticks={len(self._signal_records)}"
             f"  mean_effective={float(np.mean(effective_sigs_bps)):.2f}bps"
             f"  mean_raw={float(np.mean(raw_sigs_bps)):.2f}bps"
             f"  std_effective={float(np.std(effective_sigs_bps)):.2f}bps"
@@ -613,12 +629,25 @@ class NeuralAlphaShadowSession:
             return
         train_window = max(self.cfg.seq_len * 4, self.cfg.continuous_train_window_ticks)
         try:
-            print(f"[Shadow] continuous retrain started processed_ticks={self._processed_ticks} window_ticks={train_window}")
+            print(f"[{_utcnow()}] [Shadow] continuous retrain started processed_ticks={self._processed_ticks} window_ticks={train_window}")
             self.train_on_recent(train_window)
             self._last_continuous_train_tick = self._processed_ticks
-            print(f"[Shadow] continuous retrain completed processed_ticks={self._processed_ticks}")
+            print(f"[{_utcnow()}] [Shadow] continuous retrain completed processed_ticks={self._processed_ticks}")
         except Exception as exc:
-            print(f"[Shadow] continuous retrain failed processed_ticks={self._processed_ticks}: {exc}")
+            print(f"[{_utcnow()}] [Shadow] continuous retrain failed processed_ticks={self._processed_ticks}: {exc}")
+    def _maybe_regime_retrain(self) -> None:
+        if self.cfg.regime_retrain_every_ticks <= 0:
+            return
+        ticks_since_retrain = self._processed_ticks - self._last_regime_train_tick
+        if ticks_since_retrain < self.cfg.regime_retrain_every_ticks:
+            return
+        train_window = max(self.cfg.seq_len * 4, self.cfg.continuous_train_window_ticks)
+        try:
+            df = self._collect_training_ticks(train_window)
+            self._train_regime_on_data(df)
+            self._last_regime_train_tick = self._processed_ticks
+        except Exception as exc:
+            print(f"[{_utcnow()}] [Shadow] regime retrain failed processed_ticks={self._processed_ticks}: {exc}")
     def _update_quality_guards(self, signal_info: dict[str, Any]) -> None:
         if not self._signal_records:
             return
@@ -653,6 +682,7 @@ class NeuralAlphaShadowSession:
                 if len(self._ring) > self._max_ring:
                     self._ring = self._ring[-self._max_ring :]
                 self._maybe_continuous_train()
+                self._maybe_regime_retrain()
                 signal_info = self._infer()
                 if signal_info is None:
                     self._publisher.publish(0.0, 0.0, 0.0, 0)

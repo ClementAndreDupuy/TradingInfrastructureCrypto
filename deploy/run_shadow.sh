@@ -543,13 +543,20 @@ if [[ "$RUN_ONCE" -eq 1 ]]; then
     DURATION_SECS="$(awk "BEGIN { printf \"%.3f\", ($INTERVAL_MS * 2)/1000 }")"
 fi
 
-if portable_timeout "$DURATION_SECS" "$ENGINE_BIN" "${engine_args[@]}"; then
+# Run the engine, filtering out noisy libwebsockets demo-handler warnings that
+# are always emitted when those optional LWS extensions (SSH, raw-file, upload)
+# are compiled in but not configured.  Real WARNs from trading code are kept.
+_LWS_NOISE_PATTERN="lws-test-sshd-server-key|ssh pvo.*is mandatory|Missing pvo.*fifo-path|requires.*upload-dir"
+
+engine_exit=0
+if portable_timeout "$DURATION_SECS" "$ENGINE_BIN" "${engine_args[@]}" \
+        2> >(grep -Ev "$_LWS_NOISE_PATTERN" >&2); then
     :
 else
-    timeout_status=$?
-    if [[ "$timeout_status" -ne 124 ]]; then
-        log_error "trading_engine exited with status $timeout_status"
-        exit "$timeout_status"
+    engine_exit=$?
+    if [[ "$engine_exit" -ne 124 ]]; then
+        log_error "trading_engine exited with status $engine_exit"
+        exit "$engine_exit"
     fi
 fi
 
