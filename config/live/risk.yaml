@@ -32,7 +32,7 @@ rate_limits:
 book:
   max_age_ms: 200               # Stale book → pause
   min_spread_bps: 5.0
-  target_range_usd: 50.0        # Depth range used to size per-venue book grids
+  target_range_usd: 250.0        # Depth range used to size per-venue book grids
 
 heartbeat:
   timeout_ms: 3000

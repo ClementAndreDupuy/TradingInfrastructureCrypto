@@ -17,7 +17,7 @@ arb_risk:
   max_orders_per_minute:        100
 
   # ── Orderbook ──────────────────────────────────────────────────────────────
-  target_range_usd:             50.0      # Depth range used to size per-venue book grids
+  target_range_usd:             250.0      # Depth range used to size per-venue book grids
 
   # ── Flash crash / book corruption guard ──────────────────────────────────────
   max_price_deviation_bps:      200.0      # tighter than dev

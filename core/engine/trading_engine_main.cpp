@@ -38,6 +38,8 @@
 #include <thread>
 
 namespace {
+    using namespace trading;
+
     struct CliOptions {
         std::string mode = "live";
         std::string venues = "BINANCE,KRAKEN,OKX,COINBASE";
