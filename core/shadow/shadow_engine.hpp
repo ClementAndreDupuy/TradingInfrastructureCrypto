@@ -254,12 +254,6 @@ namespace trading {
                 return ConnectorResult::OK;
             }
 
-            if (order.tif == TimeInForce::IOC && !fillable_now) {
-                emit_cancel(*slot);
-                slot->active = false;
-                return ConnectorResult::OK;
-            }
-
             slot->is_maker = true;
             log_order(*slot, "RESTING");
             return ConnectorResult::OK;
@@ -708,8 +702,8 @@ namespace trading {
 
         void log_summary() const {
             LOG_INFO("Shadow session summary",
-                     "exact_session_pnl", net_pnl(),
-                     "net_pnl", net_pnl(),
+                     "session_pnl_usd", net_pnl(),
+                     "net_pnl_usd", net_pnl(),
                      "net_position", net_position(),
                      "total_fills", total_fills(),
                      "opened_positions", opened_positions(),

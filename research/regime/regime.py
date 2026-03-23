@@ -237,6 +237,12 @@ def _calm_anchored_fallback(
         variances=variances.tolist(),
         scales=scales.tolist(),
     )
+    import sys
+    spread_means = [round(float(means[i][1]), 6) for i in range(cfg.n_regimes)]
+    print(
+        f"[Regime] trained  names={regime_names}  spread_means={spread_means}",
+        file=sys.stderr,
+    )
     return (artifact, distribution)
 
 
