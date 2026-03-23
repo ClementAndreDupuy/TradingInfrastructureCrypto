@@ -14,10 +14,10 @@ PositionLedgerSnapshot make_ledger(double position = 0.0, int64_t inventory_age_
 
 std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> make_venues(bool healthy = true) {
     std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> venues{};
-    venues[0] = {Exchange::BINANCE, 100.0, 100.5, 4.0, 5.0, 0.5, 0.4, 0.80, 0.10, 0.30, healthy};
-    venues[1] = {Exchange::KRAKEN, 100.0, 100.5, 4.0, 4.0, 0.7, 0.4, 0.75, 0.10, 0.35, healthy};
-    venues[2] = {Exchange::OKX, 100.0, 100.5, 4.0, 3.0, 0.4, 0.3, 0.82, 0.10, 0.20, healthy};
-    venues[3] = {Exchange::COINBASE, 100.0, 100.5, 4.0, 6.0, 0.8, 0.5, 0.70, 0.10, 0.40, healthy};
+    venues[0] = {Exchange::BINANCE, 100.0, 100.5, 4.0, 5.0, 0.5, 0.4, 0.80, 0.10, 0.30, healthy, true};
+    venues[1] = {Exchange::KRAKEN, 100.0, 100.5, 4.0, 4.0, 0.7, 0.4, 0.75, 0.10, 0.35, healthy, true};
+    venues[2] = {Exchange::OKX, 100.0, 100.5, 4.0, 3.0, 0.4, 0.3, 0.82, 0.10, 0.20, healthy, true};
+    venues[3] = {Exchange::COINBASE, 100.0, 100.5, 4.0, 6.0, 0.8, 0.5, 0.70, 0.10, 0.40, healthy, true};
     return venues;
 }
 
