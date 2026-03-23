@@ -10,6 +10,7 @@
 #include "../execution/common/reconciliation_service.hpp"
 #include "../execution/common/venue_quality_model.hpp"
 #include "../execution/router/smart_order_router.hpp"
+#include "venue_quality_runtime.hpp"
 #include "feed_bootstrap.hpp"
 #include "../feeds/binance/binance_feed_handler.hpp"
 #include "../feeds/coinbase/coinbase_feed_handler.hpp"
@@ -436,6 +437,40 @@ auto main(int argc, char **argv) -> int {
             }
         }
 
+        VenueQualityModel venue_quality_model;
+        engine::VenueQualityRuntime venue_quality_runtime(venue_quality_model);
+
+        const auto mid_price_for_exchange = [&](Exchange exchange) -> double {
+            switch (exchange) {
+                case Exchange::BINANCE:
+                    return binance_book.mid_price();
+                case Exchange::KRAKEN:
+                    return kraken_book.mid_price();
+                case Exchange::OKX:
+                    return okx_book.mid_price();
+                case Exchange::COINBASE:
+                    return coinbase_book.mid_price();
+                default:
+                    return 0.0;
+            }
+        };
+
+        const auto bind_fill_handler = [&](Exchange exchange, ExchangeConnector &connector) {
+            connector.on_fill = [&](const FillUpdate &update) {
+                venue_quality_runtime.on_fill(exchange, update, std::chrono::steady_clock::now(),
+                                              mid_price_for_exchange);
+            };
+        };
+
+        bind_fill_handler(Exchange::BINANCE, binance);
+        bind_fill_handler(Exchange::KRAKEN, kraken);
+        bind_fill_handler(Exchange::OKX, okx);
+        bind_fill_handler(Exchange::COINBASE, coinbase);
+        bind_fill_handler(Exchange::BINANCE, shadow_engine.binance_connector());
+        bind_fill_handler(Exchange::KRAKEN, shadow_engine.kraken_connector());
+        bind_fill_handler(Exchange::OKX, shadow_engine.okx_connector());
+        bind_fill_handler(Exchange::COINBASE, shadow_engine.coinbase_connector());
+
         AlphaSignalReader alpha_reader;
         alpha_reader.open();
         RegimeSignalReader regime_reader;
@@ -443,7 +478,6 @@ auto main(int argc, char **argv) -> int {
         ParentOrderManager parent_manager;
         ChildOrderScheduler child_scheduler;
         PortfolioIntentEngine intent_engine;
-        VenueQualityModel venue_quality_model;
 
         const auto reconnect_interval = std::chrono::seconds(1);
         const auto reconciliation_interval = std::chrono::seconds(30);
@@ -478,8 +512,7 @@ auto main(int argc, char **argv) -> int {
             const auto submit_decision = [&](
                                              const SchedulerDecision &decision, Side side,
                                              double route_qty, const ShadowIntentMetadata &intent_metadata,
-                                             const std::string &reason_codes,
-                                             const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> &scoring_quotes) {
+                                             const std::string &reason_codes) {
                 const auto style_to_string = [](ChildExecutionStyle style) -> const char * {
                     switch (style) {
                         case ChildExecutionStyle::PASSIVE_JOIN:
@@ -492,14 +525,6 @@ auto main(int argc, char **argv) -> int {
                             return "sweep";
                     }
                     return "ioc";
-                };
-                const auto quote_for_exchange = [&](Exchange exchange) -> const VenueQuote * {
-                    for (const auto &quote: scoring_quotes) {
-                        if (quote.exchange == exchange) {
-                            return &quote;
-                        }
-                    }
-                    return nullptr;
                 };
                 for (size_t i = 0; i < decision.routing.child_count; ++i) {
                     const auto &child = decision.routing.children[i];
@@ -515,9 +540,11 @@ auto main(int argc, char **argv) -> int {
                         continue;
                     }
 
-                    const Order child_order =
+                    Order child_order =
                             make_child_order(opts.symbol.c_str(), child.exchange, side, child.quantity,
                                              child.limit_price, child.tif, next_id++);
+                    child_order.submit_ts_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count();
 
                     const double signed_notional = child.quantity * child_order.price *
                                                    (side == Side::BID ? 1.0 : -1.0);
@@ -575,26 +602,7 @@ auto main(int argc, char **argv) -> int {
                         }
                     }
 
-                    const VenueQuote *quote = quote_for_exchange(child.exchange);
-                    if (quote != nullptr) {
-                        const bool passive_style = child.tif == TimeInForce::GTX;
-                        const bool rejected = res != ConnectorResult::OK;
-                        const double realized_fill_probability =
-                                child.quantity > 1e-9
-                                        ? std::clamp(quote->depth_qty / child.quantity, 0.0, 1.0)
-                                        : 0.0;
-                        const double markout_bps = passive_style ? -quote->toxicity_bps
-                                                                 : -0.5 * quote->toxicity_bps;
-                        venue_quality_model.observe_fill_probability(child.exchange,
-                                                                    realized_fill_probability);
-                        venue_quality_model.observe_markout(child.exchange, passive_style,
-                                                           markout_bps);
-                        venue_quality_model.observe_reject(child.exchange, rejected);
-                        venue_quality_model.observe_cancel_latency(
-                                child.exchange,
-                                std::chrono::microseconds(static_cast<int64_t>(
-                                        std::max(0.0, quote->latency_penalty_bps) * 1000.0)));
-                    }
+                    venue_quality_runtime.on_submit(child_order, res, std::chrono::steady_clock::now());
 
                     LOG_INFO("order submitted", "intent", intent_metadata.intent, "reason",
                              intent_metadata.reason, "reason_codes", reason_codes.c_str(), "child", static_cast<int>(i),
@@ -723,7 +731,7 @@ auto main(int argc, char **argv) -> int {
                                                  portfolio_snapshot.oldest_inventory_age_ms,
                                                  scheduler_quotes);
                 submit_decision(scheduled, active_plan.side, active_plan.remaining_qty,
-                                intent_metadata, reason_codes, scheduler_quotes);
+                                intent_metadata, reason_codes);
             }
 
             const auto reconciliation_now = std::chrono::steady_clock::now();
@@ -810,29 +818,33 @@ auto main(int argc, char **argv) -> int {
                         if (limit_price <= 0.0) {
                             continue;
                         }
-                        const Order order = make_child_order(opts.symbol.c_str(), child.exchange,
-                                                             exit_side, child.quantity,
-                                                             limit_price, child.tif, next_id++);
+                        Order order = make_child_order(opts.symbol.c_str(), child.exchange,
+                                                       exit_side, child.quantity,
+                                                       limit_price, child.tif, next_id++);
+                        order.submit_ts_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count();
+                        ConnectorResult res = ConnectorResult::ERROR_UNKNOWN;
                         switch (child.exchange) {
                             case Exchange::BINANCE:
                                 shadow_engine.binance_connector().set_intent_metadata(final_metadata);
-                                (void) shadow_engine.binance_connector().submit_order(order);
+                                res = shadow_engine.binance_connector().submit_order(order);
                                 break;
                             case Exchange::KRAKEN:
                                 shadow_engine.kraken_connector().set_intent_metadata(final_metadata);
-                                (void) shadow_engine.kraken_connector().submit_order(order);
+                                res = shadow_engine.kraken_connector().submit_order(order);
                                 break;
                             case Exchange::OKX:
                                 shadow_engine.okx_connector().set_intent_metadata(final_metadata);
-                                (void) shadow_engine.okx_connector().submit_order(order);
+                                res = shadow_engine.okx_connector().submit_order(order);
                                 break;
                             case Exchange::COINBASE:
                                 shadow_engine.coinbase_connector().set_intent_metadata(final_metadata);
-                                (void) shadow_engine.coinbase_connector().submit_order(order);
+                                res = shadow_engine.coinbase_connector().submit_order(order);
                                 break;
                             default:
                                 break;
                         }
+                        venue_quality_runtime.on_submit(order, res, std::chrono::steady_clock::now());
                     }
                 };
                 final_submit(exit_decision);

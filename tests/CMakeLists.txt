@@ -198,6 +198,27 @@ set_tests_properties(ParentOrderManagerTest PROPERTIES
     LABELS "unit;execution"
 )
 
+add_executable(venue_quality_runtime_test
+    unit/venue_quality_runtime_test.cpp
+)
+
+target_link_libraries(venue_quality_runtime_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(venue_quality_runtime_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME VenueQualityRuntimeTest COMMAND venue_quality_runtime_test)
+set_tests_properties(VenueQualityRuntimeTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;execution"
+)
+
 add_executable(venue_quality_model_test
     unit/venue_quality_model_test.cpp
 )
