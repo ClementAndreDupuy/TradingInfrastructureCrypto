@@ -2,10 +2,17 @@ from __future__ import annotations
 
 import numpy as np
 import polars as pl
+from ..._config import model_cfg
+
+_lcfg = model_cfg()["labels"]
+_FLAT_THRESH: float = _lcfg["flat_thresh"]
+_REVERSION_HORIZON: int = _lcfg["reversion_horizon"]
+_RETURN_CLIP: float = _lcfg["return_clip"]
+_ADV_SEL_THRESH: float = _lcfg["adv_sel_thresh"]
 
 N_LEVELS = 5
 BASE_SCALAR_FEATURES = 16
-D_SCALAR = BASE_SCALAR_FEATURES + N_LEVELS  # queue imbalance contributes one feature per level
+D_SCALAR = BASE_SCALAR_FEATURES + N_LEVELS
 
 
 def _safe_col(df: pl.DataFrame, name: str, default: float = 0.0) -> np.ndarray:
@@ -162,14 +169,6 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
 
 
 def compute_labels(df: pl.DataFrame, horizons: tuple[int, ...] = (1, 10, 100, 500)) -> np.ndarray:
-    """
-    Compute multi-horizon forward log-returns.
-
-    Returns (T, 6) array:
-        col 0-3 : log returns at each horizon (clipped at ±5 bps)
-        col 4   : direction at mid horizon index 2 (0=down, 1=flat, 2=up)
-        col 5   : adverse selection proxy (0/1) — price reversion within 10 ticks
-    """
     bp, _, ap, _ = _extract_levels(df)
     mid = np.where((bp[:, 0] + ap[:, 0]) / 2.0 > 0, (bp[:, 0] + ap[:, 0]) / 2.0, np.nan)
     log_mid = np.log(np.where(mid > 0, mid, 1.0))
@@ -181,30 +180,25 @@ def compute_labels(df: pl.DataFrame, horizons: tuple[int, ...] = (1, 10, 100, 50
         fwd = np.zeros(T, dtype=np.float32)
         if h > 0 and T > h:
             fwd[: T - h] = log_mid[h:] - log_mid[: T - h]
-        returns[:, i] = np.clip(fwd, -0.0005, 0.0005)
+        returns[:, i] = np.clip(fwd, -_RETURN_CLIP, _RETURN_CLIP)
 
-    # Direction based on mid horizon (index 2 = 100-tick)
-    flat_thresh = 2e-5  # ~0.2 bps
     mid_ret = returns[:, 2]
-    direction = np.where(mid_ret > flat_thresh, 2, np.where(mid_ret < -flat_thresh, 0, 1)).astype(
+    direction = np.where(mid_ret > _FLAT_THRESH, 2, np.where(mid_ret < -_FLAT_THRESH, 0, 1)).astype(
         np.float32
     )
 
-    # Adverse selection: infer fill direction from immediate move, mark adverse if price
-    # reverts against that direction within the next 10 ticks.
-    reversion_h = 10
     fwd_ret_1 = returns[:, 0]
     adv_sel = np.zeros(T, dtype=np.float32)
-    for t in range(T - reversion_h):
+    for t in range(T - _REVERSION_HORIZON):
         r1 = float(fwd_ret_1[t])
         if abs(r1) <= 1e-6:
             continue
         fill_dir = 1.0 if r1 > 0 else -1.0
-        path = log_mid[t + 1 : t + 1 + reversion_h] - log_mid[t]
+        path = log_mid[t + 1 : t + 1 + _REVERSION_HORIZON] - log_mid[t]
         if path.size == 0:
             continue
         reversion = np.min(path) if fill_dir > 0 else -np.max(path)
-        if reversion < -2e-5:
+        if reversion < _ADV_SEL_THRESH:
             adv_sel[t] = 1.0
 
     return np.concatenate([returns, direction[:, None], adv_sel[:, None]], axis=1).astype(np.float32)

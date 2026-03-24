@@ -8,18 +8,22 @@ import torch
 from torch.utils.data import Dataset
 
 from .features import compute_labels, compute_lob_tensor, compute_scalar_features
+from ..._config import model_cfg
+
+_mcfg = model_cfg()
+_dscfg = _mcfg["dataset"]
 
 
 @dataclass
 class DatasetConfig:
-    seq_len: int = 64
-    stride: int = 1
-    horizons: tuple = (1, 10, 100, 500)
+    seq_len: int = _dscfg["seq_len"]
+    stride: int = _dscfg["stride"]
+    horizons: tuple = tuple(_dscfg["horizons"])
 
 
 def rolling_normalise(
     x: np.ndarray,
-    window: int = 500,
+    window: int = _dscfg["rolling_normalise_window"],
     history: np.ndarray | None = None,
 ) -> np.ndarray:
     """Rolling z-score normalisation with no future leakage.
@@ -104,8 +108,8 @@ class LOBDataset(Dataset):
 
 def split_walk_forward(
     df: pl.DataFrame,
-    n_folds: int = 4,
-    train_frac: float = 0.75,
+    n_folds: int = _dscfg["walk_forward_folds"],
+    train_frac: float = _dscfg["walk_forward_train_frac"],
     min_samples: int = 1,
 ) -> list[tuple[pl.DataFrame, pl.DataFrame]]:
     """Walk-forward splits with no data leakage — test always follows train.
@@ -129,7 +133,7 @@ def split_walk_forward(
 
 def split_train_validation(
     train_df: pl.DataFrame,
-    validation_frac: float = 0.15,
+    validation_frac: float = _dscfg["validation_frac"],
     min_samples: int = 1,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Split a training fold into chronological train/validation segments.

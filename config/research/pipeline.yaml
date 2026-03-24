@@ -1,0 +1,47 @@
+n_levels: 5
+default_exchanges:
+  - BINANCE
+  - KRAKEN
+  - OKX
+  - COINBASE
+request_timeout_s: 5
+large_selection_score: 1.0e9
+holdout_frac: 0.8
+collection:
+  ticks: 300
+  interval_ms: 500
+  symbol: BTCUSDT
+  ipc_dir: /ipc
+urls:
+  binance_depth: https://fapi.binance.com/fapi/v1/depth
+  kraken_depth: https://api.kraken.com/0/public/Depth
+  okx_depth: https://www.okx.com/api/v5/market/books
+  coinbase_depth: https://api.coinbase.com/api/v3/brokerage/market/product_book
+training:
+  regimes: 4
+  save_regime_model: models/r2_regime_model.json
+backtest:
+  entry_bps: 5.0
+  fee_bps: 5.0
+  signal_horizon_idx: 2
+  direction_confidence_floor: 0.55
+  risk_ceiling: 0.60
+weights:
+  primary:
+    w_return: 1.0
+    w_direction: 0.7
+    w_risk: 0.5
+    w_tc: 0.1
+    selection_w_return: 1.0
+    selection_w_direction: 0.9
+    selection_w_risk: 0.7
+    selection_w_tc: 0.1
+  secondary:
+    w_return: 0.2
+    w_direction: 1.0
+    w_risk: 0.7
+    w_tc: 0.1
+    selection_w_return: 0.25
+    selection_w_direction: 1.0
+    selection_w_risk: 0.8
+    selection_w_tc: 0.1

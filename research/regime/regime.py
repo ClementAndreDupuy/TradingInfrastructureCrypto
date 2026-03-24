@@ -8,6 +8,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 import numpy as np
 import polars as pl
+from .._config import regime_cfg
+
+_rcfg = regime_cfg()
+_FEATURE_ROLLING_WINDOW: int = _rcfg["feature_rolling_window"]
+_REGIME_IPC_PATH: str = _rcfg["ipc_path"]
+_ARTIFACT_VERSION: str = _rcfg["artifact"]["version"]
 
 
 def _utcnow() -> str:
@@ -18,11 +24,11 @@ _EPS = 1e-12
 
 @dataclass
 class RegimeConfig:
-    n_regimes: int = 4
-    max_iter: int = 75
-    tol: float = 0.0001
-    random_seed: int = 7
-    covariance_floor: float = 1e-06
+    n_regimes: int = _rcfg["model"]["n_regimes"]
+    max_iter: int = _rcfg["model"]["max_iter"]
+    tol: float = _rcfg["model"]["tol"]
+    random_seed: int = _rcfg["model"]["random_seed"]
+    covariance_floor: float = _rcfg["model"]["covariance_floor"]
 
 
 @dataclass
@@ -40,10 +46,10 @@ class RegimeArtifact:
 
 @dataclass
 class RegimeBacktestConfig:
-    train_window: int = 20_000
-    test_window: int = 5_000
-    step: int = 5_000
-    min_confidence: float = 0.60
+    train_window: int = _rcfg["backtest"]["train_window"]
+    test_window: int = _rcfg["backtest"]["test_window"]
+    step: int = _rcfg["backtest"]["step"]
+    min_confidence: float = _rcfg["backtest"]["min_confidence"]
 
 
 @dataclass
@@ -72,14 +78,14 @@ def _feature_frame(df: pl.DataFrame) -> pl.DataFrame:
         [pl.col("mid").log().diff().fill_null(0.0).alias("log_ret_1")]
     ).with_columns(
         [
-            pl.col("log_ret_1").rolling_std(window_size=20).fill_null(0.0).alias("vol_20"),
+            pl.col("log_ret_1").rolling_std(window_size=_FEATURE_ROLLING_WINDOW).fill_null(0.0).alias("vol_20"),
             pl.col("spread")
-            .rolling_mean(window_size=20)
+            .rolling_mean(window_size=_FEATURE_ROLLING_WINDOW)
             .fill_null(strategy="backward")
             .fill_null(0.0)
             .alias("spread_20"),
             pl.col("top_depth")
-            .rolling_mean(window_size=20)
+            .rolling_mean(window_size=_FEATURE_ROLLING_WINDOW)
             .fill_null(strategy="backward")
             .fill_null(0.0)
             .alias("depth_20"),
@@ -250,7 +256,7 @@ def _calm_anchored_fallback(
     distribution: dict[str, float] = {name: 0.0 for name in regime_names}
     distribution["calm"] = 1.0
     artifact = RegimeArtifact(
-        version="r2-regime-hmm-v1",
+        version=_ARTIFACT_VERSION,
         n_regimes=n,
         feature_columns=feat.columns,
         regime_names=regime_names,
@@ -328,7 +334,7 @@ def train_regime_model_from_df(
         regime_names[i]: float(counts[i] / max(len(labels), 1)) for i in range(cfg.n_regimes)
     }
     artifact = RegimeArtifact(
-        version="r2-regime-hmm-v1",
+        version=_ARTIFACT_VERSION,
         n_regimes=cfg.n_regimes,
         feature_columns=feat.columns,
         regime_names=regime_names,
@@ -365,7 +371,7 @@ def train_regime_model_from_ipc(
         regime_names[i]: float(counts[i] / max(len(labels), 1)) for i in range(cfg.n_regimes)
     }
     artifact = RegimeArtifact(
-        version="r2-regime-hmm-v1",
+        version=_ARTIFACT_VERSION,
         n_regimes=cfg.n_regimes,
         feature_columns=feat.columns,
         regime_names=regime_names,
@@ -574,7 +580,7 @@ _REGIME_DATA_FMT = "=ddddq"
 
 class RegimeSignalPublisher:
 
-    def __init__(self, path: str = "/tmp/trt_ipc/regime_signal.bin") -> None:
+    def __init__(self, path: str = _REGIME_IPC_PATH) -> None:
         self._path = path
         Path(path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
         self._f = open(path, "w+b")

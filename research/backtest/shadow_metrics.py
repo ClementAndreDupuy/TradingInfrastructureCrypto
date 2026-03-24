@@ -1,14 +1,3 @@
-"""
-Shadow validation metrics rollup.
-
-Reads JSONL logs produced during a shadow session:
-    1. shadow_decisions.jsonl — from the C++ ShadowEngine
-    2. neural_alpha_shadow.jsonl — from neural alpha shadow session
-    3. ops_events.jsonl — structured training and runtime operations events
-
-Produces a text report and optionally a Prometheus metrics file.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -18,12 +7,15 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from .._config import shadow_cfg
 
-_IC_WINDOW = 20
-_MAX_EXCHANGE_JUMP_NS = 60 * 1000000000
-_DEFAULT_DECISIONS_LOG = "shadow_decisions.jsonl"
-_DEFAULT_SIGNALS_LOG = "neural_alpha_shadow.jsonl"
-_DEFAULT_OPS_LOG = "logs/ops_events.jsonl"
+_mcfg = shadow_cfg()["metrics"]
+_vscfg = _mcfg["venue_scoring"]
+_IC_WINDOW: int = _mcfg["ic_window"]
+_MAX_EXCHANGE_JUMP_NS: int = _mcfg["max_exchange_jump_ns"]
+_DEFAULT_DECISIONS_LOG: str = _mcfg["decisions_log"]
+_DEFAULT_SIGNALS_LOG: str = _mcfg["signals_log"]
+_DEFAULT_OPS_LOG: str = _mcfg["ops_log"]
 
 
 def load_jsonl(path: str) -> list[dict[str, Any]]:
@@ -77,11 +69,11 @@ def analyse_venue_priority(rows: list[dict[str, Any]]) -> dict[str, Any]:
         else:
             cancel_latency_ms = 0.0
         base_score = (
-            fill_probability * 8.0
-            + passive_markout * 1.5
-            + taker_markout
-            - reject_rate * 10.0
-            - min(cancel_latency_ms / 1000.0, 5.0)
+            fill_probability * _vscfg["fill_weight"]
+            + passive_markout * _vscfg["passive_markout_weight"]
+            + taker_markout * _vscfg["taker_markout_weight"]
+            - reject_rate * _vscfg["reject_weight"]
+            - min(cancel_latency_ms / _vscfg["cancel_latency_scale"], _vscfg["cancel_latency_cap"])
         )
         split = max(1, event_count // 2)
         early = ordered[:split]
@@ -104,28 +96,28 @@ def analyse_venue_priority(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 float(row.get("hold_time_ms", row.get("latency_ms", 0.0))) for row in wcancels
             ])) if wcancels else 0.0
             return (
-                wfill_probability * 8.0
-                + wpassive_markout * 1.5
-                + wtaker_markout
-                - wreject_rate * 10.0
-                - min(wcancel_latency_ms / 1000.0, 5.0)
+                wfill_probability * _vscfg["fill_weight"]
+                + wpassive_markout * _vscfg["passive_markout_weight"]
+                + wtaker_markout * _vscfg["taker_markout_weight"]
+                - wreject_rate * _vscfg["reject_weight"]
+                - min(wcancel_latency_ms / _vscfg["cancel_latency_scale"], _vscfg["cancel_latency_cap"])
             )
 
         early_score = score_window(early)
         late_score = score_window(late)
         score_delta = late_score - early_score
         reason_parts: list[str] = []
-        if fill_probability >= 0.7:
+        if fill_probability >= _vscfg["strong_fill_threshold"]:
             reason_parts.append("strong fill probability")
-        elif fill_probability <= 0.35:
+        elif fill_probability <= _vscfg["weak_fill_threshold"]:
             reason_parts.append("weak fill probability")
         if passive_markout > 0.0:
             reason_parts.append("positive passive markout")
         elif passive_markout < 0.0:
             reason_parts.append("negative passive markout")
-        if reject_rate >= 0.1:
+        if reject_rate >= _vscfg["elevated_reject_threshold"]:
             reason_parts.append("elevated rejects")
-        if cancel_latency_ms >= 250.0:
+        if cancel_latency_ms >= _vscfg["slow_cancel_ms"]:
             reason_parts.append("slow cancels")
         if not reason_parts:
             reason_parts.append("mixed execution quality")
