@@ -1,39 +1,24 @@
 arb_risk:
-  # ── Notional limits (USD) ────────────────────────────────────────────────────
   max_notional_per_symbol:      5000.0
   max_notional_per_exchange:    10000.0
   max_portfolio_notional:       20000.0
-  max_gross_notional:           20000.0   # hard global gross cap
-  max_net_notional:             6000.0   # hard global net cap across venues
-  max_symbol_concentration_pct: 30.0       # any single symbol share of gross notional
-  max_venue_notional:           10000.0   # hard per-venue global cap
-  max_cross_venue_net_notional: 2500.0    # hard per-symbol cross-venue netting cap
-
-  # ── Drawdown ─────────────────────────────────────────────────────────────────
-  max_drawdown_usd:             -500.0     # 10% of dev kill threshold
-
-  # ── Rate limits ──────────────────────────────────────────────────────────────
-  max_orders_per_second:        5          # conservative for shadow
+  max_gross_notional:           20000.0
+  max_net_notional:             6000.0
+  max_symbol_concentration_pct: 30.0
+  max_venue_notional:           10000.0
+  max_cross_venue_net_notional: 2500.0
+  max_drawdown_usd:             -500.0
+  max_orders_per_second:        5
   max_orders_per_minute:        100
-
-  # ── Orderbook ──────────────────────────────────────────────────────────────
-  target_range_usd:             40.0      # Depth range used to size per-venue book grids
-
-  # ── Flash crash / book corruption guard ──────────────────────────────────────
-  max_price_deviation_bps:      200.0      # tighter than dev
-
-  # ── Circuit breaker ───────────────────────────────────────────────────────────
-  circuit_breaker_count:        3          # fewer losses before pause
+  target_range_usd:             40.0
+  max_price_deviation_bps:      200.0
+  circuit_breaker_count:        3
   circuit_breaker_loss_usd:     -25.0
   max_messages_per_second:      1000
-  price_ema_alpha:              0.01       # EMA decay for flash-crash reference price
-
-  # ── Taker fees per exchange (bps) ────────────────────────────────────────────
+  price_ema_alpha:              0.01
   fees:
     BINANCE:  7.5
     OKX:      8.0
     COINBASE: 6.0
     KRAKEN:   10.0
-
-  # ── Dead man's switch ────────────────────────────────────────────────────────
-  heartbeat_timeout_ms:         3000       # tighter than dev
+  heartbeat_timeout_ms:         3000

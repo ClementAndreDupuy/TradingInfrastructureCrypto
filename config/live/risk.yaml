@@ -1,22 +1,19 @@
-# Live trading risk limits — BTCUSDT (four-venue SOR: Binance/Kraken/OKX/Coinbase)
-# Tighter than shadow; kill switch is always active.
-
 strategy:
   symbol: BTCUSDT
-  trade_qty_btc: 0.001          # 0.001 BTC per leg (~$85 at ~$85,000/BTC)
-  taker_threshold_bps: 12.0     # Min spread to cross as taker
-  mm_spread_target_bps: 6.0     # Min spread to post as maker
+  trade_qty_btc: 0.001
+  taker_threshold_bps: 12.0
+  mm_spread_target_bps: 6.0
   quote_ttl_ms: 500
-  tick_size: 0.01               # BTC/USDT price tick size
+  tick_size: 0.01
 
 position:
-  max_per_symbol_btc: 0.076     # ~0.076 BTC (~$6500 notional)
-  max_notional_per_symbol: 6500 # USD
-  max_portfolio_notional: 13000 # USD
+  max_per_symbol_btc: 0.076
+  max_notional_per_symbol: 6500
+  max_portfolio_notional: 13000
 
 pnl:
-  max_drawdown_usd: -250.0      # Kill at $250 drawdown
-  daily_loss_limit_usd: -500.0  # Stop trading for the day above this loss
+  max_drawdown_usd: -250.0
+  daily_loss_limit_usd: -500.0
 
 fees_bps:
   binance_maker: 2.0
@@ -26,28 +23,27 @@ fees_bps:
   coinbase_taker: 6.0
 
 circuit_breaker:
-  circuit_breaker_count: 5      # consecutive losses before halt
+  circuit_breaker_count: 5
   circuit_breaker_loss_usd: -50.0
   max_messages_per_second: 1000
-  price_ema_alpha: 0.01         # EMA decay for flash-crash reference price
+  price_ema_alpha: 0.01
 
 rate_limits:
-  max_orders_per_sec: 5         # conservative (Binance limit: 10/s)
+  max_orders_per_sec: 5
   max_orders_per_min: 100
 
 book:
-  max_age_ms: 200               # Stale book → pause
+  max_age_ms: 200
   min_spread_bps: 5.0
-  target_range_usd: 250.0        # Depth range used to size per-venue book grids
+  target_range_usd: 250.0
 
 heartbeat:
   timeout_ms: 3000
 
 kill_switch:
   enabled: true
-  hardware_pin: ""              # Set to GPIO pin ID if using hardware kill
+  hardware_pin: ""
   software_hotkey: "SIGTERM"
-
 
 global_risk:
   max_gross_notional: 13000

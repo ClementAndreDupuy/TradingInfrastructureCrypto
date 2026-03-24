@@ -1,29 +1,21 @@
-# Smart Order Router — regime weights and thresholds (shadow trading)
-
-# ── Regime detection thresholds ───────────────────────────────────────────────
 high_toxicity_threshold: 2.0
 low_fill_threshold: 0.45
 high_fill_threshold: 0.75
 
-# ── High toxicity regime weights ──────────────────────────────────────────────
 high_toxicity_fill_weight: 7.0
 high_toxicity_queue_weight: 1.1
 high_toxicity_tox_weight: 3.2
 
-# ── Low fill regime weights ───────────────────────────────────────────────────
 low_fill_fill_weight: 6.0
 low_fill_queue_weight: 0.9
 low_fill_tox_weight: 1.2
 
-# ── High fill (normal) regime weights ─────────────────────────────────────────
 high_fill_fill_weight: 3.0
 high_fill_queue_weight: 0.4
 high_fill_tox_weight: 0.8
 
-# ── Score floor ───────────────────────────────────────────────────────────────
 min_fill_probability: 0.05
 
-# ── Child Order Scheduler ─────────────────────────────────────────────────────
 short_horizon_ticks: 12
 sweep_horizon_ticks: 3
 long_horizon_ticks: 80
@@ -32,7 +24,6 @@ passive_improve_inventory_age_bps: 0.25
 aggressive_inventory_age_bps: 0.1
 passive_improve_fraction: 0.20
 
-# ── Alpha routing constraints ─────────────────────────────────────────────────
 alpha_min_signal_bps: 3.0
 alpha_risk_max: 0.65
 alpha_qty_scale: 0.10

@@ -14,7 +14,6 @@
 #include <vector>
 
 namespace trading {
-    // Engine-level runtime parameters loaded from engine.yaml
     struct VenueQuoteDefaults {
         double latency_penalty_bps = 0.5;
         double risk_penalty_bps = 0.2;
@@ -29,12 +28,10 @@ namespace trading {
         int portfolio_log_heartbeat_secs = 15;
         int venue_quality_log_heartbeat_secs = 60;
         VenueQuoteDefaults venue_quote_defaults;
-        // Exchange REST endpoints (live only; shadow uses mock:// URLs)
         std::string binance_rest_url = "https://api.binance.com";
         std::string kraken_rest_url = "https://api.kraken.com";
         std::string okx_rest_url = "https://www.okx.com";
         std::string coinbase_rest_url = "https://api.coinbase.com";
-        // Shadow execution simulation params (shadow mode only)
         int64_t shadow_base_latency_ns = 150000;
         int64_t shadow_latency_jitter_ns = 50000;
         double shadow_impact_slippage_per_notional_bps = 0.8;
@@ -44,7 +41,6 @@ namespace trading {
 
     class AlgoConfigLoader {
     public:
-        // Load SmartOrderRouterConfig and ChildOrderScheduler::Config from routing.yaml
         static bool load_routing(const std::string &path, SmartOrderRouterConfig &sor_out,
                                  ChildOrderScheduler::Config &sched_out,
                                  RoutingConstraints &constraints_out) {
@@ -81,12 +77,10 @@ namespace trading {
             apply_double(values, "alpha_risk_max", constraints_out.alpha_risk_max);
             apply_double(values, "alpha_qty_scale", constraints_out.alpha_qty_scale);
 
-            // Copy loaded SOR config into the scheduler so it travels together
             sched_out.sor = sor_out;
             return true;
         }
 
-        // Load PortfolioIntentConfig from portfolio.yaml
         static bool load_portfolio(const std::string &path, PortfolioIntentConfig &out) {
             const auto values = parse_file(path);
             if (values.empty())
@@ -107,7 +101,6 @@ namespace trading {
             return true;
         }
 
-        // Load VenueQualityModel::Config from venue_quality.yaml
         static bool load_venue_quality(const std::string &path, VenueQualityModel::Config &out) {
             const auto values = parse_file(path);
             if (values.empty())
@@ -135,7 +128,6 @@ namespace trading {
             return true;
         }
 
-        // Load EngineConfig from engine.yaml
         static bool load_engine(const std::string &path, EngineConfig &out) {
             const auto values = parse_file(path);
             if (values.empty())
@@ -270,4 +262,4 @@ namespace trading {
                 field = it->second;
         }
     };
-} // namespace trading
+}

@@ -1,5 +1,3 @@
-# Venue Quality Model — EMA parameters and penalty scales (shadow trading)
-
 min_fill_probability: 0.10
 max_fill_probability: 0.98
 fill_probability_alpha: 0.18

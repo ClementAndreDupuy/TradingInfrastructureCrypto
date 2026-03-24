@@ -1,21 +1,14 @@
-# Engine runtime parameters (live trading)
-
-# ── Loop timing ───────────────────────────────────────────────────────────────
 reconnect_interval_secs: 1
 reconciliation_interval_secs: 30
 portfolio_log_heartbeat_secs: 15
 venue_quality_log_heartbeat_secs: 60
 
-# ── VenueQuote initial defaults ───────────────────────────────────────────────
-# Applied to quotes before the venue quality model has accumulated observations.
-# These are per-venue static estimates; adjust if pre-trade analytics change.
 default_latency_penalty_bps: 0.5
 default_risk_penalty_bps: 0.2
 default_fill_probability: 0.70
 default_queue_ahead_qty: 0.20
 default_toxicity_bps: 0.4
 
-# ── Exchange REST endpoints ────────────────────────────────────────────────────
 binance_rest_url: https://api.binance.com
 kraken_rest_url: https://api.kraken.com
 okx_rest_url: https://www.okx.com

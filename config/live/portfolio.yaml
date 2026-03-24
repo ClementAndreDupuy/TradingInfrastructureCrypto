@@ -1,13 +1,11 @@
-# Portfolio Intent Engine — position and signal thresholds (live trading)
-
-max_position: 0.80                    # max fraction of allowed position to target (0–1)
-min_entry_signal_bps: 3.0             # minimum alpha signal (bps) required to enter
-alpha_exit_buffer_bps: 0.75           # buffer below entry signal that still holds position
-negative_reversal_signal_bps: -1.0    # signal below this triggers immediate flatten
-max_risk_score: 0.65                  # alpha risk score above which position is flattened
-shock_flatten_threshold: 0.60         # p_shock above this triggers immediate flatten
-illiquid_reduce_threshold: 0.55       # p_illiquid above this triggers position reduction
-stale_inventory_ms: 5000              # inventory age (ms) above which position is stale
-stale_inventory_alpha_hold_bps: 10.0  # minimum signal to hold stale inventory
-health_reduce_ratio: 0.50             # reduce position to this fraction if venues degraded
-long_only: true                       # disallow short positions
+max_position: 0.80
+min_entry_signal_bps: 3.0
+alpha_exit_buffer_bps: 0.75
+negative_reversal_signal_bps: -1.0
+max_risk_score: 0.65
+shock_flatten_threshold: 0.60
+illiquid_reduce_threshold: 0.55
+stale_inventory_ms: 5000
+stale_inventory_alpha_hold_bps: 10.0
+health_reduce_ratio: 0.50
+long_only: true

@@ -37,23 +37,18 @@ namespace trading {
     };
 
     struct SmartOrderRouterConfig {
-        // Regime detection thresholds
         double high_toxicity_threshold = 2.0;
         double low_fill_threshold = 0.45;
         double high_fill_threshold = 0.75;
-        // High toxicity regime weights
         double high_toxicity_fill_weight = 7.0;
         double high_toxicity_queue_weight = 1.1;
         double high_toxicity_tox_weight = 3.2;
-        // Low fill regime weights
         double low_fill_fill_weight = 6.0;
         double low_fill_queue_weight = 0.9;
         double low_fill_tox_weight = 1.2;
-        // High fill (normal) regime weights
         double high_fill_fill_weight = 3.0;
         double high_fill_queue_weight = 0.4;
         double high_fill_tox_weight = 0.8;
-        // Score floor
         double min_fill_probability = 0.05;
     };
 

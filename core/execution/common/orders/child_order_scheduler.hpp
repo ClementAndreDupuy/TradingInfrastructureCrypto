@@ -34,7 +34,7 @@ namespace trading {
             double aggressive_inventory_age_bps = 0.1;
             double passive_improve_fraction = 0.20;
             double price_cross_epsilon = 1e-6;
-            SmartOrderRouterConfig sor; // routing regime weights loaded from routing.yaml
+            SmartOrderRouterConfig sor;
         };
 
         ChildOrderScheduler() = default;
