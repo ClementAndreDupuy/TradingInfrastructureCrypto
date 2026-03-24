@@ -34,8 +34,8 @@ trainer:
   pretrain_epochs: 3
   pretrain: false
   w_return: 1.0
-  w_direction: 0.5
-  w_risk: 0.3
+  w_direction: 0.3
+  w_risk: 0.8
   w_tc: 0.1
   tc_bps: 7.0
   adv_noise_std: 0.02
@@ -49,3 +49,6 @@ secondary:
   d_spatial: 32
   d_temporal: 64
   n_temp_layers: 1
+  w_return: 0.2
+  w_direction: 1.0
+  w_risk: 0.7
