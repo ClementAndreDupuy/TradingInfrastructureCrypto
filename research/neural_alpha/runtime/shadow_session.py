@@ -14,7 +14,14 @@ import numpy as np
 import polars as pl
 import torch
 from torch.utils.data import DataLoader
-from research.regime import RegimeConfig, RegimeSignalPublisher, infer_regime_probabilities, load_regime_artifact, save_regime_artifact, train_regime_model_from_df
+from research.regime import (
+    RegimeConfig,
+    RegimeSignalPublisher,
+    infer_regime_probabilities,
+    load_regime_artifact,
+    save_regime_artifact_bundle,
+    train_regime_model_from_df,
+)
 from .core_bridge import CoreBridge, RING_PATH
 from ..data.dataset import DatasetConfig, LOBDataset, rolling_normalise
 from ..data.features import compute_lob_tensor, compute_scalar_features
@@ -396,7 +403,20 @@ class NeuralAlphaShadowSession:
             )
             return
         regime_path.parent.mkdir(parents=True, exist_ok=True)
-        save_regime_artifact(artifact, str(regime_path))
+        save_regime_artifact_bundle(
+            artifact,
+            str(regime_path),
+            metadata={
+                "trained_at_ns": time.time_ns(),
+                "train_rows": len(df),
+                "train_window_ticks": max(self.cfg.seq_len * 4, self.cfg.continuous_train_window_ticks),
+                "regime_retrain_every_ticks": self.cfg.regime_retrain_every_ticks,
+                "spread_means": spread_means,
+                "spread_range": spread_range,
+                "regime_names": artifact.regime_names,
+                "artifact_version": artifact.version,
+            },
+        )
         self._regime_artifact = artifact
         names = ", ".join(artifact.regime_names)
         print(f"[{_utcnow()}] [Shadow] regime retrain done  regimes=[{names}]")
