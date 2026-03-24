@@ -37,8 +37,9 @@ flowchart LR
   end
 
   subgraph ColdPath["Python Cold Path (research + model)"]
-    PIPE["research/neural_alpha\nFeature pipeline + training\n(direct core/ feature ingestion)"]
-    BACKTEST["research/backtest\nEvent-driven backtests"]
+    PIPE["research/neural_alpha\nFeature pipeline + training + runtime\n(direct core/ feature ingestion)"]
+    REGIME["research/regime\nHMM regime probabilities + IPC publish"]
+    BACKTEST["research/backtest\nShadow/execution metrics + backtests"]
     TESTS["tests/unit|integration|replay|perf\nRegression + performance checks"]
   end
 
@@ -60,6 +61,8 @@ flowchart LR
   EXEC -->|"Execution telemetry + fills"| PIPE
   PIPE -->|"Backtest-ready features/signals"| BACKTEST
   PIPE -->|"Alpha signal stream"| IPCW
+  REGIME -->|"Regime probability stream"| IPCW
+  PIPE -->|"Regime training features"| REGIME
   BIND -->|"Research helpers + native accelerators"| PIPE
   IPCW -->|"Shared memory"| IPCR
   IPCR -->|"Signal read"| EXEC
@@ -124,7 +127,8 @@ flowchart LR
 - **`core/execution` smart order router**: Splits/routes validated orders to Binance/Kraken/OKX/Coinbase connectors and normalizes venue acks/fills back to execution.
 - **`core/shadow`**: Runs the same trading logic in paper mode to validate behavior before live deployment.
 - **`research/neural_alpha`**: Trains and generates alpha signals from features ingested directly from `core/feeds`, `core/orderbook`, and execution telemetry.
-- **`research/backtest`**: Replays market events to evaluate strategy quality offline.
+- **`research/regime`**: Learns regime probabilities (`calm`, `trending`, `shock`, `illiquid`) and publishes them over IPC for live consumption.
+- **`research/backtest`**: Produces shadow/execution metrics and replays market events to evaluate strategy quality offline.
 
 ## Typical lifecycle (short)
 
