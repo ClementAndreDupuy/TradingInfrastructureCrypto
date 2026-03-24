@@ -55,6 +55,14 @@ class VenueRuntimeStats:
     startup_confirmed: bool = False
     consecutive_missing_polls: int = 0
     last_source: str = "none"
+    health_state: str = "starting"
+    health_transition_count: int = 0
+    health_transition_root_causes: dict[str, int] = field(default_factory=lambda: {
+        "snapshot_rejection": 0,
+        "resnapshot_loop": 0,
+        "bridge_gap": 0,
+        "recovered": 0,
+    })
 @dataclass
 class ShadowSessionConfig:
     model_path: str | None = None
@@ -87,6 +95,9 @@ class ShadowSessionConfig:
     canary_window: int = 200
     canary_min_samples: int = 60
     require_full_model_stack: bool = True
+    min_continuous_train_interval_s: int = 600
+    min_regime_train_interval_s: int = 900
+    regime_startup_warmup_s: int = 300
 class _SignalPublisher:
     def __init__(self, path: str = _SIGNAL_FILE) -> None:
         self._path = path
@@ -138,6 +149,42 @@ def _extract_signal_series(records: list[dict[str, Any]]) -> tuple[np.ndarray, n
     raw_signals_bps = np.asarray([float(record.get("signal", 0.0)) * 10_000.0 for record in ordered], dtype=np.float64)
     effective_signals_bps = np.asarray([float(record.get("ret_mid_bps", 0.0)) for record in ordered], dtype=np.float64)
     return raw_signals_bps, effective_signals_bps
+
+def _summarise_regime_churn(records: list[dict[str, Any]]) -> dict[str, float | int | str | None]:
+    ordered = _ordered_records(records)
+    if not ordered:
+        return {
+            "dominant_regime": None,
+            "dominant_regime_change_count": 0,
+            "switches_per_minute": 0.0,
+            "average_dominant_confidence": 0.0,
+        }
+    regime_keys = ("p_calm", "p_trending", "p_shock", "p_illiquid")
+    previous_regime: str | None = None
+    change_count = 0
+    confidence_sum = 0.0
+    confidence_count = 0
+    last_regime: str | None = None
+    for record in ordered:
+        probs = {key: float(record.get(key, 0.0)) for key in regime_keys}
+        dominant_key = max(probs, key=probs.get)
+        dominant_regime = dominant_key[2:]
+        dominant_confidence = probs[dominant_key]
+        if previous_regime is not None and dominant_regime != previous_regime:
+            change_count += 1
+        previous_regime = dominant_regime
+        last_regime = dominant_regime
+        confidence_sum += dominant_confidence
+        confidence_count += 1
+    start_elapsed = int(ordered[0].get("session_elapsed_ns", 0))
+    end_elapsed = int(ordered[-1].get("session_elapsed_ns", 0))
+    elapsed_min = max((end_elapsed - start_elapsed) / 60_000_000_000.0, 1e-09)
+    return {
+        "dominant_regime": last_regime,
+        "dominant_regime_change_count": change_count,
+        "switches_per_minute": float(change_count / elapsed_min),
+        "average_dominant_confidence": float(confidence_sum / max(confidence_count, 1)),
+    }
 def _summarise_timestamp_quality(records: list[dict[str, Any]]) -> dict[str, int | float | bool]:
     diagnostics: dict[str, int | float | bool] = {
         "records": len(records),
@@ -224,6 +271,8 @@ class NeuralAlphaShadowSession:
         self._session_event_index = 0
         self._session_wall_start_ns = time.time_ns()
         self._session_steady_start_ns = time.monotonic_ns()
+        self._last_continuous_train_steady_ns = self._session_steady_start_ns
+        self._last_regime_train_steady_ns = self._session_steady_start_ns
         self._canary: EnsembleCanary | None = None
         self._prev_primary_signal: float | None = None
         self._prev_ensemble_signal: float | None = None
@@ -553,6 +602,14 @@ class NeuralAlphaShadowSession:
         rollback_path = self._registry.rollback_to_previous_champion(reason=reason)
         if rollback_path and Path(rollback_path).exists():
             self._best_effort(lambda: self.load_model(rollback_path))
+    def _transition_venue_health(self, exchange: str, new_state: str, root_cause: str) -> None:
+        stats = self._venue_stats[exchange]
+        if stats.health_state == new_state:
+            return
+        stats.health_state = new_state
+        stats.health_transition_count += 1
+        stats.health_transition_root_causes[root_cause] = stats.health_transition_root_causes.get(root_cause, 0) + 1
+
     def _rest_fallback_tick(self, exchange: str, fetcher: FetchFn | None) -> dict[str, Any] | None:
         if fetcher is None:
             return None
@@ -578,12 +635,19 @@ class NeuralAlphaShadowSession:
                 stats.startup_confirmed = True
                 stats.consecutive_missing_polls = 0
                 stats.last_source = "bridge"
+                self._transition_venue_health(exchange, "healthy", "recovered")
                 continue
             stats.missing_venue_incidents += 1
             stats.consecutive_missing_polls += 1
             stats.last_source = "bridge_unavailable" if not stats.startup_confirmed else "bridge_resnapshot"
             if stats.startup_confirmed:
                 stats.resnapshot_count += 1
+                if stats.consecutive_missing_polls >= 3:
+                    self._transition_venue_health(exchange, "degraded", "resnapshot_loop")
+                else:
+                    self._transition_venue_health(exchange, "degraded", "bridge_gap")
+            else:
+                self._transition_venue_health(exchange, "degraded", "snapshot_rejection")
             fallback_tick = self._rest_fallback_tick(exchange, _FETCHERS.get(exchange))
             if fallback_tick is not None:
                 rest_ticks.append(fallback_tick)
@@ -627,29 +691,52 @@ class NeuralAlphaShadowSession:
         raw_sigs_bps, effective_sigs_bps = _extract_signal_series(self._signal_records)
         ic, icir = self._compute_ic_metrics()
         diagnostics = _summarise_timestamp_quality(self._signal_records)
+        churn = _summarise_regime_churn(self._signal_records)
         ts_quality = "warn" if diagnostics["has_timestamp_issues"] else "ok"
-        print(
-            f"[{_utcnow()}] [Shadow] ticks={len(self._signal_records)}"
-            f"  mean_effective={float(np.mean(effective_sigs_bps)):.2f}bps"
-            f"  mean_raw={float(np.mean(raw_sigs_bps)):.2f}bps"
-            f"  std_effective={float(np.std(effective_sigs_bps)):.2f}bps"
-            f"  IC={ic:.4f}  ICIR={icir:.3f}"
-            f"  confidence_gate={self._gating_reason_counts['confidence_gate']}"
-            f"  horizon_gate={self._gating_reason_counts['horizon_disagreement_gate']}"
-            f"  safe_mode_gate={self._gating_reason_counts['safe_mode_gate']}"
-            f"  ts_quality={ts_quality}"
-        )
+        now_steady_ns = time.monotonic_ns()
+        summary = {
+            "ticks": len(self._signal_records),
+            "mean_effective_bps": float(np.mean(effective_sigs_bps)),
+            "mean_raw_bps": float(np.mean(raw_sigs_bps)),
+            "std_effective_bps": float(np.std(effective_sigs_bps)),
+            "ic": float(ic),
+            "icir": float(icir),
+            "confidence_gate": self._gating_reason_counts["confidence_gate"],
+            "horizon_gate": self._gating_reason_counts["horizon_disagreement_gate"],
+            "safe_mode_gate": self._gating_reason_counts["safe_mode_gate"],
+            "ts_quality": ts_quality,
+            "seconds_since_last_continuous_train": float((now_steady_ns - self._last_continuous_train_steady_ns) / 1_000_000_000.0),
+            "seconds_since_last_regime_train": float((now_steady_ns - self._last_regime_train_steady_ns) / 1_000_000_000.0),
+            "dominant_regime": churn["dominant_regime"],
+            "dominant_regime_change_count": int(churn["dominant_regime_change_count"]),
+            "switches_per_minute": float(churn["switches_per_minute"]),
+            "average_dominant_confidence": float(churn["average_dominant_confidence"]),
+            "venue_health": {
+                exchange: {
+                    "health_state": stats.health_state,
+                    "health_transition_count": stats.health_transition_count,
+                    "health_transition_root_causes": stats.health_transition_root_causes,
+                }
+                for exchange, stats in self._venue_stats.items()
+            },
+        }
+        print(f"[{_utcnow()}] [ShadowSummary] {json.dumps(summary, sort_keys=True)}")
     def _maybe_continuous_train(self) -> None:
         if self.cfg.continuous_train_every_ticks <= 0:
             return
         ticks_since_train = self._processed_ticks - self._last_continuous_train_tick
         if ticks_since_train < self.cfg.continuous_train_every_ticks:
             return
+        now_steady_ns = time.monotonic_ns()
+        elapsed_since_train_s = (now_steady_ns - self._last_continuous_train_steady_ns) / 1_000_000_000.0
+        if elapsed_since_train_s < self.cfg.min_continuous_train_interval_s:
+            return
         train_window = max(self.cfg.seq_len * 4, self.cfg.continuous_train_window_ticks)
         try:
             print(f"[{_utcnow()}] [Shadow] continuous retrain started processed_ticks={self._processed_ticks} window_ticks={train_window}")
             self.train_on_recent(train_window)
             self._last_continuous_train_tick = self._processed_ticks
+            self._last_continuous_train_steady_ns = now_steady_ns
             print(f"[{_utcnow()}] [Shadow] continuous retrain completed processed_ticks={self._processed_ticks}")
         except Exception as exc:
             print(f"[{_utcnow()}] [Shadow] continuous retrain failed processed_ticks={self._processed_ticks}: {exc}")
@@ -659,11 +746,19 @@ class NeuralAlphaShadowSession:
         ticks_since_retrain = self._processed_ticks - self._last_regime_train_tick
         if ticks_since_retrain < self.cfg.regime_retrain_every_ticks:
             return
+        now_steady_ns = time.monotonic_ns()
+        session_elapsed_s = (now_steady_ns - self._session_steady_start_ns) / 1_000_000_000.0
+        if session_elapsed_s < self.cfg.regime_startup_warmup_s:
+            return
+        elapsed_since_retrain_s = (now_steady_ns - self._last_regime_train_steady_ns) / 1_000_000_000.0
+        if elapsed_since_retrain_s < self.cfg.min_regime_train_interval_s:
+            return
         train_window = max(self.cfg.seq_len * 4, self.cfg.continuous_train_window_ticks)
         try:
             df = self._collect_training_ticks(train_window)
             self._train_regime_on_data(df)
             self._last_regime_train_tick = self._processed_ticks
+            self._last_regime_train_steady_ns = now_steady_ns
         except Exception as exc:
             print(f"[{_utcnow()}] [Shadow] regime retrain failed processed_ticks={self._processed_ticks}: {exc}")
     def _update_quality_guards(self, signal_info: dict[str, Any]) -> None:
@@ -735,7 +830,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     add("--exchanges", type=str, default="BINANCE,KRAKEN,OKX,COINBASE"); add("--registry-path", type=str, default="models/model_registry.json", dest="registry_path")
     add("--drift-window", type=int, default=200, dest="drift_window"); add("--drift-min-samples", type=int, default=60, dest="drift_min_samples"); add("--drift-ic-floor", type=float, default=-0.05, dest="drift_ic_floor")
     add("--safe-mode-ticks", type=int, default=120, dest="safe_mode_ticks"); add("--continuous-train-every-ticks", type=int, default=1000, dest="continuous_train_every_ticks")
-    add("--continuous-train-window-ticks", type=int, default=2000, dest="continuous_train_window_ticks"); add("--canary-ic-margin", type=float, default=0.02, dest="canary_ic_margin", help="Max IC degradation of ensemble vs primary before canary fires")
+    add("--continuous-train-window-ticks", type=int, default=2000, dest="continuous_train_window_ticks"); add("--min-continuous-train-interval-s", type=int, default=600, dest="min_continuous_train_interval_s")
+    add("--regime-retrain-every-ticks", type=int, default=5000, dest="regime_retrain_every_ticks"); add("--min-regime-train-interval-s", type=int, default=900, dest="min_regime_train_interval_s")
+    add("--regime-startup-warmup-s", type=int, default=300, dest="regime_startup_warmup_s"); add("--canary-ic-margin", type=float, default=0.02, dest="canary_ic_margin", help="Max IC degradation of ensemble vs primary before canary fires")
     add("--canary-icir-floor", type=float, default=0.0, dest="canary_icir_floor", help="Min ensemble ICIR before canary fires"); add("--canary-window", type=int, default=200, dest="canary_window"); add("--canary-min-samples", type=int, default=60, dest="canary_min_samples")
     add("--require-full-model-stack", action=argparse.BooleanOptionalAction, default=True, dest="require_full_model_stack", help="Require primary + secondary alpha models and regime artifact before entering production shadow mode.")
     return parser
@@ -783,6 +880,10 @@ def main() -> None:
         safe_mode_ticks=args.safe_mode_ticks,
         continuous_train_every_ticks=args.continuous_train_every_ticks,
         continuous_train_window_ticks=args.continuous_train_window_ticks,
+        regime_retrain_every_ticks=args.regime_retrain_every_ticks,
+        min_continuous_train_interval_s=args.min_continuous_train_interval_s,
+        min_regime_train_interval_s=args.min_regime_train_interval_s,
+        regime_startup_warmup_s=args.regime_startup_warmup_s,
         canary_ic_margin=args.canary_ic_margin,
         canary_icir_floor=args.canary_icir_floor,
         canary_window=args.canary_window,
