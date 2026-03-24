@@ -362,9 +362,9 @@ class NeuralAlphaShadowSession:
             early_stop_patience=4,
             log_every_epochs=1,
             verbose=False,
-            w_return=0.5,
-            w_direction=1.0,
-            w_risk=0.5,
+            w_return=1.0,
+            w_direction=0.3,
+            w_risk=0.8,
         )
     def _snapshot_current_state(self) -> dict[str, torch.Tensor] | None:
         return None if self._model is None else {key: value.detach().cpu().clone() for key, value in self._model.state_dict().items()}
