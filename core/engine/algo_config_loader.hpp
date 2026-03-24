@@ -91,8 +91,11 @@ namespace trading {
             apply_double(values, "alpha_exit_buffer_bps", out.alpha_exit_buffer_bps);
             apply_double(values, "negative_reversal_signal_bps", out.negative_reversal_signal_bps);
             apply_double(values, "max_risk_score", out.max_risk_score);
-            apply_double(values, "shock_flatten_threshold", out.shock_flatten_threshold);
-            apply_double(values, "illiquid_reduce_threshold", out.illiquid_reduce_threshold);
+            apply_double(values, "shock_enter_threshold", out.shock_enter_threshold);
+            apply_double(values, "shock_exit_threshold", out.shock_exit_threshold);
+            apply_double(values, "illiquid_enter_threshold", out.illiquid_enter_threshold);
+            apply_double(values, "illiquid_exit_threshold", out.illiquid_exit_threshold);
+            apply_int(values, "regime_persistence_ticks", out.regime_persistence_ticks);
             apply_int64(values, "stale_inventory_ms", out.stale_inventory_ms);
             apply_double(values, "stale_inventory_alpha_hold_bps",
                          out.stale_inventory_alpha_hold_bps);

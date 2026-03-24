@@ -32,16 +32,11 @@ namespace trading {
         double alpha_exit_buffer_bps = 0.75;
         double negative_reversal_signal_bps = -1.0;
         double max_risk_score = 0.65;
-        // Hysteresis thresholds: enter requires a higher probability than exit.
-        // This prevents rapid regime flipping when p_shock / p_illiquid hovers
-        // near a single threshold.
         double shock_enter_threshold = 0.70;
-        double shock_exit_threshold  = 0.50;
+        double shock_exit_threshold = 0.50;
         double illiquid_enter_threshold = 0.65;
-        double illiquid_exit_threshold  = 0.45;
-        // Consecutive ticks above enter (or below exit) required before the
-        // regime state actually flips.  Guards against single-tick spikes.
-        int32_t regime_persistence_ticks = 5;
+        double illiquid_exit_threshold = 0.45;
+        int regime_persistence_ticks = 5;
         int64_t stale_inventory_ms = 5000;
         double stale_inventory_alpha_hold_bps = 10.0;
         double health_reduce_ratio = 0.50;
@@ -200,24 +195,17 @@ namespace trading {
     private:
         PortfolioIntentConfig cfg_;
 
-        // Hysteresis state — one bool + tick counter per guarded regime.
-        bool    illiquid_regime_active_{false};
-        int32_t illiquid_ticks_{0};
-        bool    shock_regime_active_{false};
-        int32_t shock_ticks_{0};
+        bool illiquid_regime_active_{false};
+        int illiquid_ticks_{0};
+        bool shock_regime_active_{false};
+        int shock_ticks_{0};
 
-        // Advance hysteresis for one regime dimension.
-        // When inactive: count consecutive ticks >= enter_thresh; activate after
-        //   persistence ticks and reset counter.
-        // When active:   count consecutive ticks <  exit_thresh;  deactivate
-        //   after persistence ticks and reset counter.
-        // Any tick that does not advance the counter resets it to zero.
         static void _update_regime_hysteresis(double p,
                                               double enter_thresh,
                                               double exit_thresh,
-                                              int32_t persistence,
+                                              int persistence,
                                               bool &active,
-                                              int32_t &ticks) noexcept {
+                                              int &ticks) noexcept {
             if (!active) {
                 ticks = (p >= enter_thresh) ? ticks + 1 : 0;
                 if (ticks >= persistence) {

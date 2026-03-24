@@ -3,8 +3,11 @@ min_entry_signal_bps: 2.0
 alpha_exit_buffer_bps: 0.75
 negative_reversal_signal_bps: -1.0
 max_risk_score: 0.65
-shock_flatten_threshold: 0.60
-illiquid_reduce_threshold: 0.60
+shock_enter_threshold: 0.70
+shock_exit_threshold: 0.50
+illiquid_enter_threshold: 0.65
+illiquid_exit_threshold: 0.45
+regime_persistence_ticks: 5
 stale_inventory_ms: 10000
 stale_inventory_alpha_hold_bps: 10.0
 health_reduce_ratio: 0.50
