@@ -49,3 +49,7 @@ secondary:
   d_spatial: 32
   d_temporal: 64
   n_temp_layers: 1
+shadow_primary:
+  w_return: 1.0
+  w_direction: 0.3
+  w_risk: 0.8

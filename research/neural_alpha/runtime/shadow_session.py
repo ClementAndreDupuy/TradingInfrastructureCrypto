@@ -29,11 +29,12 @@ from ..models.model import CryptoAlphaNet
 from ..models.trainer import TrainerConfig, walk_forward_train
 from ..operations.governance import ChampionChallengerRegistry, DriftGuard, EnsembleCanary
 from ..pipeline import _fetch_binance_l5, _fetch_coinbase_l5, _fetch_kraken_l5, _fetch_okx_l5, collect_from_core_bridge
-from ..._config import shadow_cfg
+from ..._config import model_cfg, shadow_cfg
 
 _scfg = shadow_cfg()
 _ipc = _scfg["ipc"]
 _sess = _scfg["session"]
+_shadow_primary_cfg = model_cfg()["shadow_primary"]
 
 
 def _utcnow() -> str:
@@ -105,9 +106,9 @@ class ShadowSessionConfig:
     min_continuous_train_interval_s: int = _sess["min_continuous_train_interval_s"]
     min_regime_train_interval_s: int = _sess["min_regime_train_interval_s"]
     regime_startup_warmup_s: int = _sess["regime_startup_warmup_s"]
-    primary_w_return: float = _sess["primary_w_return"]
-    primary_w_direction: float = _sess["primary_w_direction"]
-    primary_w_risk: float = _sess["primary_w_risk"]
+    primary_w_return: float = _shadow_primary_cfg["w_return"]
+    primary_w_direction: float = _shadow_primary_cfg["w_direction"]
+    primary_w_risk: float = _shadow_primary_cfg["w_risk"]
 class _SignalPublisher:
     def __init__(self, path: str = _SIGNAL_FILE) -> None:
         self._path = path
