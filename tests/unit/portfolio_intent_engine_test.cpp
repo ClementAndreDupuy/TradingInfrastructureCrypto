@@ -6,6 +6,25 @@
 namespace trading {
 namespace {
 
+PortfolioIntentConfig make_cfg() {
+    PortfolioIntentConfig cfg{};
+    cfg.max_position = 0.80;
+    cfg.min_entry_signal_bps = 2.0;
+    cfg.alpha_exit_buffer_bps = 0.75;
+    cfg.negative_reversal_signal_bps = -1.0;
+    cfg.max_risk_score = 0.65;
+    cfg.shock_enter_threshold = 0.70;
+    cfg.shock_exit_threshold = 0.50;
+    cfg.illiquid_enter_threshold = 0.65;
+    cfg.illiquid_exit_threshold = 0.45;
+    cfg.regime_persistence_ticks = 5;
+    cfg.stale_inventory_ms = 10000;
+    cfg.stale_inventory_alpha_hold_bps = 10.0;
+    cfg.health_reduce_ratio = 0.50;
+    cfg.long_only = true;
+    return cfg;
+}
+
 PositionLedgerSnapshot make_ledger(double position = 0.0, int64_t inventory_age_ms = 0) {
     PositionLedgerSnapshot snapshot;
     snapshot.global_position = position;
@@ -42,7 +61,7 @@ RegimeSignal make_regime(double shock = 0.05, double illiquid = 0.05) {
 }
 
 TEST(PortfolioIntentEngineTest, PositiveAlphaProducesDeterministicTargetPosition) {
-    PortfolioIntentEngine engine;
+    PortfolioIntentEngine engine(make_cfg());
     const auto venues = make_venues();
     const auto alpha = make_alpha();
     const auto regime = make_regime();
@@ -60,7 +79,7 @@ TEST(PortfolioIntentEngineTest, PositiveAlphaProducesDeterministicTargetPosition
 }
 
 TEST(PortfolioIntentEngineTest, NegativeReversalFlattensOpenLongAggressively) {
-    PortfolioIntentEngine engine;
+    PortfolioIntentEngine engine(make_cfg());
     const auto venues = make_venues();
     const auto alpha = make_alpha(-4.5, 0.20, 0.80, 2);
     const auto regime = make_regime();
@@ -76,15 +95,12 @@ TEST(PortfolioIntentEngineTest, NegativeReversalFlattensOpenLongAggressively) {
 }
 
 TEST(PortfolioIntentEngineTest, IlliquidRegimeAndStaleInventoryReduceTarget) {
-    PortfolioIntentEngine engine;
+    PortfolioIntentEngine engine(make_cfg());
     auto venues = make_venues();
     venues[3].healthy = false;
     const auto alpha = make_alpha(7.0, 0.20, 1.0, 10);
-    // p_illiquid=0.70 is above illiquid_enter_threshold=0.65.
-    // Hysteresis requires regime_persistence_ticks=5 consecutive ticks before
-    // the regime activates.  Evaluate enough times to satisfy persistence.
     const auto regime = make_regime(0.05, 0.70);
-    const auto ledger = make_ledger(0.60, 2500);
+    const auto ledger = make_ledger(0.60, 12000);
 
     PortfolioIntent intent;
     for (int i = 0; i < 5; ++i)
@@ -107,13 +123,11 @@ TEST(PortfolioIntentEngineTest, IlliquidRegimeAndStaleInventoryReduceTarget) {
 }
 
 TEST(PortfolioIntentEngineTest, RegimeHysteresisPreventsSingleTickFlips) {
-    PortfolioIntentEngine engine;
+    PortfolioIntentEngine engine(make_cfg());
     const auto venues = make_venues();
     const auto alpha  = make_alpha(8.0, 0.20, 0.80, 6);
     const auto ledger = make_ledger(0.50, 100);
 
-    // Signal below enter threshold (0.65) — regime must NOT activate even after
-    // many ticks.
     const auto below_enter = make_regime(0.05, 0.60);
     for (int i = 0; i < 10; ++i)
         engine.evaluate(alpha, below_enter, ledger, venues);
@@ -122,11 +136,9 @@ TEST(PortfolioIntentEngineTest, RegimeHysteresisPreventsSingleTickFlips) {
         bool saw_illiquid = false;
         for (size_t i = 0; i < intent.reason_count; ++i)
             saw_illiquid |= intent.reason_codes[i] == PortfolioIntentReasonCode::ILLIQUID_REGIME;
-        EXPECT_FALSE(saw_illiquid) << "regime must not activate below enter threshold";
+        EXPECT_FALSE(saw_illiquid);
     }
 
-    // Now push signal above enter threshold for exactly persistence-1 ticks —
-    // regime must still be inactive (not yet confirmed).
     const auto above_enter = make_regime(0.05, 0.70);
     for (int i = 0; i < 4; ++i)
         engine.evaluate(alpha, above_enter, ledger, venues);
@@ -135,10 +147,9 @@ TEST(PortfolioIntentEngineTest, RegimeHysteresisPreventsSingleTickFlips) {
         bool saw_illiquid = false;
         for (size_t i = 0; i < intent.reason_count; ++i)
             saw_illiquid |= intent.reason_codes[i] == PortfolioIntentReasonCode::ILLIQUID_REGIME;
-        EXPECT_FALSE(saw_illiquid) << "regime must not activate before persistence ticks elapse";
+        EXPECT_FALSE(saw_illiquid);
     }
 
-    // Complete the persistence window — regime should now be active.
     for (int i = 0; i < 5; ++i)
         engine.evaluate(alpha, above_enter, ledger, venues);
     {
@@ -146,11 +157,9 @@ TEST(PortfolioIntentEngineTest, RegimeHysteresisPreventsSingleTickFlips) {
         bool saw_illiquid = false;
         for (size_t i = 0; i < intent.reason_count; ++i)
             saw_illiquid |= intent.reason_codes[i] == PortfolioIntentReasonCode::ILLIQUID_REGIME;
-        EXPECT_TRUE(saw_illiquid) << "regime must be active after persistence ticks";
+        EXPECT_TRUE(saw_illiquid);
     }
 
-    // Drop into the hysteresis band (between exit=0.45 and enter=0.65) —
-    // active regime must remain active (no premature exit).
     const auto in_band = make_regime(0.05, 0.55);
     for (int i = 0; i < 10; ++i)
         engine.evaluate(alpha, in_band, ledger, venues);
@@ -159,10 +168,9 @@ TEST(PortfolioIntentEngineTest, RegimeHysteresisPreventsSingleTickFlips) {
         bool saw_illiquid = false;
         for (size_t i = 0; i < intent.reason_count; ++i)
             saw_illiquid |= intent.reason_codes[i] == PortfolioIntentReasonCode::ILLIQUID_REGIME;
-        EXPECT_TRUE(saw_illiquid) << "active regime must persist inside hysteresis band";
+        EXPECT_TRUE(saw_illiquid);
     }
 
-    // Drop below exit threshold for enough ticks — regime must deactivate.
     const auto below_exit = make_regime(0.05, 0.30);
     for (int i = 0; i < 5; ++i)
         engine.evaluate(alpha, below_exit, ledger, venues);
@@ -171,12 +179,12 @@ TEST(PortfolioIntentEngineTest, RegimeHysteresisPreventsSingleTickFlips) {
         bool saw_illiquid = false;
         for (size_t i = 0; i < intent.reason_count; ++i)
             saw_illiquid |= intent.reason_codes[i] == PortfolioIntentReasonCode::ILLIQUID_REGIME;
-        EXPECT_FALSE(saw_illiquid) << "regime must deactivate after persistence ticks below exit threshold";
+        EXPECT_FALSE(saw_illiquid);
     }
 }
 
 TEST(PortfolioIntentEngineTest, NoHealthyVenuesTriggersFlattenReason) {
-    PortfolioIntentEngine engine;
+    PortfolioIntentEngine engine(make_cfg());
     const auto venues = make_venues(false);
     const auto alpha = make_alpha();
     const auto regime = make_regime();
@@ -207,5 +215,5 @@ TEST(ParentOrderManagerTest, SmallerSameDirectionTargetCapsRemainingQty) {
     EXPECT_DOUBLE_EQ(updated.plan.remaining_qty, 0.02);
 }
 
-} 
+}
 }
