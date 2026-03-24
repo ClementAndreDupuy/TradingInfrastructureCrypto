@@ -11,14 +11,14 @@ horizon_candidates:
 model_path_template: "models/neural_alpha_{symbol}_{variant}.pt"
 session:
   log_path: neural_alpha_shadow.jsonl
-  interval_ms: 500
+  interval_ms: 1000
   duration_s: 3600
   report_interval_s: 60
   seq_len: 64
   d_spatial: 64
   d_temporal: 128
   train_ticks: 0
-  train_epochs: 15
+  train_epochs: 5
   symbol: BTCUSDT
   exchanges:
     - BINANCE

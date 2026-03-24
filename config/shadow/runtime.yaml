@@ -13,7 +13,7 @@ train_epochs: 3
 report_interval: 100
 alpha_exchanges: BINANCE,KRAKEN,OKX,COINBASE
 alpha_seq_len: 64
-alpha_log_path: logs/neural_alpha_shadow.jsonl
+alpha_log_path: logs/session_shadow.jsonl
 continuous_train_every_ticks: 4000
 continuous_train_window_ticks: 1000
 safe_mode_ticks: 30
