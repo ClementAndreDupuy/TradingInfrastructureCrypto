@@ -27,17 +27,20 @@ namespace trading {
     };
 
     struct PortfolioIntentConfig {
-        double max_position = 0.80;
-        double min_entry_signal_bps = 3.0;
-        double alpha_exit_buffer_bps = 0.75;
-        double negative_reversal_signal_bps = -1.0;
-        double max_risk_score = 0.65;
-        double shock_flatten_threshold = 0.60;
-        double illiquid_reduce_threshold = 0.55;
-        int64_t stale_inventory_ms = 5000;
-        double stale_inventory_alpha_hold_bps = 10.0;
-        double health_reduce_ratio = 0.50;
-        bool long_only = true;
+        double max_position;
+        double min_entry_signal_bps;
+        double alpha_exit_buffer_bps;
+        double negative_reversal_signal_bps;
+        double max_risk_score;
+        double shock_enter_threshold;
+        double shock_exit_threshold;
+        double illiquid_enter_threshold;
+        double illiquid_exit_threshold;
+        int regime_persistence_ticks;
+        int64_t stale_inventory_ms;
+        double stale_inventory_alpha_hold_bps;
+        double health_reduce_ratio;
+        bool long_only;
     };
 
     struct PortfolioIntent {
@@ -66,7 +69,17 @@ namespace trading {
             const AlphaSignal &alpha_signal,
             const RegimeSignal &regime_signal,
             const PositionLedgerSnapshot &ledger,
-            const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> &venues) const noexcept {
+            const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> &venues) noexcept {
+            _update_regime_hysteresis(regime_signal.p_illiquid,
+                                      cfg_.illiquid_enter_threshold,
+                                      cfg_.illiquid_exit_threshold,
+                                      cfg_.regime_persistence_ticks,
+                                      illiquid_regime_active_, illiquid_ticks_);
+            _update_regime_hysteresis(regime_signal.p_shock,
+                                      cfg_.shock_enter_threshold,
+                                      cfg_.shock_exit_threshold,
+                                      cfg_.regime_persistence_ticks,
+                                      shock_regime_active_, shock_ticks_);
             PortfolioIntent out;
             const double current_position = clamp_position(ledger.global_position);
             const double expected_cost_bps = estimate_expected_cost_bps(venues);
@@ -89,8 +102,8 @@ namespace trading {
 
             const bool risk_off = alpha_signal.risk_score >= cfg_.max_risk_score;
             const bool negative_reversal = alpha_signal.signal_bps <= cfg_.negative_reversal_signal_bps;
-            const bool shock_regime = regime_signal.p_shock >= cfg_.shock_flatten_threshold;
-            const bool illiquid_regime = regime_signal.p_illiquid >= cfg_.illiquid_reduce_threshold;
+            const bool shock_regime = shock_regime_active_;
+            const bool illiquid_regime = illiquid_regime_active_;
             const bool stale_inventory = ledger.oldest_inventory_age_ms >= cfg_.stale_inventory_ms &&
                                          current_position > 0.0;
             const bool edge_positive = alpha_signal.signal_bps > expected_cost_bps;
@@ -181,6 +194,32 @@ namespace trading {
 
     private:
         PortfolioIntentConfig cfg_;
+
+        bool illiquid_regime_active_{false};
+        int illiquid_ticks_{0};
+        bool shock_regime_active_{false};
+        int shock_ticks_{0};
+
+        static void _update_regime_hysteresis(double p,
+                                              double enter_thresh,
+                                              double exit_thresh,
+                                              int persistence,
+                                              bool &active,
+                                              int &ticks) noexcept {
+            if (!active) {
+                ticks = (p >= enter_thresh) ? ticks + 1 : 0;
+                if (ticks >= persistence) {
+                    active = true;
+                    ticks  = 0;
+                }
+            } else {
+                ticks = (p < exit_thresh) ? ticks + 1 : 0;
+                if (ticks >= persistence) {
+                    active = false;
+                    ticks  = 0;
+                }
+            }
+        }
 
         [[nodiscard]] static double estimate_expected_cost_bps(
             const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> &venues) noexcept {
