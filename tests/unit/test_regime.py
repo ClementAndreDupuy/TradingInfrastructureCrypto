@@ -9,11 +9,15 @@ import pytest
 pl = pytest.importorskip("polars")
 
 from research.regime import (
+    RegimeBacktestConfig,
     RegimeConfig,
     RegimeSignalPublisher,
     infer_regime_probabilities,
     load_regime_artifact,
+    run_regime_walk_forward_backtest,
+    save_regime_artifact_bundle,
     save_regime_artifact,
+    train_regime_model_from_df,
     train_regime_model_from_ipc,
 )
 from research.regime.regime import _semantic_regime_names
@@ -226,3 +230,37 @@ def test_infer_normalizes_invalid_probabilities_in_artifact(tmp_path: Path) -> N
     probs = infer_regime_probabilities(frame, artifact)
     assert abs(sum(probs.values()) - 1.0) < 1e-6
     assert all(v >= 0.0 for v in probs.values())
+
+
+def test_save_regime_artifact_bundle_writes_meta_sidecar(tmp_path: Path) -> None:
+    frame = _make_lob_frame(n=160)
+    artifact, _ = train_regime_model_from_df(frame, RegimeConfig(n_regimes=4))
+    output = tmp_path / "regime_model.json"
+    save_regime_artifact_bundle(
+        artifact,
+        str(output),
+        metadata={"trained_at_ns": 123, "train_rows": len(frame), "artifact_version": artifact.version},
+    )
+    assert output.exists()
+    meta_path = output.with_suffix(output.suffix + ".meta.json")
+    assert meta_path.exists()
+    metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert metadata["trained_at_ns"] == 123
+    assert metadata["train_rows"] == len(frame)
+    loaded = load_regime_artifact(str(output))
+    assert loaded.version.startswith("r2-regime-hmm-v1")
+
+
+def test_regime_walk_forward_backtest_summary_is_sane() -> None:
+    frame = _make_lob_frame(n=420)
+    summary = run_regime_walk_forward_backtest(
+        frame,
+        RegimeConfig(n_regimes=4),
+        RegimeBacktestConfig(train_window=160, test_window=80, step=80, min_confidence=0.55),
+    )
+    assert summary.windows >= 1
+    assert summary.samples > 0
+    assert 0.0 <= summary.mean_confidence <= 1.0
+    assert summary.mean_entropy >= 0.0
+    assert 0.0 <= summary.dominant_switch_rate <= 1.0
+    assert 0.0 <= summary.low_confidence_rate <= 1.0

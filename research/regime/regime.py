@@ -38,6 +38,24 @@ class RegimeArtifact:
     scales: list[float]
 
 
+@dataclass
+class RegimeBacktestConfig:
+    train_window: int = 20_000
+    test_window: int = 5_000
+    step: int = 5_000
+    min_confidence: float = 0.60
+
+
+@dataclass
+class RegimeBacktestSummary:
+    windows: int
+    samples: int
+    mean_confidence: float
+    mean_entropy: float
+    dominant_switch_rate: float
+    low_confidence_rate: float
+
+
 def _feature_frame(df: pl.DataFrame) -> pl.DataFrame:
     base = df.with_columns(
         [
@@ -416,6 +434,27 @@ def save_regime_artifact(artifact: RegimeArtifact, output_path: str) -> None:
     out.write_text(json.dumps(asdict(artifact), indent=2), encoding="utf-8")
 
 
+def save_regime_artifact_bundle(
+    artifact: RegimeArtifact, output_path: str, metadata: dict[str, object]
+) -> None:
+    """
+    Persist regime artifact with the same reliability pattern as neural model saves:
+    - write to temporary path
+    - atomic replace into final path
+    - sidecar JSON metadata file (`<artifact>.meta.json`)
+    """
+    _validate_artifact(artifact)
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp_out = out.with_suffix(out.suffix + ".tmp")
+    tmp_meta = out.with_suffix(out.suffix + ".meta.json.tmp")
+    final_meta = out.with_suffix(out.suffix + ".meta.json")
+    tmp_out.write_text(json.dumps(asdict(artifact), indent=2), encoding="utf-8")
+    tmp_meta.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    tmp_out.replace(out)
+    tmp_meta.replace(final_meta)
+
+
 def load_regime_artifact(path: str) -> RegimeArtifact:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     payload = _upgrade_legacy_artifact(payload)
@@ -465,6 +504,67 @@ def infer_regime_probabilities(df: pl.DataFrame, artifact: RegimeArtifact) -> di
         "p_shock": p_shock,
         "p_illiquid": p_illiquid,
     }
+
+
+def run_regime_walk_forward_backtest(
+    df: pl.DataFrame, cfg: RegimeConfig, bt_cfg: RegimeBacktestConfig
+) -> RegimeBacktestSummary:
+    """
+    Walk-forward stability backtest for large datasets.
+    Evaluates confidence and semantic stability of inferred regimes over rolling windows.
+    """
+    if len(df) < bt_cfg.train_window + bt_cfg.test_window:
+        raise ValueError("Dataset too small for requested walk-forward regime backtest windows")
+    if bt_cfg.step <= 0:
+        raise ValueError("Backtest step must be > 0")
+
+    confidence_values: list[float] = []
+    entropy_values: list[float] = []
+    dominant_switches = 0
+    low_confidence = 0
+    samples = 0
+    windows = 0
+    last_dominant: str | None = None
+
+    start = 0
+    while start + bt_cfg.train_window + bt_cfg.test_window <= len(df):
+        train_df = df.slice(start, bt_cfg.train_window)
+        test_df = df.slice(start + bt_cfg.train_window, bt_cfg.test_window)
+        artifact, _ = train_regime_model_from_df(train_df, cfg)
+        windows += 1
+
+        for i in range(len(test_df)):
+            sample_df = test_df.slice(0, i + 1)
+            probs = infer_regime_probabilities(sample_df, artifact)
+            vec = np.array(
+                [probs["p_calm"], probs["p_trending"], probs["p_shock"], probs["p_illiquid"]],
+                dtype=np.float64,
+            )
+            max_p = float(np.max(vec))
+            ent = float(-(vec * np.log(np.maximum(vec, _EPS))).sum())
+            confidence_values.append(max_p)
+            entropy_values.append(ent)
+            samples += 1
+            if max_p < bt_cfg.min_confidence:
+                low_confidence += 1
+            dominant = max(probs.items(), key=lambda item: item[1])[0]
+            if last_dominant is not None and dominant != last_dominant:
+                dominant_switches += 1
+            last_dominant = dominant
+
+        start += bt_cfg.step
+
+    if samples == 0:
+        raise ValueError("Backtest produced no samples")
+
+    return RegimeBacktestSummary(
+        windows=windows,
+        samples=samples,
+        mean_confidence=float(np.mean(confidence_values)),
+        mean_entropy=float(np.mean(entropy_values)),
+        dominant_switch_rate=float(dominant_switches / samples),
+        low_confidence_rate=float(low_confidence / samples),
+    )
 
 
 _REGIME_SIGNAL_SIZE = 48
