@@ -648,11 +648,9 @@ class NeuralAlphaShadowSession:
             stats.consecutive_missing_polls += 1
             stats.last_source = "bridge_unavailable" if not stats.startup_confirmed else "bridge_resnapshot"
             if stats.startup_confirmed:
-                stats.resnapshot_count += 1
                 if stats.consecutive_missing_polls >= 3:
+                    stats.resnapshot_count += 1
                     self._transition_venue_health(exchange, "degraded", "resnapshot_loop")
-                else:
-                    self._transition_venue_health(exchange, "degraded", "bridge_gap")
             else:
                 self._transition_venue_health(exchange, "degraded", "snapshot_rejection")
             fallback_tick = self._rest_fallback_tick(exchange, _FETCHERS.get(exchange))

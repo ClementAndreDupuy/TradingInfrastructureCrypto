@@ -112,6 +112,15 @@ namespace {
                                   const trading::ShadowIntentMetadata &intent_metadata,
                                   const std::string &reason_codes,
                                   const trading::PortfolioIntent &intent) -> bool {
+        const bool prior_flat_hold =
+                state.intent == "hold" && std::abs(state.target_position) <= 1e-6 &&
+                !state.flatten_now;
+        const bool next_flat_hold =
+                intent_metadata.intent == "hold" &&
+                std::abs(intent.target_global_position) <= 1e-6 && !intent.flatten_now;
+        if (prior_flat_hold && next_flat_hold) {
+            return false;
+        }
         return state.intent != intent_metadata.intent || state.reason != intent_metadata.reason ||
                state.reason_codes != reason_codes ||
                std::abs(state.target_position - intent.target_global_position) > 1e-6 ||
