@@ -32,3 +32,13 @@ Unit tests → replay tests (recorded feed, compare final state) → fuzz tests 
   - sequence reset behavior after reconnect
 - Prefer deterministic replay fixtures (`tests/replay/`) whenever changing delta/snapshot logic.
 - Any optimization must preserve all-or-nothing delta application semantics first, then latency.
+
+
+## Classes & Methods (Quick Reference)
+
+- **`OrderBook` (`orderbook.hpp`)** — Flat-array L2 book with dynamic grid and sequence-aware updates.
+  - `apply_snapshot(const Snapshot&)`: Validates spread/checksum, resets grids, and loads full book state.
+  - `apply_delta(const Delta&)`: Applies a single bid/ask level update and handles grid recenter behavior.
+  - `get_best_bid()/get_best_ask()/get_mid_price()/get_spread()`: Returns top-of-book derived prices.
+  - `get_top_levels(size_t, ...)`: Extracts top-N bid/ask levels for publishing or strategy use.
+  - `tick_size()/max_levels()/active_levels()/base_price()`: Exposes current grid configuration and bounds.

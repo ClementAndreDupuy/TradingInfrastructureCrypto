@@ -178,3 +178,49 @@ NeuralAlphaMarketMaker.on_fill()
 | `common/connectors/venue_order_map.hpp` | Client ↔ venue order ID mapping |
 | `common/connectors/exchange_connector.hpp` | Abstract connector interface |
 | `common/connectors/idempotency_journal.hpp` | Crash-safe operation journaling |
+
+
+## Classes & Methods (Quick Reference)
+
+### Strategy & Routing
+- **`NeuralAlphaMarketMaker` (`market_maker.hpp`)** — Main quoting strategy with alpha/regime-aware skewing.
+  - `on_book_update()`: Runs one strategy cycle (drain fills, read signals, quote/requote, stop checks).
+  - `set_alpha_signal(...)`: Injects alpha for deterministic tests/simulation.
+- **`SmartOrderRouter` (`router/smart_order_router.hpp`)** — Venue scorer and child-order allocator.
+  - `route(...)` / `route_with_alpha(...)`: Produces venue split decisions from quotes and constraints.
+  - `infer_regime(...)` / `score_venue_bps(...)`: Derives routing regime and per-venue scoring.
+- **`ChildOrderScheduler` (`common/orders/child_order_scheduler.hpp`)** — Converts parent plan urgency/horizon into child execution style.
+  - `schedule(...)`: Picks style (passive/IOC/sweep), venue clips, and expected shortfall.
+- **`ParentOrderManager` (`common/orders/parent_order_manager.hpp`)** — Stateful parent-plan lifecycle manager.
+  - `update_target(...)`: Creates/replaces/updates parent plans from target-position deltas.
+  - `on_child_fill()/on_child_cancel()/on_child_reject()`: Reconciles plan progress from child outcomes.
+
+### Order Lifecycle & Connectors
+- **`OrderManager` (`common/orders/order_manager.hpp`)** — Owns in-flight orders, fill application, and strategy-visible position.
+  - `submit()/cancel()/cancel_all()`: Order lifecycle entry points.
+  - `drain_fills()`: Applies queued fills into order slots and position ledger.
+  - `ledger_snapshot()`: Exposes aggregated cross-venue position/PnL snapshot.
+- **`ExchangeConnector` (`common/connectors/exchange_connector.hpp`)** — Abstract exchange API contract.
+  - `connect()/disconnect()/submit/cancel/replace/query/cancel_all/reconcile`: Required connector operations.
+- **`LiveConnectorBase` (`common/connectors/live_connector_base.hpp`)** — Shared live connector workflow.
+  - `submit_order()/cancel_order()/replace_order()`: Adds idempotency journal + retry wrappers.
+  - `query_order()/cancel_all()/reconcile()`: Unified query/cancel/recovery behavior for venues.
+
+### Reliability, Reconciliation, and Portfolio State
+- **`IdempotencyJournal` (`common/connectors/idempotency_journal.hpp`)** — Crash-safe op journal.
+  - `begin()/ack()/fail()`: Tracks operation lifecycle and duplicate handling.
+  - `lookup()/recover()`: Reads existing state to suppress duplicate replays.
+- **`VenueOrderMap` (`common/connectors/venue_order_map.hpp`)** — Client↔venue order-id mapping table.
+  - `upsert()/get()/erase()/clear()`: Maintains active mappings for cancel/query/replace.
+- **`ReconciliationService` (`common/reconciliation/reconciliation_service.hpp`)** — Drift detector across local vs venue/canonical snapshots.
+  - `register_connector()/run_periodic_drift_check()/reconcile_on_reconnect()`: Drives reconciliation cycles.
+  - `set_canonical_snapshot(...)`: Supplies baseline snapshots for drift classification.
+- **`PositionLedger` (`common/portfolio/position_ledger.hpp`)** — Aggregates per-venue inventory, pending qty, and PnL.
+  - `on_order_submitted()/on_fill()/on_order_closed()`: Applies lifecycle events into venue/global state.
+  - `snapshot()`: Produces unified portfolio snapshot for strategy/reports.
+- **`PortfolioIntentEngine` (`common/portfolio/portfolio_intent_engine.hpp`)** — Converts alpha/regime/health into target position intent.
+  - `evaluate(...)`: Returns target delta, urgency, flatten flags, and reason codes.
+  - `reason_code_to_string(...)`: Maps intent reason enums to log/report labels.
+- **`VenueQualityModel` (`common/quality/venue_quality_model.hpp`)** — Adaptive venue-quality estimator.
+  - `observe_*` methods: Ingest fill, markout, reject, latency, and health signals.
+  - `snapshot()/apply()/persist_snapshot(...)`: Exposes and publishes composite quality penalties.

@@ -22,3 +22,19 @@ Gate logic:
 - SHORT trade allowed only when signal_bps < -signal_min_bps AND risk_score < risk_max 
 - NEUTRAL (|signal| < min_bps) → allow market-maker only (no directional taker arb)
 - STALE  (age > stale_ns)      → allow taker arb (fail-open to preserve uptime)
+
+
+## Classes & Methods (Quick Reference)
+
+- **`AlphaSignalReader` (`alpha_signal.hpp`)** — Reads neural alpha signal frame via seqlock mmap.
+  - `open()/close()/is_open()`: Manages shared-memory file mapping lifecycle.
+  - `read()`: Returns a consistent alpha frame (`signal_bps`, `risk_score`, sizing, horizon, timestamp).
+  - `allows_long()/allows_short()/allows_mm()`: Applies signal/risk/staleness gating with fail-open behavior.
+
+- **`RegimeSignalReader` (`regime_signal.hpp`)** — Reads regime probabilities from mmap.
+  - `open()/close()/read()`: Accesses and validates seqlock regime frame data.
+  - `is_stale(...)`: Checks frame age against caller-provided freshness threshold.
+
+- **`LobPublisher` (`lob_publisher.hpp`)** — Publishes normalized top-of-book snapshots to shared memory.
+  - `open()/close()/is_open()`: Initializes and manages the ring-buffer mapping.
+  - `publish(...)`: Writes a single exchange/symbol top-5 LOB snapshot into the next ring slot.

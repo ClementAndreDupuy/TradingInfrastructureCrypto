@@ -63,3 +63,34 @@ When modifying feed handlers, preserve deterministic ordering and sequence integ
 - When adding a venue handler, document: snapshot source, sequence/checksum rule, exact re-sync trigger conditions, and the symbol-info endpoint + field used for tick size.
 - Reconnect is a correctness boundary: treat as fresh sync unless the venue protocol explicitly guarantees continuity.
 - Keep comments limited to venue protocol contracts, sequencing rules, and resync triggers.
+
+
+## Classes & Methods (Quick Reference)
+
+- **`BookManager` (`common/book_manager.hpp`)** — Normalizes feed callbacks into `OrderBook` state.
+  - `snapshot_handler()/delta_handler()`: Returns callbacks that apply snapshots/deltas and update freshness.
+  - `age_ms()`: Reports elapsed time since last accepted update for stale-book checks.
+  - `set_publisher(LobPublisher*)`: Enables mmap LOB publishing after each accepted update.
+
+- **`BinanceFeedHandler` (`binance/...`)** — Binance depth stream synchronizer.
+  - `start()/stop()`: Manages initial sync and websocket lifecycle.
+  - `process_message(...)`: Parses depth payloads and emits normalized updates.
+  - `sync_stats()`: Returns re-sync and buffering telemetry.
+
+- **`KrakenFeedHandler` (`kraken/...`)** — Kraken book stream handler with checksum validation.
+  - `start()/stop()`: Starts or tears down snapshot+delta sync loop.
+  - `process_message(...)`: Applies snapshot/delta payloads and sequence guards.
+  - `crc32_for_test(...)`: Deterministic checksum helper for unit tests.
+
+- **`OkxFeedHandler` (`okx/...`)** — OKX books feed handler with buffered delta replay.
+  - `start()/stop()`: Controls WS loop and synchronization state.
+  - `process_message(...)`: Parses and validates snapshot/delta message flow.
+  - `validate_checksum(...)` (internal): Verifies book integrity from venue checksums.
+
+- **`CoinbaseFeedHandler` (`coinbase/...`)** — Coinbase Advanced Trade level2 handler.
+  - `start()/stop()`: Handles auth/subscription and stream lifecycle.
+  - `process_message(...)`: Converts channel events into normalized snapshot/delta updates.
+  - `build_subscription_messages()/generate_jwt(...)`: Builds authenticated subscription payloads.
+
+- **`tick_from_string(...)` (`common/tick_size.hpp`)** — Tick-size parser.
+  - Converts string tick increments (including padded decimals) to stable numeric tick sizes.
