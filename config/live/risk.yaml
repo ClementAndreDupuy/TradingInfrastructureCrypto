@@ -1,22 +1,10 @@
-strategy:
-  symbol: BTCUSDT
-  trade_qty_btc: 0.001
-  taker_threshold_bps: 12.0
-  mm_spread_target_bps: 6.0
-  quote_ttl_ms: 500
-  tick_size: 0.01
-
 position:
-  max_per_symbol_btc: 0.076
-  max_notional_per_symbol: 6500
   max_portfolio_notional: 13000
 
 pnl:
   max_drawdown_usd: -250.0
-  daily_loss_limit_usd: -500.0
 
 fees_bps:
-  binance_maker: 2.0
   binance_taker: 5.0
   okx_taker: 8.0
   kraken_taker: 10.0
@@ -34,16 +22,10 @@ rate_limits:
 
 book:
   max_age_ms: 200
-  min_spread_bps: 5.0
   target_range_usd: 250.0
 
 heartbeat:
   timeout_ms: 3000
-
-kill_switch:
-  enabled: true
-  hardware_pin: ""
-  software_hotkey: "SIGTERM"
 
 global_risk:
   max_gross_notional: 13000

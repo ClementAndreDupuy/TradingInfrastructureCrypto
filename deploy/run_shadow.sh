@@ -154,30 +154,9 @@ Credential resolution per venue (first non-empty wins):
 USAGE
 }
 
-SYMBOL="BTCUSDT"
-VENUES="BINANCE,KRAKEN,OKX,COINBASE"
-DURATION_SECS=900
-INTERVAL_MS=1000
 RUN_ONCE=0
-ENV_FILE="$ENV_FILE_DEFAULT"
-SIGNAL_FILE="/tmp/trt_ipc/neural_alpha_signal.bin"
-LOB_FEED_PATH="/tmp/trt_ipc/trt_lob_feed.bin"
-MODEL_PATH="$REPO_ROOT/models/neural_alpha_latest.pt"
-SECONDARY_MODEL_PATH="$REPO_ROOT/models/neural_alpha_secondary.pt"
-REGIME_MODEL_PATH="$REPO_ROOT/models/r2_regime_model.json"
 MODEL_PATH_SET=0
 SECONDARY_MODEL_PATH_SET=0
-TRAIN_TICKS=1000
-TRAIN_EPOCHS=4
-REPORT_INTERVAL=60
-CONTINUOUS_TRAIN_EVERY_TICKS=10000
-CONTINUOUS_TRAIN_WINDOW_TICKS=1000
-SAFE_MODE_TICKS=30
-DRIFT_MIN_SAMPLES=100
-DRIFT_IC_FLOOR=-0.08
-ALPHA_SEQ_LEN=64
-ALPHA_LOG_PATH="$REPO_ROOT/logs/neural_alpha_shadow.jsonl"
-OPS_EVENTS_LOG="$REPO_ROOT/logs/ops_events.jsonl"
 SKIP_ALPHA=0
 CONFIG_FILE="$CONFIG_FILE_DEFAULT"
 EXTRA_ARGS=()
@@ -222,13 +201,17 @@ while [[ $# -gt 0 ]]; do
 done
 
 SYMBOL_TAG="$(echo "$SYMBOL" | tr '[:upper:]' '[:lower:]')"
-if [[ "$MODEL_PATH_SET" -eq 0 && "$MODEL_PATH" == "$REPO_ROOT/models/neural_alpha_latest.pt" ]]; then
-    MODEL_PATH="$REPO_ROOT/models/neural_alpha_${SYMBOL_TAG}_latest.pt"
+if [[ "$MODEL_PATH_SET" -eq 0 ]]; then
+    if [[ -z "$MODEL_PATH" || "$MODEL_PATH" == */neural_alpha_latest.pt ]]; then
+        MODEL_PATH="$REPO_ROOT/models/neural_alpha_${SYMBOL_TAG}_latest.pt"
+    fi
 fi
-if [[ "$SECONDARY_MODEL_PATH_SET" -eq 0 && "$SECONDARY_MODEL_PATH" == "$REPO_ROOT/models/neural_alpha_secondary.pt" ]]; then
-    SECONDARY_MODEL_PATH="$REPO_ROOT/models/neural_alpha_${SYMBOL_TAG}_secondary.pt"
+if [[ "$SECONDARY_MODEL_PATH_SET" -eq 0 ]]; then
+    if [[ -z "$SECONDARY_MODEL_PATH" || "$SECONDARY_MODEL_PATH" == */neural_alpha_secondary.pt ]]; then
+        SECONDARY_MODEL_PATH="$REPO_ROOT/models/neural_alpha_${SYMBOL_TAG}_secondary.pt"
+    fi
 fi
-if [[ "$REGIME_MODEL_PATH" == "$REPO_ROOT/models/r2_regime_model.json" ]]; then
+if [[ -z "$REGIME_MODEL_PATH" || "$REGIME_MODEL_PATH" == */r2_regime_model.json ]]; then
     REGIME_MODEL_PATH="$REPO_ROOT/models/r2_regime_model_${SYMBOL_TAG}.json"
 fi
 
