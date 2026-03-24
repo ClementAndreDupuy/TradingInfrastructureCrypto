@@ -32,8 +32,16 @@ namespace trading {
         double alpha_exit_buffer_bps = 0.75;
         double negative_reversal_signal_bps = -1.0;
         double max_risk_score = 0.65;
-        double shock_flatten_threshold = 0.60;
-        double illiquid_reduce_threshold = 0.55;
+        // Hysteresis thresholds: enter requires a higher probability than exit.
+        // This prevents rapid regime flipping when p_shock / p_illiquid hovers
+        // near a single threshold.
+        double shock_enter_threshold = 0.70;
+        double shock_exit_threshold  = 0.50;
+        double illiquid_enter_threshold = 0.65;
+        double illiquid_exit_threshold  = 0.45;
+        // Consecutive ticks above enter (or below exit) required before the
+        // regime state actually flips.  Guards against single-tick spikes.
+        int32_t regime_persistence_ticks = 5;
         int64_t stale_inventory_ms = 5000;
         double stale_inventory_alpha_hold_bps = 10.0;
         double health_reduce_ratio = 0.50;
@@ -66,7 +74,17 @@ namespace trading {
             const AlphaSignal &alpha_signal,
             const RegimeSignal &regime_signal,
             const PositionLedgerSnapshot &ledger,
-            const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> &venues) const noexcept {
+            const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> &venues) noexcept {
+            _update_regime_hysteresis(regime_signal.p_illiquid,
+                                      cfg_.illiquid_enter_threshold,
+                                      cfg_.illiquid_exit_threshold,
+                                      cfg_.regime_persistence_ticks,
+                                      illiquid_regime_active_, illiquid_ticks_);
+            _update_regime_hysteresis(regime_signal.p_shock,
+                                      cfg_.shock_enter_threshold,
+                                      cfg_.shock_exit_threshold,
+                                      cfg_.regime_persistence_ticks,
+                                      shock_regime_active_, shock_ticks_);
             PortfolioIntent out;
             const double current_position = clamp_position(ledger.global_position);
             const double expected_cost_bps = estimate_expected_cost_bps(venues);
@@ -89,8 +107,8 @@ namespace trading {
 
             const bool risk_off = alpha_signal.risk_score >= cfg_.max_risk_score;
             const bool negative_reversal = alpha_signal.signal_bps <= cfg_.negative_reversal_signal_bps;
-            const bool shock_regime = regime_signal.p_shock >= cfg_.shock_flatten_threshold;
-            const bool illiquid_regime = regime_signal.p_illiquid >= cfg_.illiquid_reduce_threshold;
+            const bool shock_regime = shock_regime_active_;
+            const bool illiquid_regime = illiquid_regime_active_;
             const bool stale_inventory = ledger.oldest_inventory_age_ms >= cfg_.stale_inventory_ms &&
                                          current_position > 0.0;
             const bool edge_positive = alpha_signal.signal_bps > expected_cost_bps;
@@ -181,6 +199,39 @@ namespace trading {
 
     private:
         PortfolioIntentConfig cfg_;
+
+        // Hysteresis state — one bool + tick counter per guarded regime.
+        bool    illiquid_regime_active_{false};
+        int32_t illiquid_ticks_{0};
+        bool    shock_regime_active_{false};
+        int32_t shock_ticks_{0};
+
+        // Advance hysteresis for one regime dimension.
+        // When inactive: count consecutive ticks >= enter_thresh; activate after
+        //   persistence ticks and reset counter.
+        // When active:   count consecutive ticks <  exit_thresh;  deactivate
+        //   after persistence ticks and reset counter.
+        // Any tick that does not advance the counter resets it to zero.
+        static void _update_regime_hysteresis(double p,
+                                              double enter_thresh,
+                                              double exit_thresh,
+                                              int32_t persistence,
+                                              bool &active,
+                                              int32_t &ticks) noexcept {
+            if (!active) {
+                ticks = (p >= enter_thresh) ? ticks + 1 : 0;
+                if (ticks >= persistence) {
+                    active = true;
+                    ticks  = 0;
+                }
+            } else {
+                ticks = (p < exit_thresh) ? ticks + 1 : 0;
+                if (ticks >= persistence) {
+                    active = false;
+                    ticks  = 0;
+                }
+            }
+        }
 
         [[nodiscard]] static double estimate_expected_cost_bps(
             const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> &venues) noexcept {
