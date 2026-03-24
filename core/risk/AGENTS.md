@@ -1,42 +1,21 @@
 # core/risk/
 
-Pre-trade risk checks. **Sub-microsecond, no Python, no exceptions.**
+Runtime risk controls used by strategy and execution flows.
 
-## Checks (in order)
+## Classes & Methods (Quick Reference)
 
-1. Kill switch (single atomic load)
-2. Circuit breaker
-3. Drawdown limit → triggers kill switch
-4. Input validation
-5. Book freshness (stale data = execution risk)
-6. Flash crash guard (price deviation from reference)
-7. Gross spread minimum
-8. Fee-adjusted profitability
-9. Open leg count
-10. Rate limits (per-second and per-minute, lock-free)
-11. Position limits (per symbol, per exchange)
-12. Notional limits (per symbol, per exchange, portfolio)
+- **`CircuitBreaker` (`circuit_breaker.hpp`)** — Guardrails for runtime throughput and market safety conditions.
+  - `check_order_rate()/check_message_rate()`: Enforces order/message throughput limits.
+  - `check_drawdown()/check_book_age()/check_price_deviation()`: Monitors drawdown, staleness, and large price shocks.
+  - `record_leg_result()/check_consecutive_losses()`: Tracks loss streaks and breach status.
 
-## Kill Switch
+- **`GlobalRiskControls` (`global_risk_controls.hpp`)** — Notional and concentration cap checks.
+  - `check_order(...)`: Simulates post-order risk state and returns breach code if any.
+  - `commit_order(...)`: Commits exposure updates following a passing check.
+  - `gross_notional()/net_notional()`: Read current aggregate exposures.
 
-Three levels: software (atomic flag), dead man's switch (heartbeat timeout), hardware (physical network cut). Test weekly.
+- **`RecoveryGuard` (`recovery_guard.hpp`)** — Recovery anomaly boundary checker.
+  - `check(...)`: Validates in-flight and duplicate/race counters against configured caps.
 
-## Configuration
-
-Risk limits in `config/{dev,shadow,live}/risk.yaml`. Always tighter in live than shadow, tighter in shadow than dev.
-
-## Performance
-
-- Risk evaluation: < 500 ns on x86-64
-- No heap allocation after construction
-- Lock-free atomic operations only
-
-- Keep comments only when they explain fail-fast ordering, atomic/concurrency rationale, or guard semantics that are not obvious from the code.
-## Reusable Agent Memory (Updated)
-
-- Preserve check ordering unless there is a strong latency/correctness reason; ordering encodes fail-fast policy.
-- Any new guard should declare:
-  - unit (ticks, bps, notional)
-  - reset semantics
-  - interaction with kill switch state
-- Keep config parity across `config/dev`, `config/shadow`, `config/live` with stricter production limits.
+- **`RiskConfigLoader` (`risk_config_loader.hpp`)** — Runtime config loader.
+  - `load(path, out)`: Parses file values into `RiskRuntimeConfig`.

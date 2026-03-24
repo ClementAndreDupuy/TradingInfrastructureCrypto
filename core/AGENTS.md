@@ -1,38 +1,70 @@
 # core/
 
-**C++ hot path** — all latency-critical code lives here.
+C++ hot-path runtime components for trading, routing, risk, and shared-memory bridges.
 
-## Rules
+## Active component map
 
-1. No Python — never call Python from this layer.
-2. No heap allocation in hot path — pre-allocate everything at startup.
-3. Cache-friendly structures — flat arrays over `std::map`.
-4. PTP timestamps — never `std::chrono::system_clock`.
-5. Fail fast — log and halt on bad state, never silently continue.
+- `common/` — shared enums/types/utilities.
+- `orderbook/` — in-memory L2 order book state.
+- `feeds/` — exchange market-data handlers + normalized book updates.
+- `ipc/` — mmap bridges (`AlphaSignalReader`, `RegimeSignalReader`, `LobPublisher`).
+- `risk/` — runtime guardrails (`CircuitBreaker`, global limits, recovery guard).
+- `execution/` — connector stack, order lifecycle, routing/scheduling, portfolio/reconciliation.
+- `engine/` / `shadow/` — orchestration and paper-trading surfaces.
 
-## Components
+## Core Classes & Methods (Quick Reference)
 
-- **common/** — Shared types: `Order`, `FillUpdate`, `OrderType`, `TimeInForce`, `OrderState`, `ConnectorResult`, `Exchange`, `Side`
-- **orderbook/** — Flat-array O(1) book; all downstream depends on its correctness
-- **feeds/** — Per-exchange WebSocket handlers (Binance, Kraken, OKX, Coinbase) with snapshot/delta sync, continuity checks, and reconnect backoff
-- **ipc/** — `AlphaSignalReader`: mmaps `/tmp/neural_alpha_signal.bin` written by Python shadow session
-- **risk/** — Pre-trade checks, kill switch (sub-µs, lock-free)
-- **execution/** — `ExchangeConnector` (interface), live venue connectors (Binance/Kraken/OKX/Coinbase), `OrderManager` (position + fills), `NeuralAlphaMarketMaker` (GTX quotes, alpha skew, stop-limit)
-- **shadow/** — `ShadowConnector` + `ShadowEngine`: paper trading with identical code path to live
+### `orderbook/`
+- **`OrderBook`** — Owns the L2 price-grid state and applies normalized snapshots/deltas.
+  - `apply_snapshot(const Snapshot&)`: Reinitializes book state from a full snapshot with validation.
+  - `apply_delta(const Delta&)`: Applies a single level update into bid/ask grids.
+  - `get_best_bid()/get_best_ask()/get_mid_price()`: Returns top-of-book derived prices.
 
-## Performance Requirements
+### `feeds/`
+- **`BinanceFeedHandler` / `KrakenFeedHandler` / `OkxFeedHandler` / `CoinbaseFeedHandler`** — Venue-specific snapshot+stream synchronizers.
+  - `start()/stop()`: Controls feed lifecycle and synchronization loop.
+  - `process_message(const std::string&)`: Parses venue payloads and emits normalized updates.
+  - `refresh_tick_size()`: Fetches tick-size metadata used when constructing books.
+- **`BookManager`** — Adapter from feed callbacks into `OrderBook` + freshness tracking.
+  - `snapshot_handler()/delta_handler()`: Returns callbacks that apply incoming updates.
+  - `age_ms()`: Returns elapsed time since last accepted update.
 
-- Order book update: < 1 µs
-- Risk check: < 1 µs
-- Feed handler: < 10 µs end-to-end
+### `ipc/`
+- **`AlphaSignalReader`** — Reads mmap alpha frames via seqlock retry logic.
+  - `open()/close()/read()`: Manages mapping and returns latest consistent alpha signal.
+  - `allows_long()/allows_short()/allows_mm()`: Applies alpha/risk/staleness gating helpers.
+- **`RegimeSignalReader`** — Reads mmap regime probabilities.
+  - `read()`: Returns latest consistent regime frame.
+  - `is_stale(...)`: Validates freshness against caller threshold.
+- **`LobPublisher`** — Single-writer mmap ring publisher for top-of-book snapshots.
+  - `open()/close()/is_open()`: Manages shared-memory ring mapping.
+  - `publish(...)`: Writes one top-5 LOB snapshot slot.
 
-## Reusable Agent Memory (Updated)
+### `risk/`
+- **`CircuitBreaker`** — Runtime guardrails for order/message rates, drawdown, and stale/abnormal markets.
+  - `check_order_rate()/check_message_rate()`: Enforces throughput limits.
+  - `check_drawdown()/check_book_age()/check_price_deviation()`: Detects and reacts to unsafe states.
+  - `record_leg_result(...)`: Tracks loss streaks and escalation.
+- **`GlobalRiskControls`** — Portfolio/venue/symbol notional limit checks.
+  - `check_order(...)`: Evaluates whether an order would breach limits.
+  - `commit_order(...)`: Commits exposure state after successful check.
+- **`RecoveryGuard`** — Recovery path sanity guard.
+  - `check(...)`: Trips protection if recovery counters exceed configured caps.
+- **`RiskConfigLoader`** — Config parser for `RiskRuntimeConfig`.
+  - `load(path, out)`: Loads risk runtime settings from file.
 
-- Keep `core/` edits tightly scoped: avoid cross-cutting refactors that blend feed/orderbook/risk changes in one commit.
-- Current directory map under `core/` includes: `common/`, `engine/`, `execution/`, `feeds/`, `ipc/`, `orderbook/`, `risk/`, `shadow/`.
-- For changes that influence trading decisions, validate in this order:
-  1. `tests/unit/`
-  2. `tests/integration/` (feed→book→risk path)
-  3. `tests/replay/` for sequence/regression confidence
-- If a change could impact latency, add or run `tests/perf/` checks before merging.
-- Keep comments in `core/` sparse and high-signal: remove banner comments, usage walkthroughs, and line-by-line restatements of obvious code; keep only invariants, concurrency/memory-ordering notes, protocol contracts, and non-obvious safety rationale.
+### `execution/`
+- **`ExchangeConnector`** — Abstract connector interface.
+  - `submit_order/cancel_order/replace_order/query_order/cancel_all/reconcile`: Required connector operations.
+- **`LiveConnectorBase`** — Shared live connector behavior (journal, retry, order-id mapping).
+  - `submit_order()/cancel_order()/replace_order()`: Wraps venue calls with recovery semantics.
+  - `query_order()/cancel_all()/reconcile()`: Shared query/cancel/recovery entry points.
+- **`OrderManager`** — Strategy-side order lifecycle + fill application.
+  - `submit()/cancel()/cancel_all()`: Places/cancels orders through connector.
+  - `drain_fills()`: Applies queued fills and updates position/ledger state.
+- **`NeuralAlphaMarketMaker`** — Book-driven quoting with alpha/regime inputs and stop handling.
+  - `on_book_update()`: Main strategy loop step.
+  - `set_alpha_signal(...)`: Injects alpha/risk for tests.
+- **`SmartOrderRouter`** — Venue scoring and child-order allocation.
+  - `route()/route_with_alpha(...)`: Produces child routing decisions.
+  - `score_venue_bps()/expected_shortfall_bps(...)`: Venue cost/shortfall scoring.

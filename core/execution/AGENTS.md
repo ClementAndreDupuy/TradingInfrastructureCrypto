@@ -1,180 +1,71 @@
-# Execution Domain — Position Management & Token Selling
+# core/execution/
 
-## Overview
-
-Position tracking is centralized in `OrderManager`. Token selling occurs through normal market-making limit orders and automatic stop-limit flattening when losses exceed a threshold.
-
----
+Execution stack for order lifecycle, routing/scheduling, portfolio state, connector reliability, and reconciliation.
 
 ## Common Layout
 
-- `common/connectors/` — connector interfaces, idempotency, and venue order ID bookkeeping
-- `common/orders/` — order lifecycle, parent plans, and child scheduling
-- `common/portfolio/` — multi-venue inventory state and intent generation
-- `common/reconciliation/` — snapshot types and drift detection
-- `common/quality/` — adaptive venue quality scoring
+- `common/connectors/` — connector interfaces, idempotency journal, venue order-id mapping.
+- `common/orders/` — order manager + parent/child execution planning.
+- `common/portfolio/` — ledger snapshots and portfolio intent engine.
+- `common/reconciliation/` — reconciliation snapshot types and drift service.
+- `common/quality/` — adaptive venue quality model.
+- `router/` — smart order router logic.
+- `market_maker.hpp` — neural alpha market-making strategy surface.
 
-## Position Management
+## Classes & Methods (Quick Reference)
 
-### OrderManager (`common/orders/order_manager.hpp`)
+### Strategy & Routing
+- **`NeuralAlphaMarketMaker` (`market_maker.hpp`)**
+  - `on_book_update()`: Runs one strategy iteration (signals, quote management, stop handling).
+  - `set_alpha_signal(...)`: Injects deterministic alpha/risk values for tests.
 
-- `position_` (double) holds the net position: positive = long, negative = short
-- Orders are stored in a **pre-allocated pool of 64 `ManagedOrder` slots** (no heap allocation at runtime)
-- Fill events travel through a lock-free `SpscQueue<FillUpdate, 128>`; position mutations happen only on the strategy thread
+- **`SmartOrderRouter` (`router/smart_order_router.hpp`)**
+  - `route(...)` / `route_with_alpha(...)`: Builds routing decisions and child allocations.
+  - `infer_regime(...)`: Derives scoring regime from venue inputs.
+  - `score_venue_bps()/expected_shortfall_bps(...)`: Computes venue ranking costs.
 
-#### Threading contract
-| Thread | Allowed calls |
-|---|---|
-| Receive (WebSocket/FIX) | `connector_.on_fill` enqueues into SPSC queue only |
-| Strategy | `submit()`, `cancel()`, `drain_fills()`, `active_order_count()`, `position()`, `realized_pnl()` |
+- **`ChildOrderScheduler` (`common/orders/child_order_scheduler.hpp`)**
+  - `schedule(...)`: Chooses child execution style and venue clips for an active parent plan.
 
-`drain_fills()` **must** be called at the start of every strategy iteration (before `submit()`). Safe in shadow/single-thread mode — the queue is simply drained inline.
+- **`ParentOrderManager` (`common/orders/parent_order_manager.hpp`)**
+  - `update_target(...)`: Creates/updates/replaces parent execution plans from target deltas.
+  - `on_child_fill()/on_child_cancel()/on_child_reject()`: Reconciles plan state from child events.
 
-#### Order lifecycle
-1. **Submit** — allocates a free slot, assigns `client_order_id`, calls `connector_.submit_order()`
-2. **Fill** — receive thread enqueues `FillUpdate`; `drain_fills()` → `apply_fill()` updates qty/price, `position_`, `realized_pnl_`, fires `on_fill` callback
-3. **Cancel** — `cancel(client_id)` delegates to the connector
+### Order Lifecycle & Connectors
+- **`OrderManager` (`common/orders/order_manager.hpp`)**
+  - `submit()/cancel()/cancel_all()`: Entry points for order lifecycle actions.
+  - `drain_fills()`: Applies queued fills and updates local position + ledger state.
+  - `ledger_snapshot()/active_order_count()`: Returns strategy-visible state.
 
-### NeuralAlphaMarketMaker (`market_maker.hpp`)
+- **`ExchangeConnector` (`common/connectors/exchange_connector.hpp`)**
+  - `connect()/disconnect()/submit_order()/cancel_order()/replace_order()/query_order()/cancel_all()/reconcile()`: Base connector contract.
 
-- `entry_price_` tracks the average entry price for open positions
-- Position limits are enforced when posting quotes:
-  ```cpp
-  bool post_bid = (net_pos + qty) <= cfg_.max_position;
-  bool post_ask = (net_pos - qty) >= -cfg_.max_position;
-  ```
-- **Inventory skew decay** reduces quote skew as position approaches flat to avoid churn:
-  ```cpp
-  decay = pow(abs(net_pos) / max_position, decay_power)
-  ```
+- **`LiveConnectorBase` (`common/connectors/live_connector_base.hpp`)**
+  - `submit_order()/cancel_order()/replace_order()`: Shared idempotent + retrying connector flow.
+  - `query_order()/cancel_all()/reconcile()`: Shared query/cancel/recovery operations.
+  - `fetch_reconciliation_snapshot(...)`: Venue extension point for reconciliation snapshots.
 
----
+- **`IdempotencyJournal` (`common/connectors/idempotency_journal.hpp`)**
+  - `begin()/ack()/fail()`: Tracks op lifecycle and crash-recovery states.
+  - `lookup()/recover()`: Reads historical state to avoid duplicate operations.
 
-## Token Selling
+- **`VenueOrderMap` (`common/connectors/venue_order_map.hpp`)**
+  - `upsert()/get()/erase()/clear()`: Maintains client↔venue order-id mappings.
 
-### 1. Normal sell orders (market-making)
+### Portfolio, Reconciliation, and Venue Quality
+- **`PositionLedger` (`common/portfolio/position_ledger.hpp`)**
+  - `on_order_submitted()/on_fill()/on_order_closed()`: Applies order lifecycle events to inventory state.
+  - `snapshot()`: Produces aggregate global + per-venue position/PnL snapshot.
 
-- Sell orders use `Side::ASK`
-- **SmartOrderRouter** (`router/smart_order_router.cpp`) routes them across up to 4 venues: Binance, OKX, Coinbase, Kraken
-- Each venue is scored: `base_cost + fill_penalty + queue_penalty + toxicity_penalty + price_penalty`
-- Orders can be split across venues if beneficial
-- Routing weights adapt to market regime:
-  - **High toxicity** (avg > 2.0 bps): prioritizes fill probability
-  - **Low fill probability** (avg < 0.45): increases queue weight
-  - **High fill probability** (avg > 0.75): reduces weights for faster execution
+- **`PortfolioIntentEngine` (`common/portfolio/portfolio_intent_engine.hpp`)**
+  - `evaluate(...)`: Converts alpha/regime/venue-health/ledger state into target-position intent.
+  - `reason_code_to_string(...)`: Converts intent enums to stable log labels.
 
-### 2. Stop-limit flattening (loss closure)
+- **`ReconciliationService` (`common/reconciliation/reconciliation_service.hpp`)**
+  - `register_connector()/run_periodic_drift_check()/reconcile_on_reconnect()`: Runs reconciliation cycles.
+  - `set_canonical_snapshot(...)/set_canonical_snapshot_fetcher(...)`: Supplies baseline snapshot source.
+  - `is_quarantined()/state_for(...)`: Exposes venue reconciliation status.
 
-Triggered automatically in `check_stop()` when unrealized loss exceeds `stop_loss_bps`:
-
-```cpp
-double unreal_bps = (pos > 0.0)
-    ? (mid - entry_price_) / entry_price_ * 1e4
-    : (entry_price_ - mid) / entry_price_ * 1e4;
-
-if (unreal_bps < -cfg_.stop_loss_bps) {
-    cancel_quotes();  // Pull existing quotes first
-
-    if (pos > 0.0) {
-        // Long → SELL: limit below mid by limit_slip_bps
-        double limit_px = mid * (1.0 - cfg_.limit_slip_bps * 1e-4);
-        stop_id_ = submit_stop_limit(Side::ASK, mid, limit_px, std::abs(pos));
-    } else {
-        // Short → BUY: limit above mid by limit_slip_bps
-        double limit_px = mid * (1.0 + cfg_.limit_slip_bps * 1e-4);
-        stop_id_ = submit_stop_limit(Side::BID, mid, limit_px, std::abs(pos));
-    }
-}
-```
-
-On fill: `entry_price_` resets to 0, `stop_id_` clears, and the position is fully flat.
-
----
-
-## Safety & Reconciliation
-
-| Component | File | Role |
-|---|---|---|
-| `ReconciliationService` | `common/reconciliation/reconciliation_service.hpp` | Detects position drift vs. exchange snapshots; triggers `RISK_HALT_RECOMMENDED` if mismatch > 1e-6 |
-| `IdempotencyJournal` | `common/connectors/idempotency_journal.hpp` | Journals all SUBMIT/CANCEL ops to disk; suppresses duplicate submissions after crashes |
-| `VenueOrderMap` | `common/connectors/venue_order_map.hpp` | Bidirectional `client_order_id` ↔ `venue_order_id` mapping (capacity: 512 entries) |
-| `cancel_all()` | `common/connectors/exchange_connector.hpp` | Emergency flattening of all positions on a symbol |
-
-### Mismatch classes detected by ReconciliationService
-- `MISSING_ORDER` — order exists locally but not on exchange
-- `QTY_DRIFT` — quantity mismatch between internal state and exchange
-- `FILL_GAP` — fills missing
-- `POSITION_DRIFT` — net position mismatch
-- `BALANCE_DRIFT` — account balance mismatch
-
----
-
-## Exchange Connectivity
-
-`ExchangeConnector` (`common/connectors/exchange_connector.hpp`) is the abstract interface:
-```cpp
-virtual ConnectorResult submit_order(const Order& order) = 0;
-virtual ConnectorResult cancel_order(uint64_t client_order_id) = 0;
-virtual ConnectorResult cancel_all(const char* symbol) = 0;
-virtual ConnectorResult query_order(uint64_t client_order_id, FillUpdate& status) = 0;
-```
-
-`LiveConnectorBase` (`common/connectors/live_connector_base.hpp`) implements the shared submission flow:
-1. Checks idempotency journal for duplicates
-2. Calls venue-specific `submit_to_venue()` with retries
-3. Records ACK or FAIL in the journal
-4. Updates `VenueOrderMap`
-
-Supported venues: Binance, OKX, Coinbase, Kraken, Shadow (paper trading).
-- OKX live execution requires an API passphrase in addition to key/secret, and `cancel_all()` is intentionally unsupported until the strategy layer supplies a documented OKX-wide cancellation flow.
-
----
-
-## Position State Flow
-
-```
-Strategy / NeuralAlphaMarketMaker
-    ↓
-OrderManager.submit(Order{side: ASK})
-    ↓
-[Slot allocated in 64-entry pool]
-    ↓
-SmartOrderRouter → ExchangeConnector.submit_order()
-    ↓
-[Venue REST API call]
-    ↓
-FillUpdate received
-    ↓
-FillUpdate enqueued into SpscQueue (receive thread)
-    ↓
-OrderManager.drain_fills() → apply_fill() (strategy thread)
-    ├→ position_ -= fill_qty        (ASK reduces position)
-    ├→ realized_pnl_ updated
-    ├→ filled_qty, avg_fill_price updated
-    └→ on_fill() callback triggered
-    ↓
-NeuralAlphaMarketMaker.on_fill()
-    ├→ entry_price_ updated (if position remains)
-    ├→ bid_id_ / ask_id_ / stop_id_ cleared
-    └→ fill event logged
-```
-
----
-
-## Comment Hygiene
-
-- Keep execution comments focused on order-state invariants, venue contracts, and failure handling.
-- Remove banner comments, prose summaries of the control flow, and inline comments that only restate nearby code.
-
-## Key Files
-
-| File | Purpose |
-|---|---|
-| `common/orders/order_manager.hpp` | Core position tracking & order lifecycle |
-| `market_maker.hpp` | Quote skewing, stop-limits, position flattening |
-| `router/smart_order_router.cpp` | Multi-venue sell routing & scoring |
-| `common/reconciliation/reconciliation_service.hpp` | Drift detection & safety halts |
-| `common/connectors/live_connector_base.hpp` | Exchange API abstraction with idempotency |
-| `common/connectors/venue_order_map.hpp` | Client ↔ venue order ID mapping |
-| `common/connectors/exchange_connector.hpp` | Abstract connector interface |
-| `common/connectors/idempotency_journal.hpp` | Crash-safe operation journaling |
+- **`VenueQualityModel` (`common/quality/venue_quality_model.hpp`)**
+  - `observe_fill_probability()/observe_markout()/observe_reject()/observe_cancel_latency()/observe_health()`: Ingests execution-quality observations.
+  - `snapshot()/apply()/persist_snapshot(...)`: Exposes and persists adaptive venue-quality outputs.
