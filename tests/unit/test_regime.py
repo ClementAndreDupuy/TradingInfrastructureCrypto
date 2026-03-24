@@ -20,7 +20,7 @@ from research.regime import (
     train_regime_model_from_df,
     train_regime_model_from_ipc,
 )
-from research.regime.regime import _semantic_regime_names
+from research.regime.regime import _semantic_regime_names, _stabilize_last_posterior
 
 
 def _make_lob_frame(n: int = 120) -> "pl.DataFrame":
@@ -230,6 +230,20 @@ def test_infer_normalizes_invalid_probabilities_in_artifact(tmp_path: Path) -> N
     probs = infer_regime_probabilities(frame, artifact)
     assert abs(sum(probs.values()) - 1.0) < 1e-6
     assert all(v >= 0.0 for v in probs.values())
+
+
+def test_stabilize_last_posterior_applies_inertia() -> None:
+    gamma = np.array(
+        [
+            [0.98, 0.01, 0.01, 0.00],
+            [0.01, 0.98, 0.01, 0.00],
+        ],
+        dtype=np.float64,
+    )
+    stabilized = _stabilize_last_posterior(gamma, inertia=0.35)
+    assert np.isclose(stabilized.sum(), 1.0, atol=1e-9)
+    assert 0.60 < stabilized[1] < 0.98
+    assert 0.01 < stabilized[0] < 0.40
 
 
 def test_save_regime_artifact_bundle_writes_meta_sidecar(tmp_path: Path) -> None:

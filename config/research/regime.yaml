@@ -4,6 +4,9 @@ model:
   tol: 1.0e-4
   random_seed: 7
   covariance_floor: 1.0e-6
+inference:
+  variance_floor: 1.0e-3
+  posterior_inertia: 0.35
 feature_rolling_window: 20
 ipc_path: /tmp/trt_ipc/regime_signal.bin
 artifact:

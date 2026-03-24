@@ -33,15 +33,15 @@ session:
   safe_mode_ticks: 120
   continuous_train_every_ticks: 1000
   continuous_train_window_ticks: 2000
-  regime_retrain_every_ticks: 5000
+  regime_retrain_every_ticks: 1000
   canary_ic_margin: 0.02
   canary_icir_floor: 0.0
   canary_window: 200
   canary_min_samples: 60
   require_full_model_stack: true
   min_continuous_train_interval_s: 600
-  min_regime_train_interval_s: 900
-  regime_startup_warmup_s: 300
+  min_regime_train_interval_s: 600
+  regime_startup_warmup_s: 180
 metrics:
   ic_window: 20
   max_exchange_jump_ns: 60000000000

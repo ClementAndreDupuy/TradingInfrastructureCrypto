@@ -14,6 +14,10 @@ _rcfg = regime_cfg()
 _FEATURE_ROLLING_WINDOW: int = _rcfg["feature_rolling_window"]
 _REGIME_IPC_PATH: str = _rcfg["ipc_path"]
 _ARTIFACT_VERSION: str = _rcfg["artifact"]["version"]
+_INFERENCE_VARIANCE_FLOOR: float = float(_rcfg.get("inference", {}).get("variance_floor", 1e-06))
+_INFERENCE_POSTERIOR_INERTIA: float = float(
+    _rcfg.get("inference", {}).get("posterior_inertia", 0.0)
+)
 
 
 def _utcnow() -> str:
@@ -395,6 +399,16 @@ def _normalize_transition_matrix(values: np.ndarray) -> np.ndarray:
     return clipped / denom
 
 
+def _stabilize_last_posterior(gamma: np.ndarray, inertia: float) -> np.ndarray:
+    clipped_inertia = float(np.clip(inertia, 0.0, 0.95))
+    last = _normalize_prob_vector(gamma[-1])
+    if len(gamma) < 2 or clipped_inertia <= 0.0:
+        return last
+    prev = _normalize_prob_vector(gamma[-2])
+    blended = (1.0 - clipped_inertia) * last + clipped_inertia * prev
+    return _normalize_prob_vector(blended)
+
+
 def _validate_artifact(artifact: RegimeArtifact) -> None:
     n = artifact.n_regimes
     if n not in {3, 4}:
@@ -477,7 +491,7 @@ def infer_regime_probabilities(df: pl.DataFrame, artifact: RegimeArtifact) -> di
     scales = np.array(artifact.scales, dtype=np.float64)
     x = x_raw / np.where(scales < 1e-08, 1.0, scales)
     means = np.array(artifact.means, dtype=np.float64)
-    variances = np.array(artifact.variances, dtype=np.float64)
+    variances = np.maximum(np.array(artifact.variances, dtype=np.float64), _INFERENCE_VARIANCE_FLOOR)
     transition = _normalize_transition_matrix(
         np.array(artifact.transition_matrix, dtype=np.float64)
     )
@@ -488,8 +502,7 @@ def infer_regime_probabilities(df: pl.DataFrame, artifact: RegimeArtifact) -> di
         log_initial=np.log(np.maximum(initial, _EPS)),
         log_transition=np.log(np.maximum(transition, _EPS)),
     )
-    last_probs = gamma[-1]
-    last_probs = last_probs / np.maximum(last_probs.sum(), _EPS)
+    last_probs = _stabilize_last_posterior(gamma, _INFERENCE_POSTERIOR_INERTIA)
     prob_by_name = {name: float(last_probs[i]) for (i, name) in enumerate(artifact.regime_names)}
     p_calm = prob_by_name.get("calm", 0.0)
     p_shock = prob_by_name.get("shock", 0.0)
