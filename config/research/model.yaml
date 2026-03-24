@@ -1,0 +1,51 @@
+dataset:
+  seq_len: 64
+  stride: 1
+  horizons:
+    - 1
+    - 10
+    - 100
+    - 500
+  rolling_normalise_window: 500
+  walk_forward_folds: 4
+  walk_forward_train_frac: 0.75
+  validation_frac: 0.15
+labels:
+  flat_thresh: 2.0e-5
+  reversion_horizon: 10
+  return_clip: 5.0e-4
+  adv_sel_thresh: -2.0e-5
+trainer:
+  d_spatial: 64
+  d_temporal: 128
+  seq_len: 64
+  n_lob_heads: 4
+  n_lob_layers: 2
+  n_temp_heads: 4
+  n_temp_layers: 3
+  dropout: 0.1
+  epochs: 20
+  batch_size: 32
+  lr: 3.0e-4
+  weight_decay: 1.0e-4
+  grad_clip: 1.0
+  n_folds: 4
+  train_frac: 0.75
+  pretrain_epochs: 3
+  pretrain: false
+  w_return: 1.0
+  w_direction: 0.5
+  w_risk: 0.3
+  w_tc: 0.1
+  tc_bps: 7.0
+  adv_noise_std: 0.02
+  lr_warmup_epochs: 3
+  early_stop_patience: 5
+  log_every_epochs: 1
+  fold_seed_offset: 1337
+  use_amp: true
+  validation_frac: 0.15
+secondary:
+  d_spatial: 32
+  d_temporal: 64
+  n_temp_layers: 1

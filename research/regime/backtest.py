@@ -10,19 +10,22 @@ from .regime import (
     _load_ipc_lob_frame,
     run_regime_walk_forward_backtest,
 )
+from .._config import regime_cfg
+
+_rcfg = regime_cfg()
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Walk-forward regime stability backtest")
     parser.add_argument("--ipc-dir", type=str, required=True, help="Directory containing parquet/csv LOB files")
-    parser.add_argument("--output", type=str, default="models/regime_backtest_summary.json")
-    parser.add_argument("--n-regimes", type=int, default=4)
-    parser.add_argument("--max-iter", type=int, default=75)
-    parser.add_argument("--tol", type=float, default=1e-4)
-    parser.add_argument("--train-window", type=int, default=20_000)
-    parser.add_argument("--test-window", type=int, default=5_000)
-    parser.add_argument("--step", type=int, default=5_000)
-    parser.add_argument("--min-confidence", type=float, default=0.60)
+    parser.add_argument("--output", type=str, default=_rcfg["backtest"]["output"])
+    parser.add_argument("--n-regimes", type=int, default=_rcfg["model"]["n_regimes"])
+    parser.add_argument("--max-iter", type=int, default=_rcfg["model"]["max_iter"])
+    parser.add_argument("--tol", type=float, default=_rcfg["model"]["tol"])
+    parser.add_argument("--train-window", type=int, default=_rcfg["backtest"]["train_window"])
+    parser.add_argument("--test-window", type=int, default=_rcfg["backtest"]["test_window"])
+    parser.add_argument("--step", type=int, default=_rcfg["backtest"]["step"])
+    parser.add_argument("--min-confidence", type=float, default=_rcfg["backtest"]["min_confidence"])
     return parser
 
 

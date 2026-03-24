@@ -29,19 +29,26 @@ from ..models.model import CryptoAlphaNet
 from ..models.trainer import TrainerConfig, walk_forward_train
 from ..operations.governance import ChampionChallengerRegistry, DriftGuard, EnsembleCanary
 from ..pipeline import _fetch_binance_l5, _fetch_coinbase_l5, _fetch_kraken_l5, _fetch_okx_l5, collect_from_core_bridge
+from ..._config import shadow_cfg
+
+_scfg = shadow_cfg()
+_ipc = _scfg["ipc"]
+_sess = _scfg["session"]
+
+
 def _utcnow() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
-_SIGNAL_FILE = "/tmp/trt_ipc/neural_alpha_signal.bin"
+_SIGNAL_FILE: str = _ipc["signal_file"]
 _SIGNAL_SIZE = 48
 _SEQ_FMT = "=Q"
 _SEQ_OFFSET = 0
 _DATA_FMT = "=dddqq"
 _DATA_OFFSET = 8
-_REGIME_SIGNAL_FILE = "/tmp/trt_ipc/regime_signal.bin"
-_MAX_EXCHANGE_JUMP_NS = 60 * 1_000_000_000
-_DIRECTION_GATE = 0.55
-_HORIZON_CANDIDATES = (1, 10, 100, 500)
+_REGIME_SIGNAL_FILE: str = _ipc["regime_signal_file"]
+_MAX_EXCHANGE_JUMP_NS: int = _ipc["max_exchange_jump_ns"]
+_DIRECTION_GATE: float = _scfg["direction_gate"]
+_HORIZON_CANDIDATES: tuple = tuple(_scfg["horizon_candidates"])
 _GATING_KEYS = ("confidence_gate", "horizon_disagreement_gate", "safe_mode_gate")
 FetchFn = Callable[[str], dict[str, Any] | None]
 _FETCHERS = {"BINANCE": _fetch_binance_l5, "KRAKEN": _fetch_kraken_l5, "OKX": _fetch_okx_l5, "COINBASE": _fetch_coinbase_l5}
@@ -67,37 +74,37 @@ class VenueRuntimeStats:
 class ShadowSessionConfig:
     model_path: str | None = None
     secondary_model_path: str | None = None
-    log_path: str = "neural_alpha_shadow.jsonl"
-    interval_ms: int = 500
-    duration_s: int = 3600
-    report_interval_s: int = 60
-    seq_len: int = 64
-    d_spatial: int = 64
-    d_temporal: int = 128
-    train_ticks: int = 0
-    train_epochs: int = 15
-    symbol: str = "BTCUSDT"
-    exchanges: list[str] = field(default_factory=lambda: ["BINANCE", "KRAKEN", "OKX", "COINBASE"])
+    log_path: str = _sess["log_path"]
+    interval_ms: int = _sess["interval_ms"]
+    duration_s: int = _sess["duration_s"]
+    report_interval_s: int = _sess["report_interval_s"]
+    seq_len: int = _sess["seq_len"]
+    d_spatial: int = _sess["d_spatial"]
+    d_temporal: int = _sess["d_temporal"]
+    train_ticks: int = _sess["train_ticks"]
+    train_epochs: int = _sess["train_epochs"]
+    symbol: str = _sess["symbol"]
+    exchanges: list[str] = field(default_factory=lambda: list(_sess["exchanges"]))
     signal_file: str = _SIGNAL_FILE
     regime_signal_file: str = _REGIME_SIGNAL_FILE
     lob_feed_path: str = RING_PATH
-    regime_model_path: str = "models/r2_regime_model.json"
-    registry_path: str = "models/model_registry.json"
-    drift_window: int = 200
-    drift_min_samples: int = 60
-    drift_ic_floor: float = -0.05
-    safe_mode_ticks: int = 120
-    continuous_train_every_ticks: int = 1000
-    continuous_train_window_ticks: int = 2000
-    regime_retrain_every_ticks: int = 5000
-    canary_ic_margin: float = 0.02
-    canary_icir_floor: float = 0.0
-    canary_window: int = 200
-    canary_min_samples: int = 60
-    require_full_model_stack: bool = True
-    min_continuous_train_interval_s: int = 600
-    min_regime_train_interval_s: int = 900
-    regime_startup_warmup_s: int = 300
+    regime_model_path: str = _sess["regime_model_path"]
+    registry_path: str = _sess["registry_path"]
+    drift_window: int = _sess["drift_window"]
+    drift_min_samples: int = _sess["drift_min_samples"]
+    drift_ic_floor: float = _sess["drift_ic_floor"]
+    safe_mode_ticks: int = _sess["safe_mode_ticks"]
+    continuous_train_every_ticks: int = _sess["continuous_train_every_ticks"]
+    continuous_train_window_ticks: int = _sess["continuous_train_window_ticks"]
+    regime_retrain_every_ticks: int = _sess["regime_retrain_every_ticks"]
+    canary_ic_margin: float = _sess["canary_ic_margin"]
+    canary_icir_floor: float = _sess["canary_icir_floor"]
+    canary_window: int = _sess["canary_window"]
+    canary_min_samples: int = _sess["canary_min_samples"]
+    require_full_model_stack: bool = _sess["require_full_model_stack"]
+    min_continuous_train_interval_s: int = _sess["min_continuous_train_interval_s"]
+    min_regime_train_interval_s: int = _sess["min_regime_train_interval_s"]
+    regime_startup_warmup_s: int = _sess["regime_startup_warmup_s"]
 class _SignalPublisher:
     def __init__(self, path: str = _SIGNAL_FILE) -> None:
         self._path = path
@@ -123,7 +130,7 @@ class _SignalPublisher:
 def _ensure_parent_dir(path: str | Path) -> None:
     Path(path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
 def _symbol_model_path(symbol: str, variant: str = "latest") -> Path:
-    return Path(f"models/neural_alpha_{symbol.lower()}_{variant}.pt")
+    return Path(_scfg["model_path_template"].format(symbol=symbol.lower(), variant=variant))
 def _extract_tick_timestamps(tick: dict[str, Any]) -> tuple[int, int]:
     exchange_ts = int(tick.get("timestamp_exchange_ns", tick.get("exchange_timestamp_ns", tick.get("timestamp_ns", 0))))
     local_ts = int(tick.get("timestamp_local_ns", tick.get("local_timestamp_ns", tick.get("timestamp_ns", 0))))

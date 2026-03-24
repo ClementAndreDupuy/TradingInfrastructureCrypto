@@ -11,45 +11,48 @@ from torch.utils.data import DataLoader
 
 from ..data.dataset import DatasetConfig, build_loaders, split_train_validation, split_walk_forward
 from .model import CryptoAlphaNet, MultiTaskLoss
+from ..._config import model_cfg
+
+_tcfg = model_cfg()["trainer"]
 
 
 @dataclass
 class TrainerConfig:
-    d_spatial: int = 64
-    d_temporal: int = 128
-    n_lob_heads: int = 4
-    n_lob_layers: int = 2
-    n_temp_heads: int = 4
-    n_temp_layers: int = 3
-    dropout: float = 0.1
-    seq_len: int = 64
-    epochs: int = 20
-    batch_size: int = 32
-    lr: float = 0.0003
-    weight_decay: float = 0.0001
-    grad_clip: float = 1.0
-    n_folds: int = 4
-    train_frac: float = 0.75
-    pretrain_epochs: int = 3
-    pretrain: bool = False
-    w_return: float = 1.0
-    w_direction: float = 0.5
-    w_risk: float = 0.3
-    w_tc: float = 0.1
+    d_spatial: int = _tcfg["d_spatial"]
+    d_temporal: int = _tcfg["d_temporal"]
+    n_lob_heads: int = _tcfg["n_lob_heads"]
+    n_lob_layers: int = _tcfg["n_lob_layers"]
+    n_temp_heads: int = _tcfg["n_temp_heads"]
+    n_temp_layers: int = _tcfg["n_temp_layers"]
+    dropout: float = _tcfg["dropout"]
+    seq_len: int = _tcfg["seq_len"]
+    epochs: int = _tcfg["epochs"]
+    batch_size: int = _tcfg["batch_size"]
+    lr: float = _tcfg["lr"]
+    weight_decay: float = _tcfg["weight_decay"]
+    grad_clip: float = _tcfg["grad_clip"]
+    n_folds: int = _tcfg["n_folds"]
+    train_frac: float = _tcfg["train_frac"]
+    pretrain_epochs: int = _tcfg["pretrain_epochs"]
+    pretrain: bool = _tcfg["pretrain"]
+    w_return: float = _tcfg["w_return"]
+    w_direction: float = _tcfg["w_direction"]
+    w_risk: float = _tcfg["w_risk"]
+    w_tc: float = _tcfg["w_tc"]
     selection_w_return: float | None = None
     selection_w_direction: float | None = None
     selection_w_risk: float | None = None
     selection_w_tc: float | None = None
-    tc_bps: float = 7.0
-    adv_noise_std: float = 0.02
+    tc_bps: float = _tcfg["tc_bps"]
+    adv_noise_std: float = _tcfg["adv_noise_std"]
     resume_state_dict: dict[str, torch.Tensor] | None = None
-    lr_warmup_epochs: int = 3
-    early_stop_patience: int = 5
-    log_every_epochs: int = 1
-    fold_seed_offset: int = 1337
+    lr_warmup_epochs: int = _tcfg["lr_warmup_epochs"]
+    early_stop_patience: int = _tcfg["early_stop_patience"]
+    log_every_epochs: int = _tcfg["log_every_epochs"]
+    fold_seed_offset: int = _tcfg["fold_seed_offset"]
     event_callback: Callable[[dict[str, float | int]], None] | None = None
-    use_amp: bool = True
-    validation_frac: float = 0.15
+    use_amp: bool = _tcfg["use_amp"]
+    validation_frac: float = _tcfg["validation_frac"]
     verbose: bool = True
 
 

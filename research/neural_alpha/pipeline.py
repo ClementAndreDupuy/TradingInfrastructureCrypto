@@ -11,17 +11,21 @@ import requests
 
 from .common.symbols import binance_symbol, coinbase_symbol, kraken_symbol, okx_symbol, symbol_family
 from .runtime.core_bridge import CoreBridge
+from .._config import pipeline_cfg
 
 if TYPE_CHECKING:
     from .models.trainer import TrainerConfig
 
-N_LEVELS = 5
-DEFAULT_EXCHANGES = ["BINANCE", "KRAKEN", "OKX", "COINBASE"]
-BINANCE_DEPTH_URL = "https://fapi.binance.com/fapi/v1/depth"
-KRAKEN_DEPTH_URL = "https://api.kraken.com/0/public/Depth"
-OKX_DEPTH_URL = "https://www.okx.com/api/v5/market/books"
-COINBASE_DEPTH_URL = "https://api.coinbase.com/api/v3/brokerage/market/product_book"
-LARGE_SELECTION_SCORE = 1_000_000_000.0
+_pcfg = pipeline_cfg()
+N_LEVELS: int = _pcfg["n_levels"]
+DEFAULT_EXCHANGES: list[str] = _pcfg["default_exchanges"]
+BINANCE_DEPTH_URL: str = _pcfg["urls"]["binance_depth"]
+KRAKEN_DEPTH_URL: str = _pcfg["urls"]["kraken_depth"]
+OKX_DEPTH_URL: str = _pcfg["urls"]["okx_depth"]
+COINBASE_DEPTH_URL: str = _pcfg["urls"]["coinbase_depth"]
+LARGE_SELECTION_SCORE: float = _pcfg["large_selection_score"]
+_REQUEST_TIMEOUT_S: int = _pcfg["request_timeout_s"]
+_HOLDOUT_FRAC: float = _pcfg["holdout_frac"]
 
 def _parse_exchange_list(raw_value: str) -> list[str]:
     return [exchange.strip().upper() for exchange in raw_value.split(",") if exchange.strip()]
@@ -51,7 +55,7 @@ def _with_row_levels(
     return row
 
 def _request_json(url: str, *, params: Mapping[str, Any]) -> Any:
-    response = requests.get(url, params=params, timeout=5)
+    response = requests.get(url, params=params, timeout=_REQUEST_TIMEOUT_S)
     response.raise_for_status()
     return response.json()
 
@@ -373,7 +377,9 @@ def _trainer_config_from_args(args: argparse.Namespace, *, secondary: bool = Fal
         "selection_w_tc": getattr(args, f"{prefix}_selection_w_tc"),
     }
     if secondary:
-        kwargs.update({"d_spatial": 32, "d_temporal": 64, "n_temp_layers": 1})
+        from .._config import model_cfg as _model_cfg
+        _scfg = _model_cfg()["secondary"]
+        kwargs.update({"d_spatial": _scfg["d_spatial"], "d_temporal": _scfg["d_temporal"], "n_temp_layers": _scfg["n_temp_layers"]})
     else:
         kwargs.update({"d_spatial": args.d_spatial, "d_temporal": args.d_temporal})
     return TrainerConfig(**kwargs)
@@ -477,7 +483,7 @@ def _best_fold(fold_results: list[dict[str, Any]]) -> dict[str, Any]:
     return min(fold_results, key=lambda fold: fold.get("best_selection_score", LARGE_SELECTION_SCORE))
 
 def _holdout_df(df: pl.DataFrame) -> pl.DataFrame:
-    return df[int(len(df) * 0.8) :]
+    return df[int(len(df) * _HOLDOUT_FRAC) :]
 
 def _select_primary_state(
     df: pl.DataFrame,
@@ -568,82 +574,47 @@ def run_pipeline(args: argparse.Namespace) -> None:
     _save_models(df, args, primary_cfg, primary_folds, secondary_folds)
 
 def build_argument_parser() -> argparse.ArgumentParser:
+    _col = _pcfg["collection"]
+    _bt = _pcfg["backtest"]
+    _tr = _pcfg["training"]
+    from .._config import model_cfg as _model_cfg
+    _mcfg = _model_cfg()["trainer"]
     parser = argparse.ArgumentParser(description="Neural crypto alpha pipeline")
-    parser.add_argument("--ticks", type=int, default=300, help="Ticks to collect per exchange (default 300)")
-    parser.add_argument("--interval-ms", type=int, default=500, dest="interval_ms")
-    parser.add_argument("--symbol", type=str, default="BTCUSDT")
+    parser.add_argument("--ticks", type=int, default=_col["ticks"])
+    parser.add_argument("--interval-ms", type=int, default=_col["interval_ms"], dest="interval_ms")
+    parser.add_argument("--symbol", type=str, default=_col["symbol"])
     parser.add_argument("--exchanges", type=str, default=",".join(DEFAULT_EXCHANGES))
-    parser.add_argument("--core-only", action="store_true", help="Require core feed bridge data; disable REST fallback")
-    parser.add_argument("--data-path", type=str, default=None, dest="data_path", help="Load existing Parquet instead of fetching")
+    parser.add_argument("--core-only", action="store_true")
+    parser.add_argument("--data-path", type=str, default=None, dest="data_path")
     parser.add_argument("--save-data", type=str, default=None, dest="save_data")
     parser.add_argument("--save-model", type=str, default=None, dest="save_model")
-    parser.add_argument("--ipc-dir", type=str, default="/ipc", dest="ipc_dir")
-    parser.add_argument("--regimes", type=int, default=4, help="R2 regime count (supported: 3 or 4)")
-    parser.add_argument(
-        "--save-regime-model",
-        type=str,
-        default="models/r2_regime_model.json",
-        dest="save_regime_model",
-        help="Path to save trained R2 regime model artifact",
-    )
-    parser.add_argument("--d-spatial", type=int, default=64, dest="d_spatial")
-    parser.add_argument("--d-temporal", type=int, default=128, dest="d_temporal")
-    parser.add_argument("--seq-len", type=int, default=64, dest="seq_len")
-    parser.add_argument("--epochs", type=int, default=20)
-    parser.add_argument("--folds", type=int, default=4)
-    parser.add_argument("--batch-size", type=int, default=32, dest="batch_size")
-    parser.add_argument("--lr", type=float, default=0.0003)
+    parser.add_argument("--ipc-dir", type=str, default=_col["ipc_dir"], dest="ipc_dir")
+    parser.add_argument("--regimes", type=int, default=_tr["regimes"])
+    parser.add_argument("--save-regime-model", type=str, default=_tr["save_regime_model"], dest="save_regime_model")
+    parser.add_argument("--d-spatial", type=int, default=_mcfg["d_spatial"], dest="d_spatial")
+    parser.add_argument("--d-temporal", type=int, default=_mcfg["d_temporal"], dest="d_temporal")
+    parser.add_argument("--seq-len", type=int, default=_mcfg["seq_len"], dest="seq_len")
+    parser.add_argument("--epochs", type=int, default=_mcfg["epochs"])
+    parser.add_argument("--folds", type=int, default=_mcfg["n_folds"])
+    parser.add_argument("--batch-size", type=int, default=_mcfg["batch_size"], dest="batch_size")
+    parser.add_argument("--lr", type=float, default=_mcfg["lr"])
     parser.add_argument("--no-pretrain", action="store_true", dest="no_pretrain")
-    parser.add_argument("--pretrain-epochs", type=int, default=5, dest="pretrain_epochs")
-    parser.add_argument("--entry-bps", type=float, default=5.0, dest="entry_bps")
-    parser.add_argument("--fee-bps", type=float, default=5.0, dest="fee_bps")
-    parser.add_argument("--signal-horizon-idx", type=int, default=2, dest="signal_horizon_idx")
-    parser.add_argument(
-        "--direction-confidence-floor",
-        type=float,
-        default=0.55,
-        dest="direction_confidence_floor",
-        help="Minimum sign-aligned direction probability required to keep a signal.",
-    )
-    parser.add_argument(
-        "--risk-ceiling",
-        type=float,
-        default=0.60,
-        dest="risk_ceiling",
-        help="Risk score above which backtest signals are zeroed.",
-    )
-    for prefix, defaults in {
-        "primary": (1.0, 0.7, 0.5, 0.1, 1.0, 0.9, 0.7, 0.1),
-        "secondary": (0.2, 1.0, 0.7, 0.1, 0.25, 1.0, 0.8, 0.1),
-    }.items():
-        parser.add_argument(f"--{prefix}-w-return", type=float, default=defaults[0], dest=f"{prefix}_w_return")
-        parser.add_argument(f"--{prefix}-w-direction", type=float, default=defaults[1], dest=f"{prefix}_w_direction")
-        parser.add_argument(f"--{prefix}-w-risk", type=float, default=defaults[2], dest=f"{prefix}_w_risk")
-        parser.add_argument(f"--{prefix}-w-tc", type=float, default=defaults[3], dest=f"{prefix}_w_tc")
-        parser.add_argument(
-            f"--{prefix}-selection-w-return",
-            type=float,
-            default=defaults[4],
-            dest=f"{prefix}_selection_w_return",
-        )
-        parser.add_argument(
-            f"--{prefix}-selection-w-direction",
-            type=float,
-            default=defaults[5],
-            dest=f"{prefix}_selection_w_direction",
-        )
-        parser.add_argument(
-            f"--{prefix}-selection-w-risk",
-            type=float,
-            default=defaults[6],
-            dest=f"{prefix}_selection_w_risk",
-        )
-        parser.add_argument(
-            f"--{prefix}-selection-w-tc",
-            type=float,
-            default=defaults[7],
-            dest=f"{prefix}_selection_w_tc",
-        )
+    parser.add_argument("--pretrain-epochs", type=int, default=_mcfg["pretrain_epochs"], dest="pretrain_epochs")
+    parser.add_argument("--entry-bps", type=float, default=_bt["entry_bps"], dest="entry_bps")
+    parser.add_argument("--fee-bps", type=float, default=_bt["fee_bps"], dest="fee_bps")
+    parser.add_argument("--signal-horizon-idx", type=int, default=_bt["signal_horizon_idx"], dest="signal_horizon_idx")
+    parser.add_argument("--direction-confidence-floor", type=float, default=_bt["direction_confidence_floor"], dest="direction_confidence_floor")
+    parser.add_argument("--risk-ceiling", type=float, default=_bt["risk_ceiling"], dest="risk_ceiling")
+    for prefix in ("primary", "secondary"):
+        w = _pcfg["weights"][prefix]
+        parser.add_argument(f"--{prefix}-w-return", type=float, default=w["w_return"], dest=f"{prefix}_w_return")
+        parser.add_argument(f"--{prefix}-w-direction", type=float, default=w["w_direction"], dest=f"{prefix}_w_direction")
+        parser.add_argument(f"--{prefix}-w-risk", type=float, default=w["w_risk"], dest=f"{prefix}_w_risk")
+        parser.add_argument(f"--{prefix}-w-tc", type=float, default=w["w_tc"], dest=f"{prefix}_w_tc")
+        parser.add_argument(f"--{prefix}-selection-w-return", type=float, default=w["selection_w_return"], dest=f"{prefix}_selection_w_return")
+        parser.add_argument(f"--{prefix}-selection-w-direction", type=float, default=w["selection_w_direction"], dest=f"{prefix}_selection_w_direction")
+        parser.add_argument(f"--{prefix}-selection-w-risk", type=float, default=w["selection_w_risk"], dest=f"{prefix}_selection_w_risk")
+        parser.add_argument(f"--{prefix}-selection-w-tc", type=float, default=w["selection_w_tc"], dest=f"{prefix}_selection_w_tc")
     parser.add_argument(
         "--enable-secondary-model",
         action=argparse.BooleanOptionalAction,

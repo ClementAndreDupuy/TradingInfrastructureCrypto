@@ -1,0 +1,17 @@
+model:
+  n_regimes: 4
+  max_iter: 75
+  tol: 1.0e-4
+  random_seed: 7
+  covariance_floor: 1.0e-6
+feature_rolling_window: 20
+ipc_path: /tmp/trt_ipc/regime_signal.bin
+artifact:
+  version: r2-regime-hmm-v1
+  save_path: models/r2_regime_model.json
+backtest:
+  train_window: 20000
+  test_window: 5000
+  step: 5000
+  min_confidence: 0.60
+  output: models/regime_backtest_summary.json

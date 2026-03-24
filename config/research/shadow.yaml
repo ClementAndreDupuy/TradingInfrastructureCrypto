@@ -1,0 +1,61 @@
+ipc:
+  signal_file: /tmp/trt_ipc/neural_alpha_signal.bin
+  regime_signal_file: /tmp/trt_ipc/regime_signal.bin
+  max_exchange_jump_ns: 60000000000
+direction_gate: 0.55
+horizon_candidates:
+  - 1
+  - 10
+  - 100
+  - 500
+model_path_template: "models/neural_alpha_{symbol}_{variant}.pt"
+session:
+  log_path: neural_alpha_shadow.jsonl
+  interval_ms: 500
+  duration_s: 3600
+  report_interval_s: 60
+  seq_len: 64
+  d_spatial: 64
+  d_temporal: 128
+  train_ticks: 0
+  train_epochs: 15
+  symbol: BTCUSDT
+  exchanges:
+    - BINANCE
+    - KRAKEN
+    - OKX
+    - COINBASE
+  regime_model_path: models/r2_regime_model.json
+  registry_path: models/model_registry.json
+  drift_window: 200
+  drift_min_samples: 60
+  drift_ic_floor: -0.05
+  safe_mode_ticks: 120
+  continuous_train_every_ticks: 1000
+  continuous_train_window_ticks: 2000
+  regime_retrain_every_ticks: 5000
+  canary_ic_margin: 0.02
+  canary_icir_floor: 0.0
+  canary_window: 200
+  canary_min_samples: 60
+  require_full_model_stack: true
+  min_continuous_train_interval_s: 600
+  min_regime_train_interval_s: 900
+  regime_startup_warmup_s: 300
+metrics:
+  ic_window: 20
+  max_exchange_jump_ns: 60000000000
+  decisions_log: shadow_decisions.jsonl
+  signals_log: neural_alpha_shadow.jsonl
+  ops_log: logs/ops_events.jsonl
+  venue_scoring:
+    fill_weight: 8.0
+    passive_markout_weight: 1.5
+    taker_markout_weight: 1.0
+    reject_weight: 10.0
+    cancel_latency_scale: 1000.0
+    cancel_latency_cap: 5.0
+    strong_fill_threshold: 0.7
+    weak_fill_threshold: 0.35
+    elevated_reject_threshold: 0.1
+    slow_cancel_ms: 250.0
