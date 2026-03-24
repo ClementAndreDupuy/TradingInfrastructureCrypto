@@ -62,6 +62,7 @@ from research.neural_alpha.runtime.shadow_session import (
     NeuralAlphaShadowSession,
     ShadowSessionConfig,
     _build_signal_alignment,
+    _summarise_regime_churn,
     _summarise_timestamp_quality,
     _symbol_model_path,
 )
@@ -759,7 +760,125 @@ class TestShadowSessionTraining:
         assert loaded_secondary, "load_secondary_model was not called after train_on_recent"
 
 
+
+
+class TestShadowRetrainCadence:
+    def test_continuous_retrain_respects_minimum_wall_clock_interval(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cfg = ShadowSessionConfig(
+            log_path=str(tmp_path / "shadow.jsonl"),
+            signal_file=str(tmp_path / "alpha_signal.bin"),
+            exchanges=["BINANCE"],
+            continuous_train_every_ticks=1,
+            min_continuous_train_interval_s=600,
+            seq_len=8,
+        )
+        session = NeuralAlphaShadowSession(cfg)
+        calls: list[int] = []
+        monkeypatch.setattr(session, "train_on_recent", lambda n_ticks: calls.append(n_ticks))
+        session._processed_ticks = 1
+        session._last_continuous_train_tick = 0
+        session._session_steady_start_ns = 0
+        session._last_continuous_train_steady_ns = 0
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session.time.monotonic_ns",
+            lambda: 120 * 1_000_000_000,
+        )
+
+        session._maybe_continuous_train()
+
+        assert calls == []
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session.time.monotonic_ns",
+            lambda: 700 * 1_000_000_000,
+        )
+
+        session._maybe_continuous_train()
+
+        assert len(calls) == 1
+        session._log_fp.close()
+        session._publisher.close()
+        session._regime_publisher.close()
+
+    def test_regime_retrain_respects_startup_warmup_and_minimum_interval(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cfg = ShadowSessionConfig(
+            log_path=str(tmp_path / "shadow.jsonl"),
+            signal_file=str(tmp_path / "alpha_signal.bin"),
+            exchanges=["BINANCE"],
+            regime_retrain_every_ticks=1,
+            min_regime_train_interval_s=900,
+            regime_startup_warmup_s=300,
+            seq_len=8,
+        )
+        session = NeuralAlphaShadowSession(cfg)
+        session._processed_ticks = 1
+        session._last_regime_train_tick = 0
+        session._session_steady_start_ns = 0
+        session._last_regime_train_steady_ns = 0
+        monkeypatch.setattr(
+            session,
+            "_collect_training_ticks",
+            lambda n_ticks: pl.DataFrame(
+                [
+                    {
+                        "timestamp_ns": 1,
+                        "best_bid": 100.0,
+                        "best_ask": 100.1,
+                        "bid_size_1": 1.0,
+                        "ask_size_1": 1.0,
+                    }
+                ]
+            ),
+        )
+        calls: list[int] = []
+        monkeypatch.setattr(session, "_train_regime_on_data", lambda df: calls.append(len(df)))
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session.time.monotonic_ns",
+            lambda: 200 * 1_000_000_000,
+        )
+
+        session._maybe_regime_retrain()
+
+        assert calls == []
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session.time.monotonic_ns",
+            lambda: 600 * 1_000_000_000,
+        )
+
+        session._maybe_regime_retrain()
+
+        assert calls == []
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session.time.monotonic_ns",
+            lambda: 901 * 1_000_000_000,
+        )
+
+        session._maybe_regime_retrain()
+
+        assert len(calls) == 1
+        session._log_fp.close()
+        session._publisher.close()
+        session._regime_publisher.close()
+
+
 class TestShadowTimestampMetrics:
+    def test_regime_churn_summary_reports_switch_rate_and_confidence(self) -> None:
+        metrics = _summarise_regime_churn(
+            [
+                {"event_index": 1, "session_elapsed_ns": 0, "p_calm": 0.9, "p_trending": 0.1, "p_shock": 0.0, "p_illiquid": 0.0},
+                {"event_index": 2, "session_elapsed_ns": 30_000_000_000, "p_calm": 0.2, "p_trending": 0.7, "p_shock": 0.1, "p_illiquid": 0.0},
+                {"event_index": 3, "session_elapsed_ns": 60_000_000_000, "p_calm": 0.85, "p_trending": 0.1, "p_shock": 0.05, "p_illiquid": 0.0},
+            ]
+        )
+
+        assert metrics["dominant_regime"] == "calm"
+        assert metrics["dominant_regime_change_count"] == 2
+        assert metrics["switches_per_minute"] == pytest.approx(2.0)
+        assert metrics["average_dominant_confidence"] == pytest.approx((0.9 + 0.7 + 0.85) / 3.0)
+
     def test_signal_alignment_uses_event_order(self) -> None:
         records = [
             {"event_index": 2, "session_elapsed_ns": 2, "mid_price": 101.0, "signal": 0.2},
