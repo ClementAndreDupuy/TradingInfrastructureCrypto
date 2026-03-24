@@ -28,7 +28,7 @@ namespace trading {
 
     struct PortfolioIntentConfig {
         double max_position = 0.80;
-        double min_entry_signal_bps = 3.0;
+        double min_entry_signal_bps = 2.0;
         double alpha_exit_buffer_bps = 0.75;
         double negative_reversal_signal_bps = -1.0;
         double max_risk_score = 0.65;
@@ -37,7 +37,7 @@ namespace trading {
         double illiquid_enter_threshold = 0.65;
         double illiquid_exit_threshold = 0.45;
         int regime_persistence_ticks = 5;
-        int64_t stale_inventory_ms = 5000;
+        int64_t stale_inventory_ms = 10000;
         double stale_inventory_alpha_hold_bps = 10.0;
         double health_reduce_ratio = 0.50;
         bool long_only = true;
