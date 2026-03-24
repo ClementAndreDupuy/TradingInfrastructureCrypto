@@ -283,6 +283,7 @@ class NeuralAlphaShadowSession:
         self._canary: EnsembleCanary | None = None
         self._prev_primary_signal: float | None = None
         self._prev_ensemble_signal: float | None = None
+        self._prev_regime_probs: dict[str, float] | None = None
         self._venue_stats = {exchange.upper(): VenueRuntimeStats() for exchange in cfg.exchanges}
         self._gating_reason_counts = {key: 0 for key in _GATING_KEYS}
     @staticmethod
@@ -474,6 +475,7 @@ class NeuralAlphaShadowSession:
             },
         )
         self._regime_artifact = artifact
+        self._prev_regime_probs = None
         names = ", ".join(artifact.regime_names)
         print(f"[{_utcnow()}] [Shadow] regime retrain done  regimes=[{names}]")
     def train_on_recent(self, n_ticks: int) -> None:
@@ -545,7 +547,12 @@ class NeuralAlphaShadowSession:
         regime_probs = {"p_calm": 1.0, "p_trending": 0.0, "p_shock": 0.0, "p_illiquid": 0.0}
         if self._regime_artifact is not None:
             try:
-                regime_probs = infer_regime_probabilities(pl.DataFrame(self._ring), self._regime_artifact)
+                regime_probs = infer_regime_probabilities(
+                    pl.DataFrame(self._ring),
+                    self._regime_artifact,
+                    prev_probs=self._prev_regime_probs,
+                )
+                self._prev_regime_probs = regime_probs
             except Exception:
                 pass
         self._regime_publisher.publish(regime_probs["p_calm"], regime_probs["p_trending"], regime_probs["p_shock"], regime_probs["p_illiquid"])

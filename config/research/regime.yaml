@@ -6,7 +6,8 @@ model:
   covariance_floor: 1.0e-6
 inference:
   variance_floor: 1.0e-3
-  posterior_inertia: 0.35
+  posterior_inertia: 0.60
+  output_ema_alpha: 0.80
 feature_rolling_window: 20
 ipc_path: /tmp/trt_ipc/regime_signal.bin
 artifact:
