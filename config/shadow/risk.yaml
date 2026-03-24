@@ -25,6 +25,8 @@ arb_risk:
   # ── Circuit breaker ───────────────────────────────────────────────────────────
   circuit_breaker_count:        3          # fewer losses before pause
   circuit_breaker_loss_usd:     -25.0
+  max_messages_per_second:      1000
+  price_ema_alpha:              0.01       # EMA decay for flash-crash reference price
 
   # ── Taker fees per exchange (bps) ────────────────────────────────────────────
   fees:

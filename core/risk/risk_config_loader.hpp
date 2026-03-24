@@ -16,6 +16,11 @@ namespace trading {
         GlobalRiskConfig global_risk;
         int64_t heartbeat_timeout_ns = KillSwitch::DEFAULT_HEARTBEAT_TIMEOUT_NS;
         double target_range_usd = 50.0;
+        // Per-venue taker fees (bps) read from fees_bps / fees sections of risk.yaml
+        double binance_taker_fee_bps = 5.0;
+        double kraken_taker_fee_bps = 10.0;
+        double okx_taker_fee_bps = 8.0;
+        double coinbase_taker_fee_bps = 6.0;
     };
 
     class RiskConfigLoader {
@@ -86,6 +91,16 @@ namespace trading {
             double concentration_pct = out.global_risk.max_symbol_concentration * 100.0;
             apply_double(values, "max_symbol_concentration_pct", concentration_pct);
             out.global_risk.max_symbol_concentration = concentration_pct / 100.0;
+
+            // Per-venue taker fees — live uses "binance_taker" keys; shadow uses "BINANCE" keys
+            apply_double(values, "binance_taker", out.binance_taker_fee_bps);
+            apply_double(values, "BINANCE", out.binance_taker_fee_bps);
+            apply_double(values, "kraken_taker", out.kraken_taker_fee_bps);
+            apply_double(values, "KRAKEN", out.kraken_taker_fee_bps);
+            apply_double(values, "okx_taker", out.okx_taker_fee_bps);
+            apply_double(values, "OKX", out.okx_taker_fee_bps);
+            apply_double(values, "coinbase_taker", out.coinbase_taker_fee_bps);
+            apply_double(values, "COINBASE", out.coinbase_taker_fee_bps);
 
             return true;
         }

@@ -7,23 +7,6 @@ namespace trading {
         constexpr double k_infinite_price = 1e18;
         constexpr double k_missing_best_price = 1e17;
         constexpr double k_min_remaining_qty = 1e-12;
-        constexpr double k_min_fill_probability = 0.05;
-
-        constexpr double k_high_toxicity_threshold = 2.0;
-        constexpr double k_low_fill_threshold = 0.45;
-        constexpr double k_high_fill_threshold = 0.75;
-
-        constexpr double k_high_toxicity_fill_weight = 7.0;
-        constexpr double k_high_toxicity_queue_weight = 1.1;
-        constexpr double k_high_toxicity_tox_weight = 3.2;
-
-        constexpr double k_low_fill_fill_weight = 6.0;
-        constexpr double k_low_fill_queue_weight = 0.9;
-        constexpr double k_low_fill_tox_weight = 1.2;
-
-        constexpr double k_high_fill_fill_weight = 3.0;
-        constexpr double k_high_fill_queue_weight = 0.4;
-        constexpr double k_high_fill_tox_weight = 0.8;
 
         auto quote_price_for_side(const VenueQuote &venue_quote, Side side) noexcept -> double {
             return (side == Side::BID) ? venue_quote.best_ask : venue_quote.best_bid;
@@ -54,7 +37,8 @@ namespace trading {
 
         auto find_best_venue_index(const std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> &venues,
                                    const std::array<bool, SmartOrderRouter::MAX_VENUES> &used, Side side,
-                                   const RoutingRegime &regime, double best_px) noexcept -> int {
+                                   const RoutingRegime &regime, double best_px,
+                                   double min_fill_probability) noexcept -> int {
             int best_idx = -1;
             double best_score = k_infinite_price;
 
@@ -68,7 +52,7 @@ namespace trading {
                 }
 
                 const double score = SmartOrderRouter::expected_shortfall_bps(
-                    venue_quote, side, regime, best_px, 0.0);
+                    venue_quote, side, regime, best_px, 0.0, min_fill_probability);
                 if (score < best_score) {
                     best_score = score;
                     best_idx = static_cast<int>(i);
@@ -106,7 +90,8 @@ namespace trading {
                venue_quote.risk_penalty_bps;
     }
 
-    auto SmartOrderRouter::infer_regime(const std::array<VenueQuote, MAX_VENUES> &venues) noexcept
+    auto SmartOrderRouter::infer_regime(const std::array<VenueQuote, MAX_VENUES> &venues,
+                                        const SmartOrderRouterConfig &sor_cfg) noexcept
         -> RoutingRegime {
         double healthy_count = 0.0;
         double total_toxicity = 0.0;
@@ -131,37 +116,38 @@ namespace trading {
         const double avg_toxicity = total_toxicity / healthy_count;
         const double avg_fill = total_fill / healthy_count;
 
-        if (avg_toxicity >= k_high_toxicity_threshold) {
-            regime.fill_weight_bps = k_high_toxicity_fill_weight;
-            regime.queue_weight_bps = k_high_toxicity_queue_weight;
-            regime.toxicity_weight = k_high_toxicity_tox_weight;
+        if (avg_toxicity >= sor_cfg.high_toxicity_threshold) {
+            regime.fill_weight_bps = sor_cfg.high_toxicity_fill_weight;
+            regime.queue_weight_bps = sor_cfg.high_toxicity_queue_weight;
+            regime.toxicity_weight = sor_cfg.high_toxicity_tox_weight;
             return regime;
         }
 
-        if (avg_fill < k_low_fill_threshold) {
-            regime.fill_weight_bps = k_low_fill_fill_weight;
-            regime.queue_weight_bps = k_low_fill_queue_weight;
-            regime.toxicity_weight = k_low_fill_tox_weight;
+        if (avg_fill < sor_cfg.low_fill_threshold) {
+            regime.fill_weight_bps = sor_cfg.low_fill_fill_weight;
+            regime.queue_weight_bps = sor_cfg.low_fill_queue_weight;
+            regime.toxicity_weight = sor_cfg.low_fill_tox_weight;
             return regime;
         }
 
-        if (avg_fill > k_high_fill_threshold) {
-            regime.fill_weight_bps = k_high_fill_fill_weight;
-            regime.queue_weight_bps = k_high_fill_queue_weight;
-            regime.toxicity_weight = k_high_fill_tox_weight;
+        if (avg_fill > sor_cfg.high_fill_threshold) {
+            regime.fill_weight_bps = sor_cfg.high_fill_fill_weight;
+            regime.queue_weight_bps = sor_cfg.high_fill_queue_weight;
+            regime.toxicity_weight = sor_cfg.high_fill_tox_weight;
         }
 
         return regime;
     }
 
     auto SmartOrderRouter::score_venue_bps(const VenueQuote &venue_quote, Side side,
-                                           const RoutingRegime &regime) noexcept -> double {
+                                           const RoutingRegime &regime,
+                                           double min_fill_probability) noexcept -> double {
         const double base_cost = effective_price_bps(venue_quote, side);
         const double effective_fill_probability =
             venue_quote.adaptive_fill_probability >= 0.0 ? venue_quote.adaptive_fill_probability
                                                          : venue_quote.fill_probability;
-        const double clipped_fill = (effective_fill_probability < k_min_fill_probability)
-                                        ? k_min_fill_probability
+        const double clipped_fill = (effective_fill_probability < min_fill_probability)
+                                        ? min_fill_probability
                                         : effective_fill_probability;
         const double fill_penalty = regime.fill_weight_bps * (1.0 - clipped_fill);
         const double queue_penalty = regime.queue_weight_bps * venue_quote.queue_ahead_qty;
@@ -172,7 +158,8 @@ namespace trading {
 
     auto SmartOrderRouter::expected_shortfall_bps(const VenueQuote &venue_quote, Side side,
                                                   const RoutingRegime &regime, double best_px,
-                                                  double inventory_age_penalty_bps) noexcept -> double {
+                                                  double inventory_age_penalty_bps,
+                                                  double min_fill_probability) noexcept -> double {
         const double quote_px = quote_price_for_side(venue_quote, side);
         if (quote_px <= 0.0 || best_px <= 0.0) {
             return k_infinite_price;
@@ -180,25 +167,27 @@ namespace trading {
         const double price_penalty_bps =
                 lower_price_is_better(side) ? ((quote_px - best_px) / best_px) * 1e4
                                             : ((best_px - quote_px) / best_px) * 1e4;
-        return score_venue_bps(venue_quote, side, regime) + price_penalty_bps +
+        return score_venue_bps(venue_quote, side, regime, min_fill_probability) + price_penalty_bps +
                inventory_age_penalty_bps;
     }
 
     auto SmartOrderRouter::route(Side side, double quantity,
-                                 const std::array<VenueQuote, MAX_VENUES> &venues) noexcept
+                                 const std::array<VenueQuote, MAX_VENUES> &venues,
+                                 const SmartOrderRouterConfig &sor_cfg) noexcept
         -> RoutingDecision {
         RoutingDecision out;
 
         std::array<bool, MAX_VENUES> used{};
         double remaining = quantity;
-        const RoutingRegime regime = infer_regime(venues);
+        const RoutingRegime regime = infer_regime(venues, sor_cfg);
         const double best_px = find_best_price(side, venues);
         if (best_px >= k_missing_best_price) {
             return out;
         }
 
         while (remaining > k_min_remaining_qty && out.child_count < out.children.size()) {
-            const int best_idx = find_best_venue_index(venues, used, side, regime, best_px);
+            const int best_idx = find_best_venue_index(venues, used, side, regime, best_px,
+                                                       sor_cfg.min_fill_probability);
             if (best_idx < 0) {
                 break;
             }
@@ -211,7 +200,8 @@ namespace trading {
     auto SmartOrderRouter::route_with_alpha(Side side, double base_quantity,
                                             const AlphaSignal &alpha_signal,
                                             const std::array<VenueQuote, MAX_VENUES> &venues,
-                                            const RoutingConstraints &cfg) noexcept -> RoutingDecision {
+                                            const RoutingConstraints &cfg,
+                                            const SmartOrderRouterConfig &sor_cfg) noexcept -> RoutingDecision {
         RoutingDecision out;
 
         if (alpha_signal.risk_score >= cfg.alpha_risk_max) {
@@ -229,6 +219,6 @@ namespace trading {
 
         const double signal_mag = std::abs(alpha_signal.signal_bps);
         const double scale = 1.0 + (cfg.alpha_qty_scale * signal_mag);
-        return route(side, base_quantity * scale, venues);
+        return route(side, base_quantity * scale, venues, sor_cfg);
     }
 }

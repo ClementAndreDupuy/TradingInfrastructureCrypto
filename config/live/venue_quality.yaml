@@ -1,0 +1,31 @@
+# Venue Quality Model — EMA parameters and penalty scales (live trading)
+
+# ── Fill probability EMA ───────────────────────────────────────────────────────
+min_fill_probability: 0.10
+max_fill_probability: 0.98
+fill_probability_alpha: 0.18    # EMA decay for fill probability observations
+max_fill_step: 0.08             # max change per observation (clamps outliers)
+
+# ── Markout EMA ───────────────────────────────────────────────────────────────
+markout_alpha: 0.12
+max_markout_step_bps: 0.40
+
+# ── Reject rate EMA ───────────────────────────────────────────────────────────
+reject_rate_alpha: 0.10
+max_reject_step: 0.06
+
+# ── Cancel latency EMA ────────────────────────────────────────────────────────
+cancel_latency_alpha: 0.15
+max_cancel_latency_step_bps: 0.35
+
+# ── Health EMA ────────────────────────────────────────────────────────────────
+health_alpha: 0.20
+max_health_step_bps: 0.50
+
+# ── Penalty scales ────────────────────────────────────────────────────────────
+reject_rate_penalty_bps: 6.0
+cancel_latency_penalty_scale_bps: 3.0
+health_penalty_scale_bps: 8.0
+passive_markout_penalty_scale: 1.0
+taker_markout_penalty_scale: 1.0
+stability_penalty_scale: 0.75

@@ -25,6 +25,12 @@ fees_bps:
   kraken_taker: 10.0
   coinbase_taker: 6.0
 
+circuit_breaker:
+  circuit_breaker_count: 5      # consecutive losses before halt
+  circuit_breaker_loss_usd: -50.0
+  max_messages_per_second: 1000
+  price_ema_alpha: 0.01         # EMA decay for flash-crash reference price
+
 rate_limits:
   max_orders_per_sec: 5         # conservative (Binance limit: 10/s)
   max_orders_per_min: 100

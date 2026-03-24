@@ -34,6 +34,7 @@ namespace trading {
             double aggressive_inventory_age_bps = 0.1;
             double passive_improve_fraction = 0.20;
             double price_cross_epsilon = 1e-6;
+            SmartOrderRouterConfig sor; // routing regime weights loaded from routing.yaml
         };
 
         ChildOrderScheduler() = default;
@@ -59,7 +60,7 @@ namespace trading {
                 return out;
             }
 
-            const RoutingRegime regime = SmartOrderRouter::infer_regime(venues);
+            const RoutingRegime regime = SmartOrderRouter::infer_regime(venues, cfg_.sor);
             std::array<bool, SmartOrderRouter::MAX_VENUES> used{};
             double remaining = plan.remaining_qty;
             double total_weighted_shortfall = 0.0;
@@ -228,7 +229,8 @@ namespace trading {
                                                       const RoutingRegime &regime, double best_px,
                                                       int64_t inventory_age_ms) const noexcept {
             const double score = SmartOrderRouter::expected_shortfall_bps(
-                venue, side, regime, best_px, inventory_age_penalty_bps(style, inventory_age_ms));
+                venue, side, regime, best_px, inventory_age_penalty_bps(style, inventory_age_ms),
+                cfg_.sor.min_fill_probability);
             if (style == ChildExecutionStyle::PASSIVE_JOIN) {
                 return score - (0.5 * venue.taker_fee_bps) + venue.passive_markout_bps;
             }
