@@ -18,6 +18,9 @@ _INFERENCE_VARIANCE_FLOOR: float = float(_rcfg.get("inference", {}).get("varianc
 _INFERENCE_POSTERIOR_INERTIA: float = float(
     _rcfg.get("inference", {}).get("posterior_inertia", 0.0)
 )
+_INFERENCE_OUTPUT_EMA_ALPHA: float = float(
+    _rcfg.get("inference", {}).get("output_ema_alpha", 0.0)
+)
 
 
 def _utcnow() -> str:
@@ -483,7 +486,11 @@ def load_regime_artifact(path: str) -> RegimeArtifact:
     return artifact
 
 
-def infer_regime_probabilities(df: pl.DataFrame, artifact: RegimeArtifact) -> dict[str, float]:
+def infer_regime_probabilities(
+    df: pl.DataFrame,
+    artifact: RegimeArtifact,
+    prev_probs: dict[str, float] | None = None,
+) -> dict[str, float]:
     feat = _feature_frame(df)
     if len(feat) == 0:
         return {"p_calm": 1.0, "p_trending": 0.0, "p_shock": 0.0, "p_illiquid": 0.0}
@@ -517,12 +524,19 @@ def infer_regime_probabilities(df: pl.DataFrame, artifact: RegimeArtifact) -> di
         p_shock *= scale
         p_illiquid *= scale
         p_trending *= scale
-    return {
+    result = {
         "p_calm": p_calm,
         "p_trending": p_trending,
         "p_shock": p_shock,
         "p_illiquid": p_illiquid,
     }
+    if prev_probs is not None and _INFERENCE_OUTPUT_EMA_ALPHA > 0.0:
+        alpha = float(np.clip(_INFERENCE_OUTPUT_EMA_ALPHA, 0.0, 0.95))
+        result = {k: (1.0 - alpha) * result[k] + alpha * float(prev_probs.get(k, result[k])) for k in result}
+        total = sum(result.values())
+        if total > _EPS:
+            result = {k: v / total for k, v in result.items()}
+    return result
 
 
 def run_regime_walk_forward_backtest(
