@@ -34,7 +34,9 @@ from ..._config import model_cfg, shadow_cfg
 _scfg = shadow_cfg()
 _ipc = _scfg["ipc"]
 _sess = _scfg["session"]
-_shadow_primary_cfg = model_cfg()["shadow_primary"]
+_mcfg = model_cfg()
+_trainer_cfg = _mcfg["trainer"]
+_secondary_cfg = _mcfg["secondary"]
 
 
 def _utcnow() -> str:
@@ -106,9 +108,12 @@ class ShadowSessionConfig:
     min_continuous_train_interval_s: int = _sess["min_continuous_train_interval_s"]
     min_regime_train_interval_s: int = _sess["min_regime_train_interval_s"]
     regime_startup_warmup_s: int = _sess["regime_startup_warmup_s"]
-    primary_w_return: float = _shadow_primary_cfg["w_return"]
-    primary_w_direction: float = _shadow_primary_cfg["w_direction"]
-    primary_w_risk: float = _shadow_primary_cfg["w_risk"]
+    primary_w_return: float = _trainer_cfg["w_return"]
+    primary_w_direction: float = _trainer_cfg["w_direction"]
+    primary_w_risk: float = _trainer_cfg["w_risk"]
+    secondary_w_return: float = _secondary_cfg["w_return"]
+    secondary_w_direction: float = _secondary_cfg["w_direction"]
+    secondary_w_risk: float = _secondary_cfg["w_risk"]
 class _SignalPublisher:
     def __init__(self, path: str = _SIGNAL_FILE) -> None:
         self._path = path
@@ -434,9 +439,9 @@ class NeuralAlphaShadowSession:
                 n_temp_layers=1,
                 dropout=0.25,
                 lr=0.0007,
-                w_return=0.2,
-                w_direction=1.0,
-                w_risk=0.7,
+                w_return=self.cfg.secondary_w_return,
+                w_direction=self.cfg.secondary_w_direction,
+                w_risk=self.cfg.secondary_w_risk,
                 fold_seed_offset=9999,
                 lr_warmup_epochs=min(3, self.cfg.train_epochs // 4),
                 early_stop_patience=4,
