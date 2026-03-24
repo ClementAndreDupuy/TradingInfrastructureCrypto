@@ -105,6 +105,9 @@ class ShadowSessionConfig:
     min_continuous_train_interval_s: int = _sess["min_continuous_train_interval_s"]
     min_regime_train_interval_s: int = _sess["min_regime_train_interval_s"]
     regime_startup_warmup_s: int = _sess["regime_startup_warmup_s"]
+    primary_w_return: float = _sess["primary_w_return"]
+    primary_w_direction: float = _sess["primary_w_direction"]
+    primary_w_risk: float = _sess["primary_w_risk"]
 class _SignalPublisher:
     def __init__(self, path: str = _SIGNAL_FILE) -> None:
         self._path = path
@@ -362,9 +365,9 @@ class NeuralAlphaShadowSession:
             early_stop_patience=4,
             log_every_epochs=1,
             verbose=False,
-            w_return=1.0,
-            w_direction=0.3,
-            w_risk=0.8,
+            w_return=self.cfg.primary_w_return,
+            w_direction=self.cfg.primary_w_direction,
+            w_risk=self.cfg.primary_w_risk,
         )
     def _snapshot_current_state(self) -> dict[str, torch.Tensor] | None:
         return None if self._model is None else {key: value.detach().cpu().clone() for key, value in self._model.state_dict().items()}

@@ -42,6 +42,9 @@ session:
   min_continuous_train_interval_s: 600
   min_regime_train_interval_s: 600
   regime_startup_warmup_s: 180
+  primary_w_return: 1.0
+  primary_w_direction: 0.3
+  primary_w_risk: 0.8
 metrics:
   ic_window: 20
   max_exchange_jump_ns: 60000000000
