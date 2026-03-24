@@ -24,6 +24,7 @@
 #include "../risk/kill_switch.hpp"
 #include "../risk/risk_config_loader.hpp"
 #include "../shadow/shadow_engine.hpp"
+#include "algo_config_loader.hpp"
 
 #include <array>
 #include <atomic>
@@ -157,7 +158,9 @@ namespace {
     }
 
     auto make_quote(trading::Exchange exchange, const trading::BookManager &book,
-                    bool enabled, trading::Side side = trading::Side::BID) -> trading::VenueQuote {
+                    bool enabled, trading::Side side,
+                    double taker_fee_bps,
+                    const trading::VenueQuoteDefaults &defaults) -> trading::VenueQuote {
         if (!enabled) {
             return {exchange, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false, false};
         }
@@ -170,7 +173,14 @@ namespace {
         const double side_depth = top_opposite_depth(book, side);
 
         return {
-            exchange, bid, ask, side_depth, 5.0, 0.5, 0.2, 0.70, 0.20, 0.4, side_depth > 0.0, true,
+            exchange, bid, ask, side_depth,
+            taker_fee_bps,
+            defaults.latency_penalty_bps,
+            defaults.risk_penalty_bps,
+            defaults.fill_probability,
+            defaults.queue_ahead_qty,
+            defaults.toxicity_bps,
+            side_depth > 0.0, true,
         };
     }
 
@@ -289,6 +299,36 @@ auto main(int argc, char **argv) -> int {
                      risk_path.c_str());
         }
 
+        SmartOrderRouterConfig sor_cfg;
+        ChildOrderScheduler::Config sched_cfg;
+        RoutingConstraints routing_constraints;
+        const std::string routing_path = "config/" + opts.mode + "/routing.yaml";
+        if (!AlgoConfigLoader::load_routing(routing_path, sor_cfg, sched_cfg, routing_constraints)) {
+            LOG_WARN("Routing config not loaded — using compiled-in defaults", "path",
+                     routing_path.c_str());
+        }
+
+        PortfolioIntentConfig portfolio_cfg;
+        const std::string portfolio_path = "config/" + opts.mode + "/portfolio.yaml";
+        if (!AlgoConfigLoader::load_portfolio(portfolio_path, portfolio_cfg)) {
+            LOG_WARN("Portfolio config not loaded — using compiled-in defaults", "path",
+                     portfolio_path.c_str());
+        }
+
+        VenueQualityModel::Config vq_cfg;
+        const std::string vq_path = "config/" + opts.mode + "/venue_quality.yaml";
+        if (!AlgoConfigLoader::load_venue_quality(vq_path, vq_cfg)) {
+            LOG_WARN("Venue quality config not loaded — using compiled-in defaults", "path",
+                     vq_path.c_str());
+        }
+
+        EngineConfig engine_cfg;
+        const std::string engine_path = "config/" + opts.mode + "/engine.yaml";
+        if (!AlgoConfigLoader::load_engine(engine_path, engine_cfg)) {
+            LOG_WARN("Engine config not loaded — using compiled-in defaults", "path",
+                     engine_path.c_str());
+        }
+
         KillSwitch kill_switch(risk_cfg.heartbeat_timeout_ns);
         CircuitBreaker circuit_breaker(risk_cfg.circuit_breaker, kill_switch);
         GlobalRiskControls global_risk(risk_cfg.global_risk, kill_switch);
@@ -381,16 +421,28 @@ auto main(int argc, char **argv) -> int {
 
         BinanceConnector binance(
             binance_api_key, binance_api_secret,
-            opts.mode == "shadow" ? "mock://binance" : "https://api.binance.com");
+            opts.mode == "shadow" ? "mock://binance" : engine_cfg.binance_rest_url);
         KrakenConnector kraken(kraken_api_key, kraken_api_secret,
-                               opts.mode == "shadow" ? "mock://kraken" : "https://api.kraken.com");
+                               opts.mode == "shadow" ? "mock://kraken" : engine_cfg.kraken_rest_url);
         OkxConnector okx(okx_api_key, okx_api_secret, okx_api_passphrase,
-                         opts.mode == "shadow" ? "mock://okx" : "https://www.okx.com");
+                         opts.mode == "shadow" ? "mock://okx" : engine_cfg.okx_rest_url);
         CoinbaseConnector coinbase(
             coinbase_api_key, coinbase_api_secret,
-            opts.mode == "shadow" ? "mock://coinbase" : "https://api.coinbase.com");
+            opts.mode == "shadow" ? "mock://coinbase" : engine_cfg.coinbase_rest_url);
 
-        ShadowEngine shadow_engine(binance_book, kraken_book, okx_book, coinbase_book);
+        ShadowConfig shadow_cfg = ShadowConfig::from_yaml_values(
+            risk_cfg.binance_taker_fee_bps, risk_cfg.binance_taker_fee_bps,
+            risk_cfg.kraken_taker_fee_bps,  risk_cfg.kraken_taker_fee_bps,
+            risk_cfg.okx_taker_fee_bps,     risk_cfg.okx_taker_fee_bps,
+            risk_cfg.coinbase_taker_fee_bps, risk_cfg.coinbase_taker_fee_bps,
+            engine_cfg.shadow_log_path.c_str());
+        shadow_cfg.base_latency_ns = engine_cfg.shadow_base_latency_ns;
+        shadow_cfg.latency_jitter_ns = engine_cfg.shadow_latency_jitter_ns;
+        shadow_cfg.impact_slippage_per_notional_bps =
+            engine_cfg.shadow_impact_slippage_per_notional_bps;
+        shadow_cfg.queue_match_fraction_per_check =
+            engine_cfg.shadow_queue_match_fraction_per_check;
+        ShadowEngine shadow_engine(binance_book, kraken_book, okx_book, coinbase_book, shadow_cfg);
 
         ReconciliationService reconciliation;
         if (run_binance && !reconciliation.register_connector(binance)) {
@@ -439,7 +491,7 @@ auto main(int argc, char **argv) -> int {
             }
         }
 
-        VenueQualityModel venue_quality_model;
+        VenueQualityModel venue_quality_model(vq_cfg);
         engine::VenueQualityRuntime venue_quality_runtime(venue_quality_model);
 
         const auto mid_price_for_exchange = [&](Exchange exchange) -> double {
@@ -478,11 +530,13 @@ auto main(int argc, char **argv) -> int {
         RegimeSignalReader regime_reader;
         regime_reader.open();
         ParentOrderManager parent_manager;
-        ChildOrderScheduler child_scheduler;
-        PortfolioIntentEngine intent_engine;
+        ChildOrderScheduler child_scheduler(sched_cfg);
+        PortfolioIntentEngine intent_engine(portfolio_cfg);
 
-        const auto reconnect_interval = std::chrono::seconds(1);
-        const auto reconciliation_interval = std::chrono::seconds(30);
+        const auto reconnect_interval =
+            std::chrono::seconds(engine_cfg.reconnect_interval_secs);
+        const auto reconciliation_interval =
+            std::chrono::seconds(engine_cfg.reconciliation_interval_secs);
         const auto loop_interval =
                 std::chrono::milliseconds(opts.loop_interval_ms > 0 ? opts.loop_interval_ms : 500);
         auto next_reconnect = std::chrono::steady_clock::now() + reconnect_interval;
@@ -491,8 +545,10 @@ auto main(int argc, char **argv) -> int {
         uint64_t next_id = 1;
         AlphaSignal last_alpha_signal{};
         PortfolioIntentLogState portfolio_log_state;
-        constexpr auto portfolio_log_heartbeat = std::chrono::seconds(15);
-        auto venue_quality_log_heartbeat = std::chrono::seconds(60);
+        const auto portfolio_log_heartbeat =
+            std::chrono::seconds(engine_cfg.portfolio_log_heartbeat_secs);
+        auto venue_quality_log_heartbeat =
+            std::chrono::seconds(engine_cfg.venue_quality_log_heartbeat_secs);
         auto last_venue_quality_log = std::chrono::steady_clock::time_point{};
 
         LOG_INFO("trading_engine started", "mode", opts.mode.c_str(), "venues", opts.venues.c_str(),
@@ -624,20 +680,29 @@ auto main(int argc, char **argv) -> int {
                 }
             };
 
+            const VenueQuoteDefaults &vq_defaults = engine_cfg.venue_quote_defaults;
             auto bid_quotes = std::array<VenueQuote, SmartOrderRouter::MAX_VENUES>{
                 {
-                    make_quote(Exchange::BINANCE, binance_book, run_binance, Side::BID),
-                    make_quote(Exchange::KRAKEN, kraken_book, run_kraken, Side::BID),
-                    make_quote(Exchange::OKX, okx_book, run_okx, Side::BID),
-                    make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, Side::BID),
+                    make_quote(Exchange::BINANCE, binance_book, run_binance, Side::BID,
+                               risk_cfg.binance_taker_fee_bps, vq_defaults),
+                    make_quote(Exchange::KRAKEN, kraken_book, run_kraken, Side::BID,
+                               risk_cfg.kraken_taker_fee_bps, vq_defaults),
+                    make_quote(Exchange::OKX, okx_book, run_okx, Side::BID,
+                               risk_cfg.okx_taker_fee_bps, vq_defaults),
+                    make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, Side::BID,
+                               risk_cfg.coinbase_taker_fee_bps, vq_defaults),
                 }
             };
             auto ask_quotes = std::array<VenueQuote, SmartOrderRouter::MAX_VENUES>{
                 {
-                    make_quote(Exchange::BINANCE, binance_book, run_binance, Side::ASK),
-                    make_quote(Exchange::KRAKEN, kraken_book, run_kraken, Side::ASK),
-                    make_quote(Exchange::OKX, okx_book, run_okx, Side::ASK),
-                    make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, Side::ASK),
+                    make_quote(Exchange::BINANCE, binance_book, run_binance, Side::ASK,
+                               risk_cfg.binance_taker_fee_bps, vq_defaults),
+                    make_quote(Exchange::KRAKEN, kraken_book, run_kraken, Side::ASK,
+                               risk_cfg.kraken_taker_fee_bps, vq_defaults),
+                    make_quote(Exchange::OKX, okx_book, run_okx, Side::ASK,
+                               risk_cfg.okx_taker_fee_bps, vq_defaults),
+                    make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, Side::ASK,
+                               risk_cfg.coinbase_taker_fee_bps, vq_defaults),
                 }
             };
 
@@ -798,12 +863,17 @@ auto main(int argc, char **argv) -> int {
             const double final_position = shadow_engine.net_position();
             if (final_position > 1e-9) {
                 constexpr Side exit_side = Side::ASK;
+                const VenueQuoteDefaults &exit_defaults = engine_cfg.venue_quote_defaults;
                 std::array<VenueQuote, SmartOrderRouter::MAX_VENUES> exit_quotes{
                     {
-                        make_quote(Exchange::BINANCE, binance_book, run_binance, exit_side),
-                        make_quote(Exchange::KRAKEN, kraken_book, run_kraken, exit_side),
-                        make_quote(Exchange::OKX, okx_book, run_okx, exit_side),
-                        make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, exit_side),
+                        make_quote(Exchange::BINANCE, binance_book, run_binance, exit_side,
+                                   risk_cfg.binance_taker_fee_bps, exit_defaults),
+                        make_quote(Exchange::KRAKEN, kraken_book, run_kraken, exit_side,
+                                   risk_cfg.kraken_taker_fee_bps, exit_defaults),
+                        make_quote(Exchange::OKX, okx_book, run_okx, exit_side,
+                                   risk_cfg.okx_taker_fee_bps, exit_defaults),
+                        make_quote(Exchange::COINBASE, coinbase_book, run_coinbase, exit_side,
+                                   risk_cfg.coinbase_taker_fee_bps, exit_defaults),
                     }
                 };
                 ParentExecutionPlan exit_plan;

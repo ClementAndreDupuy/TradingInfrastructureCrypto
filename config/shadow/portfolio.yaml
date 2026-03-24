@@ -1,0 +1,11 @@
+max_position: 0.80
+min_entry_signal_bps: 3.0
+alpha_exit_buffer_bps: 0.75
+negative_reversal_signal_bps: -1.0
+max_risk_score: 0.65
+shock_flatten_threshold: 0.60
+illiquid_reduce_threshold: 0.55
+stale_inventory_ms: 5000
+stale_inventory_alpha_hold_bps: 10.0
+health_reduce_ratio: 0.50
+long_only: true

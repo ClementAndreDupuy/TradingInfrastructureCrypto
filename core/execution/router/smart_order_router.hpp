@@ -36,6 +36,22 @@ namespace trading {
         double toxicity_weight = 1.0;
     };
 
+    struct SmartOrderRouterConfig {
+        double high_toxicity_threshold = 2.0;
+        double low_fill_threshold = 0.45;
+        double high_fill_threshold = 0.75;
+        double high_toxicity_fill_weight = 7.0;
+        double high_toxicity_queue_weight = 1.1;
+        double high_toxicity_tox_weight = 3.2;
+        double low_fill_fill_weight = 6.0;
+        double low_fill_queue_weight = 0.9;
+        double low_fill_tox_weight = 1.2;
+        double high_fill_fill_weight = 3.0;
+        double high_fill_queue_weight = 0.4;
+        double high_fill_tox_weight = 0.8;
+        double min_fill_probability = 0.05;
+    };
+
     struct ChildOrder {
         Exchange exchange = Exchange::UNKNOWN;
         double quantity = 0.0;
@@ -60,22 +76,27 @@ namespace trading {
         static constexpr size_t MAX_VENUES = 4;
 
         static RoutingDecision route(Side side, double quantity,
-                                     const std::array<VenueQuote, MAX_VENUES> &venues) noexcept;
+                                     const std::array<VenueQuote, MAX_VENUES> &venues,
+                                     const SmartOrderRouterConfig &sor_cfg = {}) noexcept;
 
         static RoutingDecision route_with_alpha(Side side, double base_quantity,
                                                 const AlphaSignal &alpha_signal,
                                                 const std::array<VenueQuote, MAX_VENUES> &venues,
-                                                const RoutingConstraints &cfg = {}) noexcept;
+                                                const RoutingConstraints &cfg = {},
+                                                const SmartOrderRouterConfig &sor_cfg = {}) noexcept;
 
         static double effective_price_bps(const VenueQuote &v, Side side) noexcept;
 
-        static RoutingRegime infer_regime(const std::array<VenueQuote, MAX_VENUES> &venues) noexcept;
+        static RoutingRegime infer_regime(const std::array<VenueQuote, MAX_VENUES> &venues,
+                                          const SmartOrderRouterConfig &sor_cfg = {}) noexcept;
 
         static double score_venue_bps(const VenueQuote &v, Side side,
-                                      const RoutingRegime &regime) noexcept;
+                                      const RoutingRegime &regime,
+                                      double min_fill_probability = 0.05) noexcept;
 
         static double expected_shortfall_bps(const VenueQuote &v, Side side,
                                              const RoutingRegime &regime, double best_px_bps,
-                                             double inventory_age_penalty_bps) noexcept;
+                                             double inventory_age_penalty_bps,
+                                             double min_fill_probability = 0.05) noexcept;
     };
 }

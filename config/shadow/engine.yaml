@@ -1,0 +1,16 @@
+reconnect_interval_secs: 1
+reconciliation_interval_secs: 30
+portfolio_log_heartbeat_secs: 15
+venue_quality_log_heartbeat_secs: 60
+
+default_latency_penalty_bps: 0.5
+default_risk_penalty_bps: 0.2
+default_fill_probability: 0.70
+default_queue_ahead_qty: 0.20
+default_toxicity_bps: 0.4
+
+shadow_base_latency_ns: 150000
+shadow_latency_jitter_ns: 50000
+shadow_impact_slippage_per_notional_bps: 0.8
+shadow_queue_match_fraction_per_check: 0.35
+shadow_log_path: shadow_decisions.jsonl
