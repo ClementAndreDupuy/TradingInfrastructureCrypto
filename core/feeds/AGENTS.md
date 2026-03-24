@@ -1,96 +1,41 @@
 # core/feeds/
 
-Per-exchange market data connectors and shared book state.
+Exchange feed handlers and shared market-data normalization utilities.
 
 ## Layout
 
-- `binance/` — Binance spot depth snapshot+delta handler.
-- `kraken/` — Kraken spot book handler.
-- `okx/` — OKX public book handler.
-- `coinbase/` — Coinbase Advanced Trade level2 handler.
-- `common/` — shared feed utilities (`book_manager.hpp`, `tick_size.hpp`).
-
-Keep this layout: one folder per exchange and shared code in `common/`.
-
-## Connector responsibilities
-
-Each feed connector must:
-
-1. Call `fetch_tick_size()` synchronously at the start of `start()`, before spawning the WebSocket thread.
-2. Fetch or derive an initial snapshot.
-3. Buffer deltas while synchronizing.
-4. Validate sequence continuity.
-5. Apply deltas in order.
-6. Trigger resync on gaps/staleness/checksum failures.
-7. Expose exchange + local timestamps in produced events.
-
-## Tick size selection
-
-Each handler queries the exchange's public symbol-info endpoint to determine the price grid resolution used by the `OrderBook`. The fetched value is exposed via `tick_size()` so callers can construct the `OrderBook` with matching precision:
-
-```cpp
-handler.start();
-OrderBook book(symbol, exchange, handler.tick_size(), 20000);
-```
-
-Exchange endpoints and fields:
-
-| Exchange | Endpoint | Field |
-|----------|----------|-------|
-| Binance  | `GET /api/v3/exchangeInfo?symbol=X` | `PRICE_FILTER.tickSize` (string) |
-| Kraken   | `GET /0/public/AssetPairs?pair=X`   | `pair_decimals` (int) → `10^-n` |
-| OKX      | `GET /api/v5/public/instruments`    | `data[0].tickSz` (string) |
-| Coinbase | `GET /products/{product_id}`        | `quote_increment` (string) |
-
-String-formatted tick sizes (Binance, OKX, Coinbase) are parsed via `tick_from_string()` (`common/tick_size.hpp`), which counts significant decimal digits and returns `10^-n` exactly — avoiding the floating-point noise that `stod("0.01000000")` introduces in `price_to_index()`. `fetch_tick_size()` failures are non-fatal: `tick_size_` stays `0.0`, a WARN is logged, and the `OrderBook`'s non-positive-base guard catches any bad snapshot.
-
-## Integration contract with execution / SOR
-
-Feed handlers publish normalized `Snapshot` / `Delta` updates into the shared `BookManager` state. Execution and smart routing components must not depend on exchange-specific wire formats.
-
-When modifying feed handlers, preserve deterministic ordering and sequence integrity so `SmartOrderRouter` inputs remain consistent across venues.
-
-## Common pitfalls
-
-- Applying deltas before snapshot synchronization completes.
-- Accepting out-of-order sequence numbers.
-- Treating reconnect as a continuation instead of requiring re-sync.
-- Constructing `OrderBook` with a hardcoded tick size instead of reading `handler.tick_size()`.
-
-## Agent memory
-
-- Feed code stays exchange-isolated (`<exchange>/`) with normalization in `common/` only.
-- When adding a venue handler, document: snapshot source, sequence/checksum rule, exact re-sync trigger conditions, and the symbol-info endpoint + field used for tick size.
-- Reconnect is a correctness boundary: treat as fresh sync unless the venue protocol explicitly guarantees continuity.
-- Keep comments limited to venue protocol contracts, sequencing rules, and resync triggers.
-
+- `binance/` — Binance feed handler.
+- `kraken/` — Kraken feed handler.
+- `okx/` — OKX feed handler.
+- `coinbase/` — Coinbase Advanced Trade feed handler.
+- `common/` — shared adapters/utilities (`book_manager.hpp`, `tick_size.hpp`).
 
 ## Classes & Methods (Quick Reference)
 
-- **`BookManager` (`common/book_manager.hpp`)** — Normalizes feed callbacks into `OrderBook` state.
-  - `snapshot_handler()/delta_handler()`: Returns callbacks that apply snapshots/deltas and update freshness.
-  - `age_ms()`: Reports elapsed time since last accepted update for stale-book checks.
-  - `set_publisher(LobPublisher*)`: Enables mmap LOB publishing after each accepted update.
+- **`BookManager` (`common/book_manager.hpp`)** — Bridges normalized snapshots/deltas into `OrderBook`.
+  - `snapshot_handler()/delta_handler()`: Callbacks for feed handlers to apply updates.
+  - `age_ms()`: Freshness metric used by risk checks.
+  - `set_publisher(LobPublisher*)`: Enables optional shared-memory top-of-book publishing.
 
-- **`BinanceFeedHandler` (`binance/...`)** — Binance depth stream synchronizer.
-  - `start()/stop()`: Manages initial sync and websocket lifecycle.
-  - `process_message(...)`: Parses depth payloads and emits normalized updates.
-  - `sync_stats()`: Returns re-sync and buffering telemetry.
+- **`BinanceFeedHandler` (`binance/binance_feed_handler.hpp`)**
+  - `start()/stop()`: Starts/stops snapshot + websocket synchronization flow.
+  - `process_message(...)`: Parses stream payloads and emits snapshot/delta callbacks.
+  - `sync_stats()`: Returns resync/buffer telemetry.
 
-- **`KrakenFeedHandler` (`kraken/...`)** — Kraken book stream handler with checksum validation.
-  - `start()/stop()`: Starts or tears down snapshot+delta sync loop.
-  - `process_message(...)`: Applies snapshot/delta payloads and sequence guards.
-  - `crc32_for_test(...)`: Deterministic checksum helper for unit tests.
+- **`KrakenFeedHandler` (`kraken/kraken_feed_handler.hpp`)**
+  - `start()/stop()`: Controls handler lifecycle.
+  - `process_message(...)`: Parses/apply snapshot-delta messages and sequencing logic.
+  - `crc32_for_test(...)`: Deterministic checksum helper used in tests.
 
-- **`OkxFeedHandler` (`okx/...`)** — OKX books feed handler with buffered delta replay.
-  - `start()/stop()`: Controls WS loop and synchronization state.
-  - `process_message(...)`: Parses and validates snapshot/delta message flow.
-  - `validate_checksum(...)` (internal): Verifies book integrity from venue checksums.
+- **`OkxFeedHandler` (`okx/okx_feed_handler.hpp`)**
+  - `start()/stop()`: Controls WS loop and synchronization states.
+  - `process_message(...)`: Handles snapshot/delta parsing and ordering.
+  - `validate_delta_sequence(...)` (internal): Guards sequence continuity.
 
-- **`CoinbaseFeedHandler` (`coinbase/...`)** — Coinbase Advanced Trade level2 handler.
-  - `start()/stop()`: Handles auth/subscription and stream lifecycle.
-  - `process_message(...)`: Converts channel events into normalized snapshot/delta updates.
-  - `build_subscription_messages()/generate_jwt(...)`: Builds authenticated subscription payloads.
+- **`CoinbaseFeedHandler` (`coinbase/coinbase_feed_handler.hpp`)**
+  - `start()/stop()`: Controls auth, subscription, and lifecycle.
+  - `process_message(...)`: Converts venue messages to normalized updates.
+  - `build_subscription_messages()/generate_jwt(...)`: Builds authenticated WS subscriptions.
 
-- **`tick_from_string(...)` (`common/tick_size.hpp`)** — Tick-size parser.
-  - Converts string tick increments (including padded decimals) to stable numeric tick sizes.
+- **`tick_from_string(...)` (`common/tick_size.hpp`)**
+  - Parses exchange tick-size strings into stable `double` increments.
