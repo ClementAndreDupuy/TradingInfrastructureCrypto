@@ -362,6 +362,9 @@ class NeuralAlphaShadowSession:
             early_stop_patience=4,
             log_every_epochs=1,
             verbose=False,
+            w_return=0.5,
+            w_direction=1.0,
+            w_risk=0.5,
         )
     def _snapshot_current_state(self) -> dict[str, torch.Tensor] | None:
         return None if self._model is None else {key: value.detach().cpu().clone() for key, value in self._model.state_dict().items()}
@@ -439,12 +442,23 @@ class NeuralAlphaShadowSession:
         )
         if not fold_results:
             return
-        best = min(fold_results, key=lambda fold: fold["metrics"].get("loss_total", 1_000_000_000.0))
+        best = min(fold_results, key=lambda fold: fold.get("best_selection_score", 1_000_000_000.0))
         state = best["model_state"]
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_out = out_path.with_suffix(out_path.suffix + ".tmp")
-        torch.save(state, tmp_out)
-        tmp_out.replace(out_path)
+        metrics = dict(best.get("metrics", {}))
+        self._save_state_artifacts(
+            state,
+            out_path,
+            {
+                "trained_at_ns": time.time_ns(),
+                "train_ticks": len(df),
+                "train_epochs": self.cfg.train_epochs,
+                "seq_len": self.cfg.seq_len,
+                "d_spatial": 32,
+                "d_temporal": 64,
+                "n_temp_layers": 1,
+                "metrics": metrics,
+            },
+        )
         self._secondary_model = self._build_model(d_spatial=32, d_temporal=64, n_temp_layers=1)
         self._secondary_model.load_state_dict(state)
         self._reset_canary()
@@ -484,7 +498,7 @@ class NeuralAlphaShadowSession:
         fold_results = walk_forward_train(df, self._primary_trainer_config(resume_state, self._training_folds(df)))
         if not fold_results:
             return
-        best = min(fold_results, key=lambda fold: fold["metrics"].get("loss_total", 1_000_000_000.0))
+        best = min(fold_results, key=lambda fold: fold.get("best_selection_score", 1_000_000_000.0))
         candidate_state = best["model_state"]
         metrics = dict(best.get("metrics", {}))
         selected_state, holdout_summary = self._select_primary_state(df, candidate_state, resume_state)
