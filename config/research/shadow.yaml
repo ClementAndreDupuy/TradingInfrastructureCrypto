@@ -38,7 +38,7 @@ session:
   canary_icir_floor: 0.0
   canary_window: 200
   canary_min_samples: 60
-  require_full_model_stack: true
+  require_full_model_stack: false
   min_continuous_train_interval_s: 600
   min_regime_train_interval_s: 600
   regime_startup_warmup_s: 180
