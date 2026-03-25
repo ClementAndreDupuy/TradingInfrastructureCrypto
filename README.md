@@ -29,9 +29,11 @@ flowchart LR
   subgraph HotPath["C++ Hot Path (latency critical)"]
     FEEDS["core/feeds\nWebSocket handlers\n(snapshot + deltas + sequence checks)"]
     ORDERBOOK["core/orderbook\nLocal order books"]
-    ENGINE["core/engine\nRuntime orchestration"]
-    EXEC["core/execution\nOrderManager + MarketMaker"]
-    SOR["core/execution\nSmartOrderRouter + ExchangeConnector(s)"]
+    ENGINE["core/engine\nRuntime orchestration + target-position loop\nlive/shadow mode state machine"]
+    EXEC["core/execution\nOrderManager + NeuralAlphaMarketMaker\nposition tracking + stop-limit handling"]
+    SOR["core/execution/router\nSmartOrderRouter + exchange connectors"]
+    VQM["core/execution/common/quality\nVenueQualityModel\nadaptive venue penalties"]
+    RECON["core/execution\nReconciliation snapshots + drift checks"]
     RISK["core/risk\nPre-trade checks\nKill switch / circuit breaker"]
     SHADOW["core/shadow\nPaper-trading engine"]
   end
@@ -71,6 +73,8 @@ flowchart LR
   ENGINE -->|"Start/stop + wiring"| EXEC
   ENGINE -->|"Start/stop + wiring"| SOR
   ENGINE -->|"Start/stop + wiring"| SHADOW
+  ENGINE -->|"Target-position state transitions\nFLAT→ENTERING→HOLDING→REDUCING→FLATTENING/HALTED"| EXEC
+  ENGINE -->|"Live-mode reconciliation cadence\n(skip in shadow mode)"| RECON
 
   FEEDS -->|"Live feed connector (production)"| BIN
   FEEDS -->|"Live feed connector (production)"| KRA
@@ -87,6 +91,9 @@ flowchart LR
   EXEC -->|"Pre-trade check request"| RISK
   RISK -->|"Approve/reject"| EXEC
   EXEC -->|"Validated parent/child orders"| SOR
+  RECON -->|"Venue/account snapshots + drift flags"| EXEC
+  EXEC -->|"Execution outcomes for quality updates"| VQM
+  VQM -->|"Bounded adaptive venue penalties\n(fill prob/markout/reject/cancel-latency/health)"| SOR
 
   SOR -->|"Live order connector (production)"| BIN
   SOR -->|"Live order connector (production)"| KRA
@@ -116,7 +123,10 @@ flowchart LR
 
 ## Recent updates
 
-- ✅ **Four fully working venues for feeds and orders**: Binance, Kraken, OKX, and Coinbase are now represented as live production connectors on both the market data path (`core/feeds`) and execution path (`core/execution` smart order router).
+- ✅ **Execution engine rebuild landed**: `core/engine` now drives a target-position state machine for both live and shadow operation, with explicit transition states (`FLAT`, `ENTERING`, `HOLDING`, `REDUCING`, `FLATTENING`, `HALTED`).
+- ✅ **Adaptive venue quality routing added**: `core/execution` now updates routing scores using fill probability, markout, reject rate, cancel latency, and health-derived bounded penalties before order routing decisions.
+- ✅ **Live reconciliation flow unified with target-position logic**: live mode consumes reconciliation snapshots and drift checks through the same execution loop used by shadow mode (with reconciliation intentionally skipped in shadow).
+- ✅ **Four fully working venues for feeds and orders**: Binance, Kraken, OKX, and Coinbase are represented as live production connectors on both the market data path (`core/feeds`) and execution path (`core/execution` router stack).
 - ✅ **Neural network now consumes data directly from `core/`**: `research/neural_alpha` receives normalized market data, order book state, and execution telemetry directly from core components for model training/inference inputs.
 
 - **`core/feeds`**: Maintains real-time exchange market data streams and validates message order before updating internal state.
