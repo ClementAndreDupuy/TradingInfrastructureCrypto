@@ -6,7 +6,7 @@ namespace trading {
     class CoinbaseConnector : public LiveConnectorBase {
     public:
         CoinbaseConnector(const std::string &api_key, const std::string &api_secret,
-                          const std::string &api_url = "https://api.coinbase.com")
+                          const std::string &api_url)
             : LiveConnectorBase(Exchange::COINBASE, api_key, api_secret, api_url) {
         }
 

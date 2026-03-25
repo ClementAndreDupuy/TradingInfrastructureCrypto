@@ -9,11 +9,11 @@
 
 namespace trading {
     struct RegimeSignal {
-        double p_calm = 1.0;
-        double p_trending = 0.0;
-        double p_shock = 0.0;
-        double p_illiquid = 0.0;
-        int64_t ts_ns = 0;
+        double p_calm;
+        double p_trending;
+        double p_shock;
+        double p_illiquid;
+        int64_t ts_ns;
     };
 
     class RegimeSignalReader {
@@ -21,7 +21,7 @@ namespace trading {
         static constexpr size_t FILE_SIZE = 48;
         static constexpr int k_max_retries = 16;
 
-        explicit RegimeSignalReader(const std::string &path = "/tmp/trt_ipc/regime_signal.bin") : path_(path) {
+        explicit RegimeSignalReader(const std::string &path) : path_(path) {
         }
 
         ~RegimeSignalReader() { close(); }
@@ -99,7 +99,7 @@ namespace trading {
 
     private:
         std::string path_;
-        int fd_ = -1;
-        const char *ptr_ = nullptr;
+        int fd_;
+        const char *ptr_;
     };
 } // namespace trading

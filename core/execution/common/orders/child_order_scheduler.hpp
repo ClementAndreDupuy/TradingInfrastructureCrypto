@@ -19,21 +19,21 @@ namespace trading {
 
     struct SchedulerDecision {
         RoutingDecision routing{};
-        ChildExecutionStyle style = ChildExecutionStyle::IOC;
-        double expected_shortfall_bps = 0.0;
+        ChildExecutionStyle style;
+        double expected_shortfall_bps;
     };
 
     class ChildOrderScheduler {
     public:
         struct Config {
-            int64_t short_horizon_ticks = 12;
-            int64_t sweep_horizon_ticks = 3;
-            int64_t long_horizon_ticks = 80;
-            double passive_join_inventory_age_bps = 0.4;
-            double passive_improve_inventory_age_bps = 0.25;
-            double aggressive_inventory_age_bps = 0.1;
-            double passive_improve_fraction = 0.20;
-            double price_cross_epsilon = 1e-6;
+            int64_t short_horizon_ticks;
+            int64_t sweep_horizon_ticks;
+            int64_t long_horizon_ticks;
+            double passive_join_inventory_age_bps;
+            double passive_improve_inventory_age_bps;
+            double aggressive_inventory_age_bps;
+            double passive_improve_fraction;
+            double price_cross_epsilon;
             SmartOrderRouterConfig sor;
         };
 

@@ -24,8 +24,8 @@ namespace trading {
         using ErrorCallback = std::function<void(const std::string &)>;
 
         explicit OkxFeedHandler(const std::string &symbol,
-                                const std::string &api_url = "https://www.okx.com",
-                                const std::string &ws_url = "wss://ws.okx.com:8443/ws/v5/public");
+                                const std::string &api_url,
+                                const std::string &ws_url);
 
         ~OkxFeedHandler();
 

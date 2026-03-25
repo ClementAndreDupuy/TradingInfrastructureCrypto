@@ -100,7 +100,7 @@ namespace trading {
 
         // ── HTTP verbs ────────────────────────────────────────────────────────────────
 
-        inline HttpResponse get(const std::string &url, const std::vector<std::string> &headers = {}) {
+        inline HttpResponse get(const std::string &url, const std::vector<std::string> &headers) {
 #if defined(TRT_ENABLE_HTTP_MOCK_TRANSPORT)
             if (mock_transport_slot())
                 return mock_transport_slot()("GET", url, "", headers);
@@ -113,8 +113,8 @@ namespace trading {
             return detail::perform(h, headers);
         }
 
-        inline HttpResponse post(const std::string &url, const std::string &body = "",
-                                 const std::vector<std::string> &headers = {}) {
+        inline HttpResponse post(const std::string &url, const std::string &body,
+                                 const std::vector<std::string> &headers) {
 #if defined(TRT_ENABLE_HTTP_MOCK_TRANSPORT)
             if (mock_transport_slot())
                 return mock_transport_slot()("POST", url, body, headers);
@@ -129,8 +129,8 @@ namespace trading {
             return detail::perform(h, headers);
         }
 
-        inline HttpResponse put(const std::string &url, const std::string &body = "",
-                                const std::vector<std::string> &headers = {}) {
+        inline HttpResponse put(const std::string &url, const std::string &body,
+                                const std::vector<std::string> &headers) {
 #if defined(TRT_ENABLE_HTTP_MOCK_TRANSPORT)
             if (mock_transport_slot())
                 return mock_transport_slot()("PUT", url, body, headers);
@@ -145,7 +145,7 @@ namespace trading {
             return detail::perform(h, headers);
         }
 
-        inline HttpResponse del(const std::string &url, const std::vector<std::string> &headers = {}) {
+        inline HttpResponse del(const std::string &url, const std::vector<std::string> &headers) {
 #if defined(TRT_ENABLE_HTTP_MOCK_TRANSPORT)
             if (mock_transport_slot())
                 return mock_transport_slot()("DELETE", url, "", headers);

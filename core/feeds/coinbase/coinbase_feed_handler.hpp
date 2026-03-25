@@ -22,8 +22,8 @@ namespace trading {
 
         explicit CoinbaseFeedHandler(
             const std::string &symbol,
-            const std::string &ws_url = "wss://advanced-trade-ws.coinbase.com",
-            const std::string &api_url = "https://api.coinbase.com");
+            const std::string &ws_url,
+            const std::string &api_url);
 
         ~CoinbaseFeedHandler();
 

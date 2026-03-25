@@ -7,7 +7,7 @@ namespace trading {
     public:
         OkxConnector(const std::string &api_key, const std::string &api_secret,
                      const std::string &api_passphrase,
-                     const std::string &api_url = "https://www.okx.com")
+                     const std::string &api_url)
             : LiveConnectorBase(Exchange::OKX, api_key, api_secret, api_url, {}, api_passphrase) {
         }
 

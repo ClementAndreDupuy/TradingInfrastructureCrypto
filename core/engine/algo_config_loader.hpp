@@ -15,28 +15,28 @@
 
 namespace trading {
     struct VenueQuoteDefaults {
-        double latency_penalty_bps = 0.5;
-        double risk_penalty_bps = 0.2;
-        double fill_probability = 0.70;
-        double queue_ahead_qty = 0.20;
-        double toxicity_bps = 0.4;
+        double latency_penalty_bps;
+        double risk_penalty_bps;
+        double fill_probability;
+        double queue_ahead_qty;
+        double toxicity_bps;
     };
 
     struct EngineConfig {
-        int reconnect_interval_secs = 1;
-        int reconciliation_interval_secs = 30;
-        int portfolio_log_heartbeat_secs = 15;
-        int venue_quality_log_heartbeat_secs = 60;
+        int reconnect_interval_secs;
+        int reconciliation_interval_secs;
+        int portfolio_log_heartbeat_secs;
+        int venue_quality_log_heartbeat_secs;
         VenueQuoteDefaults venue_quote_defaults;
-        std::string binance_rest_url = "https://api.binance.com";
-        std::string kraken_rest_url = "https://api.kraken.com";
-        std::string okx_rest_url = "https://www.okx.com";
-        std::string coinbase_rest_url = "https://api.coinbase.com";
-        int64_t shadow_base_latency_ns = 150000;
-        int64_t shadow_latency_jitter_ns = 50000;
-        double shadow_impact_slippage_per_notional_bps = 0.8;
-        double shadow_queue_match_fraction_per_check = 0.35;
-        std::string shadow_log_path = "shadow_decisions.jsonl";
+        std::string binance_rest_url;
+        std::string kraken_rest_url;
+        std::string okx_rest_url;
+        std::string coinbase_rest_url;
+        int64_t shadow_base_latency_ns;
+        int64_t shadow_latency_jitter_ns;
+        double shadow_impact_slippage_per_notional_bps;
+        double shadow_queue_match_fraction_per_check;
+        std::string shadow_log_path;
     };
 
     class AlgoConfigLoader {

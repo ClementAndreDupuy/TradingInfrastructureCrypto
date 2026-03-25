@@ -44,12 +44,12 @@ namespace trading {
     };
 
     struct PortfolioIntent {
-        double target_global_position = 0.0;
-        double position_delta = 0.0;
-        ShadowUrgency urgency = ShadowUrgency::BALANCED;
-        bool flatten_now = false;
-        double max_shortfall_bps = 0.0;
-        double expected_cost_bps = 0.0;
+        double target_global_position;
+        double position_delta;
+        ShadowUrgency urgency;
+        bool flatten_now;
+        double max_shortfall_bps;
+        double expected_cost_bps;
         std::array<PortfolioIntentReasonCode, 8> reason_codes{};
         size_t reason_count = 0;
 
@@ -62,7 +62,7 @@ namespace trading {
 
     class PortfolioIntentEngine {
     public:
-        explicit PortfolioIntentEngine(PortfolioIntentConfig cfg = {}) : cfg_(cfg) {
+        explicit PortfolioIntentEngine(PortfolioIntentConfig cfg) : cfg_(cfg) {
         }
 
         [[nodiscard]] PortfolioIntent evaluate(

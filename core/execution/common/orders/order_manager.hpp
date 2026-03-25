@@ -47,10 +47,10 @@ namespace trading {
 
     struct ManagedOrder {
         Order order;
-        OrderState state = OrderState::PENDING;
-        double filled_qty = 0.0;
-        double avg_fill_price = 0.0;
-        bool active = false;
+        OrderState state;
+        double filled_qty;
+        double avg_fill_price;
+        bool active;
     };
 
     class OrderManager {
@@ -127,7 +127,7 @@ namespace trading {
         ExchangeConnector &connector_;
         std::atomic<uint64_t> next_id_;
         std::array<ManagedOrder, MAX_ORDERS> slots_{};
-        double position_ = 0.0;
+        double position_;
         PositionLedger ledger_;
 
         SpscQueue<FillUpdate, FILL_QUEUE_DEPTH> fill_queue_;

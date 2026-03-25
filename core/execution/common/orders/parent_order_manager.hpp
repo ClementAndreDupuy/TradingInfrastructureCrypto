@@ -33,18 +33,18 @@ namespace trading {
     };
 
     struct ParentExecutionPlan {
-        uint64_t plan_id = 0;
-        Side side = Side::BID;
-        double total_qty = 0.0;
-        double filled_qty = 0.0;
-        double remaining_qty = 0.0;
-        ShadowUrgency urgency = ShadowUrgency::BALANCED;
-        bool allow_passive = true;
-        bool allow_aggressive = true;
+        uint64_t plan_id;
+        Side side;
+        double total_qty;
+        double filled_qty;
+        double remaining_qty;
+        ShadowUrgency urgency;
+        bool allow_passive;
+        bool allow_aggressive;
         std::chrono::steady_clock::time_point created_at{};
         std::chrono::steady_clock::time_point deadline{};
-        ParentPlanState state = ParentPlanState::IDLE;
-        uint32_t revision = 0;
+        ParentPlanState state;
+        uint32_t revision;
 
         [[nodiscard]] bool active() const noexcept {
             return state == ParentPlanState::WORKING;
@@ -52,16 +52,16 @@ namespace trading {
     };
 
     struct ParentPlanUpdateResult {
-        ParentPlanAction action = ParentPlanAction::NONE;
+        ParentPlanAction action;
         ParentExecutionPlan plan{};
-        bool should_cancel_working_children = false;
-        bool deadline_passed = false;
+        bool should_cancel_working_children;
+        bool deadline_passed;
     };
 
     class ParentOrderManager {
     public:
         struct Config {
-            double replace_qty_threshold = 0.05;
+            double replace_qty_threshold;
             std::chrono::milliseconds default_deadline{1500};
             std::chrono::milliseconds min_deadline_extension{250};
         };
@@ -75,7 +75,7 @@ namespace trading {
             double position_delta,
             ShadowUrgency urgency,
             std::chrono::steady_clock::time_point now,
-            std::chrono::milliseconds deadline = std::chrono::milliseconds::zero()) noexcept {
+            std::chrono::milliseconds deadline) noexcept {
             ParentPlanUpdateResult result;
             maybe_expire(now, result);
 
@@ -189,7 +189,7 @@ namespace trading {
 
         Config cfg_{};
         ParentExecutionPlan plan_{};
-        uint64_t next_plan_id_ = 1;
+        uint64_t next_plan_id_;
 
         [[nodiscard]] static ParentExecutionPlan build_plan(
             Side side,

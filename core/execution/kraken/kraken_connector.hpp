@@ -6,7 +6,7 @@ namespace trading {
     class KrakenConnector : public LiveConnectorBase {
     public:
         KrakenConnector(const std::string &api_key, const std::string &api_secret,
-                        const std::string &api_url = "https://api.kraken.com")
+                        const std::string &api_url)
             : LiveConnectorBase(Exchange::KRAKEN, api_key, api_secret, api_url) {
         }
 
