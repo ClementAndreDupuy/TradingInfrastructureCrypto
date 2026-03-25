@@ -318,7 +318,6 @@ namespace trading {
             return headers;
         }
 
-
         std::string coinbase_bearer_token(const char *method, const std::string &request_path) const {
 #if TRT_HAS_OPENSSL
             if (api_key_.empty() || api_secret_.empty())
@@ -474,7 +473,6 @@ namespace trading {
         }
 
         static std::string encode_hex(const HmacDigest &d) { return encode_hex(d.data, d.len); }
-
 
         static std::string extract_host(const std::string &url) {
             const size_t scheme = url.find("://");

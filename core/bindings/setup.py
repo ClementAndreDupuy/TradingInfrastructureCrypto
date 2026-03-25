@@ -2,11 +2,9 @@ import os
 import subprocess
 import sys
 
-
 def _abort(msg: str) -> None:
     print(f"\nERROR: {msg}", file=sys.stderr)
     sys.exit(1)
-
 
 def _pkg_config(package: str, flag: str) -> list[str]:
     try:
@@ -18,7 +16,6 @@ def _pkg_config(package: str, flag: str) -> list[str]:
         _abort("pkg-config not found. Install it: apt install pkg-config / brew install pkg-config")
     except subprocess.CalledProcessError:
         return []
-
 
 def _require_pkg(package: str, install_hint: str) -> None:
     """Hard-fail if a pkg-config package is missing."""
@@ -35,7 +32,6 @@ def _require_pkg(package: str, install_hint: str) -> None:
             f"  If installed in a non-standard path, set PKG_CONFIG_PATH accordingly."
         )
 
-
 def _parse_flags(raw: list[str], include_dirs, library_dirs, libraries, extra_link):
     for f in raw:
         if f.startswith("-I"):
@@ -46,8 +42,6 @@ def _parse_flags(raw: list[str], include_dirs, library_dirs, libraries, extra_li
             libraries.append(f[2:])
         elif f:
             extra_link.append(f)
-
-
 
 try:
     import pybind11
@@ -71,7 +65,6 @@ _require_pkg(
     "nlohmann_json",
     "apt install nlohmann-json3-dev  /  brew install nlohmann-json",
 )
-
 
 from setuptools import Extension, setup
 
@@ -106,17 +99,14 @@ for flag in _pkg_config("nlohmann_json", "--cflags-only-I"):
     if flag.startswith("-I"):
         include_dirs.append(flag[2:])
 
-
 def _dedup(lst: list) -> list:
     seen: set = set()
     return [x for x in lst if not (x in seen or seen.add(x))]
-
 
 include_dirs = _dedup(include_dirs)
 library_dirs = _dedup(library_dirs)
 libraries = _dedup(libraries)
 extra_link_args = _dedup(extra_link_args)
-
 
 print("trading_core build configuration:")
 print(f"  pybind11 : {pybind11.__version__} @ {pybind11.get_include()}")
@@ -124,7 +114,6 @@ print(f"  include  : {include_dirs}")
 print(f"  libs     : {libraries}")
 print(f"  lib_dirs : {library_dirs}")
 print(f"  cflags   : {extra_compile_args}")
-
 
 ext = Extension(
     name="trading_core",

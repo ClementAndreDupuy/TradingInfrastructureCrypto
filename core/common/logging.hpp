@@ -1,7 +1,5 @@
 #pragma once
 
-
-
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -228,14 +226,12 @@ namespace trading {
                 buf[pos++] = tmp[i];
         }
 
-
         inline void fmt_fields(char *, size_t &, size_t) noexcept {
         }
 
         template<typename V, typename... Rest>
         void fmt_fields(char *buf, size_t &pos, size_t cap, const char *key, V &&val,
                         Rest &&... rest) noexcept;
-
 
         inline void fmt_value(char *buf, size_t &pos, size_t cap, const char *v) noexcept {
             fmt_append(buf, pos, cap, v);

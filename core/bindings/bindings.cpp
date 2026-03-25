@@ -18,12 +18,6 @@
 namespace py = pybind11;
 using namespace trading;
 
-
-
-
-
-
-
 template <typename... Args> static std::function<void(Args...)> make_safe_cb(py::object cb) {
     auto safe = std::shared_ptr<py::object>(new py::object(std::move(cb)), [](py::object* p) {
         py::gil_scoped_acquire gil;
@@ -35,8 +29,6 @@ template <typename... Args> static std::function<void(Args...)> make_safe_cb(py:
             (*safe)(std::forward<Args>(args)...);
         } catch (const py::error_already_set& e) {
             
-            
-            
             PyErr_PrintEx(0);
         } catch (const std::exception& e) {
             fprintf(stderr, "[trading_core] callback exception: %s\n", e.what());
@@ -44,25 +36,11 @@ template <typename... Args> static std::function<void(Args...)> make_safe_cb(py:
     };
 }
 
-
-
 static std::string fmt_double(double v) {
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(8) << v;
     return oss.str();
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 template <typename Handler>
 static py::class_<Handler> bind_feed_handler(py::module_& m, const char* class_name,
@@ -131,10 +109,6 @@ PYBIND11_MODULE(trading_core, m) {
               "KillSwitch. Requires pybind11>=2.11, Python>=3.10, libwebsockets>=4.0.";
     m.attr("__version__") = "1.0.0";
 
-    
-    
-    
-
     py::enum_<Exchange>(m, "Exchange")
         .value("BINANCE", Exchange::BINANCE)
         .value("OKX", Exchange::OKX)
@@ -160,8 +134,6 @@ PYBIND11_MODULE(trading_core, m) {
         .value("HEARTBEAT_MISSED", KillReason::HEARTBEAT_MISSED)
         .value("BOOK_CORRUPTED", KillReason::BOOK_CORRUPTED);
 
-    
-
     py::class_<VenueSymbols>(m, "VenueSymbols",
         "Venue-specific symbol strings produced by SymbolMapper.map_all().")
         .def_readonly("binance",     &VenueSymbols::binance)
@@ -185,8 +157,6 @@ PYBIND11_MODULE(trading_core, m) {
         .def_static("map_for_exchange", &SymbolMapper::map_for_exchange,
                     py::arg("exchange"), py::arg("symbol"),
                     "Convenience: map a canonical symbol to a single venue's format.");
-
-    
 
     py::class_<PriceLevel>(m, "PriceLevel")
         .def(py::init<>())
@@ -239,8 +209,6 @@ PYBIND11_MODULE(trading_core, m) {
             return oss.str();
         });
 
-    
-
     py::class_<OrderBook>(m, "OrderBook")
         .def(py::init<const std::string&, Exchange, double, size_t>(), py::arg("symbol"),
              py::arg("exchange"), py::arg("tick_size") = 1.0, py::arg("max_levels") = 20000)
@@ -265,9 +233,6 @@ PYBIND11_MODULE(trading_core, m) {
         .def(
             "get_levels_array",
             [](const OrderBook& book, py::ssize_t n) -> py::tuple {
-                
-                
-                
                 
                 std::vector<PriceLevel> bids, asks;
                 book.get_top_levels(static_cast<size_t>(n), bids, asks);
@@ -294,8 +259,6 @@ PYBIND11_MODULE(trading_core, m) {
         .def_property_readonly("symbol", &OrderBook::symbol)
         .def_property_readonly("exchange", &OrderBook::exchange);
 
-    
-
     py::class_<KillSwitch>(m, "KillSwitch")
         .def(py::init<int64_t>(),
              py::arg("heartbeat_timeout_ns") = KillSwitch::DEFAULT_HEARTBEAT_TIMEOUT_NS)
@@ -309,16 +272,12 @@ PYBIND11_MODULE(trading_core, m) {
         .def("get_reason", &KillSwitch::get_reason)
         .def_static("reason_to_string", &KillSwitch::reason_to_string, py::arg("reason"));
 
-    
-
     bind_feed_handler<BinanceFeedHandler>(
         m, "BinanceFeedHandler",
         "Binance spot order book feed handler using the diff-depth WebSocket stream.")
         .def(py::init<const std::string&, const std::string&, const std::string&>(),
              py::arg("symbol"), py::arg("api_url") = "https://api.binance.com",
              py::arg("ws_url") = "wss://stream.binance.com:9443/ws");
-
-    
 
     bind_feed_handler<KrakenFeedHandler>(
         m, "KrakenFeedHandler",
@@ -328,15 +287,11 @@ PYBIND11_MODULE(trading_core, m) {
              py::arg("api_url") = "https://api.kraken.com",
              py::arg("ws_url") = "wss://ws.kraken.com/v2");
 
-    
-
     bind_feed_handler<OkxFeedHandler>(
         m, "OkxFeedHandler", "OKX order book feed handler using the WebSocket v5 public channel.")
         .def(py::init<const std::string&, const std::string&, const std::string&>(),
              py::arg("symbol"), py::arg("api_url") = "https://www.okx.com",
              py::arg("ws_url") = "wss://ws.okx.com:8443/ws/v5/public");
-
-    
 
     bind_feed_handler<CoinbaseFeedHandler>(
         m, "CoinbaseFeedHandler",

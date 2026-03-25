@@ -81,7 +81,6 @@ namespace trading {
             return out;
         }
 
-
         static auto ecdsa_der_to_jose(const unsigned char *der, size_t der_len) -> std::string {
             const unsigned char *cursor = der;
             ECDSA_SIG *sig = d2i_ECDSA_SIG(nullptr, &cursor, static_cast<long>(der_len));

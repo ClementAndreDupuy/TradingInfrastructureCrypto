@@ -98,8 +98,6 @@ namespace trading {
         }
 #endif
 
-        
-
         inline HttpResponse get(const std::string &url, const std::vector<std::string> &headers) {
 #if defined(TRT_ENABLE_HTTP_MOCK_TRANSPORT)
             if (mock_transport_slot())
@@ -160,8 +158,6 @@ namespace trading {
             return detail::perform(h, headers);
         }
 
-        
-
         inline int64_t now_ns() {
             return std::chrono::duration_cast<std::chrono::nanoseconds>(
                         std::chrono::system_clock::now().time_since_epoch())
@@ -173,8 +169,6 @@ namespace trading {
                         std::chrono::system_clock::now().time_since_epoch())
                     .count();
         }
-
-        
 
         inline std::string env_var(const char *name) {
             const char *v = std::getenv(name);

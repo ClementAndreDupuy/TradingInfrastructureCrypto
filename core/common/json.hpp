@@ -166,7 +166,6 @@ namespace nlohmann {
             const json &operator*() const { return deref(); }
             const json *operator->() const { return &deref(); }
 
-            
             const std::string &key() const {
                 static const std::string empty_key;
                 if (j_ && j_->is_object() && j_->obj_ && idx_ < j_->obj_->size())
@@ -200,7 +199,6 @@ namespace nlohmann {
 
         iterator end() const { return iterator(this, size()); }
 
-        
         bool contains(const std::string &key) const { return find(key) != end(); }
         bool contains(const char *key) const { return find(key) != end(); }
 
@@ -216,7 +214,6 @@ namespace nlohmann {
 
         iterator find(const char *key) const { return find(std::string(key)); }
 
-        
         const json &value(const std::string &key, const json &def) const {
             auto it = find(key);
             return (it != end()) ? *it : def;
@@ -234,8 +231,6 @@ namespace nlohmann {
             }
         }
 
-        
-        
         static json parse(const std::string &s, std::nullptr_t   = nullptr,
                           bool allow_exceptions = true) {
             const char *p = s.c_str();
@@ -256,7 +251,6 @@ namespace nlohmann {
             }
         }
 
-        
         std::string dump(int   = -1) const {
             std::ostringstream os;
             serialize(os);
@@ -443,7 +437,6 @@ namespace nlohmann {
             return obj_->back().second;
         }
 
-        
         struct Parser {
             const char *pos;
             const char *end;

@@ -216,7 +216,6 @@ namespace {
         return "hold";
     }
 
-
     auto matching_position_qty(const ReconciliationSnapshot &snapshot, Exchange exchange,
                                const std::string &symbol) -> double {
         const std::string venue_symbol = SymbolMapper::map_for_exchange(exchange, symbol);
