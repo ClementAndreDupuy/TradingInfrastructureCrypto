@@ -177,4 +177,4 @@ namespace trading {
                 field = v;
         }
     };
-} // namespace trading
+} 

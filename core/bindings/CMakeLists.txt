@@ -1,8 +1,3 @@
-# CMake build target for the trading_core pybind11 extension.
-#
-# Invoked automatically from the root CMakeLists when pybind11 is found.
-# Requires: trading_common interface target + LIBWEBSOCKETS / CURL / nlohmann
-# targets already defined by add_subdirectory(core).
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(BINDINGS_LIBWEBSOCKETS REQUIRED libwebsockets)
@@ -42,5 +37,4 @@ if(OpenSSL_FOUND)
 endif()
 target_compile_options(trading_core PRIVATE ${BINDINGS_LIBWEBSOCKETS_CFLAGS_OTHER})
 
-# Install into the wheel root so `pip install` places the .so on sys.path.
 install(TARGETS trading_core DESTINATION .)

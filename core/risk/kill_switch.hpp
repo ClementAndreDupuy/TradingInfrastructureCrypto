@@ -16,7 +16,7 @@ namespace trading {
 
     class KillSwitch {
     public:
-        static constexpr int64_t DEFAULT_HEARTBEAT_TIMEOUT_NS = 5'000'000'000LL; // 5s
+        static constexpr int64_t DEFAULT_HEARTBEAT_TIMEOUT_NS = 5'000'000'000LL;
 
         explicit KillSwitch(int64_t heartbeat_timeout_ns = DEFAULT_HEARTBEAT_TIMEOUT_NS)
             : active_(false), reason_(KillReason::MANUAL), last_heartbeat_ns_(now_ns()),
@@ -79,4 +79,4 @@ namespace trading {
                     .count();
         }
     };
-} // namespace trading
+}

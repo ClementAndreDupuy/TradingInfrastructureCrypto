@@ -92,4 +92,4 @@ namespace trading {
             return {symbol, ""};
         }
     };
-} // namespace trading
+} 

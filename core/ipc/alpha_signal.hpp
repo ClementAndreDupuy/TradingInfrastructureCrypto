@@ -95,7 +95,7 @@ namespace trading {
 
         bool allows_long() const noexcept {
             if (!ptr_)
-                return true; // fail-open
+                return true;
             AlphaSignal s = read();
             if (is_stale(s))
                 return true;
@@ -136,4 +136,4 @@ namespace trading {
         int fd_;
         const char *ptr_;
     };
-} // namespace trading
+}

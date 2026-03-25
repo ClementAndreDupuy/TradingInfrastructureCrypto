@@ -37,4 +37,4 @@ namespace trading {
         RecoveryGuardConfig cfg_;
         KillSwitch &kill_switch_;
     };
-} // namespace trading
+} 

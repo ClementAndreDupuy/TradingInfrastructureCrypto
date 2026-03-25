@@ -92,7 +92,7 @@ namespace {
         return false;
     }
 
-    void stop_handler(int /*signum*/) { g_running.store(false, std::memory_order_release); }
+    void stop_handler(int ) { g_running.store(false, std::memory_order_release); }
 
     void setup_signal_handlers() {
         std::signal(SIGINT, stop_handler);
@@ -293,7 +293,7 @@ namespace {
         metadata.urgency = intent.urgency;
         return metadata;
     }
-} // namespace
+} 
 
 auto main(int argc, char **argv) -> int {
     try {

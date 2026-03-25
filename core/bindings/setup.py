@@ -48,7 +48,6 @@ def _parse_flags(raw: list[str], include_dirs, library_dirs, libraries, extra_li
             extra_link.append(f)
 
 
-# ── Dependency checks (hard failures) ────────────────────────────────────────
 
 try:
     import pybind11
@@ -73,42 +72,36 @@ _require_pkg(
     "apt install nlohmann-json3-dev  /  brew install nlohmann-json",
 )
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
 
-from setuptools import Extension, setup  # noqa: E402
+from setuptools import Extension, setup
 
 _here = os.path.dirname(os.path.abspath(__file__))
-_root = os.path.dirname(os.path.dirname(_here))  # core/bindings -> core -> repo root
+_root = os.path.dirname(os.path.dirname(_here))
 _core = os.path.join(_root, "core")
 
 include_dirs: list[str] = [pybind11.get_include(), _core]
 library_dirs: list[str] = []
 libraries: list[str] = []
 
-# Release-quality flags; -std=c++17 is required — setuptools does not set it.
 extra_compile_args: list[str] = ["-std=c++17", "-O2", "-fPIC", "-fvisibility=hidden", "-DNDEBUG"]
 extra_link_args: list[str] = []
 
-# libwebsockets
 _parse_flags(
     _pkg_config("libwebsockets", "--cflags-only-I")
     + _pkg_config("libwebsockets", "--libs"),
     include_dirs, library_dirs, libraries, extra_link_args,
 )
 
-# libcurl
 _parse_flags(
     _pkg_config("libcurl", "--cflags-only-I") + _pkg_config("libcurl", "--libs"),
     include_dirs, library_dirs, libraries, extra_link_args,
 )
 
-# OpenSSL (libwebsockets transitively depends on ssl headers/libs)
 _parse_flags(
     _pkg_config("openssl", "--cflags-only-I") + _pkg_config("openssl", "--libs"),
     include_dirs, library_dirs, libraries, extra_link_args,
 )
 
-# nlohmann/json (header-only — -I flags only)
 for flag in _pkg_config("nlohmann_json", "--cflags-only-I"):
     if flag.startswith("-I"):
         include_dirs.append(flag[2:])
@@ -124,7 +117,6 @@ library_dirs = _dedup(library_dirs)
 libraries = _dedup(libraries)
 extra_link_args = _dedup(extra_link_args)
 
-# ── Diagnostics ───────────────────────────────────────────────────────────────
 
 print("trading_core build configuration:")
 print(f"  pybind11 : {pybind11.__version__} @ {pybind11.get_include()}")
@@ -133,7 +125,6 @@ print(f"  libs     : {libraries}")
 print(f"  lib_dirs : {library_dirs}")
 print(f"  cflags   : {extra_compile_args}")
 
-# ── Extension ─────────────────────────────────────────────────────────────────
 
 ext = Extension(
     name="trading_core",

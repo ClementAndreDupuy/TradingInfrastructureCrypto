@@ -329,13 +329,13 @@ namespace trading {
                 return std::string();
 
             const int64_t now_s = http::now_ns() / 1000000000LL;
-            const std::string header = R"({"alg":"ES256","kid":"")" + json_escape(api_key_) +
-                                       R"(","typ":"JWT"})";
+            const std::string header = RR"({"alg":"ES256","kid":"")" + json_escape(api_key_) +
+                                       RR"(","typ":"JWT"})";
             const std::string payload =
-                    R"({"sub":")" + json_escape(api_key_) + R"(","iss":"cdp","nbf":)" +
-                    std::to_string(now_s) + R"(,"exp":)" + std::to_string(now_s + 120) +
-                    R"(,"uri":")" + json_escape(std::string(method) + " " + host + request_path) +
-                    R"("})";
+                    RR"({"sub":")" + json_escape(api_key_) + RR"(","iss":"cdp","nbf":)" +
+                    std::to_string(now_s) + RR"(,"exp":)" + std::to_string(now_s + 120) +
+                    RR"(,"uri":")" + json_escape(std::string(method) + " " + host + request_path) +
+                    RR"("})";
             const std::string signing_input =
                     base64url_encode(header) + "." + base64url_encode(payload);
 

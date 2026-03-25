@@ -245,8 +245,8 @@ namespace trading {
 
         const std::string ws_sym = venue_symbols_.kraken_ws;
         const std::string subscribe_msg =
-                R"({"method":"subscribe","params":{"channel":"book","symbol":[")" + ws_sym +
-                R"("],"depth":100,"snapshot":true}})";
+                RR"({"method":"subscribe","params":{"channel":"book","symbol":[")" + ws_sym +
+                RR"("],"depth":100,"snapshot":true}})";
 
         KrakenWsSession session;
         session.handler = this;

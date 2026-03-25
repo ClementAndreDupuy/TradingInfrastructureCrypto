@@ -32,25 +32,25 @@ typedef enum {
 } CURLglobal;
 
 typedef enum {
-    CURLOPT_WRITEDATA = 10001, // OBJECTPOINT + 1
-    CURLOPT_URL = 10002, // OBJECTPOINT + 2
-    CURLOPT_TIMEOUT = 13, // LONG + 13
-    CURLOPT_POSTFIELDS = 10015, // OBJECTPOINT + 15
-    CURLOPT_HTTPHEADER = 10023, // OBJECTPOINT + 23
-    CURLOPT_CUSTOMREQUEST = 10036, // OBJECTPOINT + 36
-    CURLOPT_POST = 47, // LONG + 47
-    CURLOPT_FOLLOWLOCATION = 52, // LONG + 52
-    CURLOPT_POSTFIELDSIZE = 60, // LONG + 60
-    CURLOPT_CONNECTTIMEOUT = 78, // LONG + 78
-    CURLOPT_HTTPGET = 80, // LONG + 80
-    CURLOPT_WRITEFUNCTION = 20011, // FUNCTIONPOINT + 11
-    CURLOPT_TCP_KEEPALIVE = 213, // LONG + 213
-    CURLOPT_SSL_VERIFYPEER = 64, // LONG + 64
-    CURLOPT_SSL_VERIFYHOST = 81, // LONG + 81
+    CURLOPT_WRITEDATA = 10001, 
+    CURLOPT_URL = 10002, 
+    CURLOPT_TIMEOUT = 13, 
+    CURLOPT_POSTFIELDS = 10015, 
+    CURLOPT_HTTPHEADER = 10023, 
+    CURLOPT_CUSTOMREQUEST = 10036, 
+    CURLOPT_POST = 47, 
+    CURLOPT_FOLLOWLOCATION = 52, 
+    CURLOPT_POSTFIELDSIZE = 60, 
+    CURLOPT_CONNECTTIMEOUT = 78, 
+    CURLOPT_HTTPGET = 80, 
+    CURLOPT_WRITEFUNCTION = 20011, 
+    CURLOPT_TCP_KEEPALIVE = 213, 
+    CURLOPT_SSL_VERIFYPEER = 64, 
+    CURLOPT_SSL_VERIFYHOST = 81, 
 } CURLoption;
 
 typedef enum {
-    CURLINFO_RESPONSE_CODE = 0x200000 + 2, // CURLINFO_LONG + 2
+    CURLINFO_RESPONSE_CODE = 0x200000 + 2, 
 } CURLINFO;
 
 typedef size_t (*curl_write_callback)(char *ptr, size_t size, size_t nmemb, void *userdata);
@@ -72,4 +72,4 @@ CURLcode curl_easy_getinfo(CURL *handle, CURLINFO info, ...);
 curl_slist *curl_slist_append(curl_slist *list, const char *string);
 
 void curl_slist_free_all(curl_slist *list);
-} // extern "C"
+} 

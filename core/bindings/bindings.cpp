@@ -18,12 +18,12 @@
 namespace py = pybind11;
 using namespace trading;
 
-// ── GIL-safe callback factory ─────────────────────────────────────────────────
-//
-// Wraps a Python callable in a shared_ptr whose custom deleter acquires the GIL
-// before destroying the py::object.  This guarantees the Python refcount
-// decrement is always GIL-protected, even when the owning std::function is
-// destroyed from a C++ background thread.
+
+
+
+
+
+
 template <typename... Args> static std::function<void(Args...)> make_safe_cb(py::object cb) {
     auto safe = std::shared_ptr<py::object>(new py::object(std::move(cb)), [](py::object* p) {
         py::gil_scoped_acquire gil;
@@ -34,9 +34,9 @@ template <typename... Args> static std::function<void(Args...)> make_safe_cb(py:
         try {
             (*safe)(std::forward<Args>(args)...);
         } catch (const py::error_already_set& e) {
-            // Python exception in callback — print traceback and clear, do NOT rethrow.
-            // Re-raising from a C++ background WebSocket thread would terminate the process.
-            // The kill switch should be triggered by the caller if the callback is critical.
+            
+            
+            
             PyErr_PrintEx(0);
         } catch (const std::exception& e) {
             fprintf(stderr, "[trading_core] callback exception: %s\n", e.what());
@@ -44,7 +44,7 @@ template <typename... Args> static std::function<void(Args...)> make_safe_cb(py:
     };
 }
 
-// ── __repr__ helper ───────────────────────────────────────────────────────────
+
 
 static std::string fmt_double(double v) {
     std::ostringstream oss;
@@ -52,18 +52,18 @@ static std::string fmt_double(double v) {
     return oss.str();
 }
 
-// ── Feed handler binding helper ───────────────────────────────────────────────
-//
-// Both BinanceFeedHandler and KrakenFeedHandler expose an identical Python
-// interface.  This template registers all shared methods so the concrete
-// handler blocks below only need to supply the constructor (which differs by
-// default URL values) and the exchange-specific docstring.
-//
-// Thread model: start() spawns a background WebSocket thread and blocks up to
-// 30 s waiting for STREAMING state.  The GIL is released for the entire
-// duration of start() and stop() so the background thread can acquire it when
-// invoking Python callbacks.  Callbacks are wrapped with a GIL-safe shared_ptr
-// deleter so their py::object is always released with the GIL held.
+
+
+
+
+
+
+
+
+
+
+
+
 template <typename Handler>
 static py::class_<Handler> bind_feed_handler(py::module_& m, const char* class_name,
                                              const char* class_doc) {
@@ -74,7 +74,7 @@ static py::class_<Handler> bind_feed_handler(py::module_& m, const char* class_n
                 h.set_snapshot_callback(make_safe_cb<const Snapshot&>(std::move(cb)));
             },
             py::arg("callback"),
-            py::keep_alive<1, 2>(), // keep callback alive as long as handler is alive
+            py::keep_alive<1, 2>(), 
             "Register a callback invoked on each full book snapshot. "
             "The handler holds a reference to the callable for its lifetime.")
         .def(
@@ -131,9 +131,9 @@ PYBIND11_MODULE(trading_core, m) {
               "KillSwitch. Requires pybind11>=2.11, Python>=3.10, libwebsockets>=4.0.";
     m.attr("__version__") = "1.0.0";
 
-    // ── Enums ─────────────────────────────────────────────────────────────────
-    // Do NOT call export_values() — these are C++ scoped enums (enum class).
-    // Always access via qualified name: trading_core.Exchange.BINANCE.
+    
+    
+    
 
     py::enum_<Exchange>(m, "Exchange")
         .value("BINANCE", Exchange::BINANCE)
@@ -160,7 +160,7 @@ PYBIND11_MODULE(trading_core, m) {
         .value("HEARTBEAT_MISSED", KillReason::HEARTBEAT_MISSED)
         .value("BOOK_CORRUPTED", KillReason::BOOK_CORRUPTED);
 
-    // ── SymbolMapper ──────────────────────────────────────────────────────────
+    
 
     py::class_<VenueSymbols>(m, "VenueSymbols",
         "Venue-specific symbol strings produced by SymbolMapper.map_all().")
@@ -186,7 +186,7 @@ PYBIND11_MODULE(trading_core, m) {
                     py::arg("exchange"), py::arg("symbol"),
                     "Convenience: map a canonical symbol to a single venue's format.");
 
-    // ── Structs ───────────────────────────────────────────────────────────────
+    
 
     py::class_<PriceLevel>(m, "PriceLevel")
         .def(py::init<>())
@@ -239,7 +239,7 @@ PYBIND11_MODULE(trading_core, m) {
             return oss.str();
         });
 
-    // ── OrderBook ─────────────────────────────────────────────────────────────
+    
 
     py::class_<OrderBook>(m, "OrderBook")
         .def(py::init<const std::string&, Exchange, double, size_t>(), py::arg("symbol"),
@@ -265,10 +265,10 @@ PYBIND11_MODULE(trading_core, m) {
         .def(
             "get_levels_array",
             [](const OrderBook& book, py::ssize_t n) -> py::tuple {
-                // Zero-copy into numpy: returns float64 arrays shape (n_actual, 2).
-                // Columns: [price, size].  Preferred over get_top_levels() for
-                // bulk research / vectorised backtesting — no Python object
-                // allocation per level.
+                
+                
+                
+                
                 std::vector<PriceLevel> bids, asks;
                 book.get_top_levels(static_cast<size_t>(n), bids, asks);
 
@@ -294,7 +294,7 @@ PYBIND11_MODULE(trading_core, m) {
         .def_property_readonly("symbol", &OrderBook::symbol)
         .def_property_readonly("exchange", &OrderBook::exchange);
 
-    // ── KillSwitch ────────────────────────────────────────────────────────────
+    
 
     py::class_<KillSwitch>(m, "KillSwitch")
         .def(py::init<int64_t>(),
@@ -309,7 +309,7 @@ PYBIND11_MODULE(trading_core, m) {
         .def("get_reason", &KillSwitch::get_reason)
         .def_static("reason_to_string", &KillSwitch::reason_to_string, py::arg("reason"));
 
-    // ── BinanceFeedHandler ────────────────────────────────────────────────────
+    
 
     bind_feed_handler<BinanceFeedHandler>(
         m, "BinanceFeedHandler",
@@ -318,7 +318,7 @@ PYBIND11_MODULE(trading_core, m) {
              py::arg("symbol"), py::arg("api_url") = "https://api.binance.com",
              py::arg("ws_url") = "wss://stream.binance.com:9443/ws");
 
-    // ── KrakenFeedHandler ─────────────────────────────────────────────────────
+    
 
     bind_feed_handler<KrakenFeedHandler>(
         m, "KrakenFeedHandler",
@@ -328,7 +328,7 @@ PYBIND11_MODULE(trading_core, m) {
              py::arg("api_url") = "https://api.kraken.com",
              py::arg("ws_url") = "wss://ws.kraken.com/v2");
 
-    // ── OkxFeedHandler ────────────────────────────────────────────────────────
+    
 
     bind_feed_handler<OkxFeedHandler>(
         m, "OkxFeedHandler", "OKX order book feed handler using the WebSocket v5 public channel.")
@@ -336,7 +336,7 @@ PYBIND11_MODULE(trading_core, m) {
              py::arg("symbol"), py::arg("api_url") = "https://www.okx.com",
              py::arg("ws_url") = "wss://ws.okx.com:8443/ws/v5/public");
 
-    // ── CoinbaseFeedHandler ───────────────────────────────────────────────────
+    
 
     bind_feed_handler<CoinbaseFeedHandler>(
         m, "CoinbaseFeedHandler",

@@ -52,14 +52,14 @@ auto build_order_payload(const Order& order) -> std::string {
         return {};
     }
     const std::string inst_id = SymbolMapper::map_for_exchange(Exchange::OKX, order.symbol);
-    std::string payload = std::string(R"({"instId":")") + inst_id + R"(","tdMode":")" +
-                          okx_trade_mode(inst_id) + R"(","clOrdId":")" +
-                          okx_client_order_id(order.client_order_id) + R"(","side":")" +
-                          (order.side == Side::BID ? "buy" : "sell") + R"(","ordType":")" +
-                          okx_order_type(order) + R"(","sz":")" + format_number(order.quantity) +
+    std::string payload = std::string(RR"({"instId":")") + inst_id + RR"(","tdMode":")" +
+                          okx_trade_mode(inst_id) + RR"(","clOrdId":")" +
+                          okx_client_order_id(order.client_order_id) + RR"(","side":")" +
+                          (order.side == Side::BID ? "buy" : "sell") + RR"(","ordType":")" +
+                          okx_order_type(order) + RR"(","sz":")" + format_number(order.quantity) +
                           "\"";
     if (order.type != OrderType::MARKET) {
-        payload += R"(,"px":")" + format_number(order.price) + "\"";
+        payload += RR"(,"px":")" + format_number(order.price) + "\"";
     }
     payload += "}";
     return payload;
@@ -284,9 +284,9 @@ auto OkxConnector::submit_to_venue(const Order& order, const std::string& idempo
 
 auto OkxConnector::cancel_at_venue(const VenueOrderEntry& entry) -> ConnectorResult {
     const std::string inst_id = SymbolMapper::map_for_exchange(Exchange::OKX, entry.symbol);
-    const std::string payload = std::string(R"({"instId":")") + inst_id + R"(","ordId":")" +
-                                entry.venue_order_id + R"(","clOrdId":")" +
-                                okx_client_order_id(entry.client_order_id) + R"("})";
+    const std::string payload = std::string(RR"({"instId":")") + inst_id + RR"(","ordId":")" +
+                                entry.venue_order_id + RR"(","clOrdId":")" +
+                                okx_client_order_id(entry.client_order_id) + RR"("})";
     const auto resp = http::post(api_url() + "/api/v5/trade/cancel-order", payload,
                                  auth_headers("POST", "/api/v5/trade/cancel-order", payload));
     if (!resp.ok()) {
@@ -301,12 +301,12 @@ auto OkxConnector::replace_at_venue(const VenueOrderEntry& entry, const Order& r
         return ConnectorResult::ERROR_INVALID_ORDER;
     }
     const std::string inst_id = SymbolMapper::map_for_exchange(Exchange::OKX, entry.symbol);
-    const std::string payload = std::string(R"({"instId":")") + inst_id + R"(","ordId":")" +
-                                entry.venue_order_id + R"(","clOrdId":")" +
-                                okx_client_order_id(entry.client_order_id) + R"(","newSz":")" +
-                                format_number(replacement.quantity) + R"(","newPx":")" +
-                                format_number(replacement.price) + R"(","reqId":")" +
-                                okx_client_order_id(replacement.client_order_id) + R"("})";
+    const std::string payload = std::string(RR"({"instId":")") + inst_id + RR"(","ordId":")" +
+                                entry.venue_order_id + RR"(","clOrdId":")" +
+                                okx_client_order_id(entry.client_order_id) + RR"(","newSz":")" +
+                                format_number(replacement.quantity) + RR"(","newPx":")" +
+                                format_number(replacement.price) + RR"(","reqId":")" +
+                                okx_client_order_id(replacement.client_order_id) + RR"("})";
     const auto resp = http::post(api_url() + "/api/v5/trade/amend-order", payload,
                                  auth_headers("POST", "/api/v5/trade/amend-order", payload));
     if (!resp.ok()) {
