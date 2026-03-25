@@ -158,9 +158,6 @@ def analyse_decisions(rows: list[dict[str, Any]]) -> dict[str, Any]:
     terminal_orders = len(fills) + len(cancels) + len(rejects)
     fill_rate = len(fills) / terminal_orders if terminal_orders else 0.0
     total_orders = terminal_orders + len(resting)
-    # cumulative_realized_pnl is the new field (gross realized before fees).
-    # Fall back to cumulative_pnl for logs produced by older engine builds,
-    # which stored net cashflow there.
     realized_pnl_series = [
         float(r.get("cumulative_realized_pnl", r.get("cumulative_pnl", 0.0))) for r in fills
     ]
@@ -285,7 +282,7 @@ def analyse_decisions(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "fill_rate": fill_rate,
         "net_realized_pnl_usd": net_realized_pnl,
         "net_cashflow_usd": net_cashflow,
-        "net_pnl_usd": net_realized_pnl,  # kept for backward-compat with downstream consumers
+        "net_pnl_usd": net_realized_pnl,
         "max_drawdown_usd": max_dd,
         "total_volume": fill_qty,
         "exchanges": exchanges,
