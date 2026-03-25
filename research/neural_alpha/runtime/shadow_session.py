@@ -1,5 +1,4 @@
 from __future__ import annotations
-import argparse
 import json
 import mmap
 import os
@@ -869,59 +868,8 @@ def _prepare_runtime_models(session: NeuralAlphaShadowSession, cfg: ShadowSessio
         raise RuntimeError(
             "Research production stack requires a trained model. Collect more ticks before starting or adjust `session.train_ticks`/`session.require_full_model_stack` in YAML for non-production debugging."
         )
-
-
-def _parse_cli_args() -> ShadowSessionConfig:
-    parser = argparse.ArgumentParser(description="Neural alpha shadow-session runtime")
-    parser.add_argument("--model-path", type=str, default=None)
-    parser.add_argument("--secondary-model-path", type=str, default=None)
-    parser.add_argument("--log-path", type=str, default=None)
-    parser.add_argument("--interval-ms", type=int, default=None)
-    parser.add_argument("--duration", type=int, default=None, dest="duration_s")
-    parser.add_argument("--report-interval", type=int, default=None, dest="report_interval_s")
-    parser.add_argument("--seq-len", type=int, default=None)
-    parser.add_argument("--d-spatial", type=int, default=None)
-    parser.add_argument("--d-temporal", type=int, default=None)
-    parser.add_argument("--train-ticks", type=int, default=None)
-    parser.add_argument("--train-epochs", type=int, default=None)
-    parser.add_argument("--symbol", type=str, default=None)
-    parser.add_argument("--exchanges", type=str, default=None)
-    parser.add_argument("--signal-file", type=str, default=None)
-    parser.add_argument("--regime-signal-file", type=str, default=None)
-    parser.add_argument("--lob-feed-path", type=str, default=None)
-    parser.add_argument("--regime-model-path", type=str, default=None)
-    parser.add_argument("--registry-path", type=str, default=None)
-    parser.add_argument("--drift-window", type=int, default=None)
-    parser.add_argument("--drift-min-samples", type=int, default=None)
-    parser.add_argument("--drift-ic-floor", type=float, default=None)
-    parser.add_argument("--safe-mode-ticks", type=int, default=None)
-    parser.add_argument("--continuous-train-every-ticks", type=int, default=None)
-    parser.add_argument("--continuous-train-window-ticks", type=int, default=None)
-    parser.add_argument("--regime-retrain-every-ticks", type=int, default=None)
-    parser.add_argument("--canary-ic-margin", type=float, default=None)
-    parser.add_argument("--canary-icir-floor", type=float, default=None)
-    parser.add_argument("--canary-window", type=int, default=None)
-    parser.add_argument("--canary-min-samples", type=int, default=None)
-    parser.add_argument("--require-full-model-stack", dest="require_full_model_stack", action="store_true")
-    parser.add_argument("--no-require-full-model-stack", dest="require_full_model_stack", action="store_false")
-    parser.set_defaults(require_full_model_stack=None)
-    parser.add_argument("--min-continuous-train-interval-s", type=int, default=None)
-    parser.add_argument("--min-regime-train-interval-s", type=int, default=None)
-    parser.add_argument("--regime-startup-warmup-s", type=int, default=None)
-
-    parsed = parser.parse_args()
-    overrides = vars(parsed)
-    raw_exchanges = overrides.pop("exchanges")
-    if raw_exchanges:
-        exchanges = [venue.strip().upper() for venue in raw_exchanges.split(",") if venue.strip()]
-        overrides["exchanges"] = exchanges
-
-    clean_overrides = {key: value for key, value in overrides.items() if value is not None}
-    return ShadowSessionConfig(**clean_overrides)
-
-
 def main() -> None:
-    cfg = _parse_cli_args()
+    cfg = ShadowSessionConfig()
     session = NeuralAlphaShadowSession(cfg)
     def _handle_sigint(sig: int, frame: object) -> None:
         del sig, frame
