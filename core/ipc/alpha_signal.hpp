@@ -10,11 +10,11 @@
 
 namespace trading {
     struct AlphaSignal {
-        double signal_bps = 0.0;
-        double risk_score = 0.5;
-        double size_fraction = 0.0;
-        int64_t horizon_ticks = 0;
-        int64_t ts_ns = 0;
+        double signal_bps;
+        double risk_score;
+        double size_fraction;
+        int64_t horizon_ticks;
+        int64_t ts_ns;
     };
 
     class AlphaSignalReader {
@@ -24,8 +24,8 @@ namespace trading {
         static constexpr double DEFAULT_RISK = 0.5;
         static constexpr int k_max_retries = 16;
 
-        explicit AlphaSignalReader(const std::string &path = "/tmp/trt_ipc/neural_alpha_signal.bin",
-                                   double signal_min_bps = 3.0, double risk_max = 0.65)
+        explicit AlphaSignalReader(const std::string &path,
+                                   double signal_min_bps, double risk_max)
             : path_(path), signal_min_bps_(signal_min_bps), risk_max_(risk_max) {
         }
 
@@ -133,7 +133,7 @@ namespace trading {
         std::string path_;
         double signal_min_bps_;
         double risk_max_;
-        int fd_ = -1;
-        const char *ptr_ = nullptr;
+        int fd_;
+        const char *ptr_;
     };
 } // namespace trading

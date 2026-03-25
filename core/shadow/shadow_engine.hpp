@@ -32,40 +32,40 @@ namespace trading {
     };
 
     struct ShadowIntentMetadata {
-        char intent[24] = "unspecified";
-        char reason[48] = "none";
-        double signal_bps = 0.0;
-        double risk_score = 0.0;
-        double target_position = 0.0;
-        double current_position = 0.0;
-        double expected_cost_bps = 0.0;
-        double expected_edge_bps = 0.0;
-        double max_shortfall_bps = 0.0;
-        int64_t decision_ts_ns = 0;
-        ShadowUrgency urgency = ShadowUrgency::BALANCED;
+        char intent[24];
+        char reason[48];
+        double signal_bps;
+        double risk_score;
+        double target_position;
+        double current_position;
+        double expected_cost_bps;
+        double expected_edge_bps;
+        double max_shortfall_bps;
+        int64_t decision_ts_ns;
+        ShadowUrgency urgency;
     };
 
     struct ShadowConfig {
-        double binance_maker_fee_bps = 2.0;
-        double binance_taker_fee_bps = 5.0;
-        double kraken_maker_fee_bps = 2.0;
-        double kraken_taker_fee_bps = 5.0;
-        double okx_maker_fee_bps = 2.0;
-        double okx_taker_fee_bps = 5.0;
-        double coinbase_maker_fee_bps = 4.0;
-        double coinbase_taker_fee_bps = 8.0;
-        int64_t base_latency_ns = 150000;
-        int64_t latency_jitter_ns = 50000;
-        double impact_slippage_per_notional_bps = 0.8;
-        double queue_match_fraction_per_check = 0.35;
-        char log_path[256] = "shadow_decisions.jsonl";
+        double binance_maker_fee_bps;
+        double binance_taker_fee_bps;
+        double kraken_maker_fee_bps;
+        double kraken_taker_fee_bps;
+        double okx_maker_fee_bps;
+        double okx_taker_fee_bps;
+        double coinbase_maker_fee_bps;
+        double coinbase_taker_fee_bps;
+        int64_t base_latency_ns;
+        int64_t latency_jitter_ns;
+        double impact_slippage_per_notional_bps;
+        double queue_match_fraction_per_check;
+        char log_path[256];
 
         static ShadowConfig from_yaml_values(double bin_maker_bps, double bin_taker_bps,
                                              double kra_maker_bps, double kra_taker_bps,
-                                             double okx_maker_bps = 2.0, double okx_taker_bps = 5.0,
-                                             double coinbase_maker_bps = 4.0,
-                                             double coinbase_taker_bps = 8.0,
-                                             const char *log_file = "shadow_decisions.jsonl") noexcept {
+                                             double okx_maker_bps, double okx_taker_bps,
+                                             double coinbase_maker_bps,
+                                             double coinbase_taker_bps,
+                                             const char *log_file) noexcept {
             ShadowConfig c;
             c.binance_maker_fee_bps = bin_maker_bps;
             c.binance_taker_fee_bps = bin_taker_bps;
@@ -82,12 +82,12 @@ namespace trading {
     };
 
     struct ShadowStateTransition {
-        ShadowExecutionState previous = ShadowExecutionState::FLAT;
-        ShadowExecutionState current = ShadowExecutionState::FLAT;
-        char reason[48] = "init";
-        double current_position = 0.0;
-        double target_position = 0.0;
-        bool changed = false;
+        ShadowExecutionState previous;
+        ShadowExecutionState current;
+        char reason[48];
+        double current_position;
+        double target_position;
+        bool changed;
     };
 
     class ShadowStateMachine {
@@ -168,28 +168,28 @@ namespace trading {
                                                : ShadowExecutionState::FLAT;
         }
 
-        ShadowExecutionState state_ = ShadowExecutionState::FLAT;
+        ShadowExecutionState state_;
     };
 
     struct ShadowOrder {
-        uint64_t client_order_id = 0;
-        char symbol[16] = {};
-        Exchange exchange = Exchange::UNKNOWN;
+        uint64_t client_order_id;
+        char symbol[16];
+        Exchange exchange;
         Side side;
         OrderType type;
         TimeInForce tif;
-        double price = 0;
-        double quantity = 0;
-        double filled_qty = 0;
-        double notional_filled = 0;
-        double queue_ahead_qty = 0;
-        int64_t submit_ts_ns = 0;
-        int64_t release_ts_ns = 0;
-        bool active = false;
-        bool is_maker = false;
+        double price;
+        double quantity;
+        double filled_qty;
+        double notional_filled;
+        double queue_ahead_qty;
+        int64_t submit_ts_ns;
+        int64_t release_ts_ns;
+        bool active;
+        bool is_maker;
         ShadowIntentMetadata intent{};
-        double decision_price = 0;
-        double decision_mid = 0;
+        double decision_price;
+        double decision_mid;
     };
 
     class ShadowConnector : public ExchangeConnector {
@@ -393,7 +393,7 @@ namespace trading {
         Exchange ex_;
         ShadowConfig cfg_;
         BookManager &book_;
-        std::FILE *log_fp_ = nullptr;
+        std::FILE *log_fp_;
         std::array<ShadowOrder, MAX_SHADOW_ORDERS> orders_{};
         ShadowIntentMetadata next_intent_{};
 
@@ -885,7 +885,7 @@ namespace trading {
         }
 
         ShadowConfig cfg_{};
-        std::FILE *log_fp_ = nullptr;
+        std::FILE *log_fp_;
         ShadowStateMachine state_machine_{};
         ShadowConnector binance_shadow_;
         ShadowConnector kraken_shadow_;

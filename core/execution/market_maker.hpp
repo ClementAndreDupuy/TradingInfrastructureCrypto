@@ -15,31 +15,31 @@
 namespace trading {
 
 struct MarketMakerConfig {
-    char symbol[16] = "BTCUSDT";
-    Exchange exchange = Exchange::BINANCE;
+    char symbol[16];
+    Exchange exchange;
 
-    double half_spread_bps = 2.0;
-    double skew_factor = 0.3;
-    double max_skew_bps = 5.0;
-    double order_qty = 0.001;
-    double max_position = 0.01;
+    double half_spread_bps;
+    double skew_factor;
+    double max_skew_bps;
+    double order_qty;
+    double max_position;
 
-    double requote_bps = 1.0;
-    double requote_signal = 2.0;
+    double requote_bps;
+    double requote_signal;
 
-    double stop_loss_bps = 20.0;
-    double limit_slip_bps = 3.0;
+    double stop_loss_bps;
+    double limit_slip_bps;
 
-    double risk_max = 0.65;
-    double risk_widen_bps = 3.0;
-    double signal_min_bps = 1.5;
-    double inventory_skew_decay_power = 2.0;
+    double risk_max;
+    double risk_widen_bps;
+    double signal_min_bps;
+    double inventory_skew_decay_power;
 
-    double shock_block_threshold = 0.75;
-    double illiquid_block_threshold = 0.80;
-    double regime_widen_bps = 2.0;
+    double shock_block_threshold;
+    double illiquid_block_threshold;
+    double regime_widen_bps;
 
-    int64_t stale_ns = 2'000'000'000LL;
+    int64_t stale_ns;
 };
 
 class NeuralAlphaMarketMaker {
@@ -49,8 +49,8 @@ class NeuralAlphaMarketMaker {
         : NeuralAlphaMarketMaker(order_mgr, book, kill, nullptr, cfg) {}
 
     NeuralAlphaMarketMaker(OrderManager& order_mgr, const BookManager& book, KillSwitch& kill,
-                           CircuitBreaker* circuit_breaker = nullptr,
-                           const MarketMakerConfig& cfg = {})
+                           CircuitBreaker* circuit_breaker,
+                           const MarketMakerConfig& cfg)
         : om_(order_mgr), book_(book), kill_(kill), circuit_breaker_(circuit_breaker), cfg_(cfg) {
 
         om_.on_fill = [this](const ManagedOrder& mo, const FillUpdate& u) { on_fill(mo, u); };
@@ -98,21 +98,21 @@ class NeuralAlphaMarketMaker {
     OrderManager& om_;
     const BookManager& book_;
     KillSwitch& kill_;
-    CircuitBreaker* circuit_breaker_ = nullptr;
+    CircuitBreaker* circuit_breaker_;
     MarketMakerConfig cfg_;
     AlphaSignalReader alpha_reader_;
     RegimeSignalReader regime_reader_;
 
-    uint64_t bid_id_ = 0;
-    uint64_t ask_id_ = 0;
-    uint64_t stop_id_ = 0;
-    double last_quoted_mid_ = 0.0;
-    double last_signal_bps_ = 0.0;
+    uint64_t bid_id_;
+    uint64_t ask_id_;
+    uint64_t stop_id_;
+    double last_quoted_mid_;
+    double last_signal_bps_;
 
-    double entry_price_ = 0.0;
-    double injected_signal_bps_ = 0.0;
-    double injected_risk_score_ = 0.0;
-    bool injected_signal_set_ = false;
+    double entry_price_;
+    double injected_signal_bps_;
+    double injected_risk_score_;
+    bool injected_signal_set_;
 
     void post_quotes(double mid, const AlphaSignal& sig, const RegimeSignal& regime) {
         double net_pos = om_.position();

@@ -10,30 +10,30 @@
 
 namespace trading {
     struct PositionLedgerVenueSnapshot {
-        Exchange exchange = Exchange::UNKNOWN;
-        char symbol[16] = {};
-        double position = 0.0;
-        double avg_entry_price = 0.0;
-        double realized_pnl = 0.0;
-        double unrealized_pnl = 0.0;
-        double pending_bid_qty = 0.0;
-        double pending_ask_qty = 0.0;
-        double mid_price = 0.0;
-        int64_t inventory_age_ms = 0;
-        bool active = false;
+        Exchange exchange;
+        char symbol[16];
+        double position;
+        double avg_entry_price;
+        double realized_pnl;
+        double unrealized_pnl;
+        double pending_bid_qty;
+        double pending_ask_qty;
+        double mid_price;
+        int64_t inventory_age_ms;
+        bool active;
     };
 
     struct PositionLedgerSnapshot {
-        char symbol[16] = {};
-        double global_position = 0.0;
-        double global_avg_entry_price = 0.0;
-        double realized_pnl = 0.0;
-        double unrealized_pnl = 0.0;
-        double pending_bid_qty = 0.0;
-        double pending_ask_qty = 0.0;
-        double mid_price = 0.0;
-        int64_t oldest_inventory_age_ms = 0;
-        size_t venue_count = 0;
+        char symbol[16];
+        double global_position;
+        double global_avg_entry_price;
+        double realized_pnl;
+        double unrealized_pnl;
+        double pending_bid_qty;
+        double pending_ask_qty;
+        double mid_price;
+        int64_t oldest_inventory_age_ms;
+        size_t venue_count;
         std::array<PositionLedgerVenueSnapshot, 4> venues{};
     };
 
@@ -112,21 +112,21 @@ namespace trading {
 
     private:
         struct VenuePosition {
-            Exchange exchange = Exchange::UNKNOWN;
-            char symbol[16] = {};
-            double position = 0.0;
-            double avg_entry_price = 0.0;
-            double realized_pnl = 0.0;
-            double pending_bid_qty = 0.0;
-            double pending_ask_qty = 0.0;
-            double mid_price = 0.0;
+            Exchange exchange;
+            char symbol[16];
+            double position;
+            double avg_entry_price;
+            double realized_pnl;
+            double pending_bid_qty;
+            double pending_ask_qty;
+            double mid_price;
             std::chrono::steady_clock::time_point opened_at{};
-            bool has_inventory_age = false;
-            bool active = false;
+            bool has_inventory_age;
+            bool active;
         };
 
         std::array<VenuePosition, MAX_VENUES> venues_{};
-        char symbol_[16] = {};
+        char symbol_[16];
 
         static void copy_symbol(char (&dst)[16], const char *src) noexcept {
             if (!src) {

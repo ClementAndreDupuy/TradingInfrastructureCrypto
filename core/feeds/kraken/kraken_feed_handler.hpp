@@ -24,8 +24,8 @@ namespace trading {
         using ErrorCallback = std::function<void(const std::string &)>;
 
         explicit KrakenFeedHandler(const std::string &symbol,
-                                   const std::string &api_url = "https://api.kraken.com",
-                                   const std::string &ws_url = "wss://ws.kraken.com/v2");
+                                   const std::string &api_url,
+                                   const std::string &ws_url);
 
         ~KrakenFeedHandler();
 

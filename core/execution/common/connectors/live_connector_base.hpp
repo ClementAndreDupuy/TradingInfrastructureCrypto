@@ -40,15 +40,15 @@
 
 namespace trading {
     struct RetryPolicy {
-        int max_attempts = 3;
-        int backoff_ms = 20;
+        int max_attempts;
+        int backoff_ms;
     };
 
     class LiveConnectorBase : public ExchangeConnector {
     public:
         LiveConnectorBase(Exchange exchange, std::string api_key, std::string api_secret,
-                          std::string api_url, RetryPolicy retry_policy = {},
-                          std::string api_passphrase = {})
+                          std::string api_url, RetryPolicy retry_policy,
+                          std::string api_passphrase)
             : exchange_(exchange), api_key_(std::move(api_key)), api_secret_(std::move(api_secret)),
               api_passphrase_(std::move(api_passphrase)), api_url_(std::move(api_url)),
               retry_policy_(retry_policy),
@@ -264,7 +264,7 @@ namespace trading {
 
         std::vector<std::string> auth_headers(const char *method, const std::string &request_path,
                                               const std::string &payload,
-                                              const std::string &idempotency_key = "") const {
+                                              const std::string &idempotency_key) const {
             return auth_headers_with_timestamp(method, request_path, payload, http::now_ms(),
                                                idempotency_key);
         }
@@ -273,7 +273,7 @@ namespace trading {
                                                              const std::string &request_path,
                                                              const std::string &payload,
                                                              int64_t ts_ms,
-                                                             const std::string &idempotency_key = "") const {
+                                                             const std::string &idempotency_key) const {
             const std::string ts_ms_s = std::to_string(ts_ms);
             const std::string ts_s = std::to_string(static_cast<double>(ts_ms) / 1000.0);
 
@@ -452,8 +452,8 @@ namespace trading {
 
 #if TRT_HAS_OPENSSL
         struct HmacDigest {
-            unsigned char data[EVP_MAX_MD_SIZE] = {};
-            unsigned int len = 0;
+            unsigned char data[EVP_MAX_MD_SIZE];
+            unsigned int len;
         };
 
         HmacDigest compute_hmac(const EVP_MD *algo, const std::string &payload) const {

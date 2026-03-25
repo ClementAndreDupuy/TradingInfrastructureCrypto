@@ -25,15 +25,15 @@ namespace trading {
         static constexpr size_t k_header_size = 64;
 
         struct alignas(8) LobSlot {
-            uint8_t exchange_id = 255;
-            char symbol[15] = {};
-            int64_t timestamp_ns = 0;
-            double mid_price = 0.0;
-            double bid_price[5] = {};
-            double bid_size[5] = {};
-            double ask_price[5] = {};
-            double ask_size[5] = {};
-            char reserved[64] = {};
+            uint8_t exchange_id;
+            char symbol[15];
+            int64_t timestamp_ns;
+            double mid_price;
+            double bid_price[5];
+            double bid_size[5];
+            double ask_price[5];
+            double ask_size[5];
+            char reserved[64];
         };
 
         static_assert(alignof(LobSlot) == 8, "LobSlot must remain 8-byte aligned");
@@ -156,11 +156,11 @@ namespace trading {
             header_->write_seq.store(0, std::memory_order_release);
         }
 
-        std::string path_ = k_default_path;
-        int fd_ = -1;
-        std::byte *base_ = nullptr;
-        size_t mapped_size_ = 0;
-        Header *header_ = nullptr;
-        LobSlot *slots_ = nullptr;
+        std::string path_;
+        int fd_;
+        std::byte *base_;
+        size_t mapped_size_;
+        Header *header_;
+        LobSlot *slots_;
     };
 } // namespace trading

@@ -7,11 +7,11 @@
 
 namespace trading {
     struct VenueOrderEntry {
-        uint64_t client_order_id = 0;
-        char venue_order_id[48] = {};
-        Exchange exchange = Exchange::UNKNOWN;
-        char symbol[16] = {};
-        bool active = false;
+        uint64_t client_order_id;
+        char venue_order_id[48];
+        Exchange exchange;
+        char symbol[16];
+        bool active;
     };
 
     class VenueOrderMap {

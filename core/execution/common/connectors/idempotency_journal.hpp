@@ -27,10 +27,10 @@ namespace trading {
     };
 
     struct JournalDecision {
-        JournalState state = JournalState::NONE;
-        uint64_t attempt = 0;
-        uint64_t related_client_order_id = 0;
-        char venue_order_id[64] = {};
+        JournalState state;
+        uint64_t attempt;
+        uint64_t related_client_order_id;
+        char venue_order_id[64];
 
         bool should_send_to_venue() const noexcept { return state == JournalState::IN_FLIGHT; }
         bool already_acked() const noexcept { return state == JournalState::ACKED; }
@@ -43,7 +43,7 @@ namespace trading {
         explicit IdempotencyJournal(std::string path) : path_(std::move(path)) { recover(); }
 
         JournalDecision begin(JournalOperation op, uint64_t client_order_id,
-                              uint64_t related_client_order_id = 0) {
+                              uint64_t related_client_order_id) {
             Entry *entry = find_or_create(op, client_order_id);
             if (!entry)
                 return {};
@@ -69,8 +69,8 @@ namespace trading {
             return out;
         }
 
-        void ack(JournalOperation op, uint64_t client_order_id, const char *venue_order_id = nullptr,
-                 uint64_t related_client_order_id = 0) {
+        void ack(JournalOperation op, uint64_t client_order_id, const char *venue_order_id,
+                 uint64_t related_client_order_id) {
             Entry *entry = find_or_create(op, client_order_id);
             if (!entry)
                 return;
@@ -88,7 +88,7 @@ namespace trading {
             append_record(*entry);
         }
 
-        void fail(JournalOperation op, uint64_t client_order_id, uint64_t related_client_order_id = 0) {
+        void fail(JournalOperation op, uint64_t client_order_id, uint64_t related_client_order_id) {
             Entry *entry = find_or_create(op, client_order_id);
             if (!entry)
                 return;
@@ -159,13 +159,13 @@ namespace trading {
 
     private:
         struct Entry {
-            bool used = false;
-            JournalOperation op = JournalOperation::SUBMIT;
-            uint64_t client_order_id = 0;
-            uint64_t related_client_order_id = 0;
-            uint64_t attempt = 0;
-            JournalState state = JournalState::NONE;
-            char venue_order_id[64] = {};
+            bool used;
+            JournalOperation op;
+            uint64_t client_order_id;
+            uint64_t related_client_order_id;
+            uint64_t attempt;
+            JournalState state;
+            char venue_order_id[64];
         };
 
         static void populate_decision(const Entry &entry, JournalDecision &out) noexcept {
@@ -236,6 +236,6 @@ namespace trading {
 
         std::string path_;
         std::array<Entry, MAX_RECORDS> entries_{};
-        uint64_t duplicate_ack_count_ = 0;
+        uint64_t duplicate_ack_count_;
     };
 }

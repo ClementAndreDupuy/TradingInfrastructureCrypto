@@ -14,12 +14,12 @@
 
 namespace trading {
     struct GlobalRiskConfig {
-        double max_gross_notional = 0.0;
-        double max_net_notional = 0.0;
-        double max_symbol_concentration = 1.0;
-        double max_venue_notional = 0.0;
-        double max_cross_venue_net_notional = 0.0;
-        bool kill_on_breach = true;
+        double max_gross_notional;
+        double max_net_notional;
+        double max_symbol_concentration;
+        double max_venue_notional;
+        double max_cross_venue_net_notional;
+        bool kill_on_breach;
     };
 
     enum class GlobalRiskCheckResult : uint8_t {
@@ -149,7 +149,7 @@ namespace trading {
     private:
         struct SymbolState {
             std::atomic<bool> active{false};
-            char symbol[16] = {};
+            char symbol[16];
             std::atomic<double> gross_notional{0.0};
             std::atomic<double> net_notional{0.0};
         };

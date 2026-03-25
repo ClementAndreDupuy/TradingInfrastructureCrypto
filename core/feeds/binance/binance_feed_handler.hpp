@@ -32,8 +32,8 @@ namespace trading {
         };
 
         explicit BinanceFeedHandler(const std::string &symbol,
-                                    const std::string &api_url = "https://api.binance.com",
-                                    const std::string &ws_url = "wss://stream.binance.com:9443/ws");
+                                    const std::string &api_url,
+                                    const std::string &ws_url);
 
         ~BinanceFeedHandler();
 

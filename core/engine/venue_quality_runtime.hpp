@@ -93,13 +93,13 @@ namespace trading::engine {
 
     private:
         struct TrackedOrder {
-            bool active = false;
-            uint64_t client_order_id = 0;
-            Exchange exchange = Exchange::UNKNOWN;
-            Side side = Side::BID;
-            TimeInForce tif = TimeInForce::GTC;
-            double quantity = 0.0;
-            double filled_qty = 0.0;
+            bool active;
+            uint64_t client_order_id;
+            Exchange exchange;
+            Side side;
+            TimeInForce tif;
+            double quantity;
+            double filled_qty;
             std::chrono::steady_clock::time_point submitted_at{};
         };
 

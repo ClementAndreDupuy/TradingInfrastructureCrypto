@@ -44,44 +44,44 @@ namespace trading {
         };
 
         struct RemediationPolicy {
-            uint32_t order_drift_retry_budget = 1;
-            uint32_t fill_gap_retry_budget = 2;
-            uint32_t snapshot_failure_retry_budget = 0;
+            uint32_t order_drift_retry_budget;
+            uint32_t fill_gap_retry_budget;
+            uint32_t snapshot_failure_retry_budget;
         };
 
         struct DriftThresholds {
-            double max_balance_drift = 1e-6;
-            double max_position_drift = 1e-6;
-            double max_order_fill_gap = 1e-6;
-            double max_fill_notional_drift = 1e-6;
-            double max_fill_fee_drift = 1e-6;
+            double max_balance_drift;
+            double max_position_drift;
+            double max_order_fill_gap;
+            double max_fill_notional_drift;
+            double max_fill_fee_drift;
         };
 
         struct VenueState {
-            Exchange exchange = Exchange::UNKNOWN;
-            bool registered = false;
-            bool quarantined = false;
-            int64_t last_reconcile_ts_ns = 0;
-            int64_t last_drift_check_ts_ns = 0;
-            uint32_t mismatch_count = 0;
-            uint32_t order_drift_retries = 0;
-            uint32_t fill_gap_retries = 0;
-            uint32_t snapshot_failure_retries = 0;
-            uint32_t fill_replay_requests = 0;
-            MismatchClass last_mismatch = MismatchClass::NONE;
-            DriftAction last_action = DriftAction::NONE;
-            SeverityLevel last_severity = SeverityLevel::INFO;
+            Exchange exchange;
+            bool registered;
+            bool quarantined;
+            int64_t last_reconcile_ts_ns;
+            int64_t last_drift_check_ts_ns;
+            uint32_t mismatch_count;
+            uint32_t order_drift_retries;
+            uint32_t fill_gap_retries;
+            uint32_t snapshot_failure_retries;
+            uint32_t fill_replay_requests;
+            MismatchClass last_mismatch;
+            DriftAction last_action;
+            SeverityLevel last_severity;
         };
 
         struct ReconciliationIncident {
-            int64_t ts_ns = 0;
-            Exchange exchange = Exchange::UNKNOWN;
-            MismatchClass mismatch_class = MismatchClass::NONE;
-            DriftAction action = DriftAction::NONE;
-            SeverityLevel severity = SeverityLevel::INFO;
-            bool reconnect_phase = false;
-            uint32_t retry_count = 0;
-            char reason[48] = {};
+            int64_t ts_ns;
+            Exchange exchange;
+            MismatchClass mismatch_class;
+            DriftAction action;
+            SeverityLevel severity;
+            bool reconnect_phase;
+            uint32_t retry_count;
+            char reason[48];
         };
 
         using RemediationHook = std::function<void(Exchange, MismatchClass, std::string_view)>;
@@ -169,31 +169,31 @@ namespace trading {
 
     private:
         struct DriftDecision {
-            bool mismatch = false;
-            MismatchClass mismatch_class = MismatchClass::NONE;
-            DriftAction action = DriftAction::NONE;
-            SeverityLevel severity = SeverityLevel::INFO;
-            uint32_t retry_count = 0;
-            bool quarantine = false;
-            const char *reason = "";
+            bool mismatch;
+            MismatchClass mismatch_class;
+            DriftAction action;
+            SeverityLevel severity;
+            uint32_t retry_count;
+            bool quarantine;
+            const char *reason;
         };
 
         struct FillLedger {
-            double cum_qty = 0.0;
-            double cum_notional = 0.0;
-            double cum_fee = 0.0;
-            uint32_t unique_fill_count = 0;
-            bool overflow = false;
+            double cum_qty;
+            double cum_notional;
+            double cum_fee;
+            uint32_t unique_fill_count;
+            bool overflow;
         };
 
         struct FillIdentity {
-            uint64_t client_order_id = 0;
-            char venue_order_id[64] = {};
-            char venue_trade_id[64] = {};
-            int64_t exchange_ts_ns = 0;
-            double quantity = 0.0;
-            double price = 0.0;
-            Exchange exchange = Exchange::UNKNOWN;
+            uint64_t client_order_id;
+            char venue_order_id[64];
+            char venue_trade_id[64];
+            int64_t exchange_ts_ns;
+            double quantity;
+            double price;
+            Exchange exchange;
         };
 
         ConnectorResult run_reconciliation_cycle(bool reconnect_phase) {
@@ -678,8 +678,8 @@ namespace trading {
         RemediationHook cancel_all_hook_;
         RemediationHook risk_halt_hook_;
         std::array<ReconciliationIncident, MAX_INCIDENT_TRAIL> incident_trail_{};
-        size_t incident_count_ = 0;
-        uint32_t dropped_incident_count_ = 0;
-        size_t connector_count_ = 0;
+        size_t incident_count_;
+        uint32_t dropped_incident_count_;
+        size_t connector_count_;
     };
 }
