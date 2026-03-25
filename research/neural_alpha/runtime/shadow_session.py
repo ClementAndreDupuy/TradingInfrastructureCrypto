@@ -869,7 +869,73 @@ def _prepare_runtime_models(session: NeuralAlphaShadowSession, cfg: ShadowSessio
             "Research production stack requires a trained model. Collect more ticks before starting or adjust `session.train_ticks`/`session.require_full_model_stack` in YAML for non-production debugging."
         )
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Neural Alpha Shadow Session")
+    parser.add_argument("--signal-file", default=None)
+    parser.add_argument("--lob-feed-path", default=None)
+    parser.add_argument("--duration", type=int, default=None, dest="duration_s")
+    parser.add_argument("--interval-ms", type=int, default=None)
+    parser.add_argument("--report-interval", type=int, default=None, dest="report_interval_s")
+    parser.add_argument("--seq-len", type=int, default=None)
+    parser.add_argument("--symbol", default=None)
+    parser.add_argument("--exchanges", default=None)
+    parser.add_argument("--model-path", default=None)
+    parser.add_argument("--secondary-model-path", default=None)
+    parser.add_argument("--regime-model-path", default=None)
+    parser.add_argument("--train-ticks", type=int, default=None)
+    parser.add_argument("--train-epochs", type=int, default=None)
+    parser.add_argument("--continuous-train-every-ticks", type=int, default=None)
+    parser.add_argument("--continuous-train-window-ticks", type=int, default=None)
+    parser.add_argument("--safe-mode-ticks", type=int, default=None)
+    parser.add_argument("--drift-min-samples", type=int, default=None)
+    parser.add_argument("--drift-ic-floor", type=float, default=None)
+    parser.add_argument("--no-require-full-model-stack", action="store_true", default=False)
+    parser.add_argument("--log-path", default=None)
+    args = parser.parse_args()
+
     cfg = ShadowSessionConfig()
+    if args.signal_file is not None:
+        cfg.signal_file = args.signal_file
+    if args.lob_feed_path is not None:
+        cfg.lob_feed_path = args.lob_feed_path
+    if args.duration_s is not None:
+        cfg.duration_s = args.duration_s
+    if args.interval_ms is not None:
+        cfg.interval_ms = args.interval_ms
+    if args.report_interval_s is not None:
+        cfg.report_interval_s = args.report_interval_s
+    if args.seq_len is not None:
+        cfg.seq_len = args.seq_len
+    if args.symbol is not None:
+        cfg.symbol = args.symbol
+    if args.exchanges is not None:
+        cfg.exchanges = [e.strip().upper() for e in args.exchanges.split(",") if e.strip()]
+    if args.model_path is not None:
+        cfg.model_path = args.model_path
+    if args.secondary_model_path is not None:
+        cfg.secondary_model_path = args.secondary_model_path
+    if args.regime_model_path is not None:
+        cfg.regime_model_path = args.regime_model_path
+    if args.train_ticks is not None:
+        cfg.train_ticks = args.train_ticks
+    if args.train_epochs is not None:
+        cfg.train_epochs = args.train_epochs
+    if args.continuous_train_every_ticks is not None:
+        cfg.continuous_train_every_ticks = args.continuous_train_every_ticks
+    if args.continuous_train_window_ticks is not None:
+        cfg.continuous_train_window_ticks = args.continuous_train_window_ticks
+    if args.safe_mode_ticks is not None:
+        cfg.safe_mode_ticks = args.safe_mode_ticks
+    if args.drift_min_samples is not None:
+        cfg.drift_min_samples = args.drift_min_samples
+    if args.drift_ic_floor is not None:
+        cfg.drift_ic_floor = args.drift_ic_floor
+    if args.no_require_full_model_stack:
+        cfg.require_full_model_stack = False
+    if args.log_path is not None:
+        cfg.log_path = args.log_path
+
     session = NeuralAlphaShadowSession(cfg)
     def _handle_sigint(sig: int, frame: object) -> None:
         del sig, frame

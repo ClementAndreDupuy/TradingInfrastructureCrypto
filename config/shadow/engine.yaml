@@ -12,9 +12,13 @@ default_toxicity_bps: 0.4
 retry_max_attempts: 3
 retry_backoff_ms: 200
 
+binance_rest_url: https://api.binance.com
 binance_ws_url: wss://stream.binance.com:9443
+kraken_rest_url: https://api.kraken.com
 kraken_ws_url: wss://ws.kraken.com
+okx_rest_url: https://www.okx.com
 okx_ws_url: wss://ws.okx.com:8443/ws/v5/public
+coinbase_rest_url: https://api.coinbase.com
 coinbase_ws_url: wss://advanced-trade-ws.coinbase.com
 
 shadow_base_latency_ns: 150000
