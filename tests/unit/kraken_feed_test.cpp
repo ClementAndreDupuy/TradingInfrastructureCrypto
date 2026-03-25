@@ -51,7 +51,8 @@ class KrakenFeedHandlerTest : public ::testing::Test {
   protected:
     void SetUp() override {
         set_log_level(LogLevel::ERROR);
-        handler_ = std::make_unique<KrakenFeedHandler>("XBTUSD");
+        handler_ = std::make_unique<KrakenFeedHandler>("XBTUSD", "https://api.kraken.com",
+                                                         "wss://ws.kraken.com/v2");
 
         handler_->set_snapshot_callback([this](const Snapshot& snapshot) {
             last_snapshot_ = snapshot;
@@ -159,7 +160,7 @@ TEST(KrakenBookManagerRegression, VenueChecksumDoesNotTripGenericOrderBookValida
     set_log_level(LogLevel::ERROR);
 
     BookManager book("BTCUSDT", Exchange::KRAKEN, 0.5, 200000);
-    KrakenFeedHandler handler("XBTUSD");
+    KrakenFeedHandler handler("XBTUSD", "https://api.kraken.com", "wss://ws.kraken.com/v2");
     handler.set_snapshot_callback(book.snapshot_handler());
 
     const std::string snapshot = std::string(

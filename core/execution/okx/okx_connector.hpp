@@ -6,9 +6,10 @@ namespace trading {
     class OkxConnector : public LiveConnectorBase {
     public:
         OkxConnector(const std::string &api_key, const std::string &api_secret,
-                     const std::string &api_passphrase,
-                     const std::string &api_url)
-            : LiveConnectorBase(Exchange::OKX, api_key, api_secret, api_url, {}, api_passphrase) {
+                     const std::string &api_passphrase, const std::string &api_url,
+                     RetryPolicy retry_policy = {})
+            : LiveConnectorBase(Exchange::OKX, api_key, api_secret, api_url, retry_policy,
+                                api_passphrase) {
         }
 
     protected:

@@ -29,14 +29,20 @@ namespace trading {
         int venue_quality_log_heartbeat_secs;
         VenueQuoteDefaults venue_quote_defaults;
         std::string binance_rest_url;
+        std::string binance_ws_url;
         std::string kraken_rest_url;
+        std::string kraken_ws_url;
         std::string okx_rest_url;
+        std::string okx_ws_url;
         std::string coinbase_rest_url;
+        std::string coinbase_ws_url;
         int64_t shadow_base_latency_ns;
         int64_t shadow_latency_jitter_ns;
         double shadow_impact_slippage_per_notional_bps;
         double shadow_queue_match_fraction_per_check;
         std::string shadow_log_path;
+        int retry_max_attempts;
+        int retry_backoff_ms;
     };
 
     class AlgoConfigLoader {
@@ -153,9 +159,13 @@ namespace trading {
             apply_double(values, "default_toxicity_bps", out.venue_quote_defaults.toxicity_bps);
 
             apply_string(values, "binance_rest_url", out.binance_rest_url);
+            apply_string(values, "binance_ws_url", out.binance_ws_url);
             apply_string(values, "kraken_rest_url", out.kraken_rest_url);
+            apply_string(values, "kraken_ws_url", out.kraken_ws_url);
             apply_string(values, "okx_rest_url", out.okx_rest_url);
+            apply_string(values, "okx_ws_url", out.okx_ws_url);
             apply_string(values, "coinbase_rest_url", out.coinbase_rest_url);
+            apply_string(values, "coinbase_ws_url", out.coinbase_ws_url);
 
             apply_int64(values, "shadow_base_latency_ns", out.shadow_base_latency_ns);
             apply_int64(values, "shadow_latency_jitter_ns", out.shadow_latency_jitter_ns);
@@ -164,6 +174,8 @@ namespace trading {
             apply_double(values, "shadow_queue_match_fraction_per_check",
                          out.shadow_queue_match_fraction_per_check);
             apply_string(values, "shadow_log_path", out.shadow_log_path);
+            apply_int(values, "retry_max_attempts", out.retry_max_attempts);
+            apply_int(values, "retry_backoff_ms", out.retry_backoff_ms);
             return true;
         }
 

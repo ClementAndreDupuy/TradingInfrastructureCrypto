@@ -203,12 +203,12 @@ TEST(ParentOrderManagerTest, SmallerSameDirectionTargetCapsRemainingQty) {
     const auto now = std::chrono::steady_clock::now();
 
     const ParentPlanUpdateResult created =
-            manager.update_target(0.40, ShadowUrgency::AGGRESSIVE, now);
+            manager.update_target(0.40, ShadowUrgency::AGGRESSIVE, now, std::chrono::milliseconds(0));
     ASSERT_TRUE(created.plan.active());
     EXPECT_DOUBLE_EQ(created.plan.remaining_qty, 0.40);
 
     const ParentPlanUpdateResult updated =
-            manager.update_target(0.02, ShadowUrgency::AGGRESSIVE, now + std::chrono::milliseconds(1));
+            manager.update_target(0.02, ShadowUrgency::AGGRESSIVE, now + std::chrono::milliseconds(1), std::chrono::milliseconds(0));
     ASSERT_TRUE(updated.plan.active());
     EXPECT_EQ(updated.action, ParentPlanAction::UPDATED);
     EXPECT_DOUBLE_EQ(updated.plan.total_qty, 0.02);

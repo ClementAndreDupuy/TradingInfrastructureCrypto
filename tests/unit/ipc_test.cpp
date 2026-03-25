@@ -63,13 +63,13 @@ void write_signal_file(const std::string& path, uint64_t seq, double signal_bps,
 // ── AlphaSignalReader tests ───────────────────────────────────────────────────
 
 TEST(AlphaSignalReader, OpenNonExistentFileReturnsFalse) {
-    trading::AlphaSignalReader reader("/tmp/no_such_file_ipc_test.bin");
+    trading::AlphaSignalReader reader("/tmp/no_such_file_ipc_test.bin", 0.0, 1.0);
     EXPECT_FALSE(reader.open());
     EXPECT_FALSE(reader.is_open());
 }
 
 TEST(AlphaSignalReader, ReadOnClosedReaderReturnsNeutral) {
-    trading::AlphaSignalReader reader("/tmp/no_such_file_ipc_test.bin");
+    trading::AlphaSignalReader reader("/tmp/no_such_file_ipc_test.bin", 0.0, 1.0);
     // No open() call — ptr_ is null.
     trading::AlphaSignal sig = reader.read();
     EXPECT_DOUBLE_EQ(sig.signal_bps, 0.0);
@@ -78,7 +78,7 @@ TEST(AlphaSignalReader, ReadOnClosedReaderReturnsNeutral) {
 }
 
 TEST(AlphaSignalReader, FailOpenWhenNotOpen) {
-    trading::AlphaSignalReader reader("/tmp/no_such_file_ipc_test.bin");
+    trading::AlphaSignalReader reader("/tmp/no_such_file_ipc_test.bin", 0.0, 1.0);
     EXPECT_TRUE(reader.allows_long());
     EXPECT_TRUE(reader.allows_short());
     EXPECT_TRUE(reader.allows_mm());
@@ -204,7 +204,7 @@ TEST(AlphaSignalReader, CloseIsIdempotent) {
     TempFile tmp;
     write_signal_file(tmp.path, 0, 1.0, 0.1, 1LL);
 
-    trading::AlphaSignalReader reader(tmp.path);
+    trading::AlphaSignalReader reader(tmp.path, 0.0, 1.0);
     ASSERT_TRUE(reader.open());
     reader.close();
     reader.close(); // must not crash or double-close fd

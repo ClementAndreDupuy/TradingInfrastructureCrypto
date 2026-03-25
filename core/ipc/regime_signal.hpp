@@ -20,6 +20,7 @@ namespace trading {
     public:
         static constexpr size_t FILE_SIZE = 48;
         static constexpr int k_max_retries = 16;
+        static constexpr const char *k_default_path = "/tmp/trt_ipc/trt_regime.bin";
 
         explicit RegimeSignalReader(const std::string &path) : path_(path) {
         }

@@ -352,10 +352,13 @@ auto main(int argc, char **argv) -> int {
         const bool run_okx = has_venue(opts.venues, "OKX");
         const bool run_coinbase = has_venue(opts.venues, "COINBASE");
 
-        BinanceFeedHandler binance_feed(opts.symbol);
-        KrakenFeedHandler kraken_feed(opts.symbol);
-        OkxFeedHandler okx_feed(opts.symbol);
-        CoinbaseFeedHandler coinbase_feed(opts.symbol);
+        BinanceFeedHandler binance_feed(opts.symbol, engine_cfg.binance_rest_url,
+                                        engine_cfg.binance_ws_url);
+        KrakenFeedHandler kraken_feed(opts.symbol, engine_cfg.kraken_rest_url,
+                                      engine_cfg.kraken_ws_url);
+        OkxFeedHandler okx_feed(opts.symbol, engine_cfg.okx_rest_url, engine_cfg.okx_ws_url);
+        CoinbaseFeedHandler coinbase_feed(opts.symbol, engine_cfg.coinbase_ws_url,
+                                          engine_cfg.coinbase_rest_url);
 
         const double target_range_usd = risk_cfg.target_range_usd > 0.0 ? risk_cfg.target_range_usd : 50.0;
         auto levels_for_tick = [target_range_usd](double tick) -> size_t {
@@ -427,16 +430,20 @@ auto main(int argc, char **argv) -> int {
             log_loaded_credential("OKX", "api_passphrase", okx_api_passphrase);
         }
 
+        const RetryPolicy retry_policy{engine_cfg.retry_max_attempts, engine_cfg.retry_backoff_ms};
         BinanceConnector binance(
             binance_api_key, binance_api_secret,
-            opts.mode == "shadow" ? "mock://binance" : engine_cfg.binance_rest_url);
+            opts.mode == "shadow" ? "mock://binance" : engine_cfg.binance_rest_url, retry_policy);
         KrakenConnector kraken(kraken_api_key, kraken_api_secret,
-                               opts.mode == "shadow" ? "mock://kraken" : engine_cfg.kraken_rest_url);
+                               opts.mode == "shadow" ? "mock://kraken" : engine_cfg.kraken_rest_url,
+                               retry_policy);
         OkxConnector okx(okx_api_key, okx_api_secret, okx_api_passphrase,
-                         opts.mode == "shadow" ? "mock://okx" : engine_cfg.okx_rest_url);
+                         opts.mode == "shadow" ? "mock://okx" : engine_cfg.okx_rest_url,
+                         retry_policy);
         CoinbaseConnector coinbase(
             coinbase_api_key, coinbase_api_secret,
-            opts.mode == "shadow" ? "mock://coinbase" : engine_cfg.coinbase_rest_url);
+            opts.mode == "shadow" ? "mock://coinbase" : engine_cfg.coinbase_rest_url,
+            retry_policy);
 
         ShadowConfig shadow_cfg = ShadowConfig::from_yaml_values(
             risk_cfg.binance_taker_fee_bps, risk_cfg.binance_taker_fee_bps,
@@ -533,10 +540,12 @@ auto main(int argc, char **argv) -> int {
         bind_fill_handler(Exchange::OKX, shadow_engine.okx_connector());
         bind_fill_handler(Exchange::COINBASE, shadow_engine.coinbase_connector());
 
-        AlphaSignalReader alpha_reader;
-        alpha_reader.open();
-        RegimeSignalReader regime_reader;
-        regime_reader.open();
+        AlphaSignalReader alpha_reader(AlphaSignalReader::k_default_path,
+                                       portfolio_cfg.min_entry_signal_bps,
+                                       portfolio_cfg.max_risk_score);
+        (void)alpha_reader.open();
+        RegimeSignalReader regime_reader(RegimeSignalReader::k_default_path);
+        (void)regime_reader.open();
         ParentOrderManager parent_manager;
         ChildOrderScheduler child_scheduler(sched_cfg);
         PortfolioIntentEngine intent_engine(portfolio_cfg);
@@ -806,7 +815,8 @@ auto main(int argc, char **argv) -> int {
             }
 
             const auto plan_update =
-                    parent_manager.update_target(intent.position_delta, intent.urgency, now);
+                    parent_manager.update_target(intent.position_delta, intent.urgency, now,
+                                                 std::chrono::milliseconds::zero());
             const ParentExecutionPlan active_plan = plan_update.plan;
             if (plan_update.action != ParentPlanAction::NONE && active_plan.active() &&
                 active_plan.remaining_qty > 1e-6) {

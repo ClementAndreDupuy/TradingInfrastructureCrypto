@@ -36,7 +36,7 @@ namespace trading {
         size_t frag_len{0};
     };
 
-    static auto okx_lws_cb(struct lws *wsi, enum lws_callback_reasons reason, void *unused,
+    static auto okx_lws_cb(struct lws *wsi, enum lws_callback_reasons reason, [[maybe_unused]] void *unused,
                            void *input, size_t len) -> int {
         auto *session = static_cast<OkxWsSession *>(lws_context_user(lws_get_context(wsi)));
         if (session == nullptr) {
@@ -113,7 +113,7 @@ namespace trading {
     auto OkxFeedHandler::fetch_tick_size() -> Result {
         const std::string url =
                 api_url_ + "/api/v5/public/instruments?instType=SPOT&instId=" + instrument_id_;
-        auto resp = http::get(url);
+        auto resp = http::get(url, {});
         if (!resp.ok() || resp.body.empty()) {
             LOG_WARN("[OKX] fetch_tick_size failed", "symbol", symbol_.c_str(), "status", resp.status);
             return Result::ERROR_CONNECTION_LOST;

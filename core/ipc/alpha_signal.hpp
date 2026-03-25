@@ -23,6 +23,7 @@ namespace trading {
         static constexpr int64_t STALE_NS = 2'000'000'000LL;
         static constexpr double DEFAULT_RISK = 0.5;
         static constexpr int k_max_retries = 16;
+        static constexpr const char *k_default_path = "/tmp/trt_ipc/trt_alpha.bin";
 
         explicit AlphaSignalReader(const std::string &path,
                                    double signal_min_bps, double risk_max)

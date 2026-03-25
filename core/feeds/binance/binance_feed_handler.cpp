@@ -124,7 +124,7 @@ namespace trading {
 
     auto BinanceFeedHandler::fetch_tick_size() -> Result {
         const std::string url = api_url_ + "/api/v3/exchangeInfo?symbol=" + venue_symbols_.binance;
-        auto resp = http::get(url);
+        auto resp = http::get(url, {});
         if (!resp.ok() || resp.body.empty()) {
             LOG_WARN("[Binance] fetch_tick_size failed", "symbol", symbol_.c_str(), "status", resp.status);
             return Result::ERROR_CONNECTION_LOST;
@@ -411,7 +411,7 @@ namespace trading {
         LOG_INFO("[Binance] Fetching snapshot", "symbol", symbol_.c_str());
 
         auto request_started = clock::now();
-        auto resp = http::get(url);
+        auto resp = http::get(url, {});
         snapshot_latency_ms_ = static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - request_started).count());
         if (resp.status == 429 || resp.status == 418) {

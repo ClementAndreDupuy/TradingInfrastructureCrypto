@@ -13,7 +13,7 @@ namespace {
 class FakeConnector : public LiveConnectorBase {
   public:
     explicit FakeConnector(Exchange ex)
-        : LiveConnectorBase(ex, "k", "s", "https://test", RetryPolicy{3, 0}) {}
+        : LiveConnectorBase(ex, "k", "s", "https://test", RetryPolicy{3, 0}, "") {}
 
     ConnectorResult submit_result = ConnectorResult::OK;
     ConnectorResult cancel_result = ConnectorResult::OK;

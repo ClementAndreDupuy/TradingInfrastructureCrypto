@@ -15,7 +15,8 @@ class CoinbaseFeedHandlerTest : public ::testing::Test {
         unsetenv("LIVE_COINBASE_API_SECRET");
         unsetenv("SHADOW_COINBASE_API_KEY");
         unsetenv("SHADOW_COINBASE_API_SECRET");
-        handler_ = std::make_unique<CoinbaseFeedHandler>("BTC-USD");
+        handler_ = std::make_unique<CoinbaseFeedHandler>("BTC-USD", "wss://advanced-trade-ws.coinbase.com",
+                                                           "https://api.coinbase.com");
 
         handler_->set_snapshot_callback([this](const Snapshot& snapshot) {
             last_snapshot_ = snapshot;

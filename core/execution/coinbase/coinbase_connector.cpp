@@ -23,26 +23,26 @@ namespace trading {
             const std::string product_id = SymbolMapper::map_for_exchange(Exchange::COINBASE, order.symbol);
             std::string config;
             if (order.type == OrderType::MARKET) {
-                config = std::string(RR"("market_market_ioc":{"base_size":")") +
-                         decimal_string(order.quantity) + RR"("})";
+                config = std::string(R"("market_market_ioc":{"base_size":")") +
+                         decimal_string(order.quantity) + R"("})";
             } else if (order.type == OrderType::LIMIT) {
                 if (order.tif == TimeInForce::IOC) {
-                    config = std::string(RR"("sor_limit_ioc":{"base_size":")") +
-                             decimal_string(order.quantity) + RR"(","limit_price":")" +
-                             decimal_string(order.price) + RR"("})";
+                    config = std::string(R"("sor_limit_ioc":{"base_size":")") +
+                             decimal_string(order.quantity) + R"(","limit_price":")" +
+                             decimal_string(order.price) + R"("})";
                 } else if (order.tif == TimeInForce::FOK) {
-                    config = std::string(RR"("limit_limit_fok":{"base_size":")") +
-                             decimal_string(order.quantity) + RR"(","limit_price":")" +
-                             decimal_string(order.price) + RR"("})";
+                    config = std::string(R"("limit_limit_fok":{"base_size":")") +
+                             decimal_string(order.quantity) + R"(","limit_price":")" +
+                             decimal_string(order.price) + R"("})";
                 } else {
-                    config = std::string(RR"("limit_limit_gtc":{"base_size":")") +
-                             decimal_string(order.quantity) + RR"(","limit_price":")" +
-                             decimal_string(order.price) + RR"(","post_only":false})";
+                    config = std::string(R"("limit_limit_gtc":{"base_size":")") +
+                             decimal_string(order.quantity) + R"(","limit_price":")" +
+                             decimal_string(order.price) + R"(","post_only":false})";
                 }
             }
-            return std::string(RR"({"client_order_id":")") + std::to_string(order.client_order_id) +
-                   RR"(","product_id":")" + product_id + RR"(","side":")" +
-                   (order.side == Side::BID ? "BUY" : "SELL") + RR"(","order_configuration":{)" +
+            return std::string(R"({"client_order_id":")") + std::to_string(order.client_order_id) +
+                   R"(","product_id":")" + product_id + R"(","side":")" +
+                   (order.side == Side::BID ? "BUY" : "SELL") + R"(","order_configuration":{)" +
                    config + "}}";
         }
 
@@ -240,10 +240,10 @@ namespace trading {
     }
 
     auto CoinbaseConnector::cancel_at_venue(const VenueOrderEntry &entry) -> ConnectorResult {
-        const std::string payload = std::string(RR"({"order_ids":[")") + entry.venue_order_id + RR"("]})";
+        const std::string payload = std::string(R"({"order_ids":[")") + entry.venue_order_id + R"("]})";
         const auto resp =
                 http::post(api_url() + "/api/v3/brokerage/orders/batch_cancel", payload,
-                           auth_headers("POST", "/api/v3/brokerage/orders/batch_cancel", payload));
+                           auth_headers("POST", "/api/v3/brokerage/orders/batch_cancel", payload, ""));
         if (!resp.ok()) {
             return classify_http_error(resp.status);
         }
@@ -257,12 +257,12 @@ namespace trading {
         if (replacement.type != OrderType::LIMIT) {
             return ConnectorResult::ERROR_INVALID_ORDER;
         }
-        const std::string payload_body = std::string(RR"({"order_id":")") + entry.venue_order_id +
-                                         RR"(","size":")" + decimal_string(replacement.quantity) +
-                                         RR"(","price":")" + decimal_string(replacement.price) +
-                                         RR"("})";
+        const std::string payload_body = std::string(R"({"order_id":")") + entry.venue_order_id +
+                                         R"(","size":")" + decimal_string(replacement.quantity) +
+                                         R"(","price":")" + decimal_string(replacement.price) +
+                                         R"("})";
         const auto resp = http::post(api_url() + "/api/v3/brokerage/orders/edit", payload_body,
-                                     auth_headers("POST", "/api/v3/brokerage/orders/edit", payload_body));
+                                     auth_headers("POST", "/api/v3/brokerage/orders/edit", payload_body, ""));
         if (!resp.ok()) {
             return classify_http_error(resp.status);
         }
@@ -276,7 +276,8 @@ namespace trading {
         const auto resp = http::get(
             api_url() + "/api/v3/brokerage/orders/historical/" + std::string(entry.venue_order_id),
             auth_headers(
-                "GET", std::string("/api/v3/brokerage/orders/historical/") + entry.venue_order_id, ""));
+                "GET", std::string("/api/v3/brokerage/orders/historical/") + entry.venue_order_id,
+                "", ""));
         if (!resp.ok()) {
             return classify_http_error(resp.status);
         }
@@ -298,7 +299,7 @@ namespace trading {
 
         const auto open_orders =
                 http::get(api_url() + "/api/v3/brokerage/orders/historical/batch",
-                          auth_headers("GET", "/api/v3/brokerage/orders/historical/batch", ""));
+                          auth_headers("GET", "/api/v3/brokerage/orders/historical/batch", "", ""));
         if (!open_orders.ok()) {
             return classify_http_error(open_orders.status);
         }
@@ -309,7 +310,7 @@ namespace trading {
         }
 
         const auto account_resp = http::get(api_url() + "/api/v3/brokerage/accounts",
-                                            auth_headers("GET", "/api/v3/brokerage/accounts", ""));
+                                            auth_headers("GET", "/api/v3/brokerage/accounts", "", ""));
         if (!account_resp.ok()) {
             return classify_http_error(account_resp.status);
         }
@@ -319,7 +320,7 @@ namespace trading {
         }
 
         const auto pos_resp = http::get(api_url() + "/api/v3/brokerage/cfm/positions",
-                                        auth_headers("GET", "/api/v3/brokerage/cfm/positions", ""));
+                                        auth_headers("GET", "/api/v3/brokerage/cfm/positions", "", ""));
         if (pos_resp.status != 404 && pos_resp.status != 405 && pos_resp.status != 501) {
             if (!pos_resp.ok()) {
                 return classify_http_error(pos_resp.status);
@@ -332,7 +333,7 @@ namespace trading {
 
         const auto fills_resp =
                 http::get(api_url() + "/api/v3/brokerage/orders/historical/fills",
-                          auth_headers("GET", "/api/v3/brokerage/orders/historical/fills", ""));
+                          auth_headers("GET", "/api/v3/brokerage/orders/historical/fills", "", ""));
         if (fills_resp.status == 404 || fills_resp.status == 405 || fills_resp.status == 501) {
             return ConnectorResult::OK;
         }

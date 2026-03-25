@@ -57,7 +57,7 @@ TEST(LatencyBudgetTest, RiskCheckUnderOneMicrosecond) {
 }
 
 TEST(LatencyBudgetTest, FeedMessageProcessingUnderTenMicroseconds) {
-    BinanceFeedHandler h("BTCUSDT");
+    BinanceFeedHandler h("BTCUSDT", "https://api.binance.com", "wss://stream.binance.com:9443");
     const std::string msg =
         R"({"e":"depthUpdate","s":"BTCUSDT","U":1,"u":1,"b":[["50000.0","1.0"]],"a":[["50001.0","1.0"]]})";
 

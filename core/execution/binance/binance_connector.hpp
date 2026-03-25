@@ -6,8 +6,8 @@ namespace trading {
     class BinanceConnector : public LiveConnectorBase {
     public:
         BinanceConnector(const std::string &api_key, const std::string &api_secret,
-                         const std::string &api_url)
-            : LiveConnectorBase(Exchange::BINANCE, api_key, api_secret, api_url) {
+                         const std::string &api_url, RetryPolicy retry_policy = {})
+            : LiveConnectorBase(Exchange::BINANCE, api_key, api_secret, api_url, retry_policy, "") {
         }
 
     protected:

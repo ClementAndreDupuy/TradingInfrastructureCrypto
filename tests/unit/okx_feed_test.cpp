@@ -9,7 +9,8 @@ class OkxFeedHandlerTest : public ::testing::Test {
   protected:
     void SetUp() override {
         set_log_level(LogLevel::ERROR);
-        handler_ = std::make_unique<OkxFeedHandler>("BTC-USDT");
+        handler_ = std::make_unique<OkxFeedHandler>("BTC-USDT", "https://www.okx.com",
+                                                    "wss://ws.okx.com:8443/ws/v5/public");
 
         handler_->set_snapshot_callback([this](const Snapshot& snapshot) {
             last_snapshot_ = snapshot;
@@ -89,7 +90,7 @@ TEST_F(OkxFeedHandlerTest, IgnoresMessagesForOtherInstrument) {
 }
 
 TEST(OkxFeedHandlerSymbolTest, NormalizesCompactSymbolToOkxInstId) {
-    OkxFeedHandler handler("BTCUSDT");
+    OkxFeedHandler handler("BTCUSDT", "https://www.okx.com", "wss://ws.okx.com:8443/ws/v5/public");
     handler.set_streaming_state_for_test(100);
     handler.seed_book_state_for_test({PriceLevel{50000.0, 1.0}}, {PriceLevel{50001.0, 1.0}});
 

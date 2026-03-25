@@ -49,7 +49,7 @@ class TestableCoinbaseConnector : public CoinbaseConnector {
 class TestReconnectConnector : public LiveConnectorBase {
   public:
     TestReconnectConnector()
-        : LiveConnectorBase(Exchange::BINANCE, "k", "s", "https://binance.test") {}
+        : LiveConnectorBase(Exchange::BINANCE, "k", "s", "https://binance.test", RetryPolicy{}, "") {}
 
     ConnectorResult reconcile() override {
         ++reconcile_calls;
@@ -215,7 +215,7 @@ TEST(ReconciliationServiceTest, FetchSnapshotForAllConnectors) {
     TestableBinanceConnector binance("k", "s", "https://binance.test");
     seed_binance_symbol(binance);
     TestableKrakenConnector kraken("k", "s", "https://kraken.test");
-    TestableOkxConnector okx("k", "s", "https://okx.test");
+    TestableOkxConnector okx("k", "s", "p", "https://okx.test");
     TestableCoinbaseConnector coinbase("k", "s", "https://coinbase.test");
 
     ReconciliationSnapshot snapshot;

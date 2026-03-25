@@ -11,7 +11,7 @@ TEST(ParentOrderManagerTest, CreatesOneWorkingPlanFromTargetDelta) {
     ParentOrderManager manager;
     const auto now = Clock::now();
 
-    const auto result = manager.update_target(0.40, ShadowUrgency::PASSIVE, now);
+    const auto result = manager.update_target(0.40, ShadowUrgency::PASSIVE, now, std::chrono::milliseconds(0));
 
     EXPECT_EQ(result.action, ParentPlanAction::CREATED);
     EXPECT_EQ(result.plan.plan_id, 1u);
@@ -26,7 +26,7 @@ TEST(ParentOrderManagerTest, CreatesOneWorkingPlanFromTargetDelta) {
 TEST(ParentOrderManagerTest, FillProgressUpdatesRemainingQuantity) {
     ParentOrderManager manager;
     const auto now = Clock::now();
-    manager.update_target(0.40, ShadowUrgency::BALANCED, now);
+    manager.update_target(0.40, ShadowUrgency::BALANCED, now, std::chrono::milliseconds(0));
 
     manager.on_child_fill(0.25);
     auto snapshot = manager.snapshot();
@@ -44,9 +44,9 @@ TEST(ParentOrderManagerTest, FillProgressUpdatesRemainingQuantity) {
 TEST(ParentOrderManagerTest, MeaningfulTargetChangeReplacesPlan) {
     ParentOrderManager manager;
     const auto now = Clock::now();
-    const auto first = manager.update_target(0.30, ShadowUrgency::PASSIVE, now);
+    const auto first = manager.update_target(0.30, ShadowUrgency::PASSIVE, now, std::chrono::milliseconds(0));
     const auto second = manager.update_target(-0.20, ShadowUrgency::AGGRESSIVE,
-                                              now + std::chrono::milliseconds(5));
+                                              now + std::chrono::milliseconds(5), std::chrono::milliseconds(0));
 
     EXPECT_EQ(first.plan.plan_id, 1u);
     EXPECT_EQ(second.action, ParentPlanAction::REPLACED);
@@ -61,9 +61,9 @@ TEST(ParentOrderManagerTest, MeaningfulTargetChangeReplacesPlan) {
 TEST(ParentOrderManagerTest, SmallUpdateKeepsSinglePlanObservable) {
     ParentOrderManager manager;
     const auto now = Clock::now();
-    const auto first = manager.update_target(0.30, ShadowUrgency::BALANCED, now);
+    const auto first = manager.update_target(0.30, ShadowUrgency::BALANCED, now, std::chrono::milliseconds(0));
     const auto second = manager.update_target(0.32, ShadowUrgency::AGGRESSIVE,
-                                              now + std::chrono::milliseconds(10));
+                                              now + std::chrono::milliseconds(10), std::chrono::milliseconds(0));
 
     EXPECT_EQ(second.plan.plan_id, first.plan.plan_id);
     EXPECT_EQ(second.action, ParentPlanAction::UPDATED);
@@ -92,10 +92,10 @@ TEST(ParentOrderManagerTest, DeadlineExpiryMarksPlanExpired) {
 TEST(ParentOrderManagerTest, ZeroDeltaCancelsWorkingPlan) {
     ParentOrderManager manager;
     const auto now = Clock::now();
-    manager.update_target(0.25, ShadowUrgency::BALANCED, now);
+    manager.update_target(0.25, ShadowUrgency::BALANCED, now, std::chrono::milliseconds(0));
 
     const auto result = manager.update_target(0.0, ShadowUrgency::BALANCED,
-                                              now + std::chrono::milliseconds(1));
+                                              now + std::chrono::milliseconds(1), std::chrono::milliseconds(0));
 
     EXPECT_EQ(result.action, ParentPlanAction::CANCELED);
     EXPECT_TRUE(result.should_cancel_working_children);

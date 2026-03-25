@@ -9,7 +9,7 @@ namespace trading {
 namespace {
 
 TEST(FeedDisconnectChaosTest, BinanceGapThenRecoveryMessageSucceeds) {
-    BinanceFeedHandler h("BTCUSDT");
+    BinanceFeedHandler h("BTCUSDT", "https://api.binance.com", "wss://stream.binance.com");
     const uint64_t base = h.get_sequence();
 
     const std::string gap = R"({"e":"depthUpdate","s":"BTCUSDT","U":)" +
@@ -24,7 +24,7 @@ TEST(FeedDisconnectChaosTest, BinanceGapThenRecoveryMessageSucceeds) {
 }
 
 TEST(FeedDisconnectChaosTest, KrakenGapThenRecoveryMessageSucceeds) {
-    KrakenFeedHandler h("XBTUSD");
+    KrakenFeedHandler h("XBTUSD", "https://api.kraken.com", "wss://ws.kraken.com/v2");
     const uint32_t snap_checksum =
         KrakenFeedHandler::crc32_for_test("500011000000050000100000000");
     const std::string snapshot =
@@ -41,7 +41,7 @@ TEST(FeedDisconnectChaosTest, KrakenGapThenRecoveryMessageSucceeds) {
 }
 
 TEST(FeedDisconnectChaosTest, CoinbaseSubscriptionContractSnapshotAndUpdateSucceed) {
-    CoinbaseFeedHandler h("BTC-USD");
+    CoinbaseFeedHandler h("BTC-USD", "wss://advanced-trade-ws.coinbase.com", "https://api.coinbase.com");
     const auto subscribe_messages = h.build_subscription_messages();
     ASSERT_EQ(subscribe_messages.size(), 2u);
     const auto heartbeat_sub = nlohmann::json::parse(subscribe_messages[0]);
@@ -66,7 +66,7 @@ TEST(FeedDisconnectChaosTest, CoinbaseSubscriptionContractSnapshotAndUpdateSucce
 }
 
 TEST(FeedDisconnectChaosTest, CoinbaseGapThenRecoveryViaSnapshot) {
-    CoinbaseFeedHandler h("BTC-USD");
+    CoinbaseFeedHandler h("BTC-USD", "wss://advanced-trade-ws.coinbase.com", "https://api.coinbase.com");
 
     const std::string snap =
         R"({"channel":"l2_data","type":"l2_data","sequence_num":100,"events":[{"type":"snapshot","updates":[{"side":"bid","price_level":"50000.0","new_quantity":"1.0"},{"side":"offer","price_level":"50001.0","new_quantity":"1.0"}]}]})";
@@ -86,7 +86,7 @@ TEST(FeedDisconnectChaosTest, CoinbaseGapThenRecoveryViaSnapshot) {
 }
 
 TEST(FeedDisconnectChaosTest, OkxGapThenRecoveryWithStreamingState) {
-    OkxFeedHandler h("BTC-USDT");
+    OkxFeedHandler h("BTC-USDT", "https://www.okx.com", "wss://ws.okx.com:8443/ws/v5/public");
     h.set_streaming_state_for_test(100);
     h.seed_book_state_for_test({PriceLevel{50000.0, 1.0}}, {PriceLevel{50001.0, 1.0}});
 

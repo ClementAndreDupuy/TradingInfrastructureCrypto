@@ -40,6 +40,9 @@ struct MarketMakerConfig {
     double regime_widen_bps;
 
     int64_t stale_ns;
+
+    std::string alpha_shm_path{AlphaSignalReader::k_default_path};
+    std::string regime_shm_path{RegimeSignalReader::k_default_path};
 };
 
 class NeuralAlphaMarketMaker {
@@ -51,7 +54,9 @@ class NeuralAlphaMarketMaker {
     NeuralAlphaMarketMaker(OrderManager& order_mgr, const BookManager& book, KillSwitch& kill,
                            CircuitBreaker* circuit_breaker,
                            const MarketMakerConfig& cfg)
-        : om_(order_mgr), book_(book), kill_(kill), circuit_breaker_(circuit_breaker), cfg_(cfg) {
+        : om_(order_mgr), book_(book), kill_(kill), circuit_breaker_(circuit_breaker), cfg_(cfg),
+          alpha_reader_(cfg.alpha_shm_path, cfg.signal_min_bps, cfg.risk_max),
+          regime_reader_(cfg.regime_shm_path) {
 
         om_.on_fill = [this](const ManagedOrder& mo, const FillUpdate& u) { on_fill(mo, u); };
     }

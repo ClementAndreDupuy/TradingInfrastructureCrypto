@@ -748,8 +748,7 @@ namespace trading {
         ShadowEngine(BookManager &binance_book, BookManager &kraken_book,
                      BookManager &okx_book, BookManager &coinbase_book,
                      const ShadowConfig &cfg = {})
-            : cfg_(cfg),
-              binance_shadow_(Exchange::BINANCE, cfg, binance_book),
+            : binance_shadow_(Exchange::BINANCE, cfg, binance_book),
               kraken_shadow_(Exchange::KRAKEN, cfg, kraken_book),
               okx_shadow_(Exchange::OKX, cfg, okx_book),
               coinbase_shadow_(Exchange::COINBASE, cfg, coinbase_book) {
@@ -884,7 +883,6 @@ namespace trading {
             std::fflush(log_fp_);
         }
 
-        ShadowConfig cfg_{};
         std::FILE *log_fp_;
         ShadowStateMachine state_machine_{};
         ShadowConnector binance_shadow_;

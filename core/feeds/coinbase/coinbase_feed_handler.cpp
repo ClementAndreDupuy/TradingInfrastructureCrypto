@@ -142,7 +142,7 @@ namespace trading {
             return static_cast<int64_t>(seconds) * 1'000'000'000LL + nanos;
         }
 
-        static auto coinbase_lws_cb(struct lws *wsi, enum lws_callback_reasons reason, void *unused,
+        static auto coinbase_lws_cb(struct lws *wsi, enum lws_callback_reasons reason, [[maybe_unused]] void *unused,
                                     void *input, size_t len) -> int {
             auto *session = static_cast<CoinbaseWsSession *>(lws_context_user(lws_get_context(wsi)));
             if (session == nullptr) {
@@ -337,7 +337,7 @@ namespace trading {
 
     auto CoinbaseFeedHandler::fetch_tick_size() -> Result {
         const std::string url = api_url_ + "/api/v3/brokerage/market/products/" + venue_symbols_.coinbase;
-        auto resp = http::get(url);
+        auto resp = http::get(url, {});
         if (!resp.ok() || resp.body.empty()) {
             LOG_WARN("[Coinbase] fetch_tick_size failed", "symbol", symbol_.c_str(), "status", resp.status);
             return Result::ERROR_CONNECTION_LOST;

@@ -17,11 +17,6 @@
 #include <thread>
 #include <utility>
 #include <vector>
-
-#if defined(TRT_DISABLE_OPENSSL)
-#define TRT_HAS_OPENSSL 0
-#elif defined(__has_include)
-#if __has_include(<openssl/hmac.h>) && __has_include(<openssl/evp.h>)
 #include <openssl/bn.h>
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
@@ -30,13 +25,6 @@
 #include <openssl/hmac.h>
 #include <openssl/pem.h>
 #include <openssl/sha.h>
-#define TRT_HAS_OPENSSL 1
-#else
-#define TRT_HAS_OPENSSL 0
-#endif
-#else
-#define TRT_HAS_OPENSSL 0
-#endif
 
 namespace trading {
     struct RetryPolicy {
@@ -59,12 +47,6 @@ namespace trading {
         bool is_connected() const override { return connected_.load(std::memory_order_acquire); }
 
         ConnectorResult connect() override {
-#if !TRT_HAS_OPENSSL
-            LOG_ERROR("OpenSSL backend unavailable for live connector", "exchange",
-                      exchange_to_string(exchange_));
-            connected_.store(false, std::memory_order_release);
-            return ConnectorResult::AUTH_FAILED;
-#endif
             if (exchange_ == Exchange::OKX && api_passphrase_.empty()) {
                 LOG_ERROR("Missing venue credential", "exchange", exchange_to_string(exchange_),
                           "field", "passphrase");
@@ -79,7 +61,7 @@ namespace trading {
 
         ConnectorResult submit_order(const Order &order) override {
             const JournalDecision recovery =
-                    journal_.begin(JournalOperation::SUBMIT, order.client_order_id);
+                    journal_.begin(JournalOperation::SUBMIT, order.client_order_id, 0);
             if (recovery.already_acked()) {
                 if (recovery.venue_order_id[0] != '\0' && recovery.venue_order_id[0] != '-') {
                     if (!venue_order_map_.upsert(order.client_order_id, recovery.venue_order_id,
@@ -99,14 +81,14 @@ namespace trading {
                     with_retries([&]() { return submit_to_venue(order, idempotency_key, venue_order_id); });
 
             if (result == ConnectorResult::OK) {
-                journal_.ack(JournalOperation::SUBMIT, order.client_order_id, venue_order_id.c_str());
+                journal_.ack(JournalOperation::SUBMIT, order.client_order_id, venue_order_id.c_str(), 0);
                 if (!venue_order_map_.upsert(order.client_order_id, venue_order_id.c_str(), exchange_,
                                              order.symbol)) {
                     LOG_ERROR("Venue order map full", "exchange", exchange_to_string(exchange_));
                     return ConnectorResult::ERROR_UNKNOWN;
                 }
             } else {
-                journal_.fail(JournalOperation::SUBMIT, order.client_order_id);
+                journal_.fail(JournalOperation::SUBMIT, order.client_order_id, 0);
             }
             return result;
         }
@@ -118,7 +100,7 @@ namespace trading {
                 replace_state.state == JournalState::ACKED)
                 return ConnectorResult::ERROR_INVALID_ORDER;
 
-            const JournalDecision decision = journal_.begin(JournalOperation::CANCEL, client_order_id);
+            const JournalDecision decision = journal_.begin(JournalOperation::CANCEL, client_order_id, 0);
             if (decision.already_acked())
                 return ConnectorResult::OK;
             if (!decision.should_send_to_venue())
@@ -126,17 +108,17 @@ namespace trading {
 
             const VenueOrderEntry *mapped = venue_order_map_.get(client_order_id);
             if (!mapped) {
-                journal_.fail(JournalOperation::CANCEL, client_order_id);
+                journal_.fail(JournalOperation::CANCEL, client_order_id, 0);
                 return ConnectorResult::ERROR_INVALID_ORDER;
             }
 
             const ConnectorResult result = with_retries([&]() { return cancel_at_venue(*mapped); });
 
             if (result == ConnectorResult::OK) {
-                journal_.ack(JournalOperation::CANCEL, client_order_id, mapped->venue_order_id);
+                journal_.ack(JournalOperation::CANCEL, client_order_id, mapped->venue_order_id, 0);
                 venue_order_map_.erase(client_order_id);
             } else {
-                journal_.fail(JournalOperation::CANCEL, client_order_id);
+                journal_.fail(JournalOperation::CANCEL, client_order_id, 0);
             }
             return result;
         }
@@ -319,7 +301,6 @@ namespace trading {
         }
 
         std::string coinbase_bearer_token(const char *method, const std::string &request_path) const {
-#if TRT_HAS_OPENSSL
             if (api_key_.empty() || api_secret_.empty())
                 return std::string();
 
@@ -328,13 +309,13 @@ namespace trading {
                 return std::string();
 
             const int64_t now_s = http::now_ns() / 1000000000LL;
-            const std::string header = RR"({"alg":"ES256","kid":"")" + json_escape(api_key_) +
-                                       RR"(","typ":"JWT"})";
+            const std::string header = R"({"alg":"ES256","kid":")" + json_escape(api_key_) +
+                                       R"(","typ":"JWT"})";
             const std::string payload =
-                    RR"({"sub":")" + json_escape(api_key_) + RR"(","iss":"cdp","nbf":)" +
-                    std::to_string(now_s) + RR"(,"exp":)" + std::to_string(now_s + 120) +
-                    RR"(,"uri":")" + json_escape(std::string(method) + " " + host + request_path) +
-                    RR"("})";
+                    R"({"sub":")" + json_escape(api_key_) + R"(","iss":"cdp","nbf":)" +
+                    std::to_string(now_s) + R"(,"exp":)" + std::to_string(now_s + 120) +
+                    R"(,"uri":")" + json_escape(std::string(method) + " " + host + request_path) +
+                    R"("})";
             const std::string signing_input =
                     base64url_encode(header) + "." + base64url_encode(payload);
 
@@ -369,11 +350,6 @@ namespace trading {
             EVP_MD_CTX_free(ctx);
             EVP_PKEY_free(key);
             return jwt;
-#else
-            (void) method;
-            (void) request_path;
-            return std::string();
-#endif
         }
 
         std::vector<std::string> kraken_private_headers(const std::string &request_path,
@@ -401,35 +377,19 @@ namespace trading {
         }
 
         std::string hmac_sha256_hex(const std::string &payload) const {
-#if TRT_HAS_OPENSSL
             return encode_hex(compute_hmac(EVP_sha256(), payload));
-#else
-            (void) payload;
-            return std::string();
-#endif
         }
 
         std::string hmac_sha256_base64(const std::string &payload) const {
-#if TRT_HAS_OPENSSL
             return encode_base64(compute_hmac(EVP_sha256(), payload));
-#else
-            (void) payload;
-            return std::string();
-#endif
         }
 
         std::string hmac_sha512_base64(const std::string &payload) const {
-#if TRT_HAS_OPENSSL
             return encode_base64(compute_hmac(EVP_sha512(), payload));
-#else
-            (void) payload;
-            return std::string();
-#endif
         }
 
         std::string kraken_api_sign(const std::string &request_path,
                                     const std::string &encoded_payload) const {
-#if TRT_HAS_OPENSSL
             const std::string nonce = extract_kraken_nonce(encoded_payload);
             if (nonce.empty())
                 return std::string();
@@ -442,14 +402,8 @@ namespace trading {
             std::string message = request_path;
             message.append(reinterpret_cast<const char *>(digest), SHA256_DIGEST_LENGTH);
             return encode_base64(compute_hmac_base64_secret(EVP_sha512(), message));
-#else
-            (void) request_path;
-            (void) encoded_payload;
-            return std::string();
-#endif
         }
 
-#if TRT_HAS_OPENSSL
         struct HmacDigest {
             unsigned char data[EVP_MAX_MD_SIZE];
             unsigned int len;
@@ -517,7 +471,6 @@ namespace trading {
             return out;
         }
 
-#if TRT_HAS_OPENSSL
         static std::string ecdsa_der_to_jose(const unsigned char *der, size_t der_len) {
             const unsigned char *cursor = der;
             ECDSA_SIG *sig = d2i_ECDSA_SIG(nullptr, &cursor, static_cast<long>(der_len));
@@ -538,7 +491,6 @@ namespace trading {
             ECDSA_SIG_free(sig);
             return base64url_encode(raw.data(), raw.size());
         }
-#endif
 
         static std::string extract_kraken_nonce(const std::string &encoded_payload) {
             const std::string key = "nonce=";
@@ -586,7 +538,6 @@ namespace trading {
             out.resize(static_cast<size_t>(out_len));
             return out;
         }
-#endif
 
         Exchange exchange_;
         std::string api_key_;

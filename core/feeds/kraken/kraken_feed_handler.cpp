@@ -115,7 +115,7 @@ namespace trading {
 
     auto KrakenFeedHandler::fetch_tick_size() -> Result {
         const std::string url = api_url_ + "/0/public/AssetPairs?pair=" + venue_symbols_.kraken_rest;
-        auto resp = http::get(url);
+        auto resp = http::get(url,{});
         if (resp.body.empty()) {
             LOG_WARN("[Kraken] fetch_tick_size failed", "symbol", symbol_.c_str(), "status", resp.status);
             return Result::ERROR_CONNECTION_LOST;
@@ -245,8 +245,8 @@ namespace trading {
 
         const std::string ws_sym = venue_symbols_.kraken_ws;
         const std::string subscribe_msg =
-                RR"({"method":"subscribe","params":{"channel":"book","symbol":[")" + ws_sym +
-                RR"("],"depth":100,"snapshot":true}})";
+                R"({"method":"subscribe","params":{"channel":"book","symbol":[")" + ws_sym +
+                R"("],"depth":100,"snapshot":true}})";
 
         KrakenWsSession session;
         session.handler = this;
