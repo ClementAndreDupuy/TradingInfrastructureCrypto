@@ -171,7 +171,9 @@ namespace trading {
         }
 
         LOG_INFO("[Binance] Starting feed handler", "symbol", symbol_.c_str());
-        fetch_tick_size();
+        if (tick_size_ <= 0.0) {
+            fetch_tick_size();
+        }
         reconnect_requested_.store(false, std::memory_order_release);
         running_.store(true, std::memory_order_release);
         state_.store(State::BUFFERING, std::memory_order_release);

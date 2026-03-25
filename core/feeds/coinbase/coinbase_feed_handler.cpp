@@ -391,7 +391,9 @@ namespace trading {
             }
         }
 
-        fetch_tick_size();
+        if (tick_size_ <= 0.0) {
+            fetch_tick_size();
+        }
 
         static constexpr int k_max_attempts = 3;
         static constexpr int k_backoff_ms[k_max_attempts] = {2000, 4000, 8000};
