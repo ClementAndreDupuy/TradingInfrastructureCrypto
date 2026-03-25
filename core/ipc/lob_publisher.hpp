@@ -41,7 +41,8 @@ namespace trading {
         static_assert(std::atomic<uint64_t>::is_always_lock_free,
                       "std::atomic<uint64_t> must be lock-free for cross-process mmap use");
 
-        LobPublisher() = default;
+        LobPublisher() : path_(k_default_path) {
+        }
 
         explicit LobPublisher(std::string path) : path_(std::move(path)) {
         }
@@ -154,11 +155,11 @@ namespace trading {
             header_->write_seq.store(0, std::memory_order_release);
         }
 
-        std::string path_;
-        int fd_;
-        std::byte *base_;
-        size_t mapped_size_;
-        Header *header_;
-        LobSlot *slots_;
+        std::string path_{k_default_path};
+        int fd_{-1};
+        std::byte *base_{nullptr};
+        size_t mapped_size_{0};
+        Header *header_{nullptr};
+        LobSlot *slots_{nullptr};
     };
 } 
