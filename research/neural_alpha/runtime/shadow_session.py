@@ -1,5 +1,4 @@
 from __future__ import annotations
-import argparse
 import json
 import mmap
 import os
@@ -852,25 +851,6 @@ class NeuralAlphaShadowSession:
             print("Shadow session complete.")
     def stop(self) -> None:
         self._running = False
-def _build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Neural alpha shadow session")
-    add = parser.add_argument
-    add("--model-path", type=str, default=None, dest="model_path"); add("--secondary-model-path", type=str, default=None, dest="secondary_model_path")
-    add("--log-path", type=str, default="neural_alpha_shadow.jsonl", dest="log_path"); add("--signal-file", type=str, default=_SIGNAL_FILE, dest="signal_file", help="Shared memory file path read by C++ AlphaSignalReader")
-    add("--lob-feed-path", type=str, default=RING_PATH, dest="lob_feed_path", help="Path to C++ LOB feed ring buffer"); add("--regime-signal-file", type=str, default=_REGIME_SIGNAL_FILE, dest="regime_signal_file", help="Shared memory file path read by C++ RegimeSignalReader")
-    add("--regime-model-path", type=str, default="models/r2_regime_model.json", dest="regime_model_path", help="Trained R2 regime artifact JSON for live regime inference")
-    add("--interval-ms", type=int, default=500, dest="interval_ms"); add("--duration", type=int, default=3600); add("--report-interval", type=int, default=60, dest="report_interval_s")
-    add("--seq-len", type=int, default=64, dest="seq_len"); add("--d-spatial", type=int, default=64, dest="d_spatial"); add("--d-temporal", type=int, default=128, dest="d_temporal")
-    add("--train-ticks", type=int, default=0, dest="train_ticks"); add("--train-epochs", type=int, default=10, dest="train_epochs"); add("--symbol", type=str, default="BTCUSDT")
-    add("--exchanges", type=str, default="BINANCE,KRAKEN,OKX,COINBASE"); add("--registry-path", type=str, default="models/model_registry.json", dest="registry_path")
-    add("--drift-window", type=int, default=200, dest="drift_window"); add("--drift-min-samples", type=int, default=60, dest="drift_min_samples"); add("--drift-ic-floor", type=float, default=-0.05, dest="drift_ic_floor")
-    add("--safe-mode-ticks", type=int, default=120, dest="safe_mode_ticks"); add("--continuous-train-every-ticks", type=int, default=1000, dest="continuous_train_every_ticks")
-    add("--continuous-train-window-ticks", type=int, default=2000, dest="continuous_train_window_ticks"); add("--min-continuous-train-interval-s", type=int, default=600, dest="min_continuous_train_interval_s")
-    add("--regime-retrain-every-ticks", type=int, default=5000, dest="regime_retrain_every_ticks"); add("--min-regime-train-interval-s", type=int, default=900, dest="min_regime_train_interval_s")
-    add("--regime-startup-warmup-s", type=int, default=300, dest="regime_startup_warmup_s"); add("--canary-ic-margin", type=float, default=0.02, dest="canary_ic_margin", help="Max IC degradation of ensemble vs primary before canary fires")
-    add("--canary-icir-floor", type=float, default=0.0, dest="canary_icir_floor", help="Min ensemble ICIR before canary fires"); add("--canary-window", type=int, default=200, dest="canary_window"); add("--canary-min-samples", type=int, default=60, dest="canary_min_samples")
-    add("--require-full-model-stack", action=argparse.BooleanOptionalAction, default=True, dest="require_full_model_stack", help="Require primary + secondary alpha models and regime artifact before entering production shadow mode.")
-    return parser
 def _prepare_runtime_models(session: NeuralAlphaShadowSession, cfg: ShadowSessionConfig) -> None:
     primary_model_path = Path(cfg.model_path) if cfg.model_path else _symbol_model_path(cfg.symbol, "latest")
     secondary_model_path = Path(cfg.secondary_model_path) if cfg.secondary_model_path else _symbol_model_path(cfg.symbol, "secondary")
@@ -886,45 +866,10 @@ def _prepare_runtime_models(session: NeuralAlphaShadowSession, cfg: ShadowSessio
         return
     if session._model is None and cfg.require_full_model_stack:
         raise RuntimeError(
-            "Research production stack requires a trained model. Collect more ticks before starting, set --train-ticks, or use --no-require-full-model-stack for non-production debugging."
+            "Research production stack requires a trained model. Collect more ticks before starting or adjust `session.train_ticks`/`session.require_full_model_stack` in YAML for non-production debugging."
         )
 def main() -> None:
-    args = _build_arg_parser().parse_args()
-    cfg = ShadowSessionConfig(
-        model_path=args.model_path,
-        secondary_model_path=args.secondary_model_path,
-        log_path=args.log_path,
-        interval_ms=args.interval_ms,
-        duration_s=args.duration,
-        report_interval_s=args.report_interval_s,
-        seq_len=args.seq_len,
-        d_spatial=args.d_spatial,
-        d_temporal=args.d_temporal,
-        train_ticks=args.train_ticks,
-        train_epochs=args.train_epochs,
-        symbol=args.symbol,
-        exchanges=[exchange.strip().upper() for exchange in args.exchanges.split(",") if exchange.strip()],
-        signal_file=args.signal_file,
-        lob_feed_path=args.lob_feed_path,
-        regime_signal_file=args.regime_signal_file,
-        regime_model_path=args.regime_model_path,
-        registry_path=args.registry_path,
-        drift_window=args.drift_window,
-        drift_min_samples=args.drift_min_samples,
-        drift_ic_floor=args.drift_ic_floor,
-        safe_mode_ticks=args.safe_mode_ticks,
-        continuous_train_every_ticks=args.continuous_train_every_ticks,
-        continuous_train_window_ticks=args.continuous_train_window_ticks,
-        regime_retrain_every_ticks=args.regime_retrain_every_ticks,
-        min_continuous_train_interval_s=args.min_continuous_train_interval_s,
-        min_regime_train_interval_s=args.min_regime_train_interval_s,
-        regime_startup_warmup_s=args.regime_startup_warmup_s,
-        canary_ic_margin=args.canary_ic_margin,
-        canary_icir_floor=args.canary_icir_floor,
-        canary_window=args.canary_window,
-        canary_min_samples=args.canary_min_samples,
-        require_full_model_stack=args.require_full_model_stack,
-    )
+    cfg = ShadowSessionConfig()
     session = NeuralAlphaShadowSession(cfg)
     def _handle_sigint(sig: int, frame: object) -> None:
         del sig, frame
