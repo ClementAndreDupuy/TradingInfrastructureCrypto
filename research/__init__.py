@@ -1,1 +1,1 @@
-# research package
+"""research package."""
