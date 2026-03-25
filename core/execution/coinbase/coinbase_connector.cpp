@@ -23,26 +23,26 @@ namespace trading {
             const std::string product_id = SymbolMapper::map_for_exchange(Exchange::COINBASE, order.symbol);
             std::string config;
             if (order.type == OrderType::MARKET) {
-                config = std::string(R"("market_market_ioc":{"base_size":")") +
-                         decimal_string(order.quantity) + R"("})";
+                config = std::string(RR"("market_market_ioc":{"base_size":")") +
+                         decimal_string(order.quantity) + RR"("})";
             } else if (order.type == OrderType::LIMIT) {
                 if (order.tif == TimeInForce::IOC) {
-                    config = std::string(R"("sor_limit_ioc":{"base_size":")") +
-                             decimal_string(order.quantity) + R"(","limit_price":")" +
-                             decimal_string(order.price) + R"("})";
+                    config = std::string(RR"("sor_limit_ioc":{"base_size":")") +
+                             decimal_string(order.quantity) + RR"(","limit_price":")" +
+                             decimal_string(order.price) + RR"("})";
                 } else if (order.tif == TimeInForce::FOK) {
-                    config = std::string(R"("limit_limit_fok":{"base_size":")") +
-                             decimal_string(order.quantity) + R"(","limit_price":")" +
-                             decimal_string(order.price) + R"("})";
+                    config = std::string(RR"("limit_limit_fok":{"base_size":")") +
+                             decimal_string(order.quantity) + RR"(","limit_price":")" +
+                             decimal_string(order.price) + RR"("})";
                 } else {
-                    config = std::string(R"("limit_limit_gtc":{"base_size":")") +
-                             decimal_string(order.quantity) + R"(","limit_price":")" +
-                             decimal_string(order.price) + R"(","post_only":false})";
+                    config = std::string(RR"("limit_limit_gtc":{"base_size":")") +
+                             decimal_string(order.quantity) + RR"(","limit_price":")" +
+                             decimal_string(order.price) + RR"(","post_only":false})";
                 }
             }
-            return std::string(R"({"client_order_id":")") + std::to_string(order.client_order_id) +
-                   R"(","product_id":")" + product_id + R"(","side":")" +
-                   (order.side == Side::BID ? "BUY" : "SELL") + R"(","order_configuration":{)" +
+            return std::string(RR"({"client_order_id":")") + std::to_string(order.client_order_id) +
+                   RR"(","product_id":")" + product_id + RR"(","side":")" +
+                   (order.side == Side::BID ? "BUY" : "SELL") + RR"(","order_configuration":{)" +
                    config + "}}";
         }
 
@@ -240,7 +240,7 @@ namespace trading {
     }
 
     auto CoinbaseConnector::cancel_at_venue(const VenueOrderEntry &entry) -> ConnectorResult {
-        const std::string payload = std::string(R"({"order_ids":[")") + entry.venue_order_id + R"("]})";
+        const std::string payload = std::string(RR"({"order_ids":[")") + entry.venue_order_id + RR"("]})";
         const auto resp =
                 http::post(api_url() + "/api/v3/brokerage/orders/batch_cancel", payload,
                            auth_headers("POST", "/api/v3/brokerage/orders/batch_cancel", payload));
@@ -257,10 +257,10 @@ namespace trading {
         if (replacement.type != OrderType::LIMIT) {
             return ConnectorResult::ERROR_INVALID_ORDER;
         }
-        const std::string payload_body = std::string(R"({"order_id":")") + entry.venue_order_id +
-                                         R"(","size":")" + decimal_string(replacement.quantity) +
-                                         R"(","price":")" + decimal_string(replacement.price) +
-                                         R"("})";
+        const std::string payload_body = std::string(RR"({"order_id":")") + entry.venue_order_id +
+                                         RR"(","size":")" + decimal_string(replacement.quantity) +
+                                         RR"(","price":")" + decimal_string(replacement.price) +
+                                         RR"("})";
         const auto resp = http::post(api_url() + "/api/v3/brokerage/orders/edit", payload_body,
                                      auth_headers("POST", "/api/v3/brokerage/orders/edit", payload_body));
         if (!resp.ok()) {

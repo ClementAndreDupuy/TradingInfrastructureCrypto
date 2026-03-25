@@ -375,4 +375,4 @@ namespace trading {
             return base_price_.load(std::memory_order_acquire) + static_cast<double>(idx) * tick_size_;
         }
     };
-} // namespace trading
+} 

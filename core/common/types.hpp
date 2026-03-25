@@ -133,4 +133,4 @@ namespace trading {
         int64_t local_ts_ns = 0;
         char reject_reason[64] = {};
     };
-} // namespace trading
+} 

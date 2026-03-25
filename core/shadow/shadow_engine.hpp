@@ -841,7 +841,7 @@ namespace trading {
             const double rpnl        = realized_pnl();
             const double upnl        = unrealized_pnl();
             const double fees        = total_fees();
-            const double total_pnl   = net_pnl();          // (realized - fees) + unrealized
+            const double total_pnl   = net_pnl();          
             const double cashflow    = net_cashflow();
             const double pnl_pct     = gn > 0.0 ? (total_pnl / gn) * 100.0 : 0.0;
             LOG_INFO("Shadow session summary",
@@ -892,4 +892,4 @@ namespace trading {
         ShadowConnector okx_shadow_;
         ShadowConnector coinbase_shadow_;
     };
-} // namespace trading
+} 

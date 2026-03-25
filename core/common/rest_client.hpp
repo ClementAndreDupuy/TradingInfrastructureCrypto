@@ -85,7 +85,7 @@ namespace trading {
                 }
                 return resp;
             }
-        } // namespace detail
+        } 
 
 #if defined(TRT_ENABLE_HTTP_MOCK_TRANSPORT)
         using MockTransport =
@@ -97,8 +97,6 @@ namespace trading {
             return mock_transport;
         }
 #endif
-
-        // ── HTTP verbs ────────────────────────────────────────────────────────────────
 
         inline HttpResponse get(const std::string &url, const std::vector<std::string> &headers) {
 #if defined(TRT_ENABLE_HTTP_MOCK_TRANSPORT)
@@ -160,8 +158,6 @@ namespace trading {
             return detail::perform(h, headers);
         }
 
-        // ── Timestamps ────────────────────────────────────────────────────────────────
-
         inline int64_t now_ns() {
             return std::chrono::duration_cast<std::chrono::nanoseconds>(
                         std::chrono::system_clock::now().time_since_epoch())
@@ -173,8 +169,6 @@ namespace trading {
                         std::chrono::system_clock::now().time_since_epoch())
                     .count();
         }
-
-        // ── Credentials ───────────────────────────────────────────────────────────────
 
         inline std::string env_var(const char *name) {
             const char *v = std::getenv(name);
@@ -188,5 +182,5 @@ namespace trading {
 
         inline void clear_mock_transport() { mock_transport_slot() = nullptr; }
 #endif
-    } // namespace http
-} // namespace trading
+    } 
+} 

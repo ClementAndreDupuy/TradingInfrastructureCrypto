@@ -100,8 +100,6 @@ namespace trading {
 
         bool is_open() const noexcept { return base_ != nullptr && header_ != nullptr; }
 
-        // NOT thread-safe: this class assumes a single writer (SPSC ring).  Concurrent
-        // calls from multiple threads will produce a data race on write_seq and the slot.
         void publish(Exchange exchange, const std::string &symbol, int64_t timestamp_ns,
                      double mid_price, const std::vector<PriceLevel> &bids,
                      const std::vector<PriceLevel> &asks) noexcept {
@@ -163,4 +161,4 @@ namespace trading {
         Header *header_;
         LobSlot *slots_;
     };
-} // namespace trading
+} 

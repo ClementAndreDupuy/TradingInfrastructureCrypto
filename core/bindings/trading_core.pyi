@@ -14,11 +14,9 @@ class Exchange(IntEnum):
     KRAKEN: int
     UNKNOWN: int
 
-
 class Side(IntEnum):
     BID: int
     ASK: int
-
 
 class Result(IntEnum):
     SUCCESS: int
@@ -29,7 +27,6 @@ class Result(IntEnum):
     ERROR_BOOK_CORRUPTED: int
     ERROR_CONNECTION_LOST: int
 
-
 class KillReason(IntEnum):
     MANUAL: int
     DRAWDOWN: int
@@ -37,9 +34,7 @@ class KillReason(IntEnum):
     HEARTBEAT_MISSED: int
     BOOK_CORRUPTED: int
 
-
 # ── SymbolMapper ───────────────────────────────────────────────────────────────
-
 
 class VenueSymbols:
     """Venue-specific symbol strings produced by SymbolMapper.map_all().
@@ -58,7 +53,6 @@ class VenueSymbols:
         ...
 
     def __repr__(self) -> str: ...
-
 
 class SymbolMapper:
     """Converts a canonical symbol string to venue-specific formats.
@@ -83,9 +77,7 @@ class SymbolMapper:
         """Convenience: map a canonical symbol to a single venue's format."""
         ...
 
-
 # ── Structs ────────────────────────────────────────────────────────────────────
-
 
 class PriceLevel:
     """A single price/size level on one side of the order book.
@@ -102,7 +94,6 @@ class PriceLevel:
     def __eq__(self, other: object) -> bool: ...
 
     def __repr__(self) -> str: ...
-
 
 class Delta:
     """A single incremental order book update.
@@ -124,7 +115,6 @@ class Delta:
     def __eq__(self, other: object) -> bool: ...
 
     def __repr__(self) -> str: ...
-
 
 class Snapshot:
     """A full order book snapshot.
@@ -148,9 +138,7 @@ class Snapshot:
 
     def __repr__(self) -> str: ...
 
-
 # ── OrderBook ──────────────────────────────────────────────────────────────────
-
 
 class OrderBook:
     """Flat-array order book indexed on a price-tick grid.
@@ -240,9 +228,7 @@ class OrderBook:
         """
         ...
 
-
 # ── KillSwitch ─────────────────────────────────────────────────────────────────
-
 
 class KillSwitch:
     """Hardware-level kill switch with heartbeat monitoring.
@@ -280,10 +266,7 @@ class KillSwitch:
     @staticmethod
     def reason_to_string(reason: KillReason) -> str: ...
 
-
-
 _FH = TypeVar("_FH", bound="_FeedHandlerBase")
-
 
 class _FeedHandlerBase:
     """Common interface shared by all exchange feed handlers.
@@ -371,9 +354,7 @@ class _FeedHandlerBase:
             exc_tb: object,
     ) -> bool: ...
 
-
 # ── Concrete Feed Handlers ─────────────────────────────────────────────────────
-
 
 class BinanceFeedHandler(_FeedHandlerBase):
     """Binance spot order book feed handler using the diff-depth WebSocket stream."""
@@ -384,7 +365,6 @@ class BinanceFeedHandler(_FeedHandlerBase):
             api_url: str = "https://api.binance.com",
             ws_url: str = "wss://stream.binance.com:9443/ws",
     ) -> None: ...
-
 
 class KrakenFeedHandler(_FeedHandlerBase):
     """Kraken order book feed handler using the WebSocket v2 book channel."""
@@ -397,7 +377,6 @@ class KrakenFeedHandler(_FeedHandlerBase):
             ws_url: str = "wss://ws.kraken.com/v2",
     ) -> None: ...
 
-
 class OkxFeedHandler(_FeedHandlerBase):
     """OKX order book feed handler using the WebSocket v5 public channel."""
     def __init__(
@@ -406,7 +385,6 @@ class OkxFeedHandler(_FeedHandlerBase):
             api_url: str = "https://www.okx.com",
             ws_url: str = "wss://ws.okx.com:8443/ws/v5/public",
     ) -> None: ...
-
 
 class CoinbaseFeedHandler(_FeedHandlerBase):
     """Coinbase Advanced Trade order book feed handler using the WebSocket channel."""

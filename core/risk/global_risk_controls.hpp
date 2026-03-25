@@ -220,4 +220,4 @@ namespace trading {
             return &state;
         }
     };
-} // namespace trading
+} 

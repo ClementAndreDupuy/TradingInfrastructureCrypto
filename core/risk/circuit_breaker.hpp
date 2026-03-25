@@ -220,4 +220,4 @@ namespace trading {
             return duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
         }
     };
-} // namespace trading
+}

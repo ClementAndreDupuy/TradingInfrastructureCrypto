@@ -166,7 +166,6 @@ namespace nlohmann {
             const json &operator*() const { return deref(); }
             const json *operator->() const { return &deref(); }
 
-            // For object iterators
             const std::string &key() const {
                 static const std::string empty_key;
                 if (j_ && j_->is_object() && j_->obj_ && idx_ < j_->obj_->size())
@@ -200,7 +199,6 @@ namespace nlohmann {
 
         iterator end() const { return iterator(this, size()); }
 
-        // ── find ────────────────────────────────────────────────────────────────
         bool contains(const std::string &key) const { return find(key) != end(); }
         bool contains(const char *key) const { return find(key) != end(); }
 
@@ -216,7 +214,6 @@ namespace nlohmann {
 
         iterator find(const char *key) const { return find(std::string(key)); }
 
-        // ── value(key, default) ─────────────────────────────────────────────────
         const json &value(const std::string &key, const json &def) const {
             auto it = find(key);
             return (it != end()) ? *it : def;
@@ -234,9 +231,7 @@ namespace nlohmann {
             }
         }
 
-        // ── parse ────────────────────────────────────────────────────────────────
-        // If allow_exceptions=false: returns discarded value on parse error.
-        static json parse(const std::string &s, std::nullptr_t /*cb*/  = nullptr,
+        static json parse(const std::string &s, std::nullptr_t   = nullptr,
                           bool allow_exceptions = true) {
             const char *p = s.c_str();
             const char *end = p + s.size();
@@ -256,17 +251,16 @@ namespace nlohmann {
             }
         }
 
-        // ── dump ─────────────────────────────────────────────────────────────────
-        std::string dump(int /*indent*/  = -1) const {
+        std::string dump(int   = -1) const {
             std::ostringstream os;
             serialize(os);
             return os.str();
         }
 
     private:
-        // ── Storage ─────────────────────────────────────────────────────────────
+        
         value_t type_{value_t::null};
-        std::string s_; // string value
+        std::string s_; 
         union {
             bool b_;
             int64_t i_;
@@ -274,7 +268,7 @@ namespace nlohmann {
             double d_;
         };
 
-        array_t *arr_{nullptr}; // heap-allocated to keep sizeof small
+        array_t *arr_{nullptr}; 
         object_t *obj_{nullptr};
 
         void clear() noexcept {
@@ -443,7 +437,6 @@ namespace nlohmann {
             return obj_->back().second;
         }
 
-        // ── Recursive-descent parser ─────────────────────────────────────────────
         struct Parser {
             const char *pos;
             const char *end;
@@ -491,7 +484,7 @@ namespace nlohmann {
             }
 
             json parse_object() {
-                consume(); // '{'
+                consume(); 
                 json j = json::object();
                 j.obj_ = new object_t();
                 skip_ws();
@@ -520,7 +513,7 @@ namespace nlohmann {
             }
 
             json parse_array() {
-                consume(); // '['
+                consume(); 
                 json j = json::array();
                 j.arr_ = new array_t();
                 skip_ws();
@@ -541,7 +534,7 @@ namespace nlohmann {
             }
 
             std::string parse_string() {
-                consume(); // '"'
+                consume(); 
                 std::string s;
                 while (pos < end) {
                     char c = *pos++;
@@ -577,7 +570,7 @@ namespace nlohmann {
                                 s += '\t';
                                 break;
                             case 'u': {
-                                // 4-hex unicode: decode BMP codepoint to UTF-8
+                                
                                 if (pos + 4 > end)
                                     throw std::invalid_argument("short \\uXXXX");
                                 uint32_t cp = 0;
@@ -713,4 +706,4 @@ namespace nlohmann {
 
     template<>
     inline int json::get<int>() const { return static_cast<int>(get<int64_t>()); }
-} // namespace nlohmann
+} 

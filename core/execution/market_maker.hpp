@@ -185,7 +185,7 @@ class NeuralAlphaMarketMaker {
         }
     }
 
-    void check_stop(double mid, const AlphaSignal& /*sig*/) {
+    void check_stop(double mid, const AlphaSignal& ) {
         double pos = om_.position();
         if (pos == 0.0 || stop_id_ != 0)
             return;

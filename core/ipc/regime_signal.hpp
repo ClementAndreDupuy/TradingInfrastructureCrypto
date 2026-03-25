@@ -102,4 +102,4 @@ namespace trading {
         int fd_;
         const char *ptr_;
     };
-} // namespace trading
+} 

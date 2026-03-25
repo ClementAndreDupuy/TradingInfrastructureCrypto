@@ -1,11 +1,7 @@
-# Core library components
 
-# libwebsockets (required for real WebSocket connections)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBWEBSOCKETS REQUIRED IMPORTED_TARGET libwebsockets)
 
-# libcurl: prefer system package, fall back to runtime-only link.
-# Install: sudo apt install libcurl4-openssl-dev
 find_package(CURL QUIET)
 find_package(OpenSSL QUIET)
 if(NOT TARGET CURL::libcurl)
@@ -19,17 +15,13 @@ if(NOT TARGET CURL::libcurl)
     endif()
 endif()
 
-# nlohmann/json is required.
-# Install: sudo apt install nlohmann-json3-dev
 find_package(nlohmann_json REQUIRED)
 
-# Common types library (header-only)
 add_library(trading_common INTERFACE)
 target_include_directories(trading_common INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-# Binance feed handler library
 add_library(binance_feed
     feeds/binance/binance_feed_handler.cpp
 )
@@ -51,7 +43,6 @@ target_include_directories(binance_feed PUBLIC
 
 target_compile_options(binance_feed PRIVATE ${LIBWEBSOCKETS_CFLAGS_OTHER})
 
-# Kraken feed handler library
 add_library(kraken_feed
     feeds/kraken/kraken_feed_handler.cpp
 )
@@ -73,7 +64,6 @@ target_include_directories(kraken_feed PUBLIC
 
 target_compile_options(kraken_feed PRIVATE ${LIBWEBSOCKETS_CFLAGS_OTHER})
 
-# Coinbase feed handler library
 add_library(coinbase_feed
     feeds/coinbase/coinbase_feed_handler.cpp
 )
@@ -95,7 +85,6 @@ target_include_directories(coinbase_feed PUBLIC
 
 target_compile_options(coinbase_feed PRIVATE ${LIBWEBSOCKETS_CFLAGS_OTHER})
 
-# OKX feed handler library
 add_library(okx_feed
     feeds/okx/okx_feed_handler.cpp
 )
@@ -117,7 +106,6 @@ target_include_directories(okx_feed PUBLIC
 
 target_compile_options(okx_feed PRIVATE ${LIBWEBSOCKETS_CFLAGS_OTHER})
 
-# Install targets
 install(TARGETS binance_feed kraken_feed coinbase_feed okx_feed
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib

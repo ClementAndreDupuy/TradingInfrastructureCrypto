@@ -1,7 +1,5 @@
 #pragma once
 
-// Async ring-buffer logger.
-
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -77,7 +75,7 @@ namespace trading {
 
     struct LogRing {
         alignas(64) std::atomic<uint64_t> head{0};
-        alignas(64) std::atomic<uint64_t> tail{0}; // writer advances tail
+        alignas(64) std::atomic<uint64_t> tail{0}; 
         alignas(512) LogEntry entries[LOG_RING_SIZE];
     };
 
@@ -118,7 +116,7 @@ namespace trading {
                 return;
             if (writer_thread_.joinable())
                 writer_thread_.join();
-            drain(/*force=*/true);
+            drain(true);
         }
 
         ~AsyncLogger() { stop(); }
@@ -131,7 +129,7 @@ namespace trading {
 
         void writer_loop() noexcept {
             while (running_.load(std::memory_order_acquire)) {
-                drain(/*force=*/false);
+                drain(false);
                 std::this_thread::sleep_for(std::chrono::microseconds(50));
             }
         }
@@ -228,7 +226,6 @@ namespace trading {
                 buf[pos++] = tmp[i];
         }
 
-        // Terminal case
         inline void fmt_fields(char *, size_t &, size_t) noexcept {
         }
 
@@ -236,7 +233,6 @@ namespace trading {
         void fmt_fields(char *buf, size_t &pos, size_t cap, const char *key, V &&val,
                         Rest &&... rest) noexcept;
 
-        // Value dispatch
         inline void fmt_value(char *buf, size_t &pos, size_t cap, const char *v) noexcept {
             fmt_append(buf, pos, cap, v);
         }
@@ -292,7 +288,7 @@ namespace trading {
             fmt_value(buf, pos, cap, std::forward<V>(val));
             fmt_fields(buf, pos, cap, std::forward<Rest>(rest)...);
         }
-    } // namespace detail
+    }
 
     template<typename... Args>
     inline void log(LogLevel level, const char *msg, Args &&... args) noexcept {
@@ -311,7 +307,7 @@ namespace trading {
     }
 
     inline void set_log_level(LogLevel lvl) noexcept { AsyncLogger::instance().set_level(lvl); }
-} // namespace trading
+}
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
