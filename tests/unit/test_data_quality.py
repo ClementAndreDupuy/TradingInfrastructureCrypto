@@ -33,7 +33,7 @@ from research.neural_alpha.operations.data_quality import (
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-N_LEVELS = 5
+N_LEVELS = 10
 
 
 def _lob_columns() -> dict:

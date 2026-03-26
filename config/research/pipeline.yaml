@@ -1,4 +1,4 @@
-n_levels: 5
+n_levels: 10
 default_exchanges:
   - BINANCE
   - KRAKEN

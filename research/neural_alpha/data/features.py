@@ -10,7 +10,7 @@ _REVERSION_HORIZON: int = _lcfg["reversion_horizon"]
 _RETURN_CLIP: float = _lcfg["return_clip"]
 _ADV_SEL_THRESH: float = _lcfg["adv_sel_thresh"]
 
-N_LEVELS = 5
+N_LEVELS = 10
 BASE_SCALAR_FEATURES = 19
 D_SCALAR = BASE_SCALAR_FEATURES + N_LEVELS
 TRADE_FLOW_FEATURE_INDICES: dict[str, int] = {

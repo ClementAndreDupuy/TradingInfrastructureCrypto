@@ -327,14 +327,14 @@ TEST(LobPublisher, SlotContentsMatchPublishedData) {
     std::memcpy(&mid, slot0 + 24, 8);
     EXPECT_NEAR(mid, 100.05, 1e-9);
 
-    // Verify best bid price (first element of bid_price[5] at offset 32).
+    // Verify best bid price (first element of bid_price[10] at offset 32).
     double best_bid;
     std::memcpy(&best_bid, slot0 + 32, 8);
     EXPECT_NEAR(best_bid, 100.0, 1e-9);
 
-    // Verify best ask price (at offset 32 + 5*8 bid_price + 5*8 bid_size = 32+80 = 112).
+    // Verify best ask price (at offset 32 + 10*8 bid_price + 10*8 bid_size = 192).
     double best_ask;
-    std::memcpy(&best_ask, slot0 + 112, 8);
+    std::memcpy(&best_ask, slot0 + 192, 8);
     EXPECT_NEAR(best_ask, 100.1, 1e-9);
 
     ::munmap(const_cast<char*>(m), total);
@@ -369,19 +369,19 @@ TEST(LobPublisher, SlotTradeFlowFieldsMatchPublishedData) {
     const char* slot0 = m + trading::LobPublisher::k_header_size;
 
     double last_trade_price = 0.0;
-    std::memcpy(&last_trade_price, slot0 + 192, 8);
+    std::memcpy(&last_trade_price, slot0 + 352, 8);
     EXPECT_NEAR(last_trade_price, 100.12, 1e-9);
 
     double last_trade_size = 0.0;
-    std::memcpy(&last_trade_size, slot0 + 200, 8);
+    std::memcpy(&last_trade_size, slot0 + 360, 8);
     EXPECT_NEAR(last_trade_size, 0.75, 1e-9);
 
     double recent_traded_volume = 0.0;
-    std::memcpy(&recent_traded_volume, slot0 + 208, 8);
+    std::memcpy(&recent_traded_volume, slot0 + 368, 8);
     EXPECT_NEAR(recent_traded_volume, 3.5, 1e-9);
 
     uint8_t trade_direction = 0;
-    std::memcpy(&trade_direction, slot0 + 216, 1);
+    std::memcpy(&trade_direction, slot0 + 376, 1);
     EXPECT_EQ(trade_direction, 1u);
 
     ::munmap(const_cast<char*>(m), total);
@@ -433,7 +433,7 @@ TEST(LobPublisher, BookManagerSnapshotPublishesImmediately) {
     EXPECT_NEAR(best_bid, 50'000.0, 1e-9);
 
     double best_ask;
-    std::memcpy(&best_ask, slot0 + 112, 8);
+    std::memcpy(&best_ask, slot0 + 192, 8);
     EXPECT_NEAR(best_ask, 50'001.0, 1e-9);
 
     ::munmap(const_cast<char*>(m), total);

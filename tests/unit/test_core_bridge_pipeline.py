@@ -33,7 +33,7 @@ else:
     pipeline = None
 
 HEADER_FMT = "<8sIIIIQ32s"
-SLOT_FMT = "<B15sqd" + "d" * 20 + "dddB39s"
+SLOT_FMT = "<B15sqd" + "d" * 40 + "dddB7s"
 HEADER_SIZE = struct.calcsize(HEADER_FMT)
 SLOT_SIZE = struct.calcsize(SLOT_FMT)
 CAPACITY = 8
@@ -63,10 +63,10 @@ def _write_ring(
         for seq, (exchange_id, symbol, ts_ns, mid, last_trade_price, last_trade_size, recent_traded_volume, trade_direction) in slots.items():
             offset = HEADER_SIZE + (seq % CAPACITY) * SLOT_SIZE
             symbol_bytes = symbol.encode("utf-8")[:15].ljust(15, b"\x00")
-            bids = [mid - 1 - i * 0.1 for i in range(5)]
-            bid_sizes = [1.0 + i for i in range(5)]
-            asks = [mid + 1 + i * 0.1 for i in range(5)]
-            ask_sizes = [1.5 + i for i in range(5)]
+            bids = [mid - 1 - i * 0.1 for i in range(10)]
+            bid_sizes = [1.0 + i for i in range(10)]
+            asks = [mid + 1 + i * 0.1 for i in range(10)]
+            ask_sizes = [1.5 + i for i in range(10)]
             payload = struct.pack(
                 SLOT_FMT,
                 exchange_id,
@@ -81,7 +81,7 @@ def _write_ring(
                 last_trade_size,
                 recent_traded_volume,
                 trade_direction,
-                b"\x00" * 39,
+                b"\x00" * 7,
             )
             mm[offset : offset + SLOT_SIZE] = payload
         mm.flush()
@@ -118,8 +118,8 @@ def test_core_bridge_reads_rows_and_drops_overflowed_slots() -> None:
         assert rows[-1]["last_trade_size"] == pytest.approx(0.4)
         assert rows[-1]["recent_traded_volume"] == pytest.approx(2.5)
         assert rows[-1]["trade_direction"] == 1
-        assert "bid_price_5" in rows[-1]
-        assert "ask_size_5" in rows[-1]
+        assert "bid_price_10" in rows[-1]
+        assert "ask_size_10" in rows[-1]
 
 
 @pytest.mark.skipif(pl is None or pipeline is None, reason="polars is not installed")
@@ -137,10 +137,10 @@ def test_collect_l5_ticks_prefers_bridge_then_tops_up(monkeypatch) -> None:
                 "last_trade_size": 0.01,
                 "recent_traded_volume": 0.4,
                 "trade_direction": 1,
-                **{f"bid_price_{i}": 1.0 for i in range(1, 6)},
-                **{f"bid_size_{i}": 1.0 for i in range(1, 6)},
-                **{f"ask_price_{i}": 2.0 for i in range(1, 6)},
-                **{f"ask_size_{i}": 1.0 for i in range(1, 6)},
+                **{f"bid_price_{i}": 1.0 for i in range(1, 11)},
+                **{f"bid_size_{i}": 1.0 for i in range(1, 11)},
+                **{f"ask_price_{i}": 2.0 for i in range(1, 11)},
+                **{f"ask_size_{i}": 1.0 for i in range(1, 11)},
             },
             {
                 "timestamp_ns": 2,
@@ -152,10 +152,10 @@ def test_collect_l5_ticks_prefers_bridge_then_tops_up(monkeypatch) -> None:
                 "last_trade_size": 0.02,
                 "recent_traded_volume": 0.8,
                 "trade_direction": 0,
-                **{f"bid_price_{i}": 1.1 for i in range(1, 6)},
-                **{f"bid_size_{i}": 1.0 for i in range(1, 6)},
-                **{f"ask_price_{i}": 2.1 for i in range(1, 6)},
-                **{f"ask_size_{i}": 1.0 for i in range(1, 6)},
+                **{f"bid_price_{i}": 1.1 for i in range(1, 11)},
+                **{f"bid_size_{i}": 1.0 for i in range(1, 11)},
+                **{f"ask_price_{i}": 2.1 for i in range(1, 11)},
+                **{f"ask_size_{i}": 1.0 for i in range(1, 11)},
             },
         ]
     )
@@ -172,10 +172,10 @@ def test_collect_l5_ticks_prefers_bridge_then_tops_up(monkeypatch) -> None:
                 "last_trade_size": 0.0,
                 "recent_traded_volume": 0.0,
                 "trade_direction": 255,
-                **{f"bid_price_{i}": 1.2 for i in range(1, 6)},
-                **{f"bid_size_{i}": 1.0 for i in range(1, 6)},
-                **{f"ask_price_{i}": 2.2 for i in range(1, 6)},
-                **{f"ask_size_{i}": 1.0 for i in range(1, 6)},
+                **{f"bid_price_{i}": 1.2 for i in range(1, 11)},
+                **{f"bid_size_{i}": 1.0 for i in range(1, 11)},
+                **{f"ask_price_{i}": 2.2 for i in range(1, 11)},
+                **{f"ask_size_{i}": 1.0 for i in range(1, 11)},
             },
             {
                 "timestamp_ns": 4,
@@ -187,10 +187,10 @@ def test_collect_l5_ticks_prefers_bridge_then_tops_up(monkeypatch) -> None:
                 "last_trade_size": 0.0,
                 "recent_traded_volume": 0.0,
                 "trade_direction": 255,
-                **{f"bid_price_{i}": 1.3 for i in range(1, 6)},
-                **{f"bid_size_{i}": 1.0 for i in range(1, 6)},
-                **{f"ask_price_{i}": 2.3 for i in range(1, 6)},
-                **{f"ask_size_{i}": 1.0 for i in range(1, 6)},
+                **{f"bid_price_{i}": 1.3 for i in range(1, 11)},
+                **{f"bid_size_{i}": 1.0 for i in range(1, 11)},
+                **{f"ask_price_{i}": 2.3 for i in range(1, 11)},
+                **{f"ask_size_{i}": 1.0 for i in range(1, 11)},
             },
         ]
     )
@@ -222,10 +222,10 @@ def test_collect_l5_ticks_rejects_missing_exchange(monkeypatch) -> None:
                 "symbol": "BTCUSDT",
                 "best_bid": 1.0,
                 "best_ask": 2.0,
-                **{f"bid_price_{i}": 1.0 for i in range(1, 6)},
-                **{f"bid_size_{i}": 1.0 for i in range(1, 6)},
-                **{f"ask_price_{i}": 2.0 for i in range(1, 6)},
-                **{f"ask_size_{i}": 1.0 for i in range(1, 6)},
+                **{f"bid_price_{i}": 1.0 for i in range(1, 11)},
+                **{f"bid_size_{i}": 1.0 for i in range(1, 11)},
+                **{f"ask_price_{i}": 2.0 for i in range(1, 11)},
+                **{f"ask_size_{i}": 1.0 for i in range(1, 11)},
             }
         ]
     )
