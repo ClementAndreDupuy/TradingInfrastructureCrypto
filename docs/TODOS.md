@@ -23,12 +23,12 @@ Source report: `docs/SHADOW_RUN_SOLUSDT_2026-03-26.md`.
 - **Why:** Current logs do not provide enough context to quickly isolate failing trial payloads.
 - **Scope:** Exception handling + telemetry in continuous retrain loop.
 - **Tasks:**
-  - [ ] Log exception class, message, and stack trace for each retrain failure.
-  - [ ] Log sanitized trial/config payload and selected model metadata for failing iteration.
-  - [ ] Add structured failure counters by error class in shadow summary output.
+  - [x] Log exception class, message, and stack trace for each retrain failure.
+  - [x] Log sanitized trial/config payload and selected model metadata for failing iteration.
+  - [x] Add structured failure counters by error class in shadow summary output.
 - **Acceptance criteria:**
-  - [ ] A forced retrain failure emits stack trace and trial context in a single searchable block.
-  - [ ] Shadow summary includes per-error-class failure counts.
+  - [x] A forced retrain failure emits stack trace and trial context in a single searchable block.
+  - [x] Shadow summary includes per-error-class failure counts.
 
 ## P1 — High (complete in next iteration)
 

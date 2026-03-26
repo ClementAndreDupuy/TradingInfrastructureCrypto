@@ -960,6 +960,123 @@ class TestShadowRetrainCadence:
         session._regime_publisher.close()
 
 
+class TestShadowRetrainDiagnostics:
+    """Verify that retrain failures emit full diagnostics and are counted by error class."""
+
+    def _make_session(self, tmp_path: Path) -> NeuralAlphaShadowSession:
+        cfg = ShadowSessionConfig(
+            log_path=str(tmp_path / "shadow.jsonl"),
+            signal_file=str(tmp_path / "alpha_signal.bin"),
+            exchanges=["BINANCE"],
+            continuous_train_every_ticks=1,
+            min_continuous_train_interval_s=0,
+            regime_retrain_every_ticks=1,
+            min_regime_train_interval_s=0,
+            regime_startup_warmup_s=0,
+            seq_len=8,
+        )
+        session = NeuralAlphaShadowSession(cfg)
+        session._processed_ticks = 1
+        session._last_continuous_train_tick = 0
+        session._last_regime_train_tick = 0
+        session._session_steady_start_ns = 0
+        session._last_continuous_train_steady_ns = 0
+        session._last_regime_train_steady_ns = 0
+        return session
+
+    def test_continuous_retrain_failure_logs_exc_class_and_traceback(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        session = self._make_session(tmp_path)
+
+        def _boom(n_ticks: int) -> None:
+            raise ValueError("injected type mismatch")
+
+        monkeypatch.setattr(session, "train_on_recent", _boom)
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session.time.monotonic_ns",
+            lambda: 700 * 1_000_000_000,
+        )
+
+        session._maybe_continuous_train()
+
+        captured = capsys.readouterr().out
+        assert "exc_class=ValueError" in captured
+        assert "injected type mismatch" in captured
+        assert "Traceback" in captured
+        assert "context=" in captured
+        assert session._retrain_failure_counts == {"ValueError": 1}
+
+        session._log_fp.close()
+        session._publisher.close()
+        session._regime_publisher.close()
+
+    def test_regime_retrain_failure_logs_exc_class_and_traceback(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        session = self._make_session(tmp_path)
+
+        def _boom_collect(n_ticks: int) -> None:
+            raise RuntimeError("bad data")
+
+        monkeypatch.setattr(session, "_collect_training_ticks", _boom_collect)
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session.time.monotonic_ns",
+            lambda: 1200 * 1_000_000_000,
+        )
+
+        session._maybe_regime_retrain()
+
+        captured = capsys.readouterr().out
+        assert "exc_class=RuntimeError" in captured
+        assert "bad data" in captured
+        assert "Traceback" in captured
+        assert session._regime_retrain_failure_counts == {"RuntimeError": 1}
+
+        session._log_fp.close()
+        session._publisher.close()
+        session._regime_publisher.close()
+
+    def test_summary_includes_per_error_class_failure_counts(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        session = self._make_session(tmp_path)
+        session._retrain_failure_counts = {"ValueError": 3, "RuntimeError": 1}
+        session._regime_retrain_failure_counts = {"KeyError": 2}
+
+        # Minimal signal records so _print_summary doesn't short-circuit
+        session._signal_records = [
+            {
+                "event_index": 1,
+                "session_elapsed_ns": 0,
+                "mid_price": 100.0,
+                "signal": 0.1,
+                "ret_mid_bps": 0.5,
+                "p_calm": 1.0,
+                "p_trending": 0.0,
+                "p_shock": 0.0,
+                "p_illiquid": 0.0,
+                "exchange": "BINANCE",
+                "timestamp_ns": 1,
+                "timestamp_exchange_ns": 1,
+                "timestamp_local_ns": 1,
+            }
+        ]
+
+        session._print_summary()
+
+        import json as _json
+        captured = capsys.readouterr().out
+        summary_line = next(l for l in captured.splitlines() if "[ShadowSummary]" in l)
+        payload = _json.loads(summary_line.split("[ShadowSummary] ", 1)[1])
+        assert payload["retrain_failure_counts"] == {"ValueError": 3, "RuntimeError": 1}
+        assert payload["regime_retrain_failure_counts"] == {"KeyError": 2}
+
+        session._log_fp.close()
+        session._publisher.close()
+        session._regime_publisher.close()
+
+
 class TestShadowTimestampMetrics:
     def test_regime_churn_summary_reports_switch_rate_and_confidence(self) -> None:
         metrics = _summarise_regime_churn(
