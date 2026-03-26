@@ -1,5 +1,5 @@
 {
-  "trained_at_ns": 1774550305304403000,
+  "trained_at_ns": 1774557488899288000,
   "train_ticks": 1000,
   "train_epochs": 3,
   "seq_len": 64,
@@ -7,10 +7,10 @@
   "d_temporal": 64,
   "n_temp_layers": 1,
   "metrics": {
-    "loss_return": 0.057061584666371346,
-    "loss_direction": 0.9442340135574341,
-    "loss_risk": 0.7073005735874176,
-    "loss_tc": 1.470570651918024e-06,
-    "loss_total": 1.4507569670677185
+    "loss_return": 0.0700184516608715,
+    "loss_direction": 1.2608144879341125,
+    "loss_risk": 0.42369629442691803,
+    "loss_tc": 3.12547643943617e-06,
+    "loss_total": 1.2768732905387878
   }
 }
