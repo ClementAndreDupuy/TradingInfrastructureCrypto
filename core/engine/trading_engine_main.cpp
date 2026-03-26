@@ -92,7 +92,7 @@ namespace {
         return false;
     }
 
-    void stop_handler(int ) { g_running.store(false, std::memory_order_release); }
+    void stop_handler(int) { g_running.store(false, std::memory_order_release); }
 
     void setup_signal_handlers() {
         std::signal(SIGINT, stop_handler);
@@ -292,7 +292,7 @@ namespace {
         metadata.urgency = intent.urgency;
         return metadata;
     }
-} 
+}
 
 auto main(int argc, char **argv) -> int {
     try {
@@ -377,8 +377,9 @@ auto main(int argc, char **argv) -> int {
             kraken_feed, run_kraken, "KRAKEN", opts.symbol);
         const double okx_tick =
                 engine::refresh_tick_size_for_book_init(okx_feed, run_okx, "OKX", opts.symbol);
-        const double coinbase_tick = engine::refresh_tick_size_for_book_init(
-            coinbase_feed, run_coinbase, "COINBASE", opts.symbol);
+        //const double coinbase_tick = engine::refresh_tick_size_for_book_init(
+        //    coinbase_feed, run_coinbase, "COINBASE", opts.symbol);
+        const double coinbase_tick = engine::k_default_fallback_tick_size;
 
         const size_t binance_levels = levels_for_tick(binance_tick);
         const size_t kraken_levels = levels_for_tick(kraken_tick);
@@ -432,6 +433,11 @@ auto main(int argc, char **argv) -> int {
             log_loaded_credential("OKX", "api_passphrase", okx_api_passphrase);
         }
 
+        if (run_coinbase) {
+            log_loaded_credential("COINBASE", "api_key", coinbase_api_key);
+            log_loaded_credential("COINBASE", "api_secret", coinbase_api_secret);
+        }
+
         const RetryPolicy retry_policy{engine_cfg.retry_max_attempts, engine_cfg.retry_backoff_ms};
         BinanceConnector binance(
             binance_api_key, binance_api_secret,
@@ -449,16 +455,16 @@ auto main(int argc, char **argv) -> int {
 
         ShadowConfig shadow_cfg = ShadowConfig::from_yaml_values(
             risk_cfg.binance_taker_fee_bps, risk_cfg.binance_taker_fee_bps,
-            risk_cfg.kraken_taker_fee_bps,  risk_cfg.kraken_taker_fee_bps,
-            risk_cfg.okx_taker_fee_bps,     risk_cfg.okx_taker_fee_bps,
+            risk_cfg.kraken_taker_fee_bps, risk_cfg.kraken_taker_fee_bps,
+            risk_cfg.okx_taker_fee_bps, risk_cfg.okx_taker_fee_bps,
             risk_cfg.coinbase_taker_fee_bps, risk_cfg.coinbase_taker_fee_bps,
             engine_cfg.shadow_log_path.c_str());
         shadow_cfg.base_latency_ns = engine_cfg.shadow_base_latency_ns;
         shadow_cfg.latency_jitter_ns = engine_cfg.shadow_latency_jitter_ns;
         shadow_cfg.impact_slippage_per_notional_bps =
-            engine_cfg.shadow_impact_slippage_per_notional_bps;
+                engine_cfg.shadow_impact_slippage_per_notional_bps;
         shadow_cfg.queue_match_fraction_per_check =
-            engine_cfg.shadow_queue_match_fraction_per_check;
+                engine_cfg.shadow_queue_match_fraction_per_check;
         ShadowEngine shadow_engine(binance_book, kraken_book, okx_book, coinbase_book, shadow_cfg);
 
         ReconciliationService reconciliation;
@@ -545,17 +551,17 @@ auto main(int argc, char **argv) -> int {
         AlphaSignalReader alpha_reader(AlphaSignalReader::k_default_path,
                                        portfolio_cfg.min_entry_signal_bps,
                                        portfolio_cfg.max_risk_score);
-        (void)alpha_reader.open();
+        (void) alpha_reader.open();
         RegimeSignalReader regime_reader(RegimeSignalReader::k_default_path);
-        (void)regime_reader.open();
+        (void) regime_reader.open();
         ParentOrderManager parent_manager;
         ChildOrderScheduler child_scheduler(sched_cfg);
         PortfolioIntentEngine intent_engine(portfolio_cfg);
 
         const auto reconnect_interval =
-            std::chrono::seconds(engine_cfg.reconnect_interval_secs);
+                std::chrono::seconds(engine_cfg.reconnect_interval_secs);
         const auto reconciliation_interval =
-            std::chrono::seconds(engine_cfg.reconciliation_interval_secs);
+                std::chrono::seconds(engine_cfg.reconciliation_interval_secs);
         const auto loop_interval =
                 std::chrono::milliseconds(opts.loop_interval_ms > 0 ? opts.loop_interval_ms : 500);
         auto next_reconnect = std::chrono::steady_clock::now() + reconnect_interval;
@@ -565,9 +571,9 @@ auto main(int argc, char **argv) -> int {
         AlphaSignal last_alpha_signal{};
         PortfolioIntentLogState portfolio_log_state;
         const auto portfolio_log_heartbeat =
-            std::chrono::seconds(engine_cfg.portfolio_log_heartbeat_secs);
+                std::chrono::seconds(engine_cfg.portfolio_log_heartbeat_secs);
         auto venue_quality_log_heartbeat =
-            std::chrono::seconds(engine_cfg.venue_quality_log_heartbeat_secs);
+                std::chrono::seconds(engine_cfg.venue_quality_log_heartbeat_secs);
         auto last_venue_quality_log = std::chrono::steady_clock::time_point{};
 
         LOG_INFO("trading_engine started", "mode", opts.mode.c_str(), "venues", opts.venues.c_str(),
@@ -588,9 +594,9 @@ auto main(int argc, char **argv) -> int {
                 shadow_engine.check_fills();
             }
             const auto submit_decision = [&](
-                                             const SchedulerDecision &decision, Side side,
-                                             double route_qty, const ShadowIntentMetadata &intent_metadata,
-                                             const std::string &reason_codes) {
+                const SchedulerDecision &decision, Side side,
+                double route_qty, const ShadowIntentMetadata &intent_metadata,
+                const std::string &reason_codes) {
                 const auto style_to_string = [](ChildExecutionStyle style) -> const char * {
                     switch (style) {
                         case ChildExecutionStyle::PASSIVE_JOIN:
@@ -734,11 +740,11 @@ auto main(int argc, char **argv) -> int {
 
             PositionLedgerSnapshot portfolio_snapshot =
                     opts.mode == "shadow"
-                            ? PositionLedgerSnapshot{}
-                            : build_live_portfolio_snapshot(opts.symbol, binance_book, kraken_book,
-                                                           okx_book, coinbase_book, reconciliation,
-                                                           run_binance, run_kraken, run_okx,
-                                                           run_coinbase);
+                        ? PositionLedgerSnapshot{}
+                        : build_live_portfolio_snapshot(opts.symbol, binance_book, kraken_book,
+                                                        okx_book, coinbase_book, reconciliation,
+                                                        run_binance, run_kraken, run_okx,
+                                                        run_coinbase);
             if (opts.mode == "shadow") {
                 std::strncpy(portfolio_snapshot.symbol, opts.symbol.c_str(),
                              sizeof(portfolio_snapshot.symbol) - 1);
@@ -803,10 +809,10 @@ auto main(int argc, char **argv) -> int {
             if (opts.mode == "shadow") {
                 const bool halted = kill_switch.is_active() ||
                                     circuit_breaker.check_consecutive_losses() !=
-                                            CircuitCheckResult::OK;
+                                    CircuitCheckResult::OK;
                 const ShadowStateTransition transition = shadow_engine.update_state(
-                        intent.target_global_position, intent.flatten_now, halted,
-                        reason_codes.c_str());
+                    intent.target_global_position, intent.flatten_now, halted,
+                    reason_codes.c_str());
                 if (transition.changed) {
                     LOG_INFO("shadow state transition", "from",
                              ShadowStateMachine::to_string(transition.previous), "to",
