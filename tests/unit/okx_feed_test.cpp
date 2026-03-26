@@ -178,6 +178,8 @@ TEST_F(OkxFeedHandlerTest, WsSnapshotInitializesBook) {
     ASSERT_EQ(last_snapshot_.asks.size(), 2u);
     EXPECT_DOUBLE_EQ(last_snapshot_.bids[0].price, 50000.0);
     EXPECT_DOUBLE_EQ(last_snapshot_.asks[0].price, 50001.0);
+    EXPECT_EQ(last_snapshot_.bids[0].order_count, 1u);
+    EXPECT_EQ(last_snapshot_.asks[0].order_count, 1u);
 }
 
 TEST_F(OkxFeedHandlerTest, DeltaProcessedAfterWsSnapshot) {
@@ -197,6 +199,7 @@ TEST_F(OkxFeedHandlerTest, DeltaProcessedAfterWsSnapshot) {
     EXPECT_DOUBLE_EQ(deltas_[0].price, 50000.0);
     EXPECT_DOUBLE_EQ(deltas_[0].size, 2.0);
     EXPECT_EQ(deltas_[0].side, Side::BID);
+    EXPECT_EQ(deltas_[0].order_count, 1u);
 }
 
 TEST_F(OkxFeedHandlerTest, BufferedUpdateAppliedAfterWsSnapshot) {

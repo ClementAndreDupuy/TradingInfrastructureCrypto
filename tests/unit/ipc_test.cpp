@@ -369,20 +369,64 @@ TEST(LobPublisher, SlotTradeFlowFieldsMatchPublishedData) {
     const char* slot0 = m + trading::LobPublisher::k_header_size;
 
     double last_trade_price = 0.0;
-    std::memcpy(&last_trade_price, slot0 + 352, 8);
+    std::memcpy(&last_trade_price, slot0 + 432, 8);
     EXPECT_NEAR(last_trade_price, 100.12, 1e-9);
 
     double last_trade_size = 0.0;
-    std::memcpy(&last_trade_size, slot0 + 360, 8);
+    std::memcpy(&last_trade_size, slot0 + 440, 8);
     EXPECT_NEAR(last_trade_size, 0.75, 1e-9);
 
     double recent_traded_volume = 0.0;
-    std::memcpy(&recent_traded_volume, slot0 + 368, 8);
+    std::memcpy(&recent_traded_volume, slot0 + 448, 8);
     EXPECT_NEAR(recent_traded_volume, 3.5, 1e-9);
 
     uint8_t trade_direction = 0;
-    std::memcpy(&trade_direction, slot0 + 376, 1);
+    std::memcpy(&trade_direction, slot0 + 456, 1);
     EXPECT_EQ(trade_direction, 1u);
+
+    ::munmap(const_cast<char*>(m), total);
+    ::close(fd);
+}
+
+TEST(LobPublisher, SlotOrderCountFieldsMatchPublishedData) {
+    TempFile tmp;
+    ::unlink(tmp.path.c_str());
+
+    trading::LobPublisher pub(tmp.path);
+    ASSERT_TRUE(pub.open());
+
+    std::vector<trading::PriceLevel> bids = {
+        {100.0, 1.5, 12}, {99.9, 2.0, 8}};
+    std::vector<trading::PriceLevel> asks = {
+        {100.1, 1.5, 15}, {100.2, 2.0, 9}};
+
+    pub.publish(trading::Exchange::OKX, "BTCUSDT", 123'456'789LL, 100.05, bids, asks, trading::TradeFlow{});
+
+    const size_t total = trading::LobPublisher::k_header_size +
+                         trading::LobPublisher::k_capacity *
+                             trading::LobPublisher::k_slot_size;
+    int fd = ::open(tmp.path.c_str(), O_RDONLY);
+    ASSERT_GE(fd, 0);
+    const char* m =
+        static_cast<const char*>(::mmap(nullptr, total, PROT_READ, MAP_SHARED, fd, 0));
+    ASSERT_NE(m, MAP_FAILED);
+    const char* slot0 = m + trading::LobPublisher::k_header_size;
+
+    uint32_t best_bid_order_count = 0;
+    std::memcpy(&best_bid_order_count, slot0 + 352, 4);
+    EXPECT_EQ(best_bid_order_count, 12u);
+
+    uint32_t second_bid_order_count = 0;
+    std::memcpy(&second_bid_order_count, slot0 + 356, 4);
+    EXPECT_EQ(second_bid_order_count, 8u);
+
+    uint32_t best_ask_order_count = 0;
+    std::memcpy(&best_ask_order_count, slot0 + 392, 4);
+    EXPECT_EQ(best_ask_order_count, 15u);
+
+    uint32_t second_ask_order_count = 0;
+    std::memcpy(&second_ask_order_count, slot0 + 396, 4);
+    EXPECT_EQ(second_ask_order_count, 9u);
 
     ::munmap(const_cast<char*>(m), total);
     ::close(fd);

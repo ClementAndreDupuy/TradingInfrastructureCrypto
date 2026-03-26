@@ -161,13 +161,18 @@ PYBIND11_MODULE(trading_core, m) {
     py::class_<PriceLevel>(m, "PriceLevel")
         .def(py::init<>())
         .def(py::init<double, double>(), py::arg("price"), py::arg("size"))
+        .def(py::init<double, double, uint32_t>(), py::arg("price"), py::arg("size"),
+             py::arg("order_count"))
         .def_readwrite("price", &PriceLevel::price)
         .def_readwrite("size", &PriceLevel::size)
+        .def_readwrite("order_count", &PriceLevel::order_count)
         .def("__eq__", [](const PriceLevel& a,
-                          const PriceLevel& b) { return a.price == b.price && a.size == b.size; })
+                          const PriceLevel& b) {
+            return a.price == b.price && a.size == b.size && a.order_count == b.order_count;
+        })
         .def("__repr__", [](const PriceLevel& pl) {
             return "PriceLevel(price=" + fmt_double(pl.price) + ", size=" + fmt_double(pl.size) +
-                   ")";
+                   ", order_count=" + std::to_string(pl.order_count) + ")";
         });
 
     py::class_<Delta>(m, "Delta")
@@ -175,6 +180,7 @@ PYBIND11_MODULE(trading_core, m) {
         .def_readwrite("side", &Delta::side)
         .def_readwrite("price", &Delta::price)
         .def_readwrite("size", &Delta::size)
+        .def_readwrite("order_count", &Delta::order_count)
         .def_readwrite("sequence", &Delta::sequence)
         .def_readwrite("timestamp_exchange_ns", &Delta::timestamp_exchange_ns)
         .def_readwrite("timestamp_local_ns", &Delta::timestamp_local_ns)

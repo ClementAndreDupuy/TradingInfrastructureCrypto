@@ -22,11 +22,15 @@ namespace trading {
     struct PriceLevel {
         double price;
         double size;
+        uint32_t order_count;
 
-        PriceLevel() : price(0.0), size(0.0) {
+        PriceLevel() : price(0.0), size(0.0), order_count(0) {
         }
 
-        PriceLevel(double p, double s) : price(p), size(s) {
+        PriceLevel(double p, double s) : price(p), size(s), order_count(0) {
+        }
+
+        PriceLevel(double p, double s, uint32_t oc) : price(p), size(s), order_count(oc) {
         }
     };
 
@@ -34,12 +38,13 @@ namespace trading {
         Side side;
         double price;
         double size;
+        uint32_t order_count;
         uint64_t sequence;
         int64_t timestamp_exchange_ns;
         int64_t timestamp_local_ns;
 
         Delta()
-            : side(Side::BID), price(0.0), size(0.0), sequence(0), timestamp_exchange_ns(0),
+            : side(Side::BID), price(0.0), size(0.0), order_count(0), sequence(0), timestamp_exchange_ns(0),
               timestamp_local_ns(0) {
         }
     };
