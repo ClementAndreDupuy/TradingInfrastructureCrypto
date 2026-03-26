@@ -1,0 +1,16 @@
+{
+  "trained_at_ns": 1774508693770099000,
+  "train_ticks": 2000,
+  "train_epochs": 5,
+  "seq_len": 64,
+  "d_spatial": 32,
+  "d_temporal": 64,
+  "n_temp_layers": 1,
+  "metrics": {
+    "loss_return": 0.01568424499904116,
+    "loss_direction": 1.8852669994036357,
+    "loss_risk": 0.014639430679380894,
+    "loss_tc": 1.1098345642797843e-05,
+    "loss_total": 1.8986525734265645
+  }
+}

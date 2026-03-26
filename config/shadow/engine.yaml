@@ -1,7 +1,7 @@
 reconnect_interval_secs: 1
 reconciliation_interval_secs: 30
-portfolio_log_heartbeat_secs: 15
-venue_quality_log_heartbeat_secs: 60
+portfolio_log_heartbeat_secs: 180
+venue_quality_log_heartbeat_secs: 180
 
 default_latency_penalty_bps: 0.5
 default_risk_penalty_bps: 0.2

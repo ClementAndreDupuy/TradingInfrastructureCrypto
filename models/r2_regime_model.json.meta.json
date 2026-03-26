@@ -1,0 +1,20 @@
+{
+  "trained_at_ns": 1774508712540755000,
+  "train_rows": 2000,
+  "train_window_ticks": 2000,
+  "regime_retrain_every_ticks": 1000,
+  "spread_means": [
+    1.705317373281163,
+    3.507896913884528,
+    0.8334112379559998,
+    0.8334112379558927
+  ],
+  "spread_range": 2.6744856759286355,
+  "regime_names": [
+    "calm",
+    "illiquid",
+    "trending",
+    "shock"
+  ],
+  "artifact_version": "r2-regime-hmm-v1"
+}
