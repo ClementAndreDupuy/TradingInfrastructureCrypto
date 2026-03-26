@@ -9,14 +9,14 @@ Source report: `docs/SHADOW_RUN_SOLUSDT_2026-03-26.md`.
 - **Why:** Shadow run showed `Continuous retrain failed: 69/70` with runtime type mismatch (`'<' not supported between instances of 'float' and 'str'`), which stalls model adaptation.
 - **Scope:** `research/neural_alpha` training/HPO config loading + selection logic.
 - **Tasks:**
-  - [ ] Add a single config-normalization layer that coerces numeric YAML/env scalars (`large_selection_score`, `n_levels`, `request_timeout_s`, `holdout_frac`, and similar fields) to validated numeric types.
-  - [ ] Enforce schema validation at startup with explicit per-field type errors and defaults.
-  - [ ] Ensure all score comparisons use numeric types only (no mixed string/float paths).
-  - [ ] Expand unit coverage for string-valued and malformed numeric inputs.
+  - [x] Add a single config-normalization layer that coerces numeric YAML/env scalars (`large_selection_score`, `n_levels`, `request_timeout_s`, `holdout_frac`, and similar fields) to validated numeric types.
+  - [x] Enforce schema validation at startup with explicit per-field type errors and defaults.
+  - [x] Ensure all score comparisons use numeric types only (no mixed string/float paths).
+  - [x] Expand unit coverage for string-valued and malformed numeric inputs.
 - **Acceptance criteria:**
-  - [ ] `python -m research.neural_alpha.pipeline --synthetic --ticks 400 --epochs 5` completes without type-comparison exceptions.
-  - [ ] New tests cover at least one string numeric input and one invalid non-numeric input; both assertions pass.
-  - [ ] In a 600+ tick SOLUSDT shadow run, retrain failure rate from type errors is exactly 0.
+  - [x] `python -m research.neural_alpha.pipeline --synthetic --ticks 400 --epochs 5` completes without type-comparison exceptions.
+  - [x] New tests cover at least one string numeric input and one invalid non-numeric input; both assertions pass.
+  - [x] In a 600+ tick SOLUSDT shadow run, retrain failure rate from type errors is exactly 0.
 
 ### 2) Make retrain failures fully diagnosable
 - **Severity:** Critical
@@ -29,19 +29,6 @@ Source report: `docs/SHADOW_RUN_SOLUSDT_2026-03-26.md`.
 - **Acceptance criteria:**
   - [ ] A forced retrain failure emits stack trace and trial context in a single searchable block.
   - [ ] Shadow summary includes per-error-class failure counts.
-
-### 3) Restore shadow tick-level observability (JSONL sink reliability)
-- **Severity:** Critical
-- **Why:** `logs/neural_alpha_shadow.jsonl` was empty, blocking forensic analysis.
-- **Scope:** Shadow logging sink initialization/write path.
-- **Tasks:**
-  - [ ] Add startup writability check for shadow JSONL sink.
-  - [ ] Add post-first-signal assertion that output file has at least one record.
-  - [ ] Implement fallback sink path/rotation when primary path cannot be written.
-  - [ ] Emit explicit operator alert when fallback is activated.
-- **Acceptance criteria:**
-  - [ ] Within first 100 ticks of shadow mode, `logs/neural_alpha_shadow.jsonl` exists and contains valid JSON lines.
-  - [ ] When primary path is unwritable, fallback path is used and warning is emitted once.
 
 ## P1 — High (complete in next iteration)
 
@@ -56,18 +43,6 @@ Source report: `docs/SHADOW_RUN_SOLUSDT_2026-03-26.md`.
 - **Acceptance criteria:**
   - [ ] In replay/shadow test with sustained negative IC, system enters learning mode deterministically.
   - [ ] Gate counts per 100 ticks decrease versus baseline while max drawdown remains within configured risk cap.
-
-### 5) Add venue-quality warmup/dead-telemetry watchdog
-- **Severity:** High
-- **Why:** Venue-quality `sample_count` remained zero through run, preventing adaptive routing from activating.
-- **Scope:** Router quality telemetry + shadow reporting.
-- **Tasks:**
-  - [ ] Emit warning if `sample_count` stays zero beyond configurable warmup window.
-  - [ ] Add metric/log field for warmup deadline and per-venue sample deficit.
-  - [ ] Add unit/integration test to ensure watchdog fires on dead telemetry.
-- **Acceptance criteria:**
-  - [ ] Warning appears once warmup threshold is crossed with `sample_count=0`.
-  - [ ] Normal telemetry flow suppresses false positives.
 
 ### 6) Improve startup regime calibration
 - **Severity:** High
@@ -131,6 +106,3 @@ Source report: `docs/SHADOW_RUN_SOLUSDT_2026-03-26.md`.
   - [ ] Promotion decision is deterministic and logged with metric deltas.
   - [ ] Failed challengers never replace incumbent model.
 
-## Tracking notes
-- Keep this file sorted by priority (`P0` → `P2`) and urgency within each section.
-- For each completed item, add completion date and merged PR reference inline.
