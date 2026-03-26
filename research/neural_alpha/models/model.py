@@ -135,6 +135,8 @@ class CryptoAlphaNet(nn.Module):
         n_levels: int = N_LEVELS,
     ) -> None:
         super().__init__()
+        self.n_levels = n_levels
+        self.d_scalar = d_scalar
         self.spatial_enc = LOBSpatialEncoder(
             d_model=d_spatial,
             n_heads=n_lob_heads,
@@ -169,8 +171,18 @@ class CryptoAlphaNet(nn.Module):
             raise ValueError(f"scalar must have shape (B, T, D_SCALAR), got {tuple(scalar.shape)}")
         if lob.shape[0] != scalar.shape[0] or lob.shape[1] != scalar.shape[1]:
             raise ValueError("lob and scalar batch/time dimensions must match")
+        if lob.shape[2] != self.n_levels:
+            raise ValueError(
+                f"lob level dimension must be {self.n_levels} to match IPC LOB depth, "
+                f"got {lob.shape[2]}"
+            )
         if lob.shape[-1] != 4:
             raise ValueError("lob last dimension must be 4: [bid_px,bid_sz,ask_px,ask_sz]")
+        if scalar.shape[-1] != self.d_scalar:
+            raise ValueError(
+                f"scalar last dimension must be {self.d_scalar} to match feature pipeline, "
+                f"got {scalar.shape[-1]}"
+            )
 
         spatial = self.spatial_enc(lob)
         fused = self.fusion(self.temporal_enc(torch.cat([spatial, scalar], dim=-1), mask))

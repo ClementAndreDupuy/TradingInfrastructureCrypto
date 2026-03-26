@@ -21,6 +21,7 @@ namespace trading {
     public:
         static constexpr const char *k_default_path = "/tmp/trt_ipc/trt_lob_feed.bin";
         static constexpr size_t k_capacity = 10000;
+        static constexpr size_t k_levels = 10;
         static constexpr size_t k_slot_size = 464;
         static constexpr size_t k_header_size = 64;
 
@@ -29,12 +30,12 @@ namespace trading {
             char symbol[15];
             int64_t timestamp_ns;
             double mid_price;
-            double bid_price[10];
-            double bid_size[10];
-            double ask_price[10];
-            double ask_size[10];
-            uint32_t bid_order_count[10];
-            uint32_t ask_order_count[10];
+            double bid_price[k_levels];
+            double bid_size[k_levels];
+            double ask_price[k_levels];
+            double ask_size[k_levels];
+            uint32_t bid_order_count[k_levels];
+            uint32_t ask_order_count[k_levels];
             double last_trade_price;
             double last_trade_size;
             double recent_traded_volume;
@@ -125,7 +126,7 @@ namespace trading {
             slot.timestamp_ns = timestamp_ns;
             slot.mid_price = mid_price;
 
-            for (size_t i = 0; i < 10; ++i) {
+            for (size_t i = 0; i < k_levels; ++i) {
                 slot.bid_price[i] = (i < bids.size()) ? bids[i].price : 0.0;
                 slot.bid_size[i] = (i < bids.size()) ? bids[i].size : 0.0;
                 slot.ask_price[i] = (i < asks.size()) ? asks[i].price : 0.0;
