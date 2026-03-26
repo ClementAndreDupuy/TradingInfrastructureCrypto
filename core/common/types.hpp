@@ -61,6 +61,18 @@ namespace trading {
         }
     };
 
+    struct TradeFlow {
+        double last_trade_price;
+        double last_trade_size;
+        double recent_traded_volume;
+        uint8_t trade_direction;
+
+        TradeFlow()
+            : last_trade_price(0.0), last_trade_size(0.0), recent_traded_volume(0.0),
+              trade_direction(255) {
+        }
+    };
+
     inline const char *exchange_to_string(Exchange ex) {
         switch (ex) {
             case Exchange::BINANCE:

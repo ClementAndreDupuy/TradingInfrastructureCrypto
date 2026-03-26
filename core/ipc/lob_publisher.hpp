@@ -33,7 +33,11 @@ namespace trading {
             double bid_size[5];
             double ask_price[5];
             double ask_size[5];
-            char reserved[64];
+            double last_trade_price;
+            double last_trade_size;
+            double recent_traded_volume;
+            uint8_t trade_direction;
+            char reserved[39];
         };
 
         static_assert(alignof(LobSlot) == 8, "LobSlot must remain 8-byte aligned");
@@ -103,7 +107,7 @@ namespace trading {
 
         void publish(Exchange exchange, const std::string &symbol, int64_t timestamp_ns,
                      double mid_price, const std::vector<PriceLevel> &bids,
-                     const std::vector<PriceLevel> &asks) noexcept {
+                     const std::vector<PriceLevel> &asks, const TradeFlow &trade_flow) noexcept {
             if (!is_open()) {
                 return;
             }
@@ -125,6 +129,10 @@ namespace trading {
                 slot.ask_price[i] = (i < asks.size()) ? asks[i].price : 0.0;
                 slot.ask_size[i] = (i < asks.size()) ? asks[i].size : 0.0;
             }
+            slot.last_trade_price = trade_flow.last_trade_price;
+            slot.last_trade_size = trade_flow.last_trade_size;
+            slot.recent_traded_volume = trade_flow.recent_traded_volume;
+            slot.trade_direction = trade_flow.trade_direction;
 
             header_->write_seq.store(write_seq + 1, std::memory_order_release);
         }

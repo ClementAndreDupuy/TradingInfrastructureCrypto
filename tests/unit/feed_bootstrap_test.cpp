@@ -33,6 +33,7 @@ class FakeFeedHandler {
   public:
     using SnapshotCallback = std::function<void(const trading::Snapshot&)>;
     using DeltaCallback = std::function<void(const trading::Delta&)>;
+    using TradeCallback = std::function<void(const trading::TradeFlow&)>;
 
     explicit FakeFeedHandler(
         double tick_size, trading::Result refresh_result = trading::Result::SUCCESS)
@@ -40,6 +41,7 @@ class FakeFeedHandler {
 
     void set_snapshot_callback(SnapshotCallback cb) { snapshot_callback_ = std::move(cb); }
     void set_delta_callback(DeltaCallback cb) { delta_callback_ = std::move(cb); }
+    void set_trade_callback(TradeCallback cb) { trade_callback_ = std::move(cb); }
 
     auto refresh_tick_size() -> trading::Result {
         ++refresh_calls_;
@@ -49,7 +51,8 @@ class FakeFeedHandler {
     auto start() -> trading::Result {
         start_called_ = true;
         callbacks_wired_before_start_ = static_cast<bool>(snapshot_callback_) &&
-                                        static_cast<bool>(delta_callback_);
+                                        static_cast<bool>(delta_callback_) &&
+                                        static_cast<bool>(trade_callback_);
         if (snapshot_callback_) {
             trading::Snapshot snapshot;
             snapshot.symbol = "BTCUSDT";
@@ -78,6 +81,7 @@ class FakeFeedHandler {
     bool callbacks_wired_before_start_{false};
     SnapshotCallback snapshot_callback_;
     DeltaCallback delta_callback_;
+    TradeCallback trade_callback_;
 };
 
 TEST(FeedBootstrap, RefreshTickSizeForBookInitUsesExchangeValueWhenAvailable) {

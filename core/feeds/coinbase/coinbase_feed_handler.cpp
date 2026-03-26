@@ -332,6 +332,7 @@ namespace trading {
 
         make_sub("heartbeats", false);
         make_sub("level2", true);
+        make_sub("market_trades", true);
         return messages;
     }
 
@@ -768,6 +769,41 @@ namespace trading {
             last_heartbeat_ns_.store(http::now_ns(), std::memory_order_release);
             if (exchange_ts > 0) {
                 last_event_time_exchange_ns_.store(exchange_ts, std::memory_order_release);
+            }
+            return Result::SUCCESS;
+        }
+        if (channel == "market_trades") {
+            auto events_it = json.find("events");
+            if (events_it == json.end() || !events_it->is_array()) {
+                return Result::SUCCESS;
+            }
+            for (const auto &event: *events_it) {
+                auto trades_it = event.find("trades");
+                if (trades_it == event.end() || !trades_it->is_array()) {
+                    continue;
+                }
+                for (const auto &trade_json: *trades_it) {
+                    auto price_it = trade_json.find("price");
+                    auto size_it = trade_json.find("size");
+                    if (price_it == trade_json.end() || size_it == trade_json.end()) {
+                        continue;
+                    }
+                    try {
+                        TradeFlow trade;
+                        trade.last_trade_price = std::stod(price_it->get<std::string>());
+                        trade.last_trade_size = std::stod(size_it->get<std::string>());
+                        const std::string side = trade_json.value("side", std::string());
+                        if (side == "BUY") {
+                            trade.trade_direction = 0;
+                        } else if (side == "SELL") {
+                            trade.trade_direction = 1;
+                        }
+                        if (trade_callback_ != nullptr) {
+                            trade_callback_(trade);
+                        }
+                    } catch (const std::exception &) {
+                    }
+                }
             }
             return Result::SUCCESS;
         }

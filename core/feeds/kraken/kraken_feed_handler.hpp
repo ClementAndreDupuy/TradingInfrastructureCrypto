@@ -21,6 +21,7 @@ namespace trading {
     public:
         using SnapshotCallback = std::function<void(const Snapshot &)>;
         using DeltaCallback = std::function<void(const Delta &)>;
+        using TradeCallback = std::function<void(const TradeFlow &)>;
         using ErrorCallback = std::function<void(const std::string &)>;
 
         explicit KrakenFeedHandler(const std::string &symbol,
@@ -35,6 +36,7 @@ namespace trading {
 
         void set_snapshot_callback(SnapshotCallback cb) { snapshot_callback_ = std::move(cb); }
         void set_delta_callback(DeltaCallback cb) { delta_callback_ = std::move(cb); }
+        void set_trade_callback(TradeCallback cb) { trade_callback_ = std::move(cb); }
         void set_error_callback(ErrorCallback cb) { error_callback_ = std::move(cb); }
 
         Result refresh_tick_size() { return fetch_tick_size(); }
@@ -98,6 +100,7 @@ namespace trading {
 
         SnapshotCallback snapshot_callback_;
         DeltaCallback delta_callback_;
+        TradeCallback trade_callback_;
         ErrorCallback error_callback_;
 
         void ws_event_loop();

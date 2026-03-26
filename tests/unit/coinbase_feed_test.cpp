@@ -24,6 +24,7 @@ class CoinbaseFeedHandlerTest : public ::testing::Test {
         });
 
         handler_->set_delta_callback([this](const Delta& delta) { deltas_.push_back(delta); });
+        handler_->set_trade_callback([this](const TradeFlow& trade) { trades_.push_back(trade); });
 
         handler_->set_error_callback([this](const std::string& error) { last_error_ = error; });
     }
@@ -42,6 +43,7 @@ class CoinbaseFeedHandlerTest : public ::testing::Test {
     std::unique_ptr<CoinbaseFeedHandler> handler_;
     Snapshot last_snapshot_;
     std::vector<Delta> deltas_;
+    std::vector<TradeFlow> trades_;
     std::string last_error_;
     int snapshot_count_ = 0;
 };
@@ -55,18 +57,23 @@ TEST_F(CoinbaseFeedHandlerTest, HandlerCreation) {
 
 TEST_F(CoinbaseFeedHandlerTest, SubscriptionMessagesIncludeHeartbeatsAndLevel2) {
     const auto messages = handler_->build_subscription_messages();
-    ASSERT_EQ(messages.size(), 2u);
+    ASSERT_EQ(messages.size(), 3u);
 
     const auto heartbeat = nlohmann::json::parse(messages[0]);
     const auto level2 = nlohmann::json::parse(messages[1]);
+    const auto trades = nlohmann::json::parse(messages[2]);
 
     EXPECT_EQ(heartbeat.at("channel").get<std::string>(), "heartbeats");
     EXPECT_EQ(level2.at("channel").get<std::string>(), "level2");
+    EXPECT_EQ(trades.at("channel").get<std::string>(), "market_trades");
     EXPECT_FALSE(heartbeat.contains("product_ids"));
     ASSERT_TRUE(level2.contains("product_ids"));
+    ASSERT_TRUE(trades.contains("product_ids"));
     EXPECT_EQ(level2.at("product_ids").size(), 1u);
+    EXPECT_EQ(trades.at("product_ids").size(), 1u);
     EXPECT_FALSE(heartbeat.contains("jwt"));
     EXPECT_FALSE(level2.contains("jwt"));
+    EXPECT_FALSE(trades.contains("jwt"));
 }
 
 TEST_F(CoinbaseFeedHandlerTest, SubscriptionMessagesAttachJwtWhenCredentialsAvailable) {
@@ -83,7 +90,7 @@ TEST_F(CoinbaseFeedHandlerTest, SubscriptionMessagesAttachJwtWhenCredentialsAvai
         CoinbaseFeedHandler::coinbase_api_key_from_env(),
         CoinbaseFeedHandler::coinbase_api_secret_from_env());
     const auto messages = handler_->build_subscription_messages();
-    ASSERT_EQ(messages.size(), 2u);
+    ASSERT_EQ(messages.size(), 3u);
 
     for (const auto& message : messages) {
         const auto json = nlohmann::json::parse(message);
@@ -124,6 +131,16 @@ TEST_F(CoinbaseFeedHandlerTest, HeartbeatMessagesAreAccepted) {
         R"({"channel":"heartbeats","timestamp":"2026-03-19T12:00:02.000000000Z","events":[{"current_time":"2026-03-19T12:00:02.000000000Z","heartbeat_counter":"10"}]})";
     EXPECT_EQ(handler_->process_message(heartbeat), Result::SUCCESS);
     EXPECT_TRUE(last_error_.empty());
+}
+
+TEST_F(CoinbaseFeedHandlerTest, MarketTradesChannelParsesTradeFlow) {
+    const std::string msg =
+        R"({"channel":"market_trades","events":[{"trades":[{"price":"50000.7","size":"0.6","side":"SELL"}]}]})";
+    EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
+    ASSERT_EQ(trades_.size(), 1u);
+    EXPECT_DOUBLE_EQ(trades_[0].last_trade_price, 50000.7);
+    EXPECT_DOUBLE_EQ(trades_[0].last_trade_size, 0.6);
+    EXPECT_EQ(trades_[0].trade_direction, 1u);
 }
 
 TEST_F(CoinbaseFeedHandlerTest, IgnoresLegacyLevel2Channel) {

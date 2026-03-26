@@ -33,7 +33,7 @@ else:
     pipeline = None
 
 HEADER_FMT = "<8sIIIIQ32s"
-SLOT_FMT = "<B15sqd" + "d" * 20 + "64s"
+SLOT_FMT = "<B15sqd" + "d" * 20 + "dddB39s"
 HEADER_SIZE = struct.calcsize(HEADER_FMT)
 SLOT_SIZE = struct.calcsize(SLOT_FMT)
 CAPACITY = 8
@@ -73,7 +73,11 @@ def _write_ring(path: Path, write_seq: int, slots: dict[int, tuple[int, str, int
                 *bid_sizes,
                 *asks,
                 *ask_sizes,
-                b"\x00" * 64,
+                0.0,
+                0.0,
+                0.0,
+                255,
+                b"\x00" * 39,
             )
             mm[offset : offset + SLOT_SIZE] = payload
         mm.flush()

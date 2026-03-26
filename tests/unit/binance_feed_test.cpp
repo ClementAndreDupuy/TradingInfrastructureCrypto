@@ -17,6 +17,7 @@ class BinanceFeedHandlerTest : public ::testing::Test {
             snapshot_count_++;
         });
         handler_->set_delta_callback([this](const Delta& delta) { deltas_.push_back(delta); });
+        handler_->set_trade_callback([this](const TradeFlow& trade) { trades_.push_back(trade); });
         handler_->set_error_callback([this](const std::string& error) { last_error_ = error; });
     }
 
@@ -35,6 +36,7 @@ class BinanceFeedHandlerTest : public ::testing::Test {
     std::unique_ptr<BinanceFeedHandler> handler_;
     Snapshot last_snapshot_;
     std::vector<Delta> deltas_;
+    std::vector<TradeFlow> trades_;
     std::string last_error_;
     int snapshot_count_ = 0;
 };
@@ -59,6 +61,16 @@ TEST_F(BinanceFeedHandlerTest, IgnoreNonDepthMessages) {
     std::string msg = R"({"e":"trade","s":"BTCUSDT","t":12345,"p":"50000.00","q":"1.5"})";
     EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
     EXPECT_TRUE(deltas_.empty());
+}
+
+TEST_F(BinanceFeedHandlerTest, AggTradeParsesTradeFlow) {
+    const std::string msg =
+        R"({"e":"aggTrade","s":"BTCUSDT","p":"50000.00","q":"1.5","m":true})";
+    EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
+    ASSERT_EQ(trades_.size(), 1u);
+    EXPECT_DOUBLE_EQ(trades_[0].last_trade_price, 50000.0);
+    EXPECT_DOUBLE_EQ(trades_[0].last_trade_size, 1.5);
+    EXPECT_EQ(trades_[0].trade_direction, 1u);
 }
 
 TEST_F(BinanceFeedHandlerTest, BuffersParsedDeltasWhileSynchronizing) {

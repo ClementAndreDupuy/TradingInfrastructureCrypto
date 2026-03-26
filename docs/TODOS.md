@@ -49,7 +49,7 @@
 
 ---
 
-#### [ ] 3a. Trade flow data (aggressor direction + recent volume)
+#### [x] 3a. Trade flow data (aggressor direction + recent volume)
 
 **Priority / Severity**
 - HIGH — single biggest missing signal; virtually every published microstructure alpha paper uses trade direction.

@@ -18,6 +18,7 @@ class OkxFeedHandlerTest : public ::testing::Test {
         });
 
         handler_->set_delta_callback([this](const Delta& delta) { deltas_.push_back(delta); });
+        handler_->set_trade_callback([this](const TradeFlow& trade) { trades_.push_back(trade); });
 
         handler_->set_error_callback([this](const std::string& error) { last_error_ = error; });
     }
@@ -30,6 +31,7 @@ class OkxFeedHandlerTest : public ::testing::Test {
     std::unique_ptr<OkxFeedHandler> handler_;
     Snapshot last_snapshot_;
     std::vector<Delta> deltas_;
+    std::vector<TradeFlow> trades_;
     std::string last_error_;
     int snapshot_count_ = 0;
 };
@@ -45,6 +47,16 @@ TEST_F(OkxFeedHandlerTest, IgnoresNonBookMessages) {
     std::string msg = R"({"event":"subscribe","arg":{"channel":"trades","instId":"BTC-USDT"}})";
     EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
     EXPECT_TRUE(deltas_.empty());
+}
+
+TEST_F(OkxFeedHandlerTest, ParsesTradesChannelFlow) {
+    std::string msg =
+        R"({"arg":{"channel":"trades","instId":"BTC-USDT"},"data":[{"px":"50000.1","sz":"0.4","side":"buy"}]})";
+    EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
+    ASSERT_EQ(trades_.size(), 1u);
+    EXPECT_DOUBLE_EQ(trades_[0].last_trade_price, 50000.1);
+    EXPECT_DOUBLE_EQ(trades_[0].last_trade_size, 0.4);
+    EXPECT_EQ(trades_[0].trade_direction, 0u);
 }
 
 TEST_F(OkxFeedHandlerTest, MalformedJsonIsIgnored) {

@@ -231,7 +231,9 @@ namespace trading {
 
         nlohmann::json sub = {
             {"op", "subscribe"},
-            {"args", nlohmann::json::array({{{"channel", "books"}, {"instId", instrument_id_}}})},
+            {"args", nlohmann::json::array(
+                             {{{"channel", "books"}, {"instId", instrument_id_}},
+                              {{"channel", "trades"}, {"instId", instrument_id_}}})},
         };
         session.subscribe_msg = sub.dump();
 
@@ -452,13 +454,51 @@ namespace trading {
             return Result::SUCCESS;
         }
         auto ch_it = arg_it->find("channel");
-        if (ch_it == arg_it->end() || !ch_it->is_string() || ch_it->get<std::string>() != "books") {
+        if (ch_it == arg_it->end() || !ch_it->is_string()) {
             return Result::SUCCESS;
         }
+        const std::string channel = ch_it->get<std::string>();
 
         auto inst_it = arg_it->find("instId");
         if (inst_it == arg_it->end() || !inst_it->is_string() ||
             inst_it->get<std::string>() != instrument_id_) {
+            return Result::SUCCESS;
+        }
+
+        if (channel == "trades") {
+            auto data_it = json.find("data");
+            if (data_it == json.end() || !data_it->is_array()) {
+                return Result::SUCCESS;
+            }
+            for (const auto &entry: *data_it) {
+                if (!entry.is_object()) {
+                    continue;
+                }
+                auto px_it = entry.find("px");
+                auto sz_it = entry.find("sz");
+                if (px_it == entry.end() || sz_it == entry.end()) {
+                    continue;
+                }
+                try {
+                    TradeFlow trade;
+                    trade.last_trade_price = std::stod(px_it->get<std::string>());
+                    trade.last_trade_size = std::stod(sz_it->get<std::string>());
+                    const std::string side = entry.value("side", std::string());
+                    if (side == "buy") {
+                        trade.trade_direction = 0;
+                    } else if (side == "sell") {
+                        trade.trade_direction = 1;
+                    }
+                    if (trade_callback_ != nullptr) {
+                        trade_callback_(trade);
+                    }
+                } catch (const std::exception &) {
+                }
+            }
+            return Result::SUCCESS;
+        }
+
+        if (channel != "books") {
             return Result::SUCCESS;
         }
 
