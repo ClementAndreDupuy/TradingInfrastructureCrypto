@@ -275,13 +275,13 @@ TEST(LobPublisher, PublishAdvancesWriteSeq) {
 
     std::vector<trading::PriceLevel> bids = {{100.0, 1.0}, {99.9, 2.0}};
     std::vector<trading::PriceLevel> asks = {{100.1, 1.0}, {100.2, 2.0}};
-    pub.publish(trading::Exchange::BINANCE, "BTCUSDT", 1'000'000LL, 100.05, bids, asks);
+    pub.publish(trading::Exchange::BINANCE, "BTCUSDT", 1'000'000LL, 100.05, bids, asks, trading::TradeFlow{});
 
     // Allow the release-store to propagate (same process, so it's already visible).
     std::atomic_thread_fence(std::memory_order_acquire);
     EXPECT_EQ(*write_seq_ptr, 1u);
 
-    pub.publish(trading::Exchange::KRAKEN, "BTCUSDT", 2'000'000LL, 100.10, bids, asks);
+    pub.publish(trading::Exchange::KRAKEN, "BTCUSDT", 2'000'000LL, 100.10, bids, asks, trading::TradeFlow{});
     std::atomic_thread_fence(std::memory_order_acquire);
     EXPECT_EQ(*write_seq_ptr, 2u);
 
@@ -301,7 +301,7 @@ TEST(LobPublisher, SlotContentsMatchPublishedData) {
     std::vector<trading::PriceLevel> asks = {
         {100.1, 1.5}, {100.2, 2.0}, {100.3, 3.0}, {100.4, 1.0}, {100.5, 0.5}};
 
-    pub.publish(trading::Exchange::OKX, "BTCUSDT", 123'456'789LL, 100.05, bids, asks);
+    pub.publish(trading::Exchange::OKX, "BTCUSDT", 123'456'789LL, 100.05, bids, asks, trading::TradeFlow{});
 
     // Read slot 0 directly from the file.
     const size_t total = trading::LobPublisher::k_header_size +
@@ -336,6 +336,53 @@ TEST(LobPublisher, SlotContentsMatchPublishedData) {
     double best_ask;
     std::memcpy(&best_ask, slot0 + 112, 8);
     EXPECT_NEAR(best_ask, 100.1, 1e-9);
+
+    ::munmap(const_cast<char*>(m), total);
+    ::close(fd);
+}
+
+TEST(LobPublisher, SlotTradeFlowFieldsMatchPublishedData) {
+    TempFile tmp;
+    ::unlink(tmp.path.c_str());
+
+    trading::LobPublisher pub(tmp.path);
+    ASSERT_TRUE(pub.open());
+
+    std::vector<trading::PriceLevel> bids = {{100.0, 1.5}};
+    std::vector<trading::PriceLevel> asks = {{100.1, 1.5}};
+    trading::TradeFlow trade;
+    trade.last_trade_price = 100.12;
+    trade.last_trade_size = 0.75;
+    trade.recent_traded_volume = 3.5;
+    trade.trade_direction = 1;
+
+    pub.publish(trading::Exchange::OKX, "BTCUSDT", 123'456'789LL, 100.05, bids, asks, trade);
+
+    const size_t total = trading::LobPublisher::k_header_size +
+                         trading::LobPublisher::k_capacity *
+                             trading::LobPublisher::k_slot_size;
+    int fd = ::open(tmp.path.c_str(), O_RDONLY);
+    ASSERT_GE(fd, 0);
+    const char* m =
+        static_cast<const char*>(::mmap(nullptr, total, PROT_READ, MAP_SHARED, fd, 0));
+    ASSERT_NE(m, MAP_FAILED);
+    const char* slot0 = m + trading::LobPublisher::k_header_size;
+
+    double last_trade_price = 0.0;
+    std::memcpy(&last_trade_price, slot0 + 192, 8);
+    EXPECT_NEAR(last_trade_price, 100.12, 1e-9);
+
+    double last_trade_size = 0.0;
+    std::memcpy(&last_trade_size, slot0 + 200, 8);
+    EXPECT_NEAR(last_trade_size, 0.75, 1e-9);
+
+    double recent_traded_volume = 0.0;
+    std::memcpy(&recent_traded_volume, slot0 + 208, 8);
+    EXPECT_NEAR(recent_traded_volume, 3.5, 1e-9);
+
+    uint8_t trade_direction = 0;
+    std::memcpy(&trade_direction, slot0 + 216, 1);
+    EXPECT_EQ(trade_direction, 1u);
 
     ::munmap(const_cast<char*>(m), total);
     ::close(fd);
@@ -409,7 +456,7 @@ TEST(LobPublisher, RingBufferWrapsAround) {
     for (uint64_t i = 0; i < n; ++i) {
         pub.publish(trading::Exchange::BINANCE, "BTCUSDT",
                     static_cast<int64_t>(i), 100.0 + static_cast<double>(i),
-                    bids, asks);
+                    bids, asks, trading::TradeFlow{});
     }
 
     // Check write_seq == n.
@@ -444,7 +491,7 @@ TEST(LobPublisher, PublishWhenClosedIsNoop) {
     std::vector<trading::PriceLevel> bids = {{100.0, 1.0}};
     std::vector<trading::PriceLevel> asks = {{100.1, 1.0}};
     // Must not crash.
-    pub.publish(trading::Exchange::BINANCE, "BTCUSDT", 1LL, 100.0, bids, asks);
+    pub.publish(trading::Exchange::BINANCE, "BTCUSDT", 1LL, 100.0, bids, asks, trading::TradeFlow{});
 }
 
 } // namespace

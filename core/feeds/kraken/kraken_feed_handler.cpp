@@ -33,9 +33,9 @@ namespace trading {
         bool established{false};
         bool closed{false};
         bool send_ping{false};
-        bool send_subscribe{false};
         int64_t last_ping_ns{0};
-        std::string subscribe_msg;
+        size_t pending_subscribe_index{0};
+        std::vector<std::string> subscribe_msgs;
         char frag_buf[131072];
         size_t frag_len{0};
     };
@@ -73,12 +73,16 @@ namespace trading {
             }
 
             case LWS_CALLBACK_CLIENT_WRITEABLE: {
-                if (session->send_subscribe && !session->subscribe_msg.empty()) {
-                    std::vector<unsigned char> buf(LWS_PRE + session->subscribe_msg.size());
-                    std::memcpy(buf.data() + LWS_PRE, session->subscribe_msg.c_str(),
-                                session->subscribe_msg.size());
-                    lws_write(wsi, buf.data() + LWS_PRE, session->subscribe_msg.size(), LWS_WRITE_TEXT);
-                    session->send_subscribe = false;
+                if (session->pending_subscribe_index < session->subscribe_msgs.size()) {
+                    const std::string &subscribe_msg =
+                            session->subscribe_msgs[session->pending_subscribe_index];
+                    std::vector<unsigned char> buf(LWS_PRE + subscribe_msg.size());
+                    std::memcpy(buf.data() + LWS_PRE, subscribe_msg.c_str(), subscribe_msg.size());
+                    lws_write(wsi, buf.data() + LWS_PRE, subscribe_msg.size(), LWS_WRITE_TEXT);
+                    ++session->pending_subscribe_index;
+                    if (session->pending_subscribe_index < session->subscribe_msgs.size()) {
+                        lws_callback_on_writable(wsi);
+                    }
                 } else if (session->send_ping) {
                     unsigned char buf[LWS_PRE + 4] = {};
                     lws_write(wsi, buf + LWS_PRE, 0, LWS_WRITE_PING);
@@ -246,9 +250,12 @@ namespace trading {
         }
 
         const std::string ws_sym = venue_symbols_.kraken_ws;
-        const std::string subscribe_msg =
+        const std::string book_subscribe_msg =
                 R"({"method":"subscribe","params":{"channel":"book","symbol":[")" + ws_sym +
                 R"("],"depth":100,"snapshot":true}})";
+        const std::string trade_subscribe_msg =
+                R"({"method":"subscribe","params":{"channel":"trade","symbol":[")" + ws_sym +
+                R"("],"snapshot":false}})";
 
         KrakenWsSession session;
         session.handler = this;
@@ -273,9 +280,9 @@ namespace trading {
             session.established = false;
             session.closed = false;
             session.send_ping = false;
-            session.send_subscribe = true;
+            session.pending_subscribe_index = 0;
             session.last_ping_ns = 0;
-            session.subscribe_msg = subscribe_msg;
+            session.subscribe_msgs = {book_subscribe_msg, trade_subscribe_msg};
             session.frag_len = 0;
 
             lws_client_connect_info connect_info = {};
@@ -369,7 +376,53 @@ namespace trading {
         }
 
         auto ch_it = json.find("channel");
-        if (ch_it == json.end() || !ch_it->is_string() || ch_it->get<std::string>() != "book") {
+        if (ch_it == json.end() || !ch_it->is_string()) {
+            return Result::SUCCESS;
+        }
+        const std::string channel = ch_it->get<std::string>();
+
+        if (channel == "trade") {
+            auto data_it = json.find("data");
+            if (data_it == json.end() || !data_it->is_array()) {
+                return Result::SUCCESS;
+            }
+            for (const auto &batch: *data_it) {
+                if (!batch.is_object()) {
+                    continue;
+                }
+                auto trades_it = batch.find("trades");
+                if (trades_it == batch.end() || !trades_it->is_array()) {
+                    continue;
+                }
+                for (const auto &entry: *trades_it) {
+                    if (!entry.is_object()) {
+                        continue;
+                    }
+                    auto price_it = entry.find("price");
+                    auto qty_it = entry.find("qty");
+                    if (price_it == entry.end() || qty_it == entry.end()) {
+                        continue;
+                    }
+                    try {
+                        TradeFlow trade;
+                        trade.last_trade_price = std::stod(json_number_to_wire_string(*price_it));
+                        trade.last_trade_size = std::stod(json_number_to_wire_string(*qty_it));
+                        const std::string side = entry.value("side", std::string());
+                        if (side == "buy") {
+                            trade.trade_direction = 0;
+                        } else if (side == "sell") {
+                            trade.trade_direction = 1;
+                        }
+                        if (trade_callback_ != nullptr) {
+                            trade_callback_(trade);
+                        }
+                    } catch (const std::exception &) {
+                    }
+                }
+            }
+            return Result::SUCCESS;
+        }
+        if (channel != "book") {
             return Result::SUCCESS;
         }
 

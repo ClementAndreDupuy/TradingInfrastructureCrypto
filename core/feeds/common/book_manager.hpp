@@ -12,11 +12,13 @@
 namespace trading {
     class BookManager {
     public:
+        using TradeCallback = std::function<void(const TradeFlow &)>;
+
         BookManager(const std::string &symbol, Exchange exchange, double tick_size = 1.0,
                     size_t max_levels = 20000)
             : book_(symbol, exchange, tick_size, max_levels), last_update_steady_ns_(0),
               publisher_(nullptr), last_publish_local_ts_ns_(0), last_publish_exchange_ts_ns_(0),
-              timestamp_issue_count_(0) {
+              timestamp_issue_count_(0), trade_window_start_ns_(0), trade_window_volume_(0.0) {
             pub_bids_.reserve(5);
             pub_asks_.reserve(5);
         }
@@ -55,6 +57,19 @@ namespace trading {
             };
         }
 
+        TradeCallback trade_handler() {
+            return [this](const TradeFlow &trade) {
+                const int64_t now_ns = wall_now_ns();
+                if (trade_window_start_ns_ == 0 || now_ns - trade_window_start_ns_ >= 1'000'000'000LL) {
+                    trade_window_start_ns_ = now_ns;
+                    trade_window_volume_ = 0.0;
+                }
+                trade_window_volume_ += trade.last_trade_size;
+                last_trade_flow_ = trade;
+                last_trade_flow_.recent_traded_volume = trade_window_volume_;
+            };
+        }
+
         double best_bid() const { return book_.get_best_bid(); }
         double best_ask() const { return book_.get_best_ask(); }
         double mid_price() const { return book_.get_mid_price(); }
@@ -82,6 +97,9 @@ namespace trading {
         std::atomic<int64_t> last_publish_local_ts_ns_;
         std::atomic<int64_t> last_publish_exchange_ts_ns_;
         std::atomic<uint64_t> timestamp_issue_count_;
+        TradeFlow last_trade_flow_;
+        int64_t trade_window_start_ns_;
+        double trade_window_volume_;
         std::vector<PriceLevel> pub_bids_;
         std::vector<PriceLevel> pub_asks_;
 
@@ -94,7 +112,7 @@ namespace trading {
             pub_asks_.clear();
             book_.get_top_levels(5, pub_bids_, pub_asks_);
             publisher_->publish(book_.exchange(), book_.symbol(), timestamp_ns, book_.get_mid_price(),
-                                pub_bids_, pub_asks_);
+                                pub_bids_, pub_asks_, last_trade_flow_);
         }
 
         static int64_t wall_now_ns() noexcept {

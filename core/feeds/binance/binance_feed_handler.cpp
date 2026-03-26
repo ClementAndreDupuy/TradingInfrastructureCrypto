@@ -231,7 +231,8 @@ namespace trading {
         for (auto &character: sym_lower) {
             character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
         }
-        const std::string ws_path = "/ws/" + sym_lower + "@depth@100ms";
+        const std::string ws_path = "/stream?streams=" + sym_lower + "@depth@100ms/" + sym_lower +
+                                    "@aggTrade";
 
         std::string ws_host = "stream.binance.com";
         int ws_port = 9443;
@@ -547,13 +548,42 @@ namespace trading {
             return Result::SUCCESS;
         }
 
-        auto event_it = json.find("e");
-        if (event_it == json.end() || !event_it->is_string() || event_it->get<std::string>() != "depthUpdate") {
+        const nlohmann::json *payload = &json;
+        auto data_it = json.find("data");
+        if (data_it != json.end() && data_it->is_object()) {
+            payload = &(*data_it);
+        }
+
+        auto event_it = payload->find("e");
+        if (event_it == payload->end() || !event_it->is_string()) {
+            return Result::SUCCESS;
+        }
+        const std::string event_type = event_it->get<std::string>();
+        if (event_type == "aggTrade") {
+            if (trade_callback_ != nullptr) {
+                auto price_it = payload->find("p");
+                auto qty_it = payload->find("q");
+                if (price_it != payload->end() && qty_it != payload->end()) {
+                    try {
+                        TradeFlow trade;
+                        trade.last_trade_price = std::stod(price_it->get<std::string>());
+                        trade.last_trade_size = std::stod(qty_it->get<std::string>());
+                        const bool is_seller_aggressor = payload->value("m", false);
+                        trade.trade_direction = is_seller_aggressor ? 1 : 0;
+                        trade_callback_(trade);
+                    } catch (const std::exception &) {
+                    }
+                }
+            }
+            return Result::SUCCESS;
+        }
+
+        if (event_type != "depthUpdate") {
             return Result::SUCCESS;
         }
 
         BufferedDelta delta;
-        Result parse_result = parse_delta_message(json, delta);
+        Result parse_result = parse_delta_message(*payload, delta);
         if (parse_result != Result::SUCCESS) {
             return parse_result;
         }

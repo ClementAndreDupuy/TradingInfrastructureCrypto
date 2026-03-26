@@ -33,6 +33,7 @@ namespace trading::engine {
         book.set_publisher(publisher);
         feed.set_snapshot_callback(book.snapshot_handler());
         feed.set_delta_callback(book.delta_handler());
+        feed.set_trade_callback(book.trade_handler());
     }
 
     template<typename FeedHandler>
