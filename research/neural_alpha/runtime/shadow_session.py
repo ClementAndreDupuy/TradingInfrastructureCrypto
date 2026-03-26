@@ -33,6 +33,7 @@ from ..pipeline import (
     _fetch_coinbase_l5,
     _fetch_kraken_l5,
     _fetch_okx_l5,
+    _selection_score,
     _validate_alpha_input_schema,
     collect_from_core_bridge,
 )
@@ -489,7 +490,7 @@ class NeuralAlphaShadowSession:
         )
         if not fold_results:
             return
-        best = min(fold_results, key=lambda fold: fold.get("best_selection_score", 1_000_000_000.0))
+        best = min(fold_results, key=_selection_score)
         state = best["model_state"]
         metrics = dict(best.get("metrics", {}))
         self._save_state_artifacts(
@@ -556,7 +557,7 @@ class NeuralAlphaShadowSession:
         fold_results = walk_forward_train(df, primary_cfg)
         if not fold_results:
             return
-        best = min(fold_results, key=lambda fold: fold.get("best_selection_score", 1_000_000_000.0))
+        best = min(fold_results, key=_selection_score)
         candidate_state = best["model_state"]
         metrics = dict(best.get("metrics", {}))
         selected_state, holdout_summary = self._select_primary_state(df, candidate_state, resume_state)

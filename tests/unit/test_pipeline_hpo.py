@@ -3,10 +3,12 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
+from research._config import ConfigValidationError, _normalize_model, _normalize_pipeline
 from research.neural_alpha.models.trainer import TrainerConfig
 from research.neural_alpha.pipeline import (
     _auto_tune_trainer_config,
     _candidate_dicts,
+    _selection_score,
     _validate_alpha_input_schema,
 )
 
@@ -103,6 +105,72 @@ def test_auto_tune_accepts_string_large_selection_score(monkeypatch) -> None:
 
     assert isinstance(reloaded.LARGE_SELECTION_SCORE, float)
     assert selected.lr == 2e-4
+
+
+def test_config_normalization_coerces_numeric_strings() -> None:
+    pipeline_cfg = _normalize_pipeline(
+        {
+            "n_levels": "10",
+            "request_timeout_s": "5",
+            "holdout_frac": "0.8",
+            "large_selection_score": "1.0e9",
+            "collection": {"ticks": "300", "interval_ms": "500"},
+        }
+    )
+    assert pipeline_cfg["n_levels"] == 10
+    assert pipeline_cfg["request_timeout_s"] == 5
+    assert pipeline_cfg["holdout_frac"] == pytest.approx(0.8)
+    assert pipeline_cfg["large_selection_score"] == pytest.approx(1.0e9)
+    assert pipeline_cfg["collection"]["ticks"] == 300
+    assert pipeline_cfg["collection"]["interval_ms"] == 500
+
+    model_cfg = _normalize_model(
+        {
+            "search": {
+                "enabled": "true",
+                "max_trials": "3",
+                "tuning_epochs": "2",
+                "primary": {
+                    "lr": ["2e-4", "3e-4"],
+                    "dropout": ["0.1"],
+                    "batch_size": ["32"],
+                },
+            }
+        }
+    )
+    assert model_cfg["search"]["enabled"] is True
+    assert model_cfg["search"]["max_trials"] == 3
+    assert model_cfg["search"]["tuning_epochs"] == 2
+    assert model_cfg["search"]["primary"]["lr"] == [2e-4, 3e-4]
+    assert model_cfg["search"]["primary"]["dropout"] == [0.1]
+    assert model_cfg["search"]["primary"]["batch_size"] == [32]
+
+
+def test_config_normalization_rejects_invalid_numeric_strings() -> None:
+    with pytest.raises(ConfigValidationError, match="pipeline.n_levels"):
+        _normalize_pipeline(
+            {
+                "n_levels": "ten",
+                "request_timeout_s": 5,
+                "holdout_frac": 0.8,
+                "large_selection_score": 1.0e9,
+            }
+        )
+
+    with pytest.raises(ConfigValidationError, match="model.search.primary.lr\\[0\\]"):
+        _normalize_model(
+            {
+                "search": {
+                    "primary": {"lr": ["oops"]},
+                }
+            }
+        )
+
+
+def test_selection_score_rejects_non_numeric_values() -> None:
+    assert _selection_score({"best_selection_score": "0.125"}) == pytest.approx(0.125)
+    with pytest.raises(RuntimeError, match="best_selection_score must be numeric"):
+        _selection_score({"best_selection_score": "bad"})
 
 
 def test_validate_alpha_input_schema_accepts_enriched_lob_data() -> None:

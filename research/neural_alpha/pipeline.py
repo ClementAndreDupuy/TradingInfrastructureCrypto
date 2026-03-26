@@ -449,10 +449,18 @@ def _trainer_config_from_args(args: argparse.Namespace, *, secondary: bool = Fal
 def _mean_selection_score(folds: list[dict[str, Any]]) -> float:
     if not folds:
         return LARGE_SELECTION_SCORE
-    scores = [float(fold.get("best_selection_score", LARGE_SELECTION_SCORE)) for fold in folds]
+    scores = [_selection_score(fold) for fold in folds]
     if not scores:
         return LARGE_SELECTION_SCORE
     return float(np.mean(scores))
+
+
+def _selection_score(fold: Mapping[str, Any]) -> float:
+    raw_score = fold.get("best_selection_score", LARGE_SELECTION_SCORE)
+    try:
+        return float(raw_score)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"best_selection_score must be numeric, got {raw_score!r}") from exc
 
 def _candidate_dicts(search_space: dict[str, list[Any]], max_trials: int) -> list[dict[str, Any]]:
     keys = [key for key, values in search_space.items() if values]
@@ -601,7 +609,7 @@ def _train_regime_model_if_possible(args: argparse.Namespace) -> None:
         print(f"[WARN] R2 regime training skipped: {exc}")
 
 def _best_fold(fold_results: list[dict[str, Any]]) -> dict[str, Any]:
-    return min(fold_results, key=lambda fold: fold.get("best_selection_score", LARGE_SELECTION_SCORE))
+    return min(fold_results, key=_selection_score)
 
 def _holdout_df(df: pl.DataFrame) -> pl.DataFrame:
     return df[int(len(df) * _HOLDOUT_FRAC) :]
