@@ -629,6 +629,7 @@ namespace trading {
                     PriceLevel level;
                     level.price = std::stod(px_it->get<std::string>());
                     level.size = std::stod(qty_it->get<std::string>());
+                    level.order_count = 0;
 
                     const std::string side = side_it->get<std::string>();
                     if (side == "bid") {
@@ -686,6 +687,7 @@ namespace trading {
                     delta.side = (side_it->get<std::string>() == "bid") ? Side::BID : Side::ASK;
                     delta.price = std::stod(px_it->get<std::string>());
                     delta.size = std::stod(qty_it->get<std::string>());
+                    delta.order_count = 0;
                     delta.sequence = seq;
                     delta.timestamp_exchange_ns = timestamp_exchange_ns;
                     delta.timestamp_local_ns = timestamp_local_ns;

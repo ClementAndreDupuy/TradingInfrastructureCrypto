@@ -187,7 +187,7 @@ PYBIND11_MODULE(trading_core, m) {
         .def("__eq__",
              [](const Delta& a, const Delta& b) {
                  return a.side == b.side && a.price == b.price && a.size == b.size &&
-                        a.sequence == b.sequence;
+                        a.order_count == b.order_count && a.sequence == b.sequence;
              })
         .def("__repr__", [](const Delta& d) {
             std::ostringstream oss;

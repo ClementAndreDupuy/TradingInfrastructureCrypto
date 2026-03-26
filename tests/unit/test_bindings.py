@@ -419,6 +419,17 @@ class TestDeltaEquality:
         assert "ASK" in r
         assert "50001" in r
 
+    def test_unequal_order_count(self):
+        a, b = tc.Delta(), tc.Delta()
+        for d in (a, b):
+            d.side = tc.Side.BID
+            d.price = 50000.0
+            d.size = 1.0
+            d.sequence = 10
+        a.order_count = 1
+        b.order_count = 2
+        assert a != b
+
 
 class TestSnapshotRepr:
     def test_repr(self):

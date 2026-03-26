@@ -126,6 +126,8 @@ TEST_F(KrakenFeedHandlerTest, WebsocketSnapshotInitializesBook) {
     ASSERT_EQ(last_snapshot_.asks.size(), 2u);
     EXPECT_DOUBLE_EQ(last_snapshot_.bids[0].price, 50000.0);
     EXPECT_DOUBLE_EQ(last_snapshot_.asks[0].price, 50001.0);
+    EXPECT_EQ(last_snapshot_.bids[0].order_count, 0u);
+    EXPECT_EQ(last_snapshot_.asks[0].order_count, 0u);
 }
 
 TEST_F(KrakenFeedHandlerTest, UpdateWithoutVenueSequenceUsesLocalOrdering) {
@@ -143,6 +145,7 @@ TEST_F(KrakenFeedHandlerTest, UpdateWithoutVenueSequenceUsesLocalOrdering) {
     EXPECT_EQ(deltas_[0].side, Side::ASK);
     EXPECT_DOUBLE_EQ(deltas_[0].price, 50000.5);
     EXPECT_DOUBLE_EQ(deltas_[0].size, 1.1);
+    EXPECT_EQ(deltas_[0].order_count, 0u);
     EXPECT_EQ(deltas_[0].sequence, 1u);
     EXPECT_EQ(deltas_[0].timestamp_exchange_ns, 1704067201000000001LL);
     EXPECT_GT(deltas_[0].timestamp_local_ns, 0);
