@@ -377,8 +377,7 @@ auto main(int argc, char **argv) -> int {
             kraken_feed, run_kraken, "KRAKEN", opts.symbol);
         const double okx_tick =
                 engine::refresh_tick_size_for_book_init(okx_feed, run_okx, "OKX", opts.symbol);
-        const double coinbase_tick = engine::refresh_tick_size_for_book_init(
-            coinbase_feed, run_coinbase, "COINBASE", opts.symbol);
+        const double coinbase_tick = engine::k_default_fallback_tick_size;
 
         const size_t binance_levels = levels_for_tick(binance_tick);
         const size_t kraken_levels = levels_for_tick(kraken_tick);
