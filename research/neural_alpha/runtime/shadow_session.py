@@ -5,6 +5,7 @@ import os
 import signal
 import struct
 import time
+import traceback
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -324,6 +325,8 @@ class NeuralAlphaShadowSession:
         self._prev_regime_probs: dict[str, float] | None = None
         self._venue_stats = {exchange.upper(): VenueRuntimeStats() for exchange in cfg.exchanges}
         self._gating_reason_counts = {key: 0 for key in _GATING_KEYS}
+        self._retrain_failure_counts: dict[str, int] = {}
+        self._regime_retrain_failure_counts: dict[str, int] = {}
     @staticmethod
     def _load_regime_artifact(path: str) -> Any:
         if not Path(path).exists():
@@ -804,6 +807,8 @@ class NeuralAlphaShadowSession:
                 }
                 for exchange, stats in self._venue_stats.items()
             },
+            "retrain_failure_counts": dict(self._retrain_failure_counts),
+            "regime_retrain_failure_counts": dict(self._regime_retrain_failure_counts),
         }
         print(f"[{_utcnow()}] [ShadowSummary] {json.dumps(summary, sort_keys=True)}")
     def _maybe_continuous_train(self) -> None:
@@ -824,7 +829,23 @@ class NeuralAlphaShadowSession:
             self._last_continuous_train_steady_ns = now_steady_ns
             print(f"[{_utcnow()}] [Shadow] continuous retrain completed processed_ticks={self._processed_ticks}")
         except Exception as exc:
-            print(f"[{_utcnow()}] [Shadow] continuous retrain failed processed_ticks={self._processed_ticks}: {exc}")
+            exc_class = type(exc).__name__
+            self._retrain_failure_counts[exc_class] = self._retrain_failure_counts.get(exc_class, 0) + 1
+            champion = self._registry.current_champion()
+            context = {
+                "processed_ticks": self._processed_ticks,
+                "train_window_ticks": train_window,
+                "continuous_train_every_ticks": self.cfg.continuous_train_every_ticks,
+                "continuous_train_window_ticks": self.cfg.continuous_train_window_ticks,
+                "incumbent_model_id": champion.get("model_id") if champion else None,
+                "incumbent_model_path": champion.get("model_path") if champion else None,
+            }
+            tb = traceback.format_exc()
+            print(
+                f"[{_utcnow()}] [Shadow] continuous retrain failed"
+                f" exc_class={exc_class} exc={exc}"
+                f" context={json.dumps(context)}\n{tb}"
+            )
     def _maybe_regime_retrain(self) -> None:
         if self.cfg.regime_retrain_every_ticks <= 0:
             return
@@ -845,7 +866,19 @@ class NeuralAlphaShadowSession:
             self._last_regime_train_tick = self._processed_ticks
             self._last_regime_train_steady_ns = now_steady_ns
         except Exception as exc:
-            print(f"[{_utcnow()}] [Shadow] regime retrain failed processed_ticks={self._processed_ticks}: {exc}")
+            exc_class = type(exc).__name__
+            self._regime_retrain_failure_counts[exc_class] = self._regime_retrain_failure_counts.get(exc_class, 0) + 1
+            context = {
+                "processed_ticks": self._processed_ticks,
+                "train_window_ticks": train_window,
+                "regime_retrain_every_ticks": self.cfg.regime_retrain_every_ticks,
+            }
+            tb = traceback.format_exc()
+            print(
+                f"[{_utcnow()}] [Shadow] regime retrain failed"
+                f" exc_class={exc_class} exc={exc}"
+                f" context={json.dumps(context)}\n{tb}"
+            )
     def _update_quality_guards(self, signal_info: dict[str, Any]) -> None:
         if not self._signal_records:
             return
