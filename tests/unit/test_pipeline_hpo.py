@@ -55,6 +55,56 @@ def test_auto_tune_trainer_config_selects_best_trial(monkeypatch) -> None:
     assert selected.verbose is True
 
 
+def test_auto_tune_accepts_string_large_selection_score(monkeypatch) -> None:
+    def fake_pipeline_cfg() -> dict:
+        return {
+            "n_levels": 10,
+            "default_exchanges": ["BINANCE"],
+            "urls": {
+                "binance_depth": "https://example.com/binance",
+                "kraken_depth": "https://example.com/kraken",
+                "okx_depth": "https://example.com/okx",
+                "coinbase_depth": "https://example.com/coinbase",
+            },
+            "large_selection_score": "1.0e9",
+            "request_timeout_s": 5,
+            "holdout_frac": 0.8,
+        }
+
+    def fake_model_cfg() -> dict:
+        return {
+            "search": {
+                "enabled": True,
+                "tuning_epochs": 2,
+                "max_trials": 1,
+                "primary": {"lr": [2e-4]},
+            }
+        }
+
+    def fake_walk_forward_train(df: pl.DataFrame, cfg: TrainerConfig) -> list[dict]:
+        return [{"best_selection_score": 0.5}]
+
+    monkeypatch.setattr("research._config.pipeline_cfg", fake_pipeline_cfg)
+    monkeypatch.setattr("research._config.model_cfg", fake_model_cfg)
+    monkeypatch.setattr("research.neural_alpha.models.trainer.walk_forward_train", fake_walk_forward_train)
+    monkeypatch.setattr("research.neural_alpha.models.trainer.TrainerConfig", TrainerConfig)
+
+    from importlib import reload
+    from research.neural_alpha import pipeline as pipeline_module
+
+    reloaded = reload(pipeline_module)
+    base_cfg = TrainerConfig(epochs=4, verbose=True, lr=3e-4)
+    selected = reloaded._auto_tune_trainer_config(
+        pl.DataFrame({"timestamp_ns": [1, 2, 3], "best_bid": [1.0, 1.0, 1.0], "best_ask": [1.1, 1.1, 1.1]}),
+        base_cfg,
+        secondary=False,
+        enabled=True,
+    )
+
+    assert isinstance(reloaded.LARGE_SELECTION_SCORE, float)
+    assert selected.lr == 2e-4
+
+
 def test_validate_alpha_input_schema_accepts_enriched_lob_data() -> None:
     rows = []
     for idx in range(4):
