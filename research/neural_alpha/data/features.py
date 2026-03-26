@@ -11,8 +11,13 @@ _RETURN_CLIP: float = _lcfg["return_clip"]
 _ADV_SEL_THRESH: float = _lcfg["adv_sel_thresh"]
 
 N_LEVELS = 5
-BASE_SCALAR_FEATURES = 16
+BASE_SCALAR_FEATURES = 19
 D_SCALAR = BASE_SCALAR_FEATURES + N_LEVELS
+TRADE_FLOW_FEATURE_INDICES: dict[str, int] = {
+    "trade_signed_flow": 16,
+    "trade_intensity_5": 17,
+    "trade_vs_mid_bps": 18,
+}
 
 
 def _safe_col(df: pl.DataFrame, name: str, default: float = 0.0) -> np.ndarray:
@@ -118,9 +123,12 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
         11 ofi_10             — order-flow imbalance lag-10
         12 ofi_20             — order-flow imbalance lag-20
         13..(13+N_LEVELS-1) qi_i — per-level queue imbalance for each level i in [1, N_LEVELS]
-        D_SCALAR-3           vol_60             — rolling 60-tick std of mid log return
-        D_SCALAR-2           vol_200            — rolling 200-tick std of mid log return
-        D_SCALAR-1           vol_ratio_5_60     — vol_5 / (vol_60 + 1e-8)
+        D_SCALAR-6           vol_60             — rolling 60-tick std of mid log return
+        D_SCALAR-5           vol_200            — rolling 200-tick std of mid log return
+        D_SCALAR-4           vol_ratio_5_60     — vol_5 / (vol_60 + 1e-8)
+        D_SCALAR-3           trade_signed_flow  — signed aggressor flow proxy
+        D_SCALAR-2           trade_intensity_5  — 5-tick rolling trade/depth intensity
+        D_SCALAR-1           trade_vs_mid_bps   — trade-price deviation from mid in bps
     """
     bp, bs, ap, as_ = _extract_levels(df)
 
@@ -153,6 +161,20 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
     vol_200 = _rolling_std(log_ret, 200)
 
     qi = (bs - as_) / (bs + as_ + 1e-8)
+    last_trade_price = _safe_col(df, "last_trade_price")
+    last_trade_size = np.abs(_safe_col(df, "last_trade_size"))
+    recent_traded_volume = np.clip(_safe_col(df, "recent_traded_volume"), 0.0, None)
+    trade_direction_raw = _safe_col(df, "trade_direction", default=255.0)
+    trade_direction = np.where(trade_direction_raw >= 255.0, 0.0, np.where(trade_direction_raw > 0.0, 1.0, -1.0))
+    trade_signed_flow = trade_direction * last_trade_size
+    trade_intensity = recent_traded_volume / (total_depth + 1e-8)
+    trade_intensity_5 = np.convolve(trade_intensity, np.ones(5, dtype=np.float64), mode="full")[: len(trade_intensity)]
+    trade_intensity_5 = trade_intensity_5 / np.minimum(np.arange(len(trade_intensity_5)) + 1, 5)
+    trade_vs_mid_bps = np.where(
+        (mid > 0) & (last_trade_price > 0),
+        (last_trade_price - mid) / mid * 1e4,
+        0.0,
+    )
 
     base_features = [
         log_ret, spread_bps, microprice - mid, obi,
@@ -160,6 +182,7 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
         ofi_1, log_ret * total_depth,
         vol_5, vol_20, ofi_5, ofi_10, ofi_20,
         vol_60, vol_200, vol_5 / (vol_60 + 1e-8),
+        trade_signed_flow, trade_intensity_5, trade_vs_mid_bps,
     ]
     features = np.stack(
         base_features[:13] + [qi[:, i] for i in range(N_LEVELS)] + base_features[13:],

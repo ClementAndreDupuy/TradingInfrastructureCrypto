@@ -39,7 +39,11 @@ SLOT_SIZE = struct.calcsize(SLOT_FMT)
 CAPACITY = 8
 
 
-def _write_ring(path: Path, write_seq: int, slots: dict[int, tuple[int, str, int, float]]) -> None:
+def _write_ring(
+    path: Path,
+    write_seq: int,
+    slots: dict[int, tuple[int, str, int, float, float, float, float, int]],
+) -> None:
     total_size = HEADER_SIZE + CAPACITY * SLOT_SIZE
     with path.open("w+b") as f:
         f.truncate(total_size)
@@ -56,7 +60,7 @@ def _write_ring(path: Path, write_seq: int, slots: dict[int, tuple[int, str, int
         )
         mm[0:HEADER_SIZE] = header
 
-        for seq, (exchange_id, symbol, ts_ns, mid) in slots.items():
+        for seq, (exchange_id, symbol, ts_ns, mid, last_trade_price, last_trade_size, recent_traded_volume, trade_direction) in slots.items():
             offset = HEADER_SIZE + (seq % CAPACITY) * SLOT_SIZE
             symbol_bytes = symbol.encode("utf-8")[:15].ljust(15, b"\x00")
             bids = [mid - 1 - i * 0.1 for i in range(5)]
@@ -73,10 +77,10 @@ def _write_ring(path: Path, write_seq: int, slots: dict[int, tuple[int, str, int
                 *bid_sizes,
                 *asks,
                 *ask_sizes,
-                0.0,
-                0.0,
-                0.0,
-                255,
+                last_trade_price,
+                last_trade_size,
+                recent_traded_volume,
+                trade_direction,
                 b"\x00" * 39,
             )
             mm[offset : offset + SLOT_SIZE] = payload
@@ -93,9 +97,9 @@ def test_core_bridge_reads_rows_and_drops_overflowed_slots() -> None:
     with tempfile.TemporaryDirectory() as td:
         ring_path = Path(td) / "lob.bin"
         slots = {
-            8: (0, "BTCUSDT", 1_000, 100.0),
-            9: (3, "XBTUSD", 2_000, 101.0),
-            10: (1, "BTC-USDT", 3_000, 102.0),
+            8: (0, "BTCUSDT", 1_000, 100.0, 100.1, 0.2, 1.5, 1),
+            9: (3, "XBTUSD", 2_000, 101.0, 101.2, 0.3, 2.0, 0),
+            10: (1, "BTC-USDT", 3_000, 102.0, 102.3, 0.4, 2.5, 1),
         }
         _write_ring(ring_path, write_seq=11, slots=slots)
 
@@ -110,6 +114,10 @@ def test_core_bridge_reads_rows_and_drops_overflowed_slots() -> None:
         assert rows[-1]["exchange"] == "OKX"
         assert rows[-1]["symbol"] == "BTC-USDT"
         assert rows[-1]["timestamp_ns"] == 3_000
+        assert rows[-1]["last_trade_price"] == pytest.approx(102.3)
+        assert rows[-1]["last_trade_size"] == pytest.approx(0.4)
+        assert rows[-1]["recent_traded_volume"] == pytest.approx(2.5)
+        assert rows[-1]["trade_direction"] == 1
         assert "bid_price_5" in rows[-1]
         assert "ask_size_5" in rows[-1]
 
@@ -125,6 +133,10 @@ def test_collect_l5_ticks_prefers_bridge_then_tops_up(monkeypatch) -> None:
                 "symbol": "BTCUSDT",
                 "best_bid": 1.0,
                 "best_ask": 2.0,
+                "last_trade_price": 1.9,
+                "last_trade_size": 0.01,
+                "recent_traded_volume": 0.4,
+                "trade_direction": 1,
                 **{f"bid_price_{i}": 1.0 for i in range(1, 6)},
                 **{f"bid_size_{i}": 1.0 for i in range(1, 6)},
                 **{f"ask_price_{i}": 2.0 for i in range(1, 6)},
@@ -136,6 +148,10 @@ def test_collect_l5_ticks_prefers_bridge_then_tops_up(monkeypatch) -> None:
                 "symbol": "XBTUSD",
                 "best_bid": 1.1,
                 "best_ask": 2.1,
+                "last_trade_price": 2.0,
+                "last_trade_size": 0.02,
+                "recent_traded_volume": 0.8,
+                "trade_direction": 0,
                 **{f"bid_price_{i}": 1.1 for i in range(1, 6)},
                 **{f"bid_size_{i}": 1.0 for i in range(1, 6)},
                 **{f"ask_price_{i}": 2.1 for i in range(1, 6)},
@@ -152,6 +168,10 @@ def test_collect_l5_ticks_prefers_bridge_then_tops_up(monkeypatch) -> None:
                 "symbol": "BTC-USDT",
                 "best_bid": 1.2,
                 "best_ask": 2.2,
+                "last_trade_price": 0.0,
+                "last_trade_size": 0.0,
+                "recent_traded_volume": 0.0,
+                "trade_direction": 255,
                 **{f"bid_price_{i}": 1.2 for i in range(1, 6)},
                 **{f"bid_size_{i}": 1.0 for i in range(1, 6)},
                 **{f"ask_price_{i}": 2.2 for i in range(1, 6)},
@@ -163,6 +183,10 @@ def test_collect_l5_ticks_prefers_bridge_then_tops_up(monkeypatch) -> None:
                 "symbol": "BTC-USD",
                 "best_bid": 1.3,
                 "best_ask": 2.3,
+                "last_trade_price": 0.0,
+                "last_trade_size": 0.0,
+                "recent_traded_volume": 0.0,
+                "trade_direction": 255,
                 **{f"bid_price_{i}": 1.3 for i in range(1, 6)},
                 **{f"bid_size_{i}": 1.0 for i in range(1, 6)},
                 **{f"ask_price_{i}": 2.3 for i in range(1, 6)},
@@ -183,6 +207,8 @@ def test_collect_l5_ticks_prefers_bridge_then_tops_up(monkeypatch) -> None:
     out = pipeline.collect_l5_ticks(n_ticks=4, interval_ms=1)
     assert len(out) == 4
     assert set(out["exchange"].to_list()) == {"BINANCE", "KRAKEN", "OKX", "COINBASE"}
+    for column in ("last_trade_price", "last_trade_size", "recent_traded_volume", "trade_direction"):
+        assert column in out.columns
 
 
 @pytest.mark.skipif(pl is None or pipeline is None, reason="polars is not installed")
