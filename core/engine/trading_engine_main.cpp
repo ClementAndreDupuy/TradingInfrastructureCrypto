@@ -361,12 +361,14 @@ auto main(int argc, char **argv) -> int {
                                           engine_cfg.coinbase_rest_url);
 
         const double target_range_usd = risk_cfg.target_range_usd > 0.0 ? risk_cfg.target_range_usd : 50.0;
-        auto levels_for_tick = [target_range_usd](double tick) -> size_t {
+        const size_t max_book_levels = risk_cfg.max_book_levels > 0 ? risk_cfg.max_book_levels : 10000;
+        auto levels_for_tick = [target_range_usd, max_book_levels](double tick) -> size_t {
             if (tick <= 0.0) {
                 return 1;
             }
             const size_t levels = static_cast<size_t>(target_range_usd / tick);
-            return levels > 0 ? levels : 1;
+            const size_t capped = levels > 0 ? levels : 1;
+            return capped < max_book_levels ? capped : max_book_levels;
         };
 
         const double binance_tick = engine::refresh_tick_size_for_book_init(
@@ -384,7 +386,7 @@ auto main(int argc, char **argv) -> int {
         const size_t coinbase_levels = levels_for_tick(coinbase_tick);
 
         LOG_INFO("Grid configuration",
-                 "target_range_usd", target_range_usd,
+                 "target_range_usd", target_range_usd, "max_book_levels", max_book_levels,
                  "binance_tick", binance_tick, "binance_levels", binance_levels, "binance_range_usd",
                  binance_levels * binance_tick,
                  "kraken_tick", kraken_tick, "kraken_levels", kraken_levels, "kraken_range_usd",

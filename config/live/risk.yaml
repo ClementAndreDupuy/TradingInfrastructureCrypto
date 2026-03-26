@@ -23,6 +23,7 @@ rate_limits:
 book:
   max_age_ms: 200
   target_range_usd: 250.0
+  max_book_levels: 10000
 
 heartbeat:
   timeout_ms: 3000

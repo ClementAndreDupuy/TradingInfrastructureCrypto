@@ -16,6 +16,7 @@ namespace trading {
         GlobalRiskConfig global_risk;
         int64_t heartbeat_timeout_ns = KillSwitch::DEFAULT_HEARTBEAT_TIMEOUT_NS;
         double target_range_usd = 50.0;
+        size_t max_book_levels = 10000;
         double binance_taker_fee_bps = 5.0;
         double kraken_taker_fee_bps = 10.0;
         double okx_taker_fee_bps = 8.0;
@@ -78,6 +79,7 @@ namespace trading {
 
             apply_double(values, "target_range_usd", out.target_range_usd);
             apply_double(values, "book_target_range_usd", out.target_range_usd);
+            apply_size_t(values, "max_book_levels", out.max_book_levels);
 
             apply_double(values, "max_gross_notional", out.global_risk.max_gross_notional);
             apply_double(values, "max_portfolio_notional", out.global_risk.max_gross_notional);
@@ -155,6 +157,19 @@ namespace trading {
             double v = 0.0;
             if (parse_double(it->second, v))
                 field = v;
+        }
+
+        static void apply_size_t(const std::unordered_map<std::string, std::string> &values,
+                                 const char *key, size_t &field) {
+            auto it = values.find(key);
+            if (it == values.end())
+                return;
+            try {
+                const size_t v = std::stoull(it->second);
+                if (v > 0)
+                    field = v;
+            } catch (...) {
+            }
         }
 
         static void apply_int(const std::unordered_map<std::string, std::string> &values,

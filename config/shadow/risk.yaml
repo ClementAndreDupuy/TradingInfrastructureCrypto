@@ -7,6 +7,7 @@ max_drawdown_usd:             -500.0
 max_orders_per_second:        5
 max_orders_per_minute:        100
 target_range_usd:             50.0
+max_book_levels:              5000
 max_price_deviation_bps:      200.0
 circuit_breaker_count:        3
 circuit_breaker_loss_usd:     -25.0
