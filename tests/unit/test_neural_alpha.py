@@ -50,6 +50,7 @@ from research.neural_alpha.data.features import (
     normalise_scalar,
     D_SCALAR,
     N_LEVELS,
+    TRADE_FLOW_FEATURE_INDICES,
 )
 from research.neural_alpha.models.model import (
     CryptoAlphaNet,
@@ -61,6 +62,7 @@ from research.neural_alpha.models.trainer import TrainerConfig, walk_forward_tra
 from research.neural_alpha.runtime.shadow_session import (
     NeuralAlphaShadowSession,
     ShadowSessionConfig,
+    _ensure_trade_flow_schema,
     _build_signal_alignment,
     _summarise_regime_churn,
     _summarise_timestamp_quality,
@@ -85,6 +87,10 @@ def _make_lob_df(n_ticks: int, seed: int = 0) -> pl.DataFrame:
             "exchange": "BINANCE",
             "best_bid": mid - spread / 2,
             "best_ask": mid + spread / 2,
+            "last_trade_price": mid,
+            "last_trade_size": float(abs(rng.normal(0.2, 0.05))),
+            "recent_traded_volume": float(abs(rng.normal(1.0, 0.2))),
+            "trade_direction": 1 if t % 2 == 0 else 0,
         }
         for i in range(1, 6):
             row[f"bid_price_{i}"] = mid - spread / 2 - (i - 1) * spread
@@ -174,6 +180,61 @@ class TestFeatures:
 
         labels = compute_labels(df, horizons=(1, 10, 12, 20))
         assert labels[0, 5] == pytest.approx(1.0)
+
+    def test_trade_flow_features_are_finite_and_deterministic(self) -> None:
+        rows = [
+            {
+                "timestamp_ns": 1,
+                "best_bid": 100.0,
+                "best_ask": 100.2,
+                "last_trade_price": 100.1,
+                "last_trade_size": 0.0,
+                "recent_traded_volume": 0.0,
+                "trade_direction": 255,
+                **{f"bid_price_{i}": 100.0 - i * 0.01 for i in range(1, 6)},
+                **{f"ask_price_{i}": 100.2 + i * 0.01 for i in range(1, 6)},
+                **{f"bid_size_{i}": 0.0 for i in range(1, 6)},
+                **{f"ask_size_{i}": 0.0 for i in range(1, 6)},
+            },
+            {
+                "timestamp_ns": 2,
+                "best_bid": 100.1,
+                "best_ask": 100.3,
+                "last_trade_price": 0.0,
+                "last_trade_size": -2.0,
+                "recent_traded_volume": -4.0,
+                "trade_direction": 0,
+                **{f"bid_price_{i}": 100.1 - i * 0.01 for i in range(1, 6)},
+                **{f"ask_price_{i}": 100.3 + i * 0.01 for i in range(1, 6)},
+                **{f"bid_size_{i}": 1.0 for i in range(1, 6)},
+                **{f"ask_size_{i}": 1.0 for i in range(1, 6)},
+            },
+        ]
+        df = pl.DataFrame(rows)
+        scalar_first = compute_scalar_features(df)
+        scalar_second = compute_scalar_features(df)
+        assert np.isfinite(scalar_first).all()
+        assert np.array_equal(scalar_first, scalar_second)
+        assert scalar_first[1, TRADE_FLOW_FEATURE_INDICES["trade_signed_flow"]] == pytest.approx(-2.0)
+        assert scalar_first[1, TRADE_FLOW_FEATURE_INDICES["trade_intensity_5"]] == pytest.approx(0.0)
+        assert scalar_first[1, TRADE_FLOW_FEATURE_INDICES["trade_vs_mid_bps"]] == pytest.approx(0.0)
+
+    def test_trade_flow_feature_schema_stable_under_column_ordering(self) -> None:
+        df = _make_lob_df(n_ticks=32, seed=7)
+        reordered = df.select(list(reversed(df.columns)))
+        left = compute_scalar_features(df)
+        right = compute_scalar_features(reordered)
+        assert np.allclose(left, right)
+
+    def test_shadow_schema_backfills_trade_flow_columns(self) -> None:
+        df = _make_lob_df(n_ticks=10, seed=11).drop(
+            ["last_trade_price", "last_trade_size", "recent_traded_volume", "trade_direction"]
+        )
+        out = _ensure_trade_flow_schema(df)
+        for column in ("last_trade_price", "last_trade_size", "recent_traded_volume", "trade_direction"):
+            assert column in out.columns
+        scalar = compute_scalar_features(out)
+        assert scalar.shape[1] == D_SCALAR
 
 
 # ── Model ─────────────────────────────────────────────────────────────────────

@@ -116,6 +116,23 @@ FETCHERS: dict[str, Callable[[str], dict[str, Any] | None]] = {
     "COINBASE": _fetch_coinbase_l5,
 }
 
+_TRADE_FLOW_DEFAULTS: dict[str, Any] = {
+    "last_trade_price": 0.0,
+    "last_trade_size": 0.0,
+    "recent_traded_volume": 0.0,
+    "trade_direction": 255,
+}
+
+
+def _ensure_trade_flow_columns(df: pl.DataFrame) -> pl.DataFrame:
+    if len(df) == 0:
+        return df
+    out = df
+    for column, default in _TRADE_FLOW_DEFAULTS.items():
+        if column not in out.columns:
+            out = out.with_columns(pl.lit(default).alias(column))
+    return out
+
 def collect_from_core_bridge(n_ticks: int, interval_ms: int) -> pl.DataFrame | None:
     bridge = CoreBridge()
     if not bridge.open():
@@ -131,7 +148,7 @@ def collect_from_core_bridge(n_ticks: int, interval_ms: int) -> pl.DataFrame | N
         bridge.close()
     if not rows:
         return None
-    return pl.DataFrame(rows[:n_ticks]).sort("timestamp_ns")
+    return _ensure_trade_flow_columns(pl.DataFrame(rows[:n_ticks]).sort("timestamp_ns"))
 
 def _enforce_symbol_and_exchange_coverage(
     df: pl.DataFrame,
@@ -180,7 +197,7 @@ def _collect_l5_ticks_rest(
             time.sleep(interval_s)
     if not rows:
         raise RuntimeError("No data collected — check network and exchange APIs.")
-    return pl.DataFrame(rows).sort("timestamp_ns")
+    return _ensure_trade_flow_columns(pl.DataFrame(rows).sort("timestamp_ns"))
 
 def collect_l5_ticks(
     n_ticks: int,

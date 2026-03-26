@@ -54,6 +54,24 @@ _HORIZON_CANDIDATES: tuple = tuple(_scfg["horizon_candidates"])
 _GATING_KEYS = ("confidence_gate", "horizon_disagreement_gate", "safe_mode_gate")
 FetchFn = Callable[[str], dict[str, Any] | None]
 _FETCHERS = {"BINANCE": _fetch_binance_l5, "KRAKEN": _fetch_kraken_l5, "OKX": _fetch_okx_l5, "COINBASE": _fetch_coinbase_l5}
+_TRADE_FLOW_SCHEMA_DEFAULTS: dict[str, Any] = {
+    "last_trade_price": 0.0,
+    "last_trade_size": 0.0,
+    "recent_traded_volume": 0.0,
+    "trade_direction": 255,
+}
+
+
+def _ensure_trade_flow_schema(df: pl.DataFrame) -> pl.DataFrame:
+    if len(df) == 0:
+        return df
+    out = df
+    for column, default in _TRADE_FLOW_SCHEMA_DEFAULTS.items():
+        if column not in out.columns:
+            out = out.with_columns(pl.lit(default).alias(column))
+    return out
+
+
 @dataclass
 class VenueRuntimeStats:
     ticks_received: int = 0
@@ -544,7 +562,7 @@ class NeuralAlphaShadowSession:
     def _build_inference_inputs(self) -> tuple[torch.Tensor, torch.Tensor] | None:
         if self._model is None or len(self._ring) < self.cfg.seq_len:
             return None
-        df_ring = pl.DataFrame(self._ring)
+        df_ring = _ensure_trade_flow_schema(pl.DataFrame(self._ring))
         lob_t = torch.from_numpy(compute_lob_tensor(df_ring)[-self.cfg.seq_len :]).unsqueeze(0).to(self._device)
         scalar_t = torch.from_numpy(rolling_normalise(compute_scalar_features(df_ring))[-self.cfg.seq_len :]).unsqueeze(0).to(self._device)
         return lob_t, scalar_t
@@ -570,7 +588,7 @@ class NeuralAlphaShadowSession:
         if self._regime_artifact is not None:
             try:
                 regime_probs = infer_regime_probabilities(
-                    pl.DataFrame(self._ring),
+                    _ensure_trade_flow_schema(pl.DataFrame(self._ring)),
                     self._regime_artifact,
                     prev_probs=self._prev_regime_probs,
                 )
