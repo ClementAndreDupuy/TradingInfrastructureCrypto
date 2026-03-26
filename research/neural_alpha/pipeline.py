@@ -19,15 +19,15 @@ if TYPE_CHECKING:
     from .models.trainer import TrainerConfig
 
 _pcfg = pipeline_cfg()
-N_LEVELS: int = _pcfg["n_levels"]
-DEFAULT_EXCHANGES: list[str] = _pcfg["default_exchanges"]
-BINANCE_DEPTH_URL: str = _pcfg["urls"]["binance_depth"]
-KRAKEN_DEPTH_URL: str = _pcfg["urls"]["kraken_depth"]
-OKX_DEPTH_URL: str = _pcfg["urls"]["okx_depth"]
-COINBASE_DEPTH_URL: str = _pcfg["urls"]["coinbase_depth"]
-LARGE_SELECTION_SCORE: float = _pcfg["large_selection_score"]
-_REQUEST_TIMEOUT_S: int = _pcfg["request_timeout_s"]
-_HOLDOUT_FRAC: float = _pcfg["holdout_frac"]
+N_LEVELS: int = int(_pcfg["n_levels"])
+DEFAULT_EXCHANGES: list[str] = [str(exchange).upper() for exchange in _pcfg["default_exchanges"]]
+BINANCE_DEPTH_URL: str = str(_pcfg["urls"]["binance_depth"])
+KRAKEN_DEPTH_URL: str = str(_pcfg["urls"]["kraken_depth"])
+OKX_DEPTH_URL: str = str(_pcfg["urls"]["okx_depth"])
+COINBASE_DEPTH_URL: str = str(_pcfg["urls"]["coinbase_depth"])
+LARGE_SELECTION_SCORE: float = float(_pcfg["large_selection_score"])
+_REQUEST_TIMEOUT_S: int = int(_pcfg["request_timeout_s"])
+_HOLDOUT_FRAC: float = float(_pcfg["holdout_frac"])
 
 def _parse_exchange_list(raw_value: str) -> list[str]:
     return [exchange.strip().upper() for exchange in raw_value.split(",") if exchange.strip()]
