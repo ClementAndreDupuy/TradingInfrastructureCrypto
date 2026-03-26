@@ -396,58 +396,47 @@ namespace trading {
             fetch_tick_size();
         }
 
-        static constexpr int k_max_attempts = 3;
-        static constexpr int k_backoff_ms[k_max_attempts] = {2000, 4000, 8000};
+        running_.store(true, std::memory_order_release);
+        state_.store(State::BUFFERING, std::memory_order_release);
+        last_sequence_.store(0, std::memory_order_release);
+        last_heartbeat_ns_.store(0, std::memory_order_release);
+        last_event_time_exchange_ns_.store(0, std::memory_order_release);
+        last_start_failure_reason_ = "timeout waiting for snapshot";
+        delta_buffer_.clear();
+        reconnect_requested_.store(false, std::memory_order_release);
+        auth_rejected_.store(false, std::memory_order_release);
+        subscription_rejected_.store(false, std::memory_order_release);
 
-        for (int attempt = 1; attempt <= k_max_attempts; ++attempt) {
-            running_.store(true, std::memory_order_release);
-            state_.store(State::BUFFERING, std::memory_order_release);
-            last_sequence_.store(0, std::memory_order_release);
-            last_heartbeat_ns_.store(0, std::memory_order_release);
-            last_event_time_exchange_ns_.store(0, std::memory_order_release);
-            last_start_failure_reason_ = "timeout waiting for snapshot";
-            delta_buffer_.clear();
-            reconnect_requested_.store(false, std::memory_order_release);
-            auth_rejected_.store(false, std::memory_order_release);
-            subscription_rejected_.store(false, std::memory_order_release);
+        ws_thread_ = std::thread([this]() -> void { ws_event_loop(); });
 
-            ws_thread_ = std::thread([this]() -> void { ws_event_loop(); });
+        std::unique_lock<std::mutex> lock(ws_mutex_);
+        bool ready = ws_cv_.wait_for(lock, std::chrono::seconds(45), [this]() -> bool {
+            return state_.load(std::memory_order_acquire) == State::STREAMING ||
+                   !running_.load(std::memory_order_acquire);
+        });
+        lock.unlock();
 
-            std::unique_lock<std::mutex> lock(ws_mutex_);
-            bool ready = ws_cv_.wait_for(lock, std::chrono::seconds(15), [this]() -> bool {
-                return state_.load(std::memory_order_acquire) == State::STREAMING ||
-                       !running_.load(std::memory_order_acquire);
-            });
-            lock.unlock();
-
-            const bool streaming = state_.load(std::memory_order_acquire) == State::STREAMING;
-            if (ready && streaming) {
-                LOG_INFO("[Coinbase] feed handler started", "symbol", symbol_.c_str());
-                return Result::SUCCESS;
-            }
-
-            const std::string sub_reason = last_start_failure_reason_;
-            LOG_ERROR("[Coinbase] feed start failed", "symbol", symbol_.c_str(), "attempt", attempt,
-                      "reason", sub_reason.c_str());
-
-            running_.store(false, std::memory_order_release);
-            if (auto *ctx =
-                    static_cast<struct lws_context *>(lws_ctx_.load(std::memory_order_acquire))) {
-                lws_cancel_service(ctx);
-            }
-            ws_cv_.notify_all();
-            if (ws_thread_.joinable()) {
-                ws_thread_.join();
-            }
-
-            if (attempt < k_max_attempts) {
-                LOG_INFO("[Coinbase] Retrying feed start", "symbol", symbol_.c_str(), "backoff_ms",
-                         k_backoff_ms[attempt - 1]);
-                std::this_thread::sleep_for(std::chrono::milliseconds(k_backoff_ms[attempt - 1]));
-            }
+        const bool streaming = state_.load(std::memory_order_acquire) == State::STREAMING;
+        if (ready && streaming) {
+            LOG_INFO("[Coinbase] feed handler started", "symbol", symbol_.c_str());
+            return Result::SUCCESS;
         }
 
-        LOG_ERROR("[Coinbase] feed permanently failed after all retries", "symbol", symbol_.c_str());
+        const std::string sub_reason = last_start_failure_reason_;
+        LOG_ERROR("[Coinbase] feed start failed", "symbol", symbol_.c_str(),
+                  "reason", sub_reason.c_str());
+
+        running_.store(false, std::memory_order_release);
+        if (auto *ctx =
+                static_cast<struct lws_context *>(lws_ctx_.load(std::memory_order_acquire))) {
+            lws_cancel_service(ctx);
+        }
+        ws_cv_.notify_all();
+        if (ws_thread_.joinable()) {
+            ws_thread_.join();
+        }
+
+        LOG_ERROR("[Coinbase] feed permanently failed", "symbol", symbol_.c_str());
         emit_ops_event();
         return Result::ERROR_CONNECTION_LOST;
     }
@@ -504,26 +493,34 @@ namespace trading {
             }
         }
 
+        CoinbaseWsSession session;
+        session.handler = this;
+
+        lws_context_creation_info ctx_info = {};
+        ctx_info.port = CONTEXT_PORT_NO_LISTEN;
+        ctx_info.protocols = k_coinbase_protocols;
+        ctx_info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+        ctx_info.user = &session;
+
+        auto *ctx = lws_create_context(&ctx_info);
+        if (ctx == nullptr) {
+            last_start_failure_reason_ = "websocket context creation failed";
+            LOG_ERROR("[Coinbase] lws_create_context failed", "symbol", symbol_.c_str());
+            running_.store(false, std::memory_order_release);
+            ws_cv_.notify_all();
+            return;
+        }
+        lws_ctx_.store(ctx, std::memory_order_release);
+
         while (running_.load(std::memory_order_acquire)) {
-            CoinbaseWsSession session;
-            session.handler = this;
+            session.wsi = nullptr;
+            session.established = false;
+            session.closed = false;
+            session.send_ping = false;
+            session.last_ping_ns = 0;
+            session.pending_msg_index = 0;
+            session.frag_len = 0;
             session.subscribe_msgs = build_subscription_messages();
-
-            lws_context_creation_info ctx_info = {};
-            ctx_info.port = CONTEXT_PORT_NO_LISTEN;
-            ctx_info.protocols = k_coinbase_protocols;
-            ctx_info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
-            ctx_info.user = &session;
-
-            auto *ctx = lws_create_context(&ctx_info);
-            if (ctx == nullptr) {
-                last_start_failure_reason_ = "websocket context creation failed";
-                LOG_ERROR("[Coinbase] lws_create_context failed", "symbol", symbol_.c_str());
-                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-                delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
-                continue;
-            }
-            lws_ctx_.store(ctx, std::memory_order_release);
 
             lws_client_connect_info connect_info = {};
             connect_info.context = ctx;
@@ -538,8 +535,6 @@ namespace trading {
             if (lws_client_connect_via_info(&connect_info) == nullptr) {
                 last_start_failure_reason_ = "websocket connect failed";
                 LOG_ERROR("[Coinbase] WebSocket connect failed", "symbol", symbol_.c_str());
-                lws_context_destroy(ctx);
-                lws_ctx_.store(nullptr, std::memory_order_release);
                 std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
                 delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
                 continue;
@@ -550,8 +545,6 @@ namespace trading {
             }
 
             if (!running_.load() || session.closed) {
-                lws_context_destroy(ctx);
-                lws_ctx_.store(nullptr, std::memory_order_release);
                 if (running_.load()) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
                     delay_ms = std::min(delay_ms * 2, MAX_DELAY_MS);
@@ -583,8 +576,6 @@ namespace trading {
                 lws_service(ctx, 50);
             }
 
-            lws_context_destroy(ctx);
-            lws_ctx_.store(nullptr, std::memory_order_release);
             state_.store(State::BUFFERING, std::memory_order_release);
 
             if (running_.load(std::memory_order_acquire)) {
@@ -595,6 +586,8 @@ namespace trading {
             }
         }
 
+        lws_context_destroy(ctx);
+        lws_ctx_.store(nullptr, std::memory_order_release);
         ws_cv_.notify_all();
     }
 
