@@ -216,7 +216,7 @@ namespace trading {
         Exchange exchange() const { return exchange_; }
 
     private:
-        static constexpr double k_max_spread_ticks_multiplier_ = 0.25;
+        static constexpr double k_max_spread_ticks_multiplier_ = 1.0;
         static constexpr size_t k_min_active_levels_ = 1024;
 
         size_t compute_snapshot_active_levels(double best_bid) const noexcept {
