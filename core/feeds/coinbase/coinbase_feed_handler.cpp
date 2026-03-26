@@ -31,8 +31,8 @@ namespace trading {
             int64_t last_ping_ns{0};
             size_t pending_msg_index{0};
             std::vector<std::string> subscribe_msgs;
-            char frag_buf[131072];
             size_t frag_len{0};
+            std::string frag_buf;
         };
 
         static auto base64url_encode(const unsigned char *data, size_t len) -> std::string {
@@ -161,15 +161,15 @@ namespace trading {
                 case LWS_CALLBACK_CLIENT_RECEIVE: {
                     const char *data = static_cast<const char *>(input);
                     bool is_final = lws_is_final_fragment(wsi) != 0;
-                    if (session->frag_len + len <= sizeof(session->frag_buf)) {
-                        std::memcpy(session->frag_buf + session->frag_len, data, len);
-                        session->frag_len += len;
+                    constexpr size_t k_max_msg_bytes = 8UL * 1024UL * 1024UL;
+                    if (session->frag_buf.size() + len <= k_max_msg_bytes) {
+                        session->frag_buf.append(data, len);
                     } else {
-                        session->frag_len = 0;
+                        session->frag_buf.clear();
                     }
-                    if (is_final && session->frag_len > 0 && (session->handler != nullptr)) {
-                        session->handler->process_message(std::string(session->frag_buf, session->frag_len));
-                        session->frag_len = 0;
+                    if (is_final && !session->frag_buf.empty() && (session->handler != nullptr)) {
+                        session->handler->process_message(session->frag_buf);
+                        session->frag_buf.clear();
                     }
                     break;
                 }
