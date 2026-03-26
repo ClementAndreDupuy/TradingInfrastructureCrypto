@@ -21,7 +21,7 @@ namespace trading {
     public:
         static constexpr const char *k_default_path = "/tmp/trt_ipc/trt_lob_feed.bin";
         static constexpr size_t k_capacity = 10000;
-        static constexpr size_t k_slot_size = 488;
+        static constexpr size_t k_slot_size = 464;
         static constexpr size_t k_header_size = 64;
 
         struct alignas(8) LobSlot {
@@ -43,7 +43,7 @@ namespace trading {
         };
 
         static_assert(alignof(LobSlot) == 8, "LobSlot must remain 8-byte aligned");
-        static_assert(sizeof(LobSlot) == k_slot_size, "LobSlot must be exactly 488 bytes");
+        static_assert(sizeof(LobSlot) == k_slot_size, "LobSlot must be exactly 464 bytes");
         static_assert(std::atomic<uint64_t>::is_always_lock_free,
                       "std::atomic<uint64_t> must be lock-free for cross-process mmap use");
 
