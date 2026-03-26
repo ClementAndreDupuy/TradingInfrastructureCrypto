@@ -8,7 +8,7 @@ from typing import Any
 import polars as pl
 
 log = logging.getLogger(__name__)
-N_LEVELS = 5
+N_LEVELS = 10
 _REQUIRED_COLUMNS: list[tuple[str, str]] = [
     ("timestamp_ns", "int"),
     ("exchange", "str"),

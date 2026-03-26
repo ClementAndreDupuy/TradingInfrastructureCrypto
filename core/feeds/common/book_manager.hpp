@@ -19,8 +19,8 @@ namespace trading {
             : book_(symbol, exchange, tick_size, max_levels), last_update_steady_ns_(0),
               publisher_(nullptr), last_publish_local_ts_ns_(0), last_publish_exchange_ts_ns_(0),
               timestamp_issue_count_(0), trade_window_start_ns_(0), trade_window_volume_(0.0) {
-            pub_bids_.reserve(5);
-            pub_asks_.reserve(5);
+            pub_bids_.reserve(10);
+            pub_asks_.reserve(10);
         }
 
         void set_publisher(LobPublisher *publisher) noexcept { publisher_ = publisher; }
@@ -110,7 +110,7 @@ namespace trading {
 
             pub_bids_.clear();
             pub_asks_.clear();
-            book_.get_top_levels(5, pub_bids_, pub_asks_);
+            book_.get_top_levels(10, pub_bids_, pub_asks_);
             publisher_->publish(book_.exchange(), book_.symbol(), timestamp_ns, book_.get_mid_price(),
                                 pub_bids_, pub_asks_, last_trade_flow_);
         }

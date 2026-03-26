@@ -78,7 +78,7 @@
 
 ---
 
-#### [ ] 3b. Increase LOB depth from 5 to 10 levels
+#### [x] 3b. Increase LOB depth from 5 to 10 levels
 
 **Priority / Severity**
 - HIGH — 5 levels loses iceberg context and depth asymmetry beyond the near touch.

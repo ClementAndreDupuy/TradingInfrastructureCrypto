@@ -21,7 +21,7 @@ namespace trading {
     public:
         static constexpr const char *k_default_path = "/tmp/trt_ipc/trt_lob_feed.bin";
         static constexpr size_t k_capacity = 10000;
-        static constexpr size_t k_slot_size = 256;
+        static constexpr size_t k_slot_size = 384;
         static constexpr size_t k_header_size = 64;
 
         struct alignas(8) LobSlot {
@@ -29,19 +29,19 @@ namespace trading {
             char symbol[15];
             int64_t timestamp_ns;
             double mid_price;
-            double bid_price[5];
-            double bid_size[5];
-            double ask_price[5];
-            double ask_size[5];
+            double bid_price[10];
+            double bid_size[10];
+            double ask_price[10];
+            double ask_size[10];
             double last_trade_price;
             double last_trade_size;
             double recent_traded_volume;
             uint8_t trade_direction;
-            char reserved[39];
+            char reserved[7];
         };
 
         static_assert(alignof(LobSlot) == 8, "LobSlot must remain 8-byte aligned");
-        static_assert(sizeof(LobSlot) == k_slot_size, "LobSlot must be exactly 256 bytes");
+        static_assert(sizeof(LobSlot) == k_slot_size, "LobSlot must be exactly 384 bytes");
         static_assert(std::atomic<uint64_t>::is_always_lock_free,
                       "std::atomic<uint64_t> must be lock-free for cross-process mmap use");
 
@@ -123,7 +123,7 @@ namespace trading {
             slot.timestamp_ns = timestamp_ns;
             slot.mid_price = mid_price;
 
-            for (size_t i = 0; i < 5; ++i) {
+            for (size_t i = 0; i < 10; ++i) {
                 slot.bid_price[i] = (i < bids.size()) ? bids[i].price : 0.0;
                 slot.bid_size[i] = (i < bids.size()) ? bids[i].size : 0.0;
                 slot.ask_price[i] = (i < asks.size()) ? asks[i].price : 0.0;

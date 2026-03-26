@@ -6,7 +6,7 @@ from typing import Any
 
 RING_PATH = "/tmp/trt_ipc/trt_lob_feed.bin"
 HEADER_FMT = "<8sIIIIQ32s"
-SLOT_FMT = "<B15sqd" + "d" * 20 + "dddB39s"
+SLOT_FMT = "<B15sqd" + "d" * 40 + "dddB7s"
 HEADER_SIZE = struct.calcsize(HEADER_FMT)
 SLOT_SIZE = struct.calcsize(SLOT_FMT)
 EXPECTED_MAGIC = b"TRTLOB01"
@@ -73,15 +73,15 @@ class CoreBridge:
             exchange_id = unpacked[0]
             symbol_raw = unpacked[1]
             timestamp_ns = unpacked[2]
-            price_size_values = unpacked[4:24]
-            bids_p = price_size_values[0:5]
-            bids_s = price_size_values[5:10]
-            asks_p = price_size_values[10:15]
-            asks_s = price_size_values[15:20]
-            last_trade_price = unpacked[24]
-            last_trade_size = unpacked[25]
-            recent_traded_volume = unpacked[26]
-            trade_direction = unpacked[27]
+            price_size_values = unpacked[4:44]
+            bids_p = price_size_values[0:10]
+            bids_s = price_size_values[10:20]
+            asks_p = price_size_values[20:30]
+            asks_s = price_size_values[30:40]
+            last_trade_price = unpacked[44]
+            last_trade_size = unpacked[45]
+            recent_traded_volume = unpacked[46]
+            trade_direction = unpacked[47]
             best_bid = float(bids_p[0])
             best_ask = float(asks_p[0])
             if best_bid <= 0.0 or best_ask <= 0.0 or best_ask <= best_bid:
@@ -99,7 +99,7 @@ class CoreBridge:
                 "recent_traded_volume": float(recent_traded_volume),
                 "trade_direction": int(trade_direction),
             }
-            for i in range(5):
+            for i in range(10):
                 row[f"bid_price_{i + 1}"] = float(bids_p[i])
                 row[f"bid_size_{i + 1}"] = float(bids_s[i])
                 row[f"ask_price_{i + 1}"] = float(asks_p[i])
