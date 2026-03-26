@@ -199,6 +199,31 @@ TEST_F(CoinbaseFeedHandlerTest, AuthRejectSurfacesSpecificError) {
     EXPECT_NE(last_error_.find("authentication rejected"), std::string::npos);
 }
 
+TEST_F(CoinbaseFeedHandlerTest, LargeSnapshotExceeding128KBIsProcessed) {
+    // Coinbase BTC-USD snapshots can exceed 128KB (thousands of price levels).
+    // This test verifies that large snapshots are not silently dropped.
+    nlohmann::json updates = nlohmann::json::array();
+    for (int i = 0; i < 2000; ++i) {
+        updates.push_back({{"side", "bid"},
+                           {"price_level", std::to_string(50000.0 - i * 0.01)},
+                           {"new_quantity", std::to_string(1.0 + i * 0.001)}});
+        updates.push_back({{"side", "offer"},
+                           {"price_level", std::to_string(50001.0 + i * 0.01)},
+                           {"new_quantity", std::to_string(1.0 + i * 0.001)}});
+    }
+    nlohmann::json snapshot = {
+        {"channel", "l2_data"},
+        {"sequence_num", 300},
+        {"events", nlohmann::json::array({{{"type", "snapshot"}, {"updates", updates}}})}};
+    const std::string msg = snapshot.dump();
+    ASSERT_GT(msg.size(), 131072u) << "test requires message > 128KB to validate fix";
+    EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
+    EXPECT_EQ(snapshot_count_, 1);
+    EXPECT_EQ(handler_->get_sequence(), 300u);
+    EXPECT_EQ(last_snapshot_.bids.size(), 2000u);
+    EXPECT_EQ(last_snapshot_.asks.size(), 2000u);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
