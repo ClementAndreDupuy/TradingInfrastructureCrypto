@@ -109,6 +109,120 @@ def _normalize_search_space(search_space: Any, *, field: str) -> dict[str, Any]:
 
 def _normalize_model(raw: dict[str, Any]) -> dict[str, Any]:
     cfg = dict(raw)
+    dataset = cfg.get("dataset")
+    if dataset is not None:
+        dataset_map = _require_mapping(dataset, field="model.dataset")
+        normalized_dataset = dict(dataset_map)
+        int_fields = {"seq_len", "stride", "rolling_normalise_window", "walk_forward_folds"}
+        float_fields = {"walk_forward_train_frac", "validation_frac"}
+        for field_name in int_fields:
+            if field_name in normalized_dataset:
+                normalized_dataset[field_name] = _as_int(
+                    normalized_dataset[field_name], field=f"model.dataset.{field_name}"
+                )
+        for field_name in float_fields:
+            if field_name in normalized_dataset:
+                normalized_dataset[field_name] = _as_float(
+                    normalized_dataset[field_name], field=f"model.dataset.{field_name}"
+                )
+        horizons = normalized_dataset.get("horizons")
+        if horizons is not None:
+            if not isinstance(horizons, list):
+                raise ConfigValidationError("model.dataset.horizons must be a list")
+            normalized_dataset["horizons"] = [
+                _as_int(value, field=f"model.dataset.horizons[{idx}]") for idx, value in enumerate(horizons)
+            ]
+        cfg["dataset"] = normalized_dataset
+
+    labels = cfg.get("labels")
+    if labels is not None:
+        labels_map = _require_mapping(labels, field="model.labels")
+        normalized_labels = dict(labels_map)
+        if "flat_thresh" in normalized_labels:
+            normalized_labels["flat_thresh"] = _as_float(normalized_labels["flat_thresh"], field="model.labels.flat_thresh")
+        if "reversion_horizon" in normalized_labels:
+            normalized_labels["reversion_horizon"] = _as_int(
+                normalized_labels["reversion_horizon"], field="model.labels.reversion_horizon"
+            )
+        if "return_clip" in normalized_labels:
+            normalized_labels["return_clip"] = _as_float(normalized_labels["return_clip"], field="model.labels.return_clip")
+        if "adv_sel_thresh" in normalized_labels:
+            normalized_labels["adv_sel_thresh"] = _as_float(
+                normalized_labels["adv_sel_thresh"], field="model.labels.adv_sel_thresh"
+            )
+        cfg["labels"] = normalized_labels
+
+    trainer = cfg.get("trainer")
+    if trainer is not None:
+        trainer_map = _require_mapping(trainer, field="model.trainer")
+        normalized_trainer = dict(trainer_map)
+        int_fields = {
+            "d_spatial",
+            "d_temporal",
+            "seq_len",
+            "n_lob_heads",
+            "n_lob_layers",
+            "n_temp_heads",
+            "n_temp_layers",
+            "epochs",
+            "batch_size",
+            "n_folds",
+            "pretrain_epochs",
+            "lr_warmup_epochs",
+            "early_stop_patience",
+            "log_every_epochs",
+            "fold_seed_offset",
+        }
+        float_fields = {
+            "dropout",
+            "lr",
+            "weight_decay",
+            "grad_clip",
+            "train_frac",
+            "w_return",
+            "w_direction",
+            "w_risk",
+            "w_tc",
+            "tc_bps",
+            "adv_noise_std",
+            "validation_frac",
+        }
+        bool_fields = {"pretrain", "use_amp"}
+        for field_name in int_fields:
+            if field_name in normalized_trainer:
+                normalized_trainer[field_name] = _as_int(
+                    normalized_trainer[field_name], field=f"model.trainer.{field_name}"
+                )
+        for field_name in float_fields:
+            if field_name in normalized_trainer:
+                normalized_trainer[field_name] = _as_float(
+                    normalized_trainer[field_name], field=f"model.trainer.{field_name}"
+                )
+        for field_name in bool_fields:
+            if field_name in normalized_trainer:
+                normalized_trainer[field_name] = _as_bool(
+                    normalized_trainer[field_name], field=f"model.trainer.{field_name}"
+                )
+        cfg["trainer"] = normalized_trainer
+
+    secondary = cfg.get("secondary")
+    if secondary is not None:
+        secondary_map = _require_mapping(secondary, field="model.secondary")
+        normalized_secondary = dict(secondary_map)
+        int_fields = {"d_spatial", "d_temporal", "n_temp_layers"}
+        float_fields = {"w_return", "w_direction", "w_risk"}
+        for field_name in int_fields:
+            if field_name in normalized_secondary:
+                normalized_secondary[field_name] = _as_int(
+                    normalized_secondary[field_name], field=f"model.secondary.{field_name}"
+                )
+        for field_name in float_fields:
+            if field_name in normalized_secondary:
+                normalized_secondary[field_name] = _as_float(
+                    normalized_secondary[field_name], field=f"model.secondary.{field_name}"
+                )
+        cfg["secondary"] = normalized_secondary
+
     search = cfg.get("search")
     if search is not None:
         cfg["search"] = _normalize_search_space(search, field="model.search")
