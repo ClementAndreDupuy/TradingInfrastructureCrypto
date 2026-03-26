@@ -59,6 +59,52 @@ def _extract_levels(df: pl.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarra
     return _pad_to_levels(bp), _pad_to_levels(bs), _pad_to_levels(ap), _pad_to_levels(as_)
 
 
+def _extract_order_counts(df: pl.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """Returns bid/ask order counts shaped (T, N_LEVELS).
+
+    Semantics note:
+    - Some venues publish per-level order counts (e.g. OKX).
+    - Other venues do not, and publish zero as "not available".
+    This helper keeps missing counts at zero so downstream logic can
+    explicitly decide when to trust count-aware features.
+    """
+    T = len(df)
+
+    def _count_cols(*names: str) -> np.ndarray:
+        cols = []
+        for i in range(1, N_LEVELS + 1):
+            values: np.ndarray | None = None
+            for name in names:
+                col = f"{name}_{i}"
+                if col in df.columns:
+                    values = df[col].to_numpy(allow_copy=True).astype(np.float64)
+                    break
+            if values is None:
+                values = np.zeros(T, dtype=np.float64)
+            cols.append(values)
+        return np.stack(cols, axis=1)
+
+    bid_counts = _count_cols("bid_oc", "bid_order_count")
+    ask_counts = _count_cols("ask_oc", "ask_order_count")
+    return bid_counts, ask_counts
+
+
+def _count_weighted_depth(
+    sizes: np.ndarray,
+    counts: np.ndarray,
+    opposite_counts: np.ndarray,
+) -> np.ndarray:
+    """Blend size-only and count-aware depth with missing-count fallback.
+
+    If both sides publish positive counts at a level, we up-weight depth by
+    log1p(count) to encode queue crowding. If either side is missing counts,
+    we preserve the legacy size-only semantics for that level.
+    """
+    both_present = (counts > 0.0) & (opposite_counts > 0.0)
+    multiplier = np.where(both_present, 1.0 + np.log1p(counts), 1.0)
+    return sizes * multiplier
+
+
 def compute_lob_tensor(df: pl.DataFrame) -> np.ndarray:
     """Build the (T, N_LEVELS, 4) LOB tensor.
     Each level: [normalised_bid_price, bid_size_share, normalised_ask_price, ask_size_share]
@@ -131,6 +177,9 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
         D_SCALAR-1           trade_vs_mid_bps   — trade-price deviation from mid in bps
     """
     bp, bs, ap, as_ = _extract_levels(df)
+    bid_counts, ask_counts = _extract_order_counts(df)
+    eff_bs = _count_weighted_depth(bs, bid_counts, ask_counts)
+    eff_as = _count_weighted_depth(as_, ask_counts, bid_counts)
 
     best_bid = bp[:, 0]
     best_ask = ap[:, 0]
@@ -138,12 +187,12 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
 
     spread_bps = np.where(mid > 0, (best_ask - best_bid) / mid * 1e4, 0.0)
 
-    denom = bs[:, 0] + as_[:, 0]
+    denom = eff_bs[:, 0] + eff_as[:, 0]
     denom = np.where(denom > 0, denom, 1.0)
-    microprice = (best_bid * as_[:, 0] + best_ask * bs[:, 0]) / denom
+    microprice = (best_bid * eff_as[:, 0] + best_ask * eff_bs[:, 0]) / denom
 
-    depth_bid = bs.sum(axis=1)
-    depth_ask = as_.sum(axis=1)
+    depth_bid = eff_bs.sum(axis=1)
+    depth_ask = eff_as.sum(axis=1)
     total_depth = depth_bid + depth_ask
     obi = np.where(total_depth > 0, depth_bid / total_depth, 0.5)
 
@@ -160,7 +209,7 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
     vol_60 = _rolling_std(log_ret, 60)
     vol_200 = _rolling_std(log_ret, 200)
 
-    qi = (bs - as_) / (bs + as_ + 1e-8)
+    qi = (eff_bs - eff_as) / (eff_bs + eff_as + 1e-8)
     last_trade_price = _safe_col(df, "last_trade_price")
     last_trade_size = np.abs(_safe_col(df, "last_trade_size"))
     recent_traded_volume = np.clip(_safe_col(df, "recent_traded_volume"), 0.0, None)

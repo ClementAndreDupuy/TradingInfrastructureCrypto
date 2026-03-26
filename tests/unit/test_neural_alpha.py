@@ -236,6 +236,41 @@ class TestFeatures:
         scalar = compute_scalar_features(out)
         assert scalar.shape[1] == D_SCALAR
 
+    def test_order_count_zero_semantics_fall_back_to_size_only_features(self) -> None:
+        base_df = _make_lob_df(n_ticks=24, seed=13)
+        with_missing_counts = base_df.with_columns(
+            [pl.lit(0).alias(f"bid_oc_{i}") for i in range(1, 11)]
+            + [pl.lit(0).alias(f"ask_oc_{i}") for i in range(1, 11)]
+        )
+        left = compute_scalar_features(base_df)
+        right = compute_scalar_features(with_missing_counts)
+        assert np.allclose(left, right)
+
+    def test_order_count_presence_reweights_depth_imbalance(self) -> None:
+        rows = [
+            {
+                "timestamp_ns": 1,
+                "best_bid": 100.0,
+                "best_ask": 100.2,
+                "last_trade_price": 100.1,
+                "last_trade_size": 0.1,
+                "recent_traded_volume": 0.3,
+                "trade_direction": 1,
+                **{f"bid_price_{i}": 100.0 - i * 0.01 for i in range(1, 11)},
+                **{f"ask_price_{i}": 100.2 + i * 0.01 for i in range(1, 11)},
+                **{f"bid_size_{i}": 1.0 for i in range(1, 11)},
+                **{f"ask_size_{i}": 1.0 for i in range(1, 11)},
+                **{f"bid_oc_{i}": 20 for i in range(1, 11)},
+                **{f"ask_oc_{i}": 2 for i in range(1, 11)},
+            }
+        ]
+        df = pl.DataFrame(rows)
+        scalar = compute_scalar_features(df)
+        obi_index = 3
+        qi_start = 13
+        assert scalar[0, obi_index] > 0.5
+        assert scalar[0, qi_start] > 0.0
+
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 
