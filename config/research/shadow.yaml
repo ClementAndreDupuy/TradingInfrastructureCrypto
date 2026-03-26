@@ -30,7 +30,11 @@ session:
   drift_window: 200
   drift_min_samples: 60
   drift_ic_floor: -0.05
+  drift_breach_streak: 3
+  drift_recovery_streak: 8
+  drift_rearm_ic_margin: 0.02
   safe_mode_ticks: 120
+  safe_mode_cooldown_ticks: 120
   continuous_train_every_ticks: 1000
   continuous_train_window_ticks: 2000
   regime_retrain_every_ticks: 1000
@@ -38,6 +42,11 @@ session:
   canary_icir_floor: 0.0
   canary_window: 200
   canary_min_samples: 60
+  canary_trigger_streak: 3
+  canary_rearm_streak: 8
+  extreme_risk_threshold: 0.98
+  secondary_max_relative_loss: 1.15
+  secondary_min_validation_ic_delta: -0.02
   require_full_model_stack: false
   min_continuous_train_interval_s: 600
   min_regime_train_interval_s: 600

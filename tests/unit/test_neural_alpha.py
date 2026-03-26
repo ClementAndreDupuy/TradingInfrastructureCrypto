@@ -1273,3 +1273,53 @@ class TestShadowTimestampMetrics:
         assert metrics["duration_min"] == pytest.approx(0.5)
         assert metrics["timestamp_quality"]["has_timestamp_issues"] is True
         assert metrics["ic"] == 0.0
+
+    def test_signal_gates_use_graded_notional_scaling(self, tmp_path: Path) -> None:
+        cfg = ShadowSessionConfig(
+            log_path=str(tmp_path / "shadow.jsonl"),
+            signal_file=str(tmp_path / "alpha_signal.bin"),
+            regime_signal_file=str(tmp_path / "regime_signal.bin"),
+            exchanges=["BINANCE"],
+            seq_len=8,
+        )
+        session = NeuralAlphaShadowSession(cfg)
+
+        signal_bps, size_scale, reasons, safe_mode = session._apply_signal_gates(
+            12.0,
+            0.2,
+            np.array([0.3, 0.2, 0.5], dtype=np.float64),
+            ret_1tick_bps=5.0,
+        )
+
+        assert signal_bps == pytest.approx(12.0)
+        assert 0.0 < size_scale < 1.0
+        assert "confidence_gate" in reasons
+        assert safe_mode is False
+
+        session._log_fp.close()
+        session._publisher.close()
+        session._regime_publisher.close()
+
+    def test_safe_mode_respects_cooldown(self, tmp_path: Path) -> None:
+        cfg = ShadowSessionConfig(
+            log_path=str(tmp_path / "shadow.jsonl"),
+            signal_file=str(tmp_path / "alpha_signal.bin"),
+            regime_signal_file=str(tmp_path / "regime_signal.bin"),
+            exchanges=["BINANCE"],
+            safe_mode_ticks=4,
+            safe_mode_cooldown_ticks=6,
+            seq_len=8,
+        )
+        session = NeuralAlphaShadowSession(cfg)
+
+        session._trigger_safe_mode("drift")
+        first_remaining = session._safe_mode_ticks_remaining
+        session._trigger_safe_mode("drift_again")
+
+        assert first_remaining == 4
+        assert session._safe_mode_ticks_remaining == 4
+        assert session._safe_mode_reason == "drift"
+
+        session._log_fp.close()
+        session._publisher.close()
+        session._regime_publisher.close()
