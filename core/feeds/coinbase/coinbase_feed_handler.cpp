@@ -641,6 +641,11 @@ namespace trading {
             return Result::ERROR_BOOK_CORRUPTED;
         }
 
+        std::sort(snap.bids.begin(), snap.bids.end(),
+                  [](const PriceLevel &a, const PriceLevel &b) { return a.price > b.price; });
+        std::sort(snap.asks.begin(), snap.asks.end(),
+                  [](const PriceLevel &a, const PriceLevel &b) { return a.price < b.price; });
+
         last_sequence_.store(seq, std::memory_order_release);
         last_event_time_exchange_ns_.store(snap.timestamp_exchange_ns, std::memory_order_release);
         if (snapshot_callback_) {
