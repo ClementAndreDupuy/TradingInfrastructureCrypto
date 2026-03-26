@@ -222,6 +222,35 @@ TEST_F(CoinbaseFeedHandlerTest, LargeSnapshotExceeding128KBIsProcessed) {
     EXPECT_EQ(last_snapshot_.asks.size(), 2000u);
 }
 
+TEST_F(CoinbaseFeedHandlerTest, SnapshotBidsAndAsksSortedAfterParsing) {
+    // Coinbase sends snapshot levels in arbitrary order; the handler must sort them
+    // so that bids[0] is the best bid (highest price) and asks[0] is the best ask
+    // (lowest price), as required by OrderBook::apply_snapshot().
+    std::string snapshot =
+        R"({"channel":"l2_data","sequence_num":500,"events":[{"type":"snapshot","updates":[)"
+        R"({"side":"bid","price_level":"49990.0","new_quantity":"1.0"},)"
+        R"({"side":"bid","price_level":"50000.0","new_quantity":"2.0"},)"
+        R"({"side":"bid","price_level":"49995.0","new_quantity":"3.0"},)"
+        R"({"side":"offer","price_level":"50010.0","new_quantity":"1.0"},)"
+        R"({"side":"offer","price_level":"50001.0","new_quantity":"2.0"},)"
+        R"({"side":"offer","price_level":"50005.0","new_quantity":"3.0"})"
+        R"(]}]})";
+
+    EXPECT_EQ(handler_->process_message(snapshot), Result::SUCCESS);
+    ASSERT_EQ(last_snapshot_.bids.size(), 3u);
+    ASSERT_EQ(last_snapshot_.asks.size(), 3u);
+
+    // Bids must be sorted descending (best bid first)
+    EXPECT_DOUBLE_EQ(last_snapshot_.bids[0].price, 50000.0);
+    EXPECT_DOUBLE_EQ(last_snapshot_.bids[1].price, 49995.0);
+    EXPECT_DOUBLE_EQ(last_snapshot_.bids[2].price, 49990.0);
+
+    // Asks must be sorted ascending (best ask first)
+    EXPECT_DOUBLE_EQ(last_snapshot_.asks[0].price, 50001.0);
+    EXPECT_DOUBLE_EQ(last_snapshot_.asks[1].price, 50005.0);
+    EXPECT_DOUBLE_EQ(last_snapshot_.asks[2].price, 50010.0);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
