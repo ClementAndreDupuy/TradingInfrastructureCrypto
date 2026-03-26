@@ -1,7 +1,5 @@
-#define private public
 #include "core/feeds/binance/binance_feed_handler.hpp"
 #include "core/feeds/common/book_manager.hpp"
-#undef private
 #include <gtest/gtest.h>
 #include <string>
 
@@ -64,24 +62,25 @@ TEST_F(BinanceFeedHandlerTest, IgnoreNonDepthMessages) {
 }
 
 TEST_F(BinanceFeedHandlerTest, BuffersParsedDeltasWhileSynchronizing) {
+    handler_->set_state(BinanceFeedHandler::State::BUFFERING);
     std::string msg =
         R"({"e":"depthUpdate","E":1700000000000,"s":"BTCUSDT","U":101,"u":102,"b":[["50000.00","1.5"]],"a":[["50001.00","0.8"]]})";
 
     EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
-    ASSERT_EQ(handler_->delta_buffer_.size(), 1u);
-    EXPECT_EQ(handler_->delta_buffer_[0].first_update_id, 101u);
-    EXPECT_EQ(handler_->delta_buffer_[0].last_update_id, 102u);
-    EXPECT_EQ(handler_->delta_buffer_[0].timestamp_exchange_ns, 1700000000000000000LL);
+    ASSERT_EQ(handler_->delta_buffer().size(), 1u);
+    EXPECT_EQ(handler_->delta_buffer()[0].first_update_id, 101u);
+    EXPECT_EQ(handler_->delta_buffer()[0].last_update_id, 102u);
+    EXPECT_EQ(handler_->delta_buffer()[0].timestamp_exchange_ns, 1700000000000000000LL);
     auto stats = handler_->sync_stats();
     EXPECT_EQ(stats.buffer_high_water_mark, 1u);
 }
 
 TEST_F(BinanceFeedHandlerTest, ApplyBufferedDeltasSkipsStaleAndBridgesSnapshot) {
-    handler_->delta_buffer_.push_back(make_delta(95, 99));
-    handler_->delta_buffer_.push_back(make_delta(100, 102));
-    handler_->delta_buffer_.push_back(make_delta(103, 104, 50000.5, 50001.5));
-    handler_->last_sequence_.store(99, std::memory_order_release);
-    handler_->state_.store(BinanceFeedHandler::State::BUFFERING, std::memory_order_release);
+    handler_->delta_buffer().push_back(make_delta(95, 99));
+    handler_->delta_buffer().push_back(make_delta(100, 102));
+    handler_->delta_buffer().push_back(make_delta(103, 104, 50000.5, 50001.5));
+    handler_->set_last_sequence(99);
+    handler_->set_state(BinanceFeedHandler::State::BUFFERING);
 
     ASSERT_EQ(handler_->apply_buffered_deltas(99), Result::SUCCESS);
     EXPECT_EQ(handler_->get_sequence(), 104u);
@@ -94,20 +93,20 @@ TEST_F(BinanceFeedHandlerTest, ApplyBufferedDeltasSkipsStaleAndBridgesSnapshot) 
 
 
 TEST_F(BinanceFeedHandlerTest, AllBufferedDeltasOlderThanSnapshotAreIgnored) {
-    handler_->delta_buffer_.push_back(make_delta(95, 99));
-    handler_->delta_buffer_.push_back(make_delta(98, 99, 50000.5, 50001.5));
-    handler_->last_sequence_.store(100, std::memory_order_release);
+    handler_->delta_buffer().push_back(make_delta(95, 99));
+    handler_->delta_buffer().push_back(make_delta(98, 99, 50000.5, 50001.5));
+    handler_->set_last_sequence(100);
 
     ASSERT_EQ(handler_->apply_buffered_deltas(100), Result::SUCCESS);
-    EXPECT_TRUE(handler_->delta_buffer_.empty());
+    EXPECT_TRUE(handler_->delta_buffer().empty());
     EXPECT_TRUE(deltas_.empty());
     auto stats = handler_->sync_stats();
     EXPECT_EQ(stats.buffered_skipped, 2u);
 }
 
 TEST_F(BinanceFeedHandlerTest, MissingBridgeDeltaTriggersResync) {
-    handler_->delta_buffer_.push_back(make_delta(105, 106));
-    handler_->last_sequence_.store(99, std::memory_order_release);
+    handler_->delta_buffer().push_back(make_delta(105, 106));
+    handler_->set_last_sequence(99);
 
     EXPECT_EQ(handler_->apply_buffered_deltas(99), Result::ERROR_SEQUENCE_GAP);
     auto stats = handler_->sync_stats();
@@ -118,8 +117,8 @@ TEST_F(BinanceFeedHandlerTest, MissingBridgeDeltaTriggersResync) {
 
 
 TEST_F(BinanceFeedHandlerTest, StaleStreamingDeltaIsIgnoredPerBinanceContract) {
-    handler_->state_.store(BinanceFeedHandler::State::STREAMING, std::memory_order_release);
-    handler_->last_sequence_.store(105, std::memory_order_release);
+    handler_->set_state(BinanceFeedHandler::State::STREAMING);
+    handler_->set_last_sequence(105);
 
     std::string msg = R"({"e":"depthUpdate","s":"BTCUSDT","U":100,"u":104,"b":[["50000.00","1.0"]],"a":[]})";
     EXPECT_EQ(handler_->process_message(msg), Result::SUCCESS);
@@ -129,8 +128,8 @@ TEST_F(BinanceFeedHandlerTest, StaleStreamingDeltaIsIgnoredPerBinanceContract) {
 }
 
 TEST_F(BinanceFeedHandlerTest, StreamingSequenceGapTriggersResync) {
-    handler_->state_.store(BinanceFeedHandler::State::STREAMING, std::memory_order_release);
-    handler_->last_sequence_.store(100, std::memory_order_release);
+    handler_->set_state(BinanceFeedHandler::State::STREAMING);
+    handler_->set_last_sequence(100);
 
     std::string msg = R"({"e":"depthUpdate","s":"BTCUSDT","U":105,"u":105,"b":[],"a":[]})";
     EXPECT_EQ(handler_->process_message(msg), Result::ERROR_SEQUENCE_GAP);
@@ -138,7 +137,7 @@ TEST_F(BinanceFeedHandlerTest, StreamingSequenceGapTriggersResync) {
     auto stats = handler_->sync_stats();
     EXPECT_EQ(stats.resync_count, 1u);
     EXPECT_EQ(stats.last_resync_reason, "sequence_gap");
-    EXPECT_TRUE(handler_->reconnect_requested_.load(std::memory_order_acquire));
+    EXPECT_TRUE(handler_->reconnect_requested());
 }
 
 TEST_F(BinanceFeedHandlerTest, ParseFailureReturnsBookCorrupted) {
@@ -147,20 +146,21 @@ TEST_F(BinanceFeedHandlerTest, ParseFailureReturnsBookCorrupted) {
 }
 
 TEST_F(BinanceFeedHandlerTest, BufferOverflowTriggersResync) {
-    handler_->delta_buffer_.resize(BinanceFeedHandler::MAX_BUFFER_SIZE);
+    handler_->set_state(BinanceFeedHandler::State::BUFFERING);
+    handler_->delta_buffer().resize(BinanceFeedHandler::MAX_BUFFER_SIZE);
     std::string msg = R"({"e":"depthUpdate","s":"BTCUSDT","U":101,"u":101,"b":[],"a":[]})";
 
     EXPECT_EQ(handler_->process_message(msg), Result::ERROR_CONNECTION_LOST);
     auto stats = handler_->sync_stats();
     EXPECT_EQ(stats.resync_count, 1u);
     EXPECT_EQ(stats.last_resync_reason, "buffer_overflow");
-    EXPECT_TRUE(handler_->delta_buffer_.empty());
+    EXPECT_TRUE(handler_->delta_buffer().empty());
 }
 
 
 TEST_F(BinanceFeedHandlerTest, StreamingBatchKeepsBinanceUpdateIdOnEveryLevel) {
-    handler_->state_.store(BinanceFeedHandler::State::STREAMING, std::memory_order_release);
-    handler_->last_sequence_.store(100, std::memory_order_release);
+    handler_->set_state(BinanceFeedHandler::State::STREAMING);
+    handler_->set_last_sequence(100);
 
     const std::string msg =
         R"({"e":"depthUpdate","E":1700000000000,"s":"BTCUSDT","U":101,"u":101,"b":[["50000.00","0.0"],["49999.98","3.2"]],"a":[["50000.03","1.1"],["50000.04","2.4"]]})";
@@ -186,8 +186,8 @@ TEST_F(BinanceFeedHandlerTest, StreamingBatchAppliesAllLevelsToDynamicGridBook) 
     ASSERT_TRUE(book.is_ready());
 
     handler_->set_delta_callback(book.delta_handler());
-    handler_->state_.store(BinanceFeedHandler::State::STREAMING, std::memory_order_release);
-    handler_->last_sequence_.store(100, std::memory_order_release);
+    handler_->set_state(BinanceFeedHandler::State::STREAMING);
+    handler_->set_last_sequence(100);
 
     const std::string msg =
         R"({"e":"depthUpdate","E":1700000000000,"s":"BTCUSDT","U":101,"u":101,"b":[["50000.00","0.0"],["49999.98","3.2"]],"a":[["50000.03","1.1"],["50000.04","2.4"]]})";
