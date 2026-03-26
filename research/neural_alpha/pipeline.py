@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import time
+from dataclasses import asdict
+from itertools import islice, product
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Mapping
 
@@ -122,6 +124,12 @@ _TRADE_FLOW_DEFAULTS: dict[str, Any] = {
     "recent_traded_volume": 0.0,
     "trade_direction": 255,
 }
+_TRADE_COLUMNS: tuple[str, ...] = (
+    "last_trade_price",
+    "last_trade_size",
+    "recent_traded_volume",
+    "trade_direction",
+)
 
 
 def _ensure_trade_flow_columns(df: pl.DataFrame) -> pl.DataFrame:
@@ -132,6 +140,43 @@ def _ensure_trade_flow_columns(df: pl.DataFrame) -> pl.DataFrame:
         if column not in out.columns:
             out = out.with_columns(pl.lit(default).alias(column))
     return out
+
+def _has_dense_levels(df: pl.DataFrame) -> bool:
+    if "bid_prices" in df.columns and "ask_prices" in df.columns:
+        return True
+    level_columns: list[str] = []
+    for side in ("bid", "ask"):
+        for field in ("price", "size"):
+            level_columns.extend([f"{side}_{field}_{idx}" for idx in range(1, N_LEVELS + 1)])
+    return all(column in df.columns for column in level_columns)
+
+def _count_columns_present(df: pl.DataFrame) -> tuple[list[str], list[str]]:
+    bid_candidates = [f"bid_oc_{idx}" for idx in range(1, N_LEVELS + 1)] + [f"bid_order_count_{idx}" for idx in range(1, N_LEVELS + 1)]
+    ask_candidates = [f"ask_oc_{idx}" for idx in range(1, N_LEVELS + 1)] + [f"ask_order_count_{idx}" for idx in range(1, N_LEVELS + 1)]
+    bid_found = [column for column in bid_candidates if column in df.columns]
+    ask_found = [column for column in ask_candidates if column in df.columns]
+    return bid_found, ask_found
+
+def _validate_alpha_input_schema(df: pl.DataFrame) -> None:
+    if not _has_dense_levels(df):
+        raise RuntimeError(
+            f"Dataset must include {N_LEVELS} levels for bid/ask price+size columns (or list-level bid_prices/ask_prices)."
+        )
+    missing_trade = [column for column in _TRADE_COLUMNS if column not in df.columns]
+    if missing_trade:
+        raise RuntimeError(f"Dataset missing trade-flow columns required by both models: {missing_trade}")
+    bid_count_columns, ask_count_columns = _count_columns_present(df)
+    if not bid_count_columns or not ask_count_columns:
+        raise RuntimeError(
+            "Dataset missing per-level order-count columns required for count-aware depth features (bid_oc_* or bid_order_count_*, ask_oc_* or ask_order_count_*)."
+        )
+    non_zero_bid = int((df.select([pl.col(column).abs().sum().alias(column) for column in bid_count_columns]).to_numpy() > 0).sum())
+    non_zero_ask = int((df.select([pl.col(column).abs().sum().alias(column) for column in ask_count_columns]).to_numpy() > 0).sum())
+    if non_zero_bid == 0 or non_zero_ask == 0:
+        raise RuntimeError("Order-count columns are present but contain only zeros; cannot train count-aware alpha models.")
+    print(
+        f"[DATA] alpha schema verified: levels={N_LEVELS} trade_cols={len(_TRADE_COLUMNS)} count_cols_bid={len(bid_count_columns)} count_cols_ask={len(ask_count_columns)}"
+    )
 
 def collect_from_core_bridge(n_ticks: int, interval_ms: int) -> pl.DataFrame | None:
     bridge = CoreBridge()
@@ -401,6 +446,65 @@ def _trainer_config_from_args(args: argparse.Namespace, *, secondary: bool = Fal
         kwargs.update({"d_spatial": args.d_spatial, "d_temporal": args.d_temporal})
     return TrainerConfig(**kwargs)
 
+def _mean_selection_score(folds: list[dict[str, Any]]) -> float:
+    if not folds:
+        return LARGE_SELECTION_SCORE
+    scores = [float(fold.get("best_selection_score", LARGE_SELECTION_SCORE)) for fold in folds]
+    if not scores:
+        return LARGE_SELECTION_SCORE
+    return float(np.mean(scores))
+
+def _candidate_dicts(search_space: dict[str, list[Any]], max_trials: int) -> list[dict[str, Any]]:
+    keys = [key for key, values in search_space.items() if values]
+    if not keys:
+        return []
+    values = [search_space[key] for key in keys]
+    combos = [dict(zip(keys, combo)) for combo in islice(product(*values), max_trials)]
+    return combos
+
+def _auto_tune_trainer_config(
+    df: pl.DataFrame,
+    base_cfg: TrainerConfig,
+    *,
+    secondary: bool,
+    enabled: bool,
+) -> TrainerConfig:
+    from .models.trainer import TrainerConfig, walk_forward_train
+    from .._config import model_cfg as _model_cfg
+
+    if not enabled:
+        return base_cfg
+    search_cfg = _model_cfg().get("search", {})
+    if not bool(search_cfg.get("enabled", True)):
+        return base_cfg
+    model_key = "secondary" if secondary else "primary"
+    search_space = search_cfg.get(model_key, {})
+    max_trials = int(search_cfg.get("max_trials", 0))
+    if max_trials <= 0:
+        return base_cfg
+    trials = _candidate_dicts(search_space, max_trials)
+    if not trials:
+        return base_cfg
+    tuning_epochs = int(search_cfg.get("tuning_epochs", base_cfg.epochs))
+    best_cfg = base_cfg
+    best_score = LARGE_SELECTION_SCORE
+    model_name = "secondary" if secondary else "primary"
+    print(f"[HPO] tuning {model_name} model over {len(trials)} trials")
+    for trial_idx, trial in enumerate(trials, start=1):
+        cfg_kwargs = asdict(base_cfg)
+        cfg_kwargs.update(trial)
+        cfg_kwargs["epochs"] = max(1, min(base_cfg.epochs, tuning_epochs))
+        cfg_kwargs["verbose"] = False
+        candidate_cfg = TrainerConfig(**cfg_kwargs)
+        folds = walk_forward_train(df, candidate_cfg)
+        score = _mean_selection_score(folds)
+        print(f"[HPO] {model_name} trial {trial_idx}/{len(trials)} score={score:.6f} params={trial}")
+        if score < best_score:
+            best_score = score
+            best_cfg = TrainerConfig(**asdict(candidate_cfg) | {"verbose": base_cfg.verbose, "epochs": base_cfg.epochs})
+    print(f"[HPO] selected {model_name} score={best_score:.6f}")
+    return best_cfg
+
 def _load_or_collect_data(args: argparse.Namespace) -> pl.DataFrame:
     if args.data_path and Path(args.data_path).exists():
         print(f"Loading data from {args.data_path}")
@@ -569,8 +673,14 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
     df = _load_or_collect_data(args)
     _save_data_if_requested(df, args.save_data)
+    _validate_alpha_input_schema(df)
     print(f"Dataset: {len(df)} ticks  columns={df.columns[:8]}…\n")
-    primary_cfg = _trainer_config_from_args(args)
+    primary_cfg = _auto_tune_trainer_config(
+        df,
+        _trainer_config_from_args(args),
+        secondary=False,
+        enabled=args.auto_tune_hparams,
+    )
     primary_folds = walk_forward_train(df, primary_cfg)
     if not primary_folds:
         print("No fold results — dataset too small for the chosen seq_len / n_folds.")
@@ -579,7 +689,12 @@ def run_pipeline(args: argparse.Namespace) -> None:
     secondary_folds: list[dict[str, Any]] | None = None
     if args.enable_secondary_model:
         print("Training secondary ensemble model (d_spatial=32, d_temporal=64, n_temp_layers=1)…")
-        secondary_cfg = _trainer_config_from_args(args, secondary=True)
+        secondary_cfg = _auto_tune_trainer_config(
+            df,
+            _trainer_config_from_args(args, secondary=True),
+            secondary=True,
+            enabled=args.auto_tune_hparams,
+        )
         secondary_folds = walk_forward_train(df, secondary_cfg)
         if not secondary_folds:
             raise RuntimeError("Secondary ensemble model produced no fold results.")
@@ -638,6 +753,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=True,
         dest="enable_secondary_model",
         help="Train and save a smaller secondary alpha model alongside the primary model (enabled by default).",
+    )
+    parser.add_argument(
+        "--auto-tune-hparams",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        dest="auto_tune_hparams",
     )
     return parser
 

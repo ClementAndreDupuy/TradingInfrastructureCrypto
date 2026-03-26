@@ -52,3 +52,47 @@ secondary:
   w_return: 0.2
   w_direction: 1.0
   w_risk: 0.7
+search:
+  enabled: true
+  tuning_epochs: 8
+  max_trials: 6
+  primary:
+    lr:
+      - 2.0e-4
+      - 3.0e-4
+      - 5.0e-4
+    dropout:
+      - 0.05
+      - 0.1
+      - 0.15
+    batch_size:
+      - 32
+      - 64
+    w_direction:
+      - 0.5
+      - 0.7
+      - 0.9
+    w_risk:
+      - 0.5
+      - 0.8
+      - 1.1
+  secondary:
+    lr:
+      - 2.0e-4
+      - 3.0e-4
+      - 4.0e-4
+    dropout:
+      - 0.05
+      - 0.1
+      - 0.15
+    batch_size:
+      - 32
+      - 64
+    w_direction:
+      - 0.8
+      - 1.0
+      - 1.2
+    w_risk:
+      - 0.6
+      - 0.8
+      - 1.0
