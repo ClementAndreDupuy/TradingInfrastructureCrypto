@@ -65,6 +65,12 @@ _MAX_EXCHANGE_JUMP_NS: int = _ipc["max_exchange_jump_ns"]
 _DIRECTION_GATE: float = _scfg["direction_gate"]
 _HORIZON_CANDIDATES: tuple = tuple(_scfg["horizon_candidates"])
 _GATING_KEYS = ("confidence_gate", "horizon_disagreement_gate", "safe_mode_gate")
+_NOTIONAL_SCALE_BUCKETS: tuple[tuple[float, float], ...] = (
+    (0.90, 1.0),
+    (0.75, 0.35),
+    (0.60, 0.15),
+    (0.0, 0.05),
+)
 FetchFn = Callable[[str], dict[str, Any] | None]
 _FETCHERS = {"BINANCE": _fetch_binance_l5, "KRAKEN": _fetch_kraken_l5, "OKX": _fetch_okx_l5, "COINBASE": _fetch_coinbase_l5}
 _TRADE_FLOW_SCHEMA_DEFAULTS: dict[str, Any] = {
@@ -134,6 +140,15 @@ class ShadowSessionConfig:
     canary_icir_floor: float = _sess["canary_icir_floor"]
     canary_window: int = _sess["canary_window"]
     canary_min_samples: int = _sess["canary_min_samples"]
+    canary_trigger_streak: int = _sess.get("canary_trigger_streak", 3)
+    canary_rearm_streak: int = _sess.get("canary_rearm_streak", 8)
+    safe_mode_cooldown_ticks: int = _sess.get("safe_mode_cooldown_ticks", 120)
+    drift_breach_streak: int = _sess.get("drift_breach_streak", 3)
+    drift_recovery_streak: int = _sess.get("drift_recovery_streak", 8)
+    drift_rearm_ic_margin: float = _sess.get("drift_rearm_ic_margin", 0.02)
+    extreme_risk_threshold: float = _sess.get("extreme_risk_threshold", 0.98)
+    secondary_max_relative_loss: float = _sess.get("secondary_max_relative_loss", 1.15)
+    secondary_min_validation_ic_delta: float = _sess.get("secondary_min_validation_ic_delta", -0.02)
     require_full_model_stack: bool = _sess["require_full_model_stack"]
     min_continuous_train_interval_s: int = _sess["min_continuous_train_interval_s"]
     min_regime_train_interval_s: int = _sess["min_regime_train_interval_s"]
@@ -306,8 +321,16 @@ class NeuralAlphaShadowSession:
         self._running = False
         self._signal_records: list[dict[str, Any]] = []
         self._registry = ChampionChallengerRegistry(cfg.registry_path)
-        self._drift_guard = DriftGuard(window=cfg.drift_window, min_samples=cfg.drift_min_samples, ic_floor=cfg.drift_ic_floor)
+        self._drift_guard = DriftGuard(
+            window=cfg.drift_window,
+            min_samples=cfg.drift_min_samples,
+            ic_floor=cfg.drift_ic_floor,
+            breach_streak_required=cfg.drift_breach_streak,
+            recovery_streak_required=cfg.drift_recovery_streak,
+            rearm_ic_margin=cfg.drift_rearm_ic_margin,
+        )
         self._safe_mode_ticks_remaining = 0
+        self._safe_mode_cooldown_ticks_remaining = 0
         self._safe_mode_reason: str | None = None
         self._bridge = CoreBridge(cfg.lob_feed_path)
         self._bridge.open()
@@ -327,6 +350,8 @@ class NeuralAlphaShadowSession:
         self._gating_reason_counts = {key: 0 for key in _GATING_KEYS}
         self._retrain_failure_counts: dict[str, int] = {}
         self._regime_retrain_failure_counts: dict[str, int] = {}
+        self._latest_primary_sanity: dict[str, float] = {"validation_loss": float("inf"), "validation_ic": 0.0}
+        self._latest_secondary_sanity: dict[str, float] = {}
     @staticmethod
     def _load_regime_artifact(path: str) -> Any:
         if not Path(path).exists():
@@ -341,6 +366,16 @@ class NeuralAlphaShadowSession:
         self._model = self._build_model(self.cfg.d_spatial, self.cfg.d_temporal)
         self._model.load_state_dict(torch.load(path, map_location=self._device, weights_only=True))
     def load_secondary_model(self, path: str) -> None:
+        meta_path = Path(path).with_suffix(".json")
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                if meta.get("sanity_passed") is False:
+                    self._secondary_model = None
+                    self._canary = None
+                    return
+            except Exception:
+                pass
         self._secondary_model = self._build_model(
             d_spatial=_SECONDARY_D_SPATIAL,
             d_temporal=_SECONDARY_D_TEMPORAL,
@@ -354,6 +389,8 @@ class NeuralAlphaShadowSession:
             min_samples=self.cfg.canary_min_samples,
             ic_margin=self.cfg.canary_ic_margin,
             icir_floor=self.cfg.canary_icir_floor,
+            trigger_streak_required=self.cfg.canary_trigger_streak,
+            rearm_streak_required=self.cfg.canary_rearm_streak,
         )
         self._prev_primary_signal = None
         self._prev_ensemble_signal = None
@@ -496,6 +533,46 @@ class NeuralAlphaShadowSession:
         best = min(fold_results, key=_selection_score)
         state = best["model_state"]
         metrics = dict(best.get("metrics", {}))
+        primary_loss = float(self._latest_primary_sanity.get("validation_loss", float("inf")))
+        primary_ic = float(self._latest_primary_sanity.get("validation_ic", 0.0))
+        secondary_loss = float(best.get("best_selection_score", float("inf")))
+        secondary_ic = self._estimate_validation_ic(fold_results)
+        self._latest_secondary_sanity = {
+            "validation_loss": secondary_loss,
+            "validation_ic": secondary_ic,
+            "primary_validation_loss": primary_loss,
+            "primary_validation_ic": primary_ic,
+        }
+        weak_secondary = (
+            secondary_loss > primary_loss * self.cfg.secondary_max_relative_loss
+            or secondary_ic < primary_ic + self.cfg.secondary_min_validation_ic_delta
+        )
+        if weak_secondary:
+            print(
+                f"[{_utcnow()}] [Shadow] secondary model disabled — failed sanity checks"
+                f" secondary_loss={secondary_loss:.6f}"
+                f" primary_loss={primary_loss:.6f}"
+                f" secondary_ic={secondary_ic:.6f}"
+                f" primary_ic={primary_ic:.6f}"
+            )
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.with_suffix(".json").write_text(
+                json.dumps(
+                    {
+                        "trained_at_ns": time.time_ns(),
+                        "sanity_passed": False,
+                        "validation_loss": secondary_loss,
+                        "validation_ic": secondary_ic,
+                        "primary_validation_loss": primary_loss,
+                        "primary_validation_ic": primary_ic,
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            self._secondary_model = None
+            self._canary = None
+            return
         self._save_state_artifacts(
             state,
             out_path,
@@ -508,6 +585,9 @@ class NeuralAlphaShadowSession:
                 "d_temporal": cfg.d_temporal,
                 "n_temp_layers": cfg.n_temp_layers,
                 "metrics": metrics,
+                "validation_loss": secondary_loss,
+                "validation_ic": secondary_ic,
+                "sanity_passed": True,
             },
         )
         self._secondary_model = self._build_model(
@@ -517,6 +597,22 @@ class NeuralAlphaShadowSession:
         )
         self._secondary_model.load_state_dict(state)
         self._reset_canary()
+    @staticmethod
+    def _estimate_validation_ic(fold_results: list[dict[str, Any]]) -> float:
+        values: list[float] = []
+        for fold in fold_results:
+            preds = fold.get("predictions")
+            labels = fold.get("labels")
+            if preds is None or labels is None:
+                continue
+            pred_mid = np.asarray(preds)[:, 2]
+            label_mid = np.asarray(labels)[:, 2]
+            if pred_mid.size < 2 or label_mid.size < 2:
+                continue
+            if float(np.std(pred_mid)) <= 1e-9 or float(np.std(label_mid)) <= 1e-9:
+                continue
+            values.append(float(np.corrcoef(pred_mid, label_mid)[0, 1]))
+        return float(np.mean(values)) if values else 0.0
     def _train_regime_on_data(self, df: pl.DataFrame) -> None:
         regime_path = Path(self.cfg.regime_model_path)
         artifact, _ = train_regime_model_from_df(df, RegimeConfig())
@@ -561,6 +657,10 @@ class NeuralAlphaShadowSession:
         if not fold_results:
             return
         best = min(fold_results, key=_selection_score)
+        self._latest_primary_sanity = {
+            "validation_loss": float(best.get("best_selection_score", float("inf"))),
+            "validation_ic": self._estimate_validation_ic(fold_results),
+        }
         candidate_state = best["model_state"]
         metrics = dict(best.get("metrics", {}))
         selected_state, holdout_summary = self._select_primary_state(df, candidate_state, resume_state)
@@ -602,23 +702,38 @@ class NeuralAlphaShadowSession:
         lob_t = torch.from_numpy(compute_lob_tensor(df_ring)[-self.cfg.seq_len :]).unsqueeze(0).to(self._device)
         scalar_t = torch.from_numpy(rolling_normalise(compute_scalar_features(df_ring))[-self.cfg.seq_len :]).unsqueeze(0).to(self._device)
         return lob_t, scalar_t
-    def _apply_signal_gates(self, raw_signal_bps: float, dir_probs: np.ndarray, ret_1tick_bps: float) -> tuple[float, list[str], bool]:
+    def _confidence_scale(self, confidence: float) -> float:
+        for threshold, scale in _NOTIONAL_SCALE_BUCKETS:
+            if confidence >= threshold:
+                return scale
+        return _NOTIONAL_SCALE_BUCKETS[-1][1]
+    def _apply_signal_gates(
+        self, raw_signal_bps: float, risk: float, dir_probs: np.ndarray, ret_1tick_bps: float
+    ) -> tuple[float, float, list[str], bool]:
         signal_bps = raw_signal_bps
+        size_scale = 1.0
         gating_reasons: list[str] = []
         if signal_bps > 0 and dir_probs[2] <= _DIRECTION_GATE or signal_bps < 0 and dir_probs[0] <= _DIRECTION_GATE:
-            signal_bps = 0.0
+            direction_confidence = float(dir_probs[2] if signal_bps > 0 else dir_probs[0])
+            size_scale *= self._confidence_scale(direction_confidence)
             gating_reasons.append("confidence_gate")
         if signal_bps > 0 and ret_1tick_bps <= 0 or signal_bps < 0 and ret_1tick_bps >= 0:
-            signal_bps = 0.0
+            size_scale *= 0.35
             gating_reasons.append("horizon_disagreement_gate")
         safe_mode_active = self._safe_mode_ticks_remaining > 0
         if safe_mode_active:
             signal_bps = 0.0
+            size_scale = 0.0
             self._safe_mode_ticks_remaining -= 1
             gating_reasons.append("safe_mode_gate")
+        if self._safe_mode_cooldown_ticks_remaining > 0:
+            self._safe_mode_cooldown_ticks_remaining -= 1
+        if risk >= self.cfg.extreme_risk_threshold:
+            signal_bps = 0.0
+            size_scale = 0.0
         for reason in set(gating_reasons):
             self._gating_reason_counts[reason] += 1
-        return signal_bps, gating_reasons, safe_mode_active
+        return signal_bps, size_scale, gating_reasons, safe_mode_active
     def _infer_regime_probabilities(self) -> dict[str, float]:
         regime_probs = {"p_calm": 1.0, "p_trending": 0.0, "p_shock": 0.0, "p_illiquid": 0.0}
         if self._regime_artifact is not None:
@@ -650,9 +765,11 @@ class NeuralAlphaShadowSession:
             raw_signal_bps = (raw_signal_bps + float(secondary_returns[2]) * 10_000.0) / 2.0
         dir_probs = torch.softmax(primary_output["direction"][0, -1], dim=-1).cpu().numpy()
         ret_1tick_bps = float(returns[0]) * 10_000.0
-        signal_bps, gating_reasons, safe_mode_active = self._apply_signal_gates(raw_signal_bps, dir_probs, ret_1tick_bps)
+        signal_bps, size_scale, gating_reasons, safe_mode_active = self._apply_signal_gates(
+            raw_signal_bps, risk, dir_probs, ret_1tick_bps
+        )
         selected_horizon_ticks = int(_HORIZON_CANDIDATES[int(np.argmax(np.abs(returns)))])
-        size_fraction = 0.0 if signal_bps == 0.0 else float(np.clip(1.0 - risk, 0.0, 1.0))
+        size_fraction = 0.0 if signal_bps == 0.0 else float(np.clip(1.0 - risk, 0.0, 1.0) * size_scale)
         self._publisher.publish(signal_bps, risk, size_fraction, selected_horizon_ticks)
         last_tick = self._ring[-1]
         exchange_ts, local_ts = _extract_tick_timestamps(last_tick)
@@ -687,7 +804,10 @@ class NeuralAlphaShadowSession:
             **self._infer_regime_probabilities(),
         }
     def _trigger_safe_mode(self, reason: str) -> None:
+        if self._safe_mode_cooldown_ticks_remaining > 0:
+            return
         self._safe_mode_ticks_remaining = max(self._safe_mode_ticks_remaining, self.cfg.safe_mode_ticks)
+        self._safe_mode_cooldown_ticks_remaining = self.cfg.safe_mode_cooldown_ticks
         self._safe_mode_reason = reason
         rollback_path = self._registry.rollback_to_previous_champion(reason=reason)
         if rollback_path and Path(rollback_path).exists():

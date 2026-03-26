@@ -122,21 +122,40 @@ class EnsembleCanary:
         min_samples: int = 60,
         ic_margin: float = 0.02,
         icir_floor: float = 0.0,
+        trigger_streak_required: int = 3,
+        rearm_streak_required: int = 8,
     ) -> None:
         self.window = window
         self.min_samples = min_samples
         self.ic_margin = ic_margin
         self.icir_floor = icir_floor
+        self.trigger_streak_required = max(1, int(trigger_streak_required))
+        self.rearm_streak_required = max(1, int(rearm_streak_required))
         self._primary: deque[float] = deque(maxlen=window)
         self._ensemble: deque[float] = deque(maxlen=window)
         self._outcomes: deque[float] = deque(maxlen=window)
+        self._degradation_streak = 0
+        self._healthy_streak = 0
+        self._armed = True
 
     def update(self, primary_signal: float, ensemble_signal: float, outcome: float) -> bool:
         """Record one tick.  Returns True if ensemble rollback should be triggered."""
         self._primary.append(float(primary_signal))
         self._ensemble.append(float(ensemble_signal))
         self._outcomes.append(float(outcome))
-        return self._should_rollback()
+        if self._degradation_detected():
+            self._degradation_streak += 1
+            self._healthy_streak = 0
+            if self._armed and self._degradation_streak >= self.trigger_streak_required:
+                self._armed = False
+                self._degradation_streak = 0
+                return True
+            return False
+        self._healthy_streak += 1
+        self._degradation_streak = 0
+        if not self._armed and self._healthy_streak >= self.rearm_streak_required:
+            self._armed = True
+        return False
 
     def _ic(self, signals: deque[float]) -> float | None:
         import numpy as np
@@ -180,7 +199,7 @@ class EnsembleCanary:
     def ensemble_icir(self) -> float | None:
         return self._icir(self._ensemble)
 
-    def _should_rollback(self) -> bool:
+    def _degradation_detected(self) -> bool:
         p_ic = self.primary_ic()
         e_ic = self.ensemble_ic()
         if p_ic is None or e_ic is None:
@@ -196,18 +215,49 @@ class EnsembleCanary:
 class DriftGuard:
     """Tracks rolling realised IC and signals when safe mode should be enabled."""
 
-    def __init__(self, window: int = 200, min_samples: int = 60, ic_floor: float = -0.05) -> None:
+    def __init__(
+        self,
+        window: int = 200,
+        min_samples: int = 60,
+        ic_floor: float = -0.05,
+        breach_streak_required: int = 3,
+        recovery_streak_required: int = 8,
+        rearm_ic_margin: float = 0.02,
+    ) -> None:
         self.window = window
         self.min_samples = min_samples
         self.ic_floor = ic_floor
+        self.breach_streak_required = max(1, int(breach_streak_required))
+        self.recovery_streak_required = max(1, int(recovery_streak_required))
+        self.rearm_ic_margin = rearm_ic_margin
         self._signals: deque[float] = deque(maxlen=window)
         self._outcomes: deque[float] = deque(maxlen=window)
+        self._breach_streak = 0
+        self._healthy_streak = 0
+        self._armed = True
 
     def update(self, signal: float, outcome: float) -> bool:
         self._signals.append(float(signal))
         self._outcomes.append(float(outcome))
         ic = self.current_ic()
-        return ic is not None and ic < self.ic_floor
+        if ic is None:
+            return False
+        if ic < self.ic_floor:
+            self._breach_streak += 1
+            self._healthy_streak = 0
+            if self._armed and self._breach_streak >= self.breach_streak_required:
+                self._armed = False
+                self._breach_streak = 0
+                return True
+            return False
+        self._breach_streak = 0
+        if ic >= self.ic_floor + self.rearm_ic_margin:
+            self._healthy_streak += 1
+            if not self._armed and self._healthy_streak >= self.recovery_streak_required:
+                self._armed = True
+        else:
+            self._healthy_streak = 0
+        return False
 
     def current_ic(self) -> float | None:
         if len(self._signals) < self.min_samples:
