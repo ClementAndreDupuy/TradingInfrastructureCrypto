@@ -2,11 +2,10 @@
 
 #include <chrono>
 #include <cstdlib>
-#if defined(TRT_ENABLE_HTTP_MOCK_TRANSPORT)
 #include <functional>
-#include <utility>
-#endif
+#include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 #ifdef __has_include
 #if __has_include(<curl/curl.h>)
@@ -85,24 +84,38 @@ namespace trading {
                 }
                 return resp;
             }
-        } 
+        }
 
-#if defined(TRT_ENABLE_HTTP_MOCK_TRANSPORT)
         using MockTransport =
-        std::function<HttpResponse(const char*method, const std::string & url, const std::string & body,
-        const std::vector<std::string> &headers)>;
+            std::function<HttpResponse(const char *method, const std::string &url, const std::string &body,
+                                       const std::vector<std::string> &headers)>;
+
+        inline std::mutex &mock_transport_mutex() {
+            static std::mutex mtx;
+            return mtx;
+        }
 
         inline MockTransport &mock_transport_slot() {
             static MockTransport mock_transport;
             return mock_transport;
         }
-#endif
+
+        inline void set_mock_transport(MockTransport handler) {
+            std::lock_guard<std::mutex> lock(mock_transport_mutex());
+            mock_transport_slot() = std::move(handler);
+        }
+
+        inline void clear_mock_transport() {
+            std::lock_guard<std::mutex> lock(mock_transport_mutex());
+            mock_transport_slot() = nullptr;
+        }
 
         inline HttpResponse get(const std::string &url, const std::vector<std::string> &headers) {
-#if defined(TRT_ENABLE_HTTP_MOCK_TRANSPORT)
-            if (mock_transport_slot())
-                return mock_transport_slot()("GET", url, "", headers);
-#endif
+            {
+                std::lock_guard<std::mutex> lock(mock_transport_mutex());
+                if (mock_transport_slot())
+                    return mock_transport_slot()("GET", url, "", headers);
+            }
             CURL *h = detail::tl_handle();
             if (!h)
                 return {};
@@ -113,10 +126,11 @@ namespace trading {
 
         inline HttpResponse post(const std::string &url, const std::string &body,
                                  const std::vector<std::string> &headers) {
-#if defined(TRT_ENABLE_HTTP_MOCK_TRANSPORT)
-            if (mock_transport_slot())
-                return mock_transport_slot()("POST", url, body, headers);
-#endif
+            {
+                std::lock_guard<std::mutex> lock(mock_transport_mutex());
+                if (mock_transport_slot())
+                    return mock_transport_slot()("POST", url, body, headers);
+            }
             CURL *h = detail::tl_handle();
             if (!h)
                 return {};
@@ -129,10 +143,11 @@ namespace trading {
 
         inline HttpResponse put(const std::string &url, const std::string &body,
                                 const std::vector<std::string> &headers) {
-#if defined(TRT_ENABLE_HTTP_MOCK_TRANSPORT)
-            if (mock_transport_slot())
-                return mock_transport_slot()("PUT", url, body, headers);
-#endif
+            {
+                std::lock_guard<std::mutex> lock(mock_transport_mutex());
+                if (mock_transport_slot())
+                    return mock_transport_slot()("PUT", url, body, headers);
+            }
             CURL *h = detail::tl_handle();
             if (!h)
                 return {};
@@ -144,10 +159,11 @@ namespace trading {
         }
 
         inline HttpResponse del(const std::string &url, const std::vector<std::string> &headers) {
-#if defined(TRT_ENABLE_HTTP_MOCK_TRANSPORT)
-            if (mock_transport_slot())
-                return mock_transport_slot()("DELETE", url, "", headers);
-#endif
+            {
+                std::lock_guard<std::mutex> lock(mock_transport_mutex());
+                if (mock_transport_slot())
+                    return mock_transport_slot()("DELETE", url, "", headers);
+            }
             CURL *h = detail::tl_handle();
             if (!h)
                 return {};
@@ -174,13 +190,5 @@ namespace trading {
             const char *v = std::getenv(name);
             return v ? v : "";
         }
-
-#if defined(TRT_ENABLE_HTTP_MOCK_TRANSPORT)
-        inline void set_mock_transport(MockTransport handler) {
-            mock_transport_slot() = std::move(handler);
-        }
-
-        inline void clear_mock_transport() { mock_transport_slot() = nullptr; }
-#endif
-    } 
-} 
+    }
+}

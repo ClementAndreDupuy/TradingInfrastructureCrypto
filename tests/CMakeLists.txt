@@ -14,10 +14,6 @@ if(NOT GTest_FOUND)
     FetchContent_MakeAvailable(googletest)
 endif()
 
-# Enable HTTP mock transport in connector code paths for test builds.
-# execution target owns the connector translation units that include rest_client.hpp.
-target_compile_definitions(execution PUBLIC TRT_ENABLE_HTTP_MOCK_TRANSPORT=1)
-
 # Unit tests
 add_executable(binance_feed_test
     unit/binance_feed_test.cpp

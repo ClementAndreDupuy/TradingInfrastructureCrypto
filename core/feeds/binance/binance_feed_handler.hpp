@@ -22,6 +22,23 @@ namespace trading {
         using DeltaCallback = std::function<void(const Delta &)>;
         using ErrorCallback = std::function<void(const std::string &)>;
 
+        enum class State { DISCONNECTED, BUFFERING, STREAMING };
+
+        struct ParsedLevel {
+            double price{0.0};
+            double size{0.0};
+        };
+
+        struct BufferedDelta {
+            uint64_t first_update_id{0};
+            uint64_t last_update_id{0};
+            int64_t timestamp_exchange_ns{0};
+            std::vector<ParsedLevel> bids;
+            std::vector<ParsedLevel> asks;
+        };
+
+        static constexpr size_t MAX_BUFFER_SIZE = 8192;
+
         struct SyncStats {
             uint64_t resync_count{0};
             uint64_t snapshot_latency_ms{0};
@@ -59,22 +76,16 @@ namespace trading {
 
         Result process_message(const std::string &message);
 
+        Result apply_buffered_deltas(uint64_t snapshot_sequence);
+
+        // Test injection interface
+        void set_state(State s) { state_.store(s, std::memory_order_release); }
+        void set_last_sequence(uint64_t n) { last_sequence_.store(n, std::memory_order_release); }
+        bool reconnect_requested() const { return reconnect_requested_.load(std::memory_order_acquire); }
+        std::vector<BufferedDelta> &delta_buffer() { return delta_buffer_; }
+        const std::vector<BufferedDelta> &delta_buffer() const { return delta_buffer_; }
+
     private:
-        enum class State { DISCONNECTED, BUFFERING, STREAMING };
-
-        struct ParsedLevel {
-            double price{0.0};
-            double size{0.0};
-        };
-
-        struct BufferedDelta {
-            uint64_t first_update_id{0};
-            uint64_t last_update_id{0};
-            int64_t timestamp_exchange_ns{0};
-            std::vector<ParsedLevel> bids;
-            std::vector<ParsedLevel> asks;
-        };
-
         Result fetch_tick_size();
 
         Result parse_delta_message(const nlohmann::json &json, BufferedDelta &delta) const;
@@ -82,8 +93,6 @@ namespace trading {
         Result process_snapshot();
 
         Result apply_delta(const BufferedDelta &delta);
-
-        Result apply_buffered_deltas(uint64_t snapshot_sequence);
 
         bool validate_delta_sequence(uint64_t first_update_id, uint64_t last_update_id) const;
 
@@ -109,7 +118,6 @@ namespace trading {
         std::condition_variable ws_cv_;
 
         std::vector<BufferedDelta> delta_buffer_;
-        static constexpr size_t MAX_BUFFER_SIZE = 8192;
         size_t buffer_high_water_mark_{0};
         uint64_t buffered_applied_{0};
         uint64_t buffered_skipped_{0};

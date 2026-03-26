@@ -652,6 +652,10 @@ namespace trading {
                 trigger_resnapshot("buffered_sequence_gap");
                 return Result::ERROR_SEQUENCE_GAP;
             }
+            if (apply_delta(delta) != Result::SUCCESS) {
+                trigger_resnapshot("buffered_delta_apply_failed");
+                return Result::ERROR_BOOK_CORRUPTED;
+            }
         }
 
         buffered_applied_ += static_cast<uint64_t>(delta_buffer_.size() - start_index);
