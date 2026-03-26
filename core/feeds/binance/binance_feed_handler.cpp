@@ -623,6 +623,7 @@ namespace trading {
                 book_delta.side = side;
                 book_delta.price = level.price;
                 book_delta.size = level.size;
+                book_delta.order_count = 0;
                 book_delta.sequence = delta.last_update_id;
                 book_delta.timestamp_exchange_ns = delta.timestamp_exchange_ns;
                 book_delta.timestamp_local_ns = local_timestamp_ns;

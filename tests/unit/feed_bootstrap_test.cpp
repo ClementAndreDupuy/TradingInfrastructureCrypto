@@ -146,7 +146,7 @@ TEST(FeedBootstrap, WireCallbacksAndBridgeBeforeStartPublishesBootstrapSnapshot)
     EXPECT_DOUBLE_EQ(best_bid, 50'000.0);
 
     double best_ask = 0.0;
-    std::memcpy(&best_ask, slot0 + 112, sizeof(best_ask));
+    std::memcpy(&best_ask, slot0 + 192, sizeof(best_ask));
     EXPECT_DOUBLE_EQ(best_ask, 50'001.0);
 
     ::munmap(const_cast<char*>(mapped), total);

@@ -181,6 +181,7 @@ TEST_F(BinanceFeedHandlerTest, StreamingBatchKeepsBinanceUpdateIdOnEveryLevel) {
     ASSERT_EQ(deltas_.size(), 4u);
     for (const auto& delta : deltas_) {
         EXPECT_EQ(delta.sequence, 101u);
+        EXPECT_EQ(delta.order_count, 0u);
     }
 }
 

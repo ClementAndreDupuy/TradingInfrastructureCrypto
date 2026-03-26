@@ -6,7 +6,7 @@ from typing import Any
 
 RING_PATH = "/tmp/trt_ipc/trt_lob_feed.bin"
 HEADER_FMT = "<8sIIIIQ32s"
-SLOT_FMT = "<B15sqd" + "d" * 40 + "dddB7s"
+SLOT_FMT = "<B15sqd" + "d" * 40 + "I" * 20 + "dddB7s"
 HEADER_SIZE = struct.calcsize(HEADER_FMT)
 SLOT_SIZE = struct.calcsize(SLOT_FMT)
 EXPECTED_MAGIC = b"TRTLOB01"
@@ -78,10 +78,12 @@ class CoreBridge:
             bids_s = price_size_values[10:20]
             asks_p = price_size_values[20:30]
             asks_s = price_size_values[30:40]
-            last_trade_price = unpacked[44]
-            last_trade_size = unpacked[45]
-            recent_traded_volume = unpacked[46]
-            trade_direction = unpacked[47]
+            bid_ocs = unpacked[44:54]
+            ask_ocs = unpacked[54:64]
+            last_trade_price = unpacked[64]
+            last_trade_size = unpacked[65]
+            recent_traded_volume = unpacked[66]
+            trade_direction = unpacked[67]
             best_bid = float(bids_p[0])
             best_ask = float(asks_p[0])
             if best_bid <= 0.0 or best_ask <= 0.0 or best_ask <= best_bid:
@@ -104,6 +106,8 @@ class CoreBridge:
                 row[f"bid_size_{i + 1}"] = float(bids_s[i])
                 row[f"ask_price_{i + 1}"] = float(asks_p[i])
                 row[f"ask_size_{i + 1}"] = float(asks_s[i])
+                row[f"bid_oc_{i + 1}"] = int(bid_ocs[i])
+                row[f"ask_oc_{i + 1}"] = int(ask_ocs[i])
             rows.append(row)
         self._last_seq = write_seq
         return rows

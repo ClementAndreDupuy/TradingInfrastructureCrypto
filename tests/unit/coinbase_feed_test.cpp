@@ -114,6 +114,10 @@ TEST_F(CoinbaseFeedHandlerTest, ProcessSnapshotThenUpdate) {
     EXPECT_EQ(last_snapshot_.exchange, Exchange::COINBASE);
     EXPECT_EQ(handler_->get_sequence(), 100u);
     EXPECT_GT(last_snapshot_.timestamp_exchange_ns, 0);
+    ASSERT_EQ(last_snapshot_.bids.size(), 1u);
+    ASSERT_EQ(last_snapshot_.asks.size(), 1u);
+    EXPECT_EQ(last_snapshot_.bids[0].order_count, 0u);
+    EXPECT_EQ(last_snapshot_.asks[0].order_count, 0u);
 
     std::string update =
         R"({"channel":"l2_data","timestamp":"2026-03-19T12:00:01.123456789Z","sequence_num":101,"events":[{"type":"update","updates":[{"side":"bid","price_level":"50000.5","new_quantity":"2.0"},{"side":"offer","price_level":"50001.5","new_quantity":"1.1"}]}]})";
@@ -122,6 +126,8 @@ TEST_F(CoinbaseFeedHandlerTest, ProcessSnapshotThenUpdate) {
     ASSERT_EQ(deltas_.size(), 2u);
     EXPECT_EQ(deltas_[0].side, Side::BID);
     EXPECT_EQ(deltas_[1].side, Side::ASK);
+    EXPECT_EQ(deltas_[0].order_count, 0u);
+    EXPECT_EQ(deltas_[1].order_count, 0u);
     EXPECT_EQ(handler_->get_sequence(), 101u);
     EXPECT_GT(deltas_[0].timestamp_exchange_ns, 0);
 }

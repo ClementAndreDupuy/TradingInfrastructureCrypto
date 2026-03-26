@@ -97,7 +97,7 @@
 
 ---
 
-#### [ ] 3c. Order count per level
+#### [x] 3c. Order count per level
 
 **Priority / Severity**
 - MEDIUM — number of resting orders is a distinct signal from aggregate size (1×100-lot vs 100×1-lot).

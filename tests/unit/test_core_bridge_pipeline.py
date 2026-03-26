@@ -33,7 +33,7 @@ else:
     pipeline = None
 
 HEADER_FMT = "<8sIIIIQ32s"
-SLOT_FMT = "<B15sqd" + "d" * 40 + "dddB7s"
+SLOT_FMT = "<B15sqd" + "d" * 40 + "I" * 20 + "dddB7s"
 HEADER_SIZE = struct.calcsize(HEADER_FMT)
 SLOT_SIZE = struct.calcsize(SLOT_FMT)
 CAPACITY = 8
@@ -77,6 +77,8 @@ def _write_ring(
                 *bid_sizes,
                 *asks,
                 *ask_sizes,
+                *([3] * 10),
+                *([4] * 10),
                 last_trade_price,
                 last_trade_size,
                 recent_traded_volume,
@@ -120,6 +122,8 @@ def test_core_bridge_reads_rows_and_drops_overflowed_slots() -> None:
         assert rows[-1]["trade_direction"] == 1
         assert "bid_price_10" in rows[-1]
         assert "ask_size_10" in rows[-1]
+        assert rows[-1]["bid_oc_1"] == 3
+        assert rows[-1]["ask_oc_1"] == 4
 
 
 @pytest.mark.skipif(pl is None or pipeline is None, reason="polars is not installed")

@@ -474,11 +474,11 @@ namespace trading {
         snap.timestamp_local_ns = http::now_ns();
         snap.bids.reserve(bids_.size());
         for (const auto &[price, level]: bids_) {
-            snap.bids.emplace_back(price, std::stod(level.second));
+            snap.bids.emplace_back(price, std::stod(level.second), 0);
         }
         snap.asks.reserve(asks_.size());
         for (const auto &[price, level]: asks_) {
-            snap.asks.emplace_back(price, std::stod(level.second));
+            snap.asks.emplace_back(price, std::stod(level.second), 0);
         }
 
         if (snap.bids.empty() || snap.asks.empty()) {
@@ -535,6 +535,7 @@ namespace trading {
                 delta.side = side;
                 delta.price = std::stod(json_number_to_wire_string(*p_it));
                 delta.size = std::stod(json_number_to_wire_string(*q_it));
+                delta.order_count = 0;
                 delta.sequence = seq;
                 delta.timestamp_exchange_ns = timestamp_exchange_ns;
                 delta.timestamp_local_ns = timestamp_local_ns;

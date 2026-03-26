@@ -362,8 +362,21 @@ namespace trading {
                     continue;
                 }
                 try {
-                    out.push_back(
-                        {std::stod(lvl[0].get<std::string>()), std::stod(lvl[1].get<std::string>())});
+                    uint32_t order_count = 0;
+                    if (lvl.size() > 3) {
+                        if (lvl[3].is_string()) {
+                            order_count = static_cast<uint32_t>(std::stoul(lvl[3].get<std::string>()));
+                        } else if (lvl[3].is_number_unsigned()) {
+                            order_count = lvl[3].get<uint32_t>();
+                        } else if (lvl[3].is_number_integer()) {
+                            const int64_t value = lvl[3].get<int64_t>();
+                            if (value > 0) {
+                                order_count = static_cast<uint32_t>(value);
+                            }
+                        }
+                    }
+                    out.push_back({std::stod(lvl[0].get<std::string>()), std::stod(lvl[1].get<std::string>()),
+                                   order_count});
                 } catch (const std::exception &ex) {
                     LOG_WARN("[OKX] WS snapshot level parse failed", "symbol", sym, "error", ex.what());
                 }
@@ -429,6 +442,18 @@ namespace trading {
                 delta.side = side;
                 delta.price = std::stod(lvl[0].get<std::string>());
                 delta.size = std::stod(lvl[1].get<std::string>());
+                if (lvl.size() > 3) {
+                    if (lvl[3].is_string()) {
+                        delta.order_count = static_cast<uint32_t>(std::stoul(lvl[3].get<std::string>()));
+                    } else if (lvl[3].is_number_unsigned()) {
+                        delta.order_count = lvl[3].get<uint32_t>();
+                    } else if (lvl[3].is_number_integer()) {
+                        const int64_t value = lvl[3].get<int64_t>();
+                        if (value > 0) {
+                            delta.order_count = static_cast<uint32_t>(value);
+                        }
+                    }
+                }
                 delta.sequence = seq;
                 delta.timestamp_local_ns = timestamp_ns;
                 if (delta_callback_) {

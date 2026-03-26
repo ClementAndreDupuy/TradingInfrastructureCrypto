@@ -1,5 +1,6 @@
 #include "core/feeds/common/tick_size.hpp"
 #include "core/orderbook/orderbook.hpp"
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -287,6 +288,46 @@ TEST(OrderBook, RecenterPreservesInRangeLiquidity) {
 
     EXPECT_TRUE(found_bid);
     EXPECT_TRUE(found_ask);
+}
+
+TEST(OrderBook, OrderCountRoundTripAcrossSnapshotDeltaAndRecenter) {
+    OrderBook book("BTCUSDT", Exchange::OKX, 1.0, 20000);
+
+    Snapshot s = make_snapshot(50000.0, 50001.0, 2, 1.0, 100);
+    s.bids[0].order_count = 7;
+    s.bids[1].order_count = 5;
+    s.asks[0].order_count = 9;
+    s.asks[1].order_count = 4;
+    ASSERT_EQ(book.apply_snapshot(s), Result::SUCCESS);
+
+    std::vector<PriceLevel> bids, asks;
+    book.get_top_levels(2, bids, asks);
+    ASSERT_EQ(bids.size(), 2u);
+    ASSERT_EQ(asks.size(), 2u);
+    EXPECT_EQ(bids[0].order_count, 7u);
+    EXPECT_EQ(asks[0].order_count, 9u);
+
+    Delta update = make_delta(Side::BID, 50000.0, 3.0, 101);
+    update.order_count = 11;
+    ASSERT_EQ(book.apply_delta(update), Result::SUCCESS);
+    book.get_top_levels(2, bids, asks);
+    ASSERT_FALSE(bids.empty());
+    EXPECT_EQ(bids[0].order_count, 11u);
+
+    Delta preserve = make_delta(Side::BID, 52000.0, 4.0, 102);
+    preserve.order_count = 6;
+    ASSERT_EQ(book.apply_delta(preserve), Result::SUCCESS);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 65000.0, 1.0, 103)), Result::ERROR_INVALID_PRICE);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 65000.0, 1.0, 104)), Result::ERROR_INVALID_PRICE);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 65000.0, 1.0, 105)), Result::ERROR_INVALID_PRICE);
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 65000.0, 1.0, 106)), Result::SUCCESS);
+
+    book.get_top_levels(20000, bids, asks);
+    auto level_it = std::find_if(bids.begin(), bids.end(), [](const PriceLevel& level) {
+        return std::fabs(level.price - 52000.0) < 0.01;
+    });
+    ASSERT_NE(level_it, bids.end());
+    EXPECT_EQ(level_it->order_count, 6u);
 }
 
 TEST(OrderBook, IgnoresFarPassiveLiquidityWithoutRecentering) {

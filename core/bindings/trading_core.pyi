@@ -88,8 +88,9 @@ class PriceLevel:
 
     price: float  # Absolute price in quote currency (e.g. USD)
     size: float  # Quantity at this price level (in base currency)
+    order_count: int  # Resting order count at this level when available
 
-    def __init__(self, price: float = ..., size: float = ...) -> None: ...
+    def __init__(self, price: float = ..., size: float = ..., order_count: int = ...) -> None: ...
 
     def __eq__(self, other: object) -> bool: ...
 
@@ -106,6 +107,7 @@ class Delta:
     side: Side  # Which side of the book is updated
     price: float  # Price level being updated
     size: float  # New size at this level (0.0 = remove level)
+    order_count: int  # Resting order count for this level, 0 when unavailable
     sequence: int  # Exchange sequence number for gap detection
     timestamp_exchange_ns: int  # Exchange-reported event time (ns since epoch)
     timestamp_local_ns: int  # Local receipt timestamp (ns since epoch)

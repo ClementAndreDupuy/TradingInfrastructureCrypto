@@ -15,7 +15,9 @@ namespace trading {
             : symbol_(symbol), exchange_(exchange), tick_size_(tick_size), max_levels_(max_levels),
               active_levels_(max_levels), base_price_(0.0), sequence_(0), initialized_(false),
               bid_sizes_(max_levels, 0.0), ask_sizes_(max_levels, 0.0),
+              bid_order_counts_(max_levels, 0), ask_order_counts_(max_levels, 0),
               scratch_bid_sizes_(max_levels, 0.0), scratch_ask_sizes_(max_levels, 0.0),
+              scratch_bid_order_counts_(max_levels, 0), scratch_ask_order_counts_(max_levels, 0),
               out_of_range_streak_(0) {
         }
 
@@ -55,6 +57,8 @@ namespace trading {
             initialized_.store(false, std::memory_order_release);
             std::fill(bid_sizes_.begin(), bid_sizes_.end(), 0.0);
             std::fill(ask_sizes_.begin(), ask_sizes_.end(), 0.0);
+            std::fill(bid_order_counts_.begin(), bid_order_counts_.end(), 0);
+            std::fill(ask_order_counts_.begin(), ask_order_counts_.end(), 0);
             active_levels_.store(active_levels, std::memory_order_release);
             base_price_.store(new_base, std::memory_order_release);
             sequence_.store(snapshot.sequence, std::memory_order_release);
@@ -75,6 +79,7 @@ namespace trading {
                     continue;
                 }
                 bid_sizes_[idx] = level.size;
+                bid_order_counts_[idx] = level.order_count;
             }
             for (const auto &level: snapshot.asks) {
                 size_t idx;
@@ -83,6 +88,7 @@ namespace trading {
                     continue;
                 }
                 ask_sizes_[idx] = level.size;
+                ask_order_counts_[idx] = level.order_count;
             }
 
             const size_t total = snapshot.bids.size() + snapshot.asks.size();
@@ -141,8 +147,10 @@ namespace trading {
 
             if (delta.side == Side::BID) {
                 bid_sizes_[idx] = delta.size;
+                bid_order_counts_[idx] = delta.order_count;
             } else {
                 ask_sizes_[idx] = delta.size;
+                ask_order_counts_[idx] = delta.order_count;
             }
 
             if (delta.sequence > 0) {
@@ -190,12 +198,12 @@ namespace trading {
             const size_t levels = active_levels();
             for (size_t i = levels - 1; i < levels && bids.size() < n; --i) {
                 if (bid_sizes_[i] > 0.0) {
-                    bids.push_back(PriceLevel(index_to_price(i), bid_sizes_[i]));
+                    bids.push_back(PriceLevel(index_to_price(i), bid_sizes_[i], bid_order_counts_[i]));
                 }
             }
             for (size_t i = 0; i < levels && asks.size() < n; ++i) {
                 if (ask_sizes_[i] > 0.0) {
-                    asks.push_back(PriceLevel(index_to_price(i), ask_sizes_[i]));
+                    asks.push_back(PriceLevel(index_to_price(i), ask_sizes_[i], ask_order_counts_[i]));
                 }
             }
         }
@@ -288,8 +296,12 @@ namespace trading {
 
         std::vector<double> bid_sizes_;
         std::vector<double> ask_sizes_;
+        std::vector<uint32_t> bid_order_counts_;
+        std::vector<uint32_t> ask_order_counts_;
         std::vector<double> scratch_bid_sizes_;
         std::vector<double> scratch_ask_sizes_;
+        std::vector<uint32_t> scratch_bid_order_counts_;
+        std::vector<uint32_t> scratch_ask_order_counts_;
         uint32_t out_of_range_streak_;
 
         static constexpr uint32_t k_recenter_streak_trigger_ = 4;
@@ -338,6 +350,8 @@ namespace trading {
 
             std::fill(scratch_bid_sizes_.begin(), scratch_bid_sizes_.end(), 0.0);
             std::fill(scratch_ask_sizes_.begin(), scratch_ask_sizes_.end(), 0.0);
+            std::fill(scratch_bid_order_counts_.begin(), scratch_bid_order_counts_.end(), 0);
+            std::fill(scratch_ask_order_counts_.begin(), scratch_ask_order_counts_.end(), 0);
 
             for (size_t i = 0; i < levels; ++i) {
                 const int64_t new_idx = static_cast<int64_t>(i) + shift_ticks;
@@ -347,10 +361,14 @@ namespace trading {
 
                 scratch_bid_sizes_[static_cast<size_t>(new_idx)] = bid_sizes_[i];
                 scratch_ask_sizes_[static_cast<size_t>(new_idx)] = ask_sizes_[i];
+                scratch_bid_order_counts_[static_cast<size_t>(new_idx)] = bid_order_counts_[i];
+                scratch_ask_order_counts_[static_cast<size_t>(new_idx)] = ask_order_counts_[i];
             }
 
             bid_sizes_.swap(scratch_bid_sizes_);
             ask_sizes_.swap(scratch_ask_sizes_);
+            bid_order_counts_.swap(scratch_bid_order_counts_);
+            ask_order_counts_.swap(scratch_ask_order_counts_);
             base_price_.store(new_base, std::memory_order_release);
             out_of_range_streak_ = 0;
 
