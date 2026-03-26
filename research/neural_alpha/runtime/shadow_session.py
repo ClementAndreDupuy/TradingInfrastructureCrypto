@@ -27,7 +27,15 @@ from ..data.features import compute_lob_tensor, compute_scalar_features
 from ..models.model import CryptoAlphaNet
 from ..models.trainer import TrainerConfig, walk_forward_train
 from ..operations.governance import ChampionChallengerRegistry, DriftGuard, EnsembleCanary
-from ..pipeline import _fetch_binance_l5, _fetch_coinbase_l5, _fetch_kraken_l5, _fetch_okx_l5, collect_from_core_bridge
+from ..pipeline import (
+    _auto_tune_trainer_config,
+    _fetch_binance_l5,
+    _fetch_coinbase_l5,
+    _fetch_kraken_l5,
+    _fetch_okx_l5,
+    _validate_alpha_input_schema,
+    collect_from_core_bridge,
+)
 from ..._config import model_cfg, shadow_cfg
 
 _scfg = shadow_cfg()
@@ -36,6 +44,9 @@ _sess = _scfg["session"]
 _mcfg = model_cfg()
 _trainer_cfg = _mcfg["trainer"]
 _secondary_cfg = _mcfg["secondary"]
+_SECONDARY_D_SPATIAL: int = _secondary_cfg["d_spatial"]
+_SECONDARY_D_TEMPORAL: int = _secondary_cfg["d_temporal"]
+_SECONDARY_N_TEMP_LAYERS: int = _secondary_cfg["n_temp_layers"]
 
 
 def _utcnow() -> str:
@@ -326,7 +337,11 @@ class NeuralAlphaShadowSession:
         self._model = self._build_model(self.cfg.d_spatial, self.cfg.d_temporal)
         self._model.load_state_dict(torch.load(path, map_location=self._device, weights_only=True))
     def load_secondary_model(self, path: str) -> None:
-        self._secondary_model = self._build_model(d_spatial=32, d_temporal=64, n_temp_layers=1)
+        self._secondary_model = self._build_model(
+            d_spatial=_SECONDARY_D_SPATIAL,
+            d_temporal=_SECONDARY_D_TEMPORAL,
+            n_temp_layers=_SECONDARY_N_TEMP_LAYERS,
+        )
         self._secondary_model.load_state_dict(torch.load(path, map_location=self._device, weights_only=True))
         self._reset_canary()
     def _reset_canary(self) -> None:
@@ -392,6 +407,23 @@ class NeuralAlphaShadowSession:
             w_direction=self.cfg.primary_w_direction,
             w_risk=self.cfg.primary_w_risk,
         )
+    def _secondary_trainer_config(self, n_folds: int) -> TrainerConfig:
+        return TrainerConfig(
+            epochs=self.cfg.train_epochs,
+            n_folds=n_folds,
+            seq_len=self.cfg.seq_len,
+            d_spatial=_SECONDARY_D_SPATIAL,
+            d_temporal=_SECONDARY_D_TEMPORAL,
+            n_temp_layers=_SECONDARY_N_TEMP_LAYERS,
+            fold_seed_offset=9999,
+            lr_warmup_epochs=min(3, self.cfg.train_epochs // 4),
+            early_stop_patience=4,
+            log_every_epochs=1,
+            verbose=False,
+            w_return=self.cfg.secondary_w_return,
+            w_direction=self.cfg.secondary_w_direction,
+            w_risk=self.cfg.secondary_w_risk,
+        )
     def _snapshot_current_state(self) -> dict[str, torch.Tensor] | None:
         return None if self._model is None else {key: value.detach().cpu().clone() for key, value in self._model.state_dict().items()}
     def _save_state_artifacts(self, state_dict: dict[str, torch.Tensor], out_path: Path, meta: dict[str, Any]) -> None:
@@ -445,26 +477,15 @@ class NeuralAlphaShadowSession:
         summary["selected"] = "incumbent"
         return resume_state, summary
     def _train_secondary_on_data(self, df: pl.DataFrame, out_path: Path) -> None:
+        cfg = _auto_tune_trainer_config(
+            df,
+            self._secondary_trainer_config(self._training_folds(df)),
+            secondary=True,
+            enabled=True,
+        )
         fold_results = walk_forward_train(
             df,
-            TrainerConfig(
-                epochs=self.cfg.train_epochs,
-                n_folds=self._training_folds(df),
-                seq_len=self.cfg.seq_len,
-                d_spatial=32,
-                d_temporal=64,
-                n_temp_layers=1,
-                dropout=0.25,
-                lr=0.0007,
-                w_return=self.cfg.secondary_w_return,
-                w_direction=self.cfg.secondary_w_direction,
-                w_risk=self.cfg.secondary_w_risk,
-                fold_seed_offset=9999,
-                lr_warmup_epochs=min(3, self.cfg.train_epochs // 4),
-                early_stop_patience=4,
-                log_every_epochs=1,
-                verbose=False,
-            ),
+            cfg,
         )
         if not fold_results:
             return
@@ -479,13 +500,17 @@ class NeuralAlphaShadowSession:
                 "train_ticks": len(df),
                 "train_epochs": self.cfg.train_epochs,
                 "seq_len": self.cfg.seq_len,
-                "d_spatial": 32,
-                "d_temporal": 64,
-                "n_temp_layers": 1,
+                "d_spatial": cfg.d_spatial,
+                "d_temporal": cfg.d_temporal,
+                "n_temp_layers": cfg.n_temp_layers,
                 "metrics": metrics,
             },
         )
-        self._secondary_model = self._build_model(d_spatial=32, d_temporal=64, n_temp_layers=1)
+        self._secondary_model = self._build_model(
+            d_spatial=cfg.d_spatial,
+            d_temporal=cfg.d_temporal,
+            n_temp_layers=cfg.n_temp_layers,
+        )
         self._secondary_model.load_state_dict(state)
         self._reset_canary()
     def _train_regime_on_data(self, df: pl.DataFrame) -> None:
@@ -520,8 +545,15 @@ class NeuralAlphaShadowSession:
         print(f"[{_utcnow()}] [Shadow] regime retrain done  regimes=[{names}]")
     def train_on_recent(self, n_ticks: int) -> None:
         df = self._collect_training_ticks(n_ticks)
+        _validate_alpha_input_schema(df)
         resume_state = self._snapshot_current_state()
-        fold_results = walk_forward_train(df, self._primary_trainer_config(resume_state, self._training_folds(df)))
+        primary_cfg = _auto_tune_trainer_config(
+            df,
+            self._primary_trainer_config(resume_state, self._training_folds(df)),
+            secondary=False,
+            enabled=True,
+        )
+        fold_results = walk_forward_train(df, primary_cfg)
         if not fold_results:
             return
         best = min(fold_results, key=lambda fold: fold.get("best_selection_score", 1_000_000_000.0))
