@@ -250,15 +250,6 @@ def _fit_hmm(
 def _calm_anchored_fallback(
     feat: pl.DataFrame, cfg: RegimeConfig, raw_scales: np.ndarray
 ) -> tuple["RegimeArtifact", dict[str, float]]:
-    """
-    When training data is flat/degenerate, the market is calm by definition.
-    Build a valid HMM artifact anchored to calm rather than raising an error.
-
-    All states share the observed means (only calm data was seen so we cannot
-    learn regime separations). Calm gets near-certain initial and transition
-    probability, so live inference will output high p_calm for flat data and
-    allow probability to flow to other states as real variation appears.
-    """
     n = cfg.n_regimes
     x_raw = feat.to_numpy().astype(np.float64)
     obs_mean = x_raw.mean(axis=0)
@@ -489,12 +480,6 @@ def save_regime_artifact(artifact: RegimeArtifact, output_path: str) -> None:
 def save_regime_artifact_bundle(
     artifact: RegimeArtifact, output_path: str, metadata: dict[str, object]
 ) -> None:
-    """
-    Persist regime artifact with the same reliability pattern as neural model saves:
-    - write to temporary path
-    - atomic replace into final path
-    - sidecar JSON metadata file (`<artifact>.meta.json`)
-    """
     _validate_artifact(artifact)
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -571,10 +556,6 @@ def infer_regime_probabilities(
 def run_regime_walk_forward_backtest(
     df: pl.DataFrame, cfg: RegimeConfig, bt_cfg: RegimeBacktestConfig
 ) -> RegimeBacktestSummary:
-    """
-    Walk-forward stability backtest for large datasets.
-    Evaluates confidence and semantic stability of inferred regimes over rolling windows.
-    """
     if len(df) < bt_cfg.train_window + bt_cfg.test_window:
         raise ValueError("Dataset too small for requested walk-forward regime backtest windows")
     if bt_cfg.step <= 0:

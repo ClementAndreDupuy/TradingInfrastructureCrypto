@@ -26,13 +26,6 @@ def rolling_normalise(
     window: int = _dscfg["rolling_normalise_window"],
     history: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Rolling z-score normalisation with no future leakage.
-
-    ``history`` lets the caller warm-start the rolling statistics with prior
-    observations (for example the training split when normalising a holdout
-    split). That keeps evaluation point-in-time safe while avoiding unstable
-    first-batch scaling on a fresh test slice.
-    """
     T, D = x.shape
     if T == 0:
         return x.astype(np.float32)
@@ -61,14 +54,6 @@ def rolling_normalise(
 
 
 class LOBDataset(Dataset):
-    """Sliding-window dataset.
-
-    Each sample is a dict:
-        lob   : (seq_len, N_LEVELS, D_LOB)  float32
-        scalar: (seq_len, D_SCALAR)     float32
-        labels: (seq_len, 6)            float32
-        mask  : (seq_len,)              bool
-    """
 
     def __init__(
         self,
@@ -112,10 +97,6 @@ def split_walk_forward(
     train_frac: float = _dscfg["walk_forward_train_frac"],
     min_samples: int = 1,
 ) -> list[tuple[pl.DataFrame, pl.DataFrame]]:
-    """Walk-forward splits with no data leakage — test always follows train.
-
-    ``min_samples`` is the minimum rows required in both train and test slices;
-    pass ``seq_len`` to filter out folds too short for a sliding window."""
     T = len(df)
     fold_size = T // n_folds
     splits: list[tuple[pl.DataFrame, pl.DataFrame]] = []
@@ -136,13 +117,6 @@ def split_train_validation(
     validation_frac: float = _dscfg["validation_frac"],
     min_samples: int = 1,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
-    """Split a training fold into chronological train/validation segments.
-
-    The validation slice is always the newest tail of the fold so model
-    selection remains point-in-time safe. If the fold is too short to satisfy
-    ``min_samples`` on both sides, the original training data is returned with
-    an empty validation frame so callers can decide how to handle the fallback.
-    """
     if len(train_df) == 0:
         return (train_df, train_df.clear())
     if not 0.0 < validation_frac < 1.0:
@@ -164,7 +138,6 @@ def build_loaders(
     num_workers: int = 0,
 ) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader,
            np.ndarray | None, np.ndarray | None]:
-    """Build train/test DataLoaders with per-dataset rolling normalisation."""
     from torch.utils.data import DataLoader
 
     cfg = cfg or DatasetConfig()

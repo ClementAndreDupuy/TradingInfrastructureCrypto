@@ -26,11 +26,6 @@ class BacktestConfig:
 
 
 class NeuralAlphaBacktest:
-    """
-    Replays LOB data tick-by-tick, driven by neural signal predictions.
-    Predictions are aligned with ticks so that prediction[t] was generated
-    using information up to tick t (point-in-time safe).
-    """
 
     def __init__(self, cfg: BacktestConfig | None = None) -> None:
         self.cfg = cfg or BacktestConfig()
@@ -47,14 +42,6 @@ class NeuralAlphaBacktest:
         self._equity: list[tuple[int, float]] = []
 
     def run(self, df: pl.DataFrame, signals: np.ndarray) -> dict:
-        """
-        Args:
-            df      : LOB DataFrame with timestamp_ns, best_bid, best_ask
-            signals : (T,) array of predicted mid-horizon log-returns (from model)
-
-        Returns:
-            dict with keys: trades, equity_curve, metrics
-        """
         self._rng = np.random.default_rng(self.cfg.random_seed)
         self._reset()
         entry_thresh = self.cfg.entry_threshold_bps * 0.0001
@@ -261,9 +248,6 @@ def run_backtest_on_fold(
     test_slice_end: int,
     cfg: BacktestConfig | None = None,
 ) -> dict:
-    """
-    Convenience wrapper: aligns fold predictions with the test slice of df.
-    """
     test_df = df[test_slice_start:test_slice_end]
     preds = np.asarray(fold_result["predictions"][:, 2], dtype=np.float32)
     direction_probs = fold_result.get("direction_probs")
