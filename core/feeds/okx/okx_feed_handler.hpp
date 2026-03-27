@@ -92,6 +92,8 @@ namespace trading {
 
         std::deque<std::string> delta_buffer_;
         static constexpr size_t MAX_BUFFER_SIZE = 1000;
+        // OKX "books" channel delivers up to 400 levels per side.
+        static constexpr size_t k_book_depth = 400;
 
         SnapshotCallback snapshot_callback_;
         DeltaCallback delta_callback_;

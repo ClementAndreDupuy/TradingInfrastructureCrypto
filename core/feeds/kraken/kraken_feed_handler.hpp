@@ -130,7 +130,9 @@ namespace trading {
 
         void trigger_resnapshot(const std::string &reason);
 
-        uint32_t subscribed_depth_{100};
+        // WebSocket subscription depth; matches "depth":100 in the subscribe message.
+        static constexpr size_t k_subscribed_depth = 100;
+        uint32_t subscribed_depth_{k_subscribed_depth};
         std::map<double, std::pair<std::string, std::string>, std::greater<double> > bids_;
         std::map<double, std::pair<std::string, std::string> > asks_;
     };
