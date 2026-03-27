@@ -11,6 +11,7 @@ _T = TypeVar("_T")
 
 
 class ConfigValidationError(RuntimeError):
+    pass
 
 
 def _require_mapping(value: Any, *, field: str) -> dict[str, Any]:
