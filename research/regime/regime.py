@@ -27,6 +27,7 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 _EPS = 1e-12
+_SPREAD_FEAT_IDX: int = 1
 
 
 @dataclass
@@ -36,6 +37,7 @@ class RegimeConfig:
     tol: float = _rcfg["model"]["tol"]
     random_seed: int = _rcfg["model"]["random_seed"]
     covariance_floor: float = _rcfg["model"]["covariance_floor"]
+    spread_diversity_floor: float = float(_rcfg["model"]["spread_diversity_floor"])
 
 
 @dataclass
@@ -187,6 +189,18 @@ def _forward_backward(
     return (gamma, xi, alpha, ll)
 
 
+def _enforce_spread_separation(means: np.ndarray, min_sep: float) -> np.ndarray:
+    spread = means[:, _SPREAD_FEAT_IDX].copy()
+    order = np.argsort(spread)
+    s = spread[order]
+    for i in range(1, len(s)):
+        if s[i] - s[i - 1] < min_sep:
+            s[i] = s[i - 1] + min_sep
+    out = means.copy()
+    out[order, _SPREAD_FEAT_IDX] = s
+    return out
+
+
 def _fit_hmm(
     x: np.ndarray, cfg: RegimeConfig
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -215,6 +229,7 @@ def _fit_hmm(
         transition = np.maximum(transition, _EPS)
         transition = transition / transition.sum(axis=1, keepdims=True)
         means = gamma.T @ x / np.maximum(gamma_sum[:, None], _EPS)
+        means = _enforce_spread_separation(means, cfg.spread_diversity_floor)
         diff = x[:, None, :] - means[None, :, :]
         weighted_var = (gamma[:, :, None] * (diff * diff)).sum(axis=0)
         variances = weighted_var / np.maximum(gamma_sum[:, None], _EPS)
@@ -332,6 +347,20 @@ def train_regime_model_from_df(
     scales = np.where(raw_scales < 1e-08, 1.0, raw_scales)
     x = x_raw / scales
     (labels, initial, transition, means, variances) = _fit_hmm(x, cfg)
+    spread_std_norm = float(np.std(means[:, _SPREAD_FEAT_IDX]))
+    if spread_std_norm < cfg.spread_diversity_floor:
+        spread_means_orig = [
+            round(float(means[i, _SPREAD_FEAT_IDX] * scales[_SPREAD_FEAT_IDX]), 6)
+            for i in range(cfg.n_regimes)
+        ]
+        spread_range_orig = round(max(spread_means_orig) - min(spread_means_orig), 6)
+        print(
+            f"[{_utcnow()}] [Regime] near-degenerate solution detected"
+            f"  spread_std_norm={spread_std_norm:.6f} (< {cfg.spread_diversity_floor})"
+            f"  spread_means={spread_means_orig}  spread_range={spread_range_orig}"
+            f" — anchoring artifact to calm regime."
+        )
+        return _calm_anchored_fallback(feat, cfg, raw_scales)
     (labels, initial, transition, means, variances) = _canonical_sort_states(
         labels, initial, transition, means, variances
     )
