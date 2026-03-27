@@ -31,8 +31,8 @@ trainer:
   grad_clip: 1.0
   n_folds: 4
   train_frac: 0.75
-  pretrain_epochs: 3
-  pretrain: false
+  pretrain_epochs: 5
+  pretrain: true
   w_return: 1.0
   w_direction: 0.3
   w_risk: 0.8

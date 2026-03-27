@@ -64,7 +64,7 @@ class LOBDataset(Dataset):
     """Sliding-window dataset.
 
     Each sample is a dict:
-        lob   : (seq_len, N_LEVELS, 4)  float32
+        lob   : (seq_len, N_LEVELS, D_LOB)  float32
         scalar: (seq_len, D_SCALAR)     float32
         labels: (seq_len, 6)            float32
         mask  : (seq_len,)              bool
