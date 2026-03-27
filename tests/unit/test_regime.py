@@ -265,6 +265,33 @@ def test_save_regime_artifact_bundle_writes_meta_sidecar(tmp_path: Path) -> None
     assert loaded.version.startswith("r2-regime-hmm-v1")
 
 
+def test_flat_spread_data_does_not_produce_degenerate_model() -> None:
+    rng = np.random.default_rng(0)
+    n = 200
+    rows = []
+    for i in range(n):
+        mid = 50000.0 + float(rng.normal(0, 20))
+        rows.append(
+            {
+                "timestamp_ns": 1_700_000_000_000_000_000 + i,
+                "best_bid": mid - 0.005,
+                "best_ask": mid + 0.005,
+                "bid_size_1": 10.0 + float(rng.integers(0, 8)),
+                "ask_size_1": 9.0 + float(rng.integers(0, 8)),
+            }
+        )
+    df = pl.DataFrame(rows)
+    cfg = RegimeConfig(n_regimes=4)
+    artifact, _ = train_regime_model_from_df(df, cfg)
+    spread_means_norm = [float(m[1]) for m in artifact.means]
+    spread_std_norm = float(np.std(spread_means_norm))
+    spread_range_norm = max(spread_means_norm) - min(spread_means_norm)
+    assert spread_std_norm >= cfg.spread_diversity_floor or spread_range_norm < 1e-9, (
+        f"Accepted degenerate model: spread_std_norm={spread_std_norm:.6f} "
+        f"spread_means={spread_means_norm}"
+    )
+
+
 def test_regime_walk_forward_backtest_summary_is_sane() -> None:
     frame = _make_lob_frame(n=420)
     summary = run_regime_walk_forward_backtest(
