@@ -11,8 +11,8 @@ _RETURN_CLIP: float = _lcfg["return_clip"]
 _ADV_SEL_THRESH: float = _lcfg["adv_sel_thresh"]
 
 N_LEVELS = 10
-D_LOB = 6
-BASE_SCALAR_FEATURES = 21
+D_LOB = 4
+BASE_SCALAR_FEATURES = 19
 D_SCALAR = BASE_SCALAR_FEATURES + N_LEVELS
 TRADE_FLOW_FEATURE_INDICES: dict[str, int] = {
     "trade_signed_flow": 13 + N_LEVELS + 3,
@@ -111,7 +111,7 @@ def compute_lob_tensor(df: pl.DataFrame) -> np.ndarray:
     ask_oc_norm = ask_oc / ask_oc.sum(axis=1, keepdims=True).clip(1e-9)
 
     return np.stack(
-        [bid_p_norm, bid_s_norm, ask_p_norm, ask_s_norm, bid_oc_norm, ask_oc_norm], axis=2
+        [bid_p_norm, bid_s_norm, ask_p_norm, ask_s_norm], axis=2
     ).astype(np.float32)
 
 
@@ -200,7 +200,6 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
         vol_5, vol_20, ofi_5, ofi_10, ofi_20,
         vol_60, vol_200, vol_5 / (vol_60 + 1e-8),
         trade_signed_flow, trade_intensity_5, trade_vs_mid_bps,
-        best_bid_avg_order_sz, best_ask_avg_order_sz,
     ]
     features = np.stack(
         base_features[:13] + [qi[:, i] for i in range(N_LEVELS)] + base_features[13:],

@@ -189,7 +189,7 @@ class CryptoAlphaNet(nn.Module):
         if lob.shape[-1] != self.d_lob_in:
             raise ValueError(
                 f"lob last dimension must be {self.d_lob_in}: "
-                "[bid_px, bid_sz, ask_px, ask_sz, bid_oc_share, ask_oc_share], "
+                "[bid_px, bid_sz, ask_px, ask_sz], "
                 f"got {lob.shape[-1]}"
             )
         if scalar.shape[-1] != self.d_scalar:
