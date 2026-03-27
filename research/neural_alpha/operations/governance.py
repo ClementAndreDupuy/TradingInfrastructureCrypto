@@ -8,7 +8,6 @@ from typing import Any
 
 
 class ChampionChallengerRegistry:
-    """Lightweight model governance registry persisted as JSON."""
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
@@ -109,12 +108,6 @@ class ChampionChallengerRegistry:
 
 
 class EnsembleCanary:
-    """
-    Compares live IC and ICIR of the primary-only signal against the ensemble
-    (primary + secondary averaged) signal.  Triggers rollback when the ensemble
-    degrades below the primary by more than ic_margin, or when its ICIR drops
-    below icir_floor (once enough samples are available).
-    """
 
     def __init__(
         self,
@@ -139,7 +132,6 @@ class EnsembleCanary:
         self._armed = True
 
     def update(self, primary_signal: float, ensemble_signal: float, outcome: float) -> bool:
-        """Record one tick.  Returns True if ensemble rollback should be triggered."""
         self._primary.append(float(primary_signal))
         self._ensemble.append(float(ensemble_signal))
         self._outcomes.append(float(outcome))
@@ -213,7 +205,6 @@ class EnsembleCanary:
 
 
 class DriftGuard:
-    """Tracks rolling realised IC and signals when safe mode should be enabled."""
 
     def __init__(
         self,

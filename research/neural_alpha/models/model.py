@@ -23,7 +23,6 @@ warnings.filterwarnings(
 
 
 class LOBSpatialEncoder(nn.Module):
-    """Encode per-level LOB state with self-attention over price levels."""
 
     def __init__(
         self,
@@ -59,13 +58,6 @@ class LOBSpatialEncoder(nn.Module):
 
 
 class TemporalEncoder(nn.Module):
-    """Transformer over time after fusing spatial and scalar features.
-
-    ``causal=True`` (default) applies a causal attention mask so that each
-    position can only attend to itself and earlier positions.  This prevents
-    future-data leakage during training, where the multi-task loss is computed
-    across all sequence positions, not just the last one.
-    """
 
     def __init__(
         self,
@@ -122,7 +114,6 @@ class _SinusoidalPE(nn.Module):
 
 
 class MLPHead(nn.Module):
-    """Small shared head used for all prediction tasks."""
 
     def __init__(self, d_in: int, d_hidden: int, d_out: int) -> None:
         super().__init__()
@@ -133,7 +124,6 @@ class MLPHead(nn.Module):
 
 
 class CryptoAlphaNet(nn.Module):
-    """LOB encoder + temporal encoder + lightweight multitask heads."""
 
     def __init__(
         self,
@@ -220,7 +210,6 @@ class CryptoAlphaNet(nn.Module):
 
 
 class MultiTaskLoss(nn.Module):
-    """Robust multitask loss for noisy return, direction, and risk targets."""
 
     def __init__(
         self,

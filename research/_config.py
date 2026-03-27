@@ -11,7 +11,6 @@ _T = TypeVar("_T")
 
 
 class ConfigValidationError(RuntimeError):
-    """Raised when a research config contains an invalid field value."""
 
 
 def _require_mapping(value: Any, *, field: str) -> dict[str, Any]:

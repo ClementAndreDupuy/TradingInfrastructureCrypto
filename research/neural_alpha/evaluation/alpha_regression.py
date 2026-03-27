@@ -63,12 +63,6 @@ class FlatThresholdPoint:
 def compute_ic(
     signals: np.ndarray, returns: np.ndarray, rolling_window: int = 20
 ) -> tuple[float, float, float]:
-    """
-    Compute Information Coefficient (Spearman rank correlation).
-
-    Returns:
-        ic_mean, ic_std, icir
-    """
     signals = np.asarray(signals, dtype=np.float64).ravel()
     returns = np.asarray(returns, dtype=np.float64).ravel()
     valid = np.isfinite(signals) & np.isfinite(returns)
@@ -94,7 +88,6 @@ def compute_ic(
 
 
 def compute_hit_rate(signals: np.ndarray, returns: np.ndarray) -> float:
-    """Fraction of ticks where sign(signal) == sign(return)."""
     signals = np.asarray(signals).ravel()
     returns = np.asarray(returns).ravel()
     valid = np.isfinite(signals) & np.isfinite(returns) & (signals != 0)
@@ -106,12 +99,6 @@ def compute_hit_rate(signals: np.ndarray, returns: np.ndarray) -> float:
 def ols_regression(
     signals: np.ndarray, returns: np.ndarray
 ) -> tuple[float, float, float, float, float]:
-    """
-    OLS regression: return ~ alpha + beta * signal
-
-    Returns:
-        alpha, beta, t_stat, p_value, r_squared
-    """
     signals = np.asarray(signals, dtype=np.float64).ravel()
     returns = np.asarray(returns, dtype=np.float64).ravel()
     valid = np.isfinite(signals) & np.isfinite(returns)
@@ -135,7 +122,6 @@ def ols_regression(
 
 
 def compute_turnover(signals: np.ndarray) -> float:
-    """Mean absolute change in signal per tick."""
     s = np.asarray(signals, dtype=np.float64).ravel()
     if len(s) < 2:
         return 0.0
@@ -339,17 +325,6 @@ def analyse_flat_threshold_sensitivity(
 def analyse_alpha(
     fold_results: list[dict], horizon_idx: int = 2, rolling_window: int = 20
 ) -> AlphaMetrics:
-    """
-    Aggregate alpha analysis across all walk-forward folds.
-
-    Args:
-        fold_results  : list of fold dicts from walk_forward_train
-        horizon_idx   : which return horizon to use (0=1t, 1=10t, 2=100t, 3=500t)
-        rolling_window: window for rolling IC
-
-    Returns:
-        AlphaMetrics instance
-    """
     all_signals: list[np.ndarray] = []
     all_returns: list[np.ndarray] = []
     for fold in fold_results:

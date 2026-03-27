@@ -86,7 +86,6 @@ class QualityReport:
 
 
 class DataQualityError(RuntimeError):
-    """Raised when one or more data quality gates breach their thresholds."""
 
     def __init__(self, report: QualityReport) -> None:
         self.report = report
@@ -97,7 +96,6 @@ class DataQualityError(RuntimeError):
 
 
 def _check_schema(df: pl.DataFrame) -> CheckResult:
-    """Verify all required columns exist with compatible dtypes."""
     missing: list[str] = []
     wrong_type: list[str] = []
     for col, expected_kind in _REQUIRED_COLUMNS:
@@ -126,7 +124,6 @@ def _check_schema(df: pl.DataFrame) -> CheckResult:
 
 
 def _check_null_rates(df: pl.DataFrame, max_null_rate: float) -> CheckResult:
-    """Ensure no column exceeds the maximum allowed null fraction."""
     breaching: dict[str, float] = {}
     for col, _ in _REQUIRED_COLUMNS:
         if col not in df.columns:
@@ -145,7 +142,6 @@ def _check_null_rates(df: pl.DataFrame, max_null_rate: float) -> CheckResult:
 
 
 def _check_sequence_gaps(df: pl.DataFrame, max_gap_ns: int) -> CheckResult:
-    """Detect per-venue timestamp gaps larger than max_gap_ns."""
     if "timestamp_ns" not in df.columns or "exchange" not in df.columns:
         return CheckResult(
             check="sequence_gap_check",
@@ -178,7 +174,6 @@ def _check_sequence_gaps(df: pl.DataFrame, max_gap_ns: int) -> CheckResult:
 def _check_timestamp_skew(
     df: pl.DataFrame, max_age_ns: int, allow_future_ticks: bool, future_tolerance_ns: int
 ) -> CheckResult:
-    """Check timestamps are not too old and not meaningfully in the future."""
     if "timestamp_ns" not in df.columns:
         return CheckResult(
             check="timestamp_skew",
@@ -220,7 +215,6 @@ def _check_timestamp_skew(
 
 
 def _check_duplicates(df: pl.DataFrame) -> CheckResult:
-    """Detect duplicate (timestamp_ns, exchange) rows."""
     key_cols = [c for c in ("timestamp_ns", "exchange") if c in df.columns]
     if not key_cols:
         return CheckResult(
@@ -249,12 +243,6 @@ def _check_duplicates(df: pl.DataFrame) -> CheckResult:
 
 
 def run_quality_gates(df: pl.DataFrame, cfg: DataQualityConfig | None = None) -> QualityReport:
-    """
-    Run all data quality gates against *df*.
-
-    Returns a QualityReport. Does NOT raise — callers decide whether to raise
-    based on report.passed (use assert_quality_passed for fail-closed behaviour).
-    """
     cfg = cfg or DataQualityConfig()
     checks: list[CheckResult] = [
         _check_schema(df),
@@ -282,13 +270,11 @@ def run_quality_gates(df: pl.DataFrame, cfg: DataQualityConfig | None = None) ->
 
 
 def assert_quality_passed(report: QualityReport) -> None:
-    """Raise DataQualityError if the report contains any breaches."""
     if not report.passed:
         raise DataQualityError(report)
 
 
 def write_quality_report(report: QualityReport, path: Path) -> None:
-    """Persist the quality report as JSON to *path*."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(report.to_dict(), f, indent=2)
