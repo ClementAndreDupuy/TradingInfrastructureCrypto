@@ -51,6 +51,8 @@ session:
   min_continuous_train_interval_s: 600
   min_regime_train_interval_s: 600
   regime_startup_warmup_s: 180
+  max_regime_switches_per_minute_for_retrain: 6.0
+  retrain_hpo_score_explosion_factor: 8.0
 metrics:
   ic_window: 20
   max_exchange_jump_ns: 60000000000
