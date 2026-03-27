@@ -371,14 +371,12 @@ auto main(int argc, char **argv) -> int {
             return capped < max_book_levels ? capped : max_book_levels;
         };
 
-        const double binance_tick = engine::refresh_tick_size_for_book_init(
-            binance_feed, run_binance, "BINANCE", opts.symbol);
-        const double kraken_tick = engine::refresh_tick_size_for_book_init(
-            kraken_feed, run_kraken, "KRAKEN", opts.symbol);
-        const double okx_tick =
-                engine::refresh_tick_size_for_book_init(okx_feed, run_okx, "OKX", opts.symbol);
-        //const double coinbase_tick = engine::refresh_tick_size_for_book_init(
-        //    coinbase_feed, run_coinbase, "COINBASE", opts.symbol);
+        // All four venues share the same $1 grid tick so their OrderBook price ranges are
+        // identical (max_book_levels × 1.0 USD).  Each feed handler still fetches the
+        // exchange's native tick during start() for use by the execution connectors.
+        const double binance_tick  = engine::k_default_fallback_tick_size;
+        const double kraken_tick   = engine::k_default_fallback_tick_size;
+        const double okx_tick      = engine::k_default_fallback_tick_size;
         const double coinbase_tick = engine::k_default_fallback_tick_size;
 
         const size_t binance_levels = levels_for_tick(binance_tick);
