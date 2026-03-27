@@ -959,6 +959,88 @@ class TestShadowRetrainCadence:
         session._publisher.close()
         session._regime_publisher.close()
 
+    def test_continuous_retrain_skips_when_timestamp_quality_warn(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cfg = ShadowSessionConfig(
+            log_path=str(tmp_path / "shadow.jsonl"),
+            signal_file=str(tmp_path / "alpha_signal.bin"),
+            exchanges=["BINANCE"],
+            continuous_train_every_ticks=1,
+            min_continuous_train_interval_s=0,
+            seq_len=8,
+        )
+        session = NeuralAlphaShadowSession(cfg)
+        session._processed_ticks = 1
+        session._last_continuous_train_tick = 0
+        session._session_steady_start_ns = 0
+        session._last_continuous_train_steady_ns = 0
+        session._signal_records = [
+            {
+                "event_index": 1,
+                "session_elapsed_ns": 1,
+                "exchange": "BINANCE",
+                "timestamp_exchange_ns": 0,
+                "timestamp_local_ns": 0,
+                "mid_price": 100.0,
+                "signal": 0.0,
+                "ret_mid_bps": 0.0,
+                "p_calm": 1.0,
+                "p_trending": 0.0,
+                "p_shock": 0.0,
+                "p_illiquid": 0.0,
+            }
+        ]
+        calls: list[int] = []
+        monkeypatch.setattr(session, "train_on_recent", lambda n_ticks: calls.append(n_ticks))
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session.time.monotonic_ns",
+            lambda: 700 * 1_000_000_000,
+        )
+
+        session._maybe_continuous_train()
+
+        assert calls == []
+        session._log_fp.close()
+        session._publisher.close()
+        session._regime_publisher.close()
+
+    def test_continuous_retrain_skips_when_regime_churn_exceeds_cap(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cfg = ShadowSessionConfig(
+            log_path=str(tmp_path / "shadow.jsonl"),
+            signal_file=str(tmp_path / "alpha_signal.bin"),
+            exchanges=["BINANCE"],
+            continuous_train_every_ticks=1,
+            min_continuous_train_interval_s=0,
+            max_regime_switches_per_minute_for_retrain=1.0,
+            seq_len=8,
+        )
+        session = NeuralAlphaShadowSession(cfg)
+        session._processed_ticks = 1
+        session._last_continuous_train_tick = 0
+        session._session_steady_start_ns = 0
+        session._last_continuous_train_steady_ns = 0
+        session._signal_records = [
+            {"event_index": 1, "session_elapsed_ns": 0, "exchange": "BINANCE", "timestamp_exchange_ns": 1, "timestamp_local_ns": 1, "mid_price": 100.0, "signal": 0.0, "ret_mid_bps": 0.0, "p_calm": 0.9, "p_trending": 0.1, "p_shock": 0.0, "p_illiquid": 0.0},
+            {"event_index": 2, "session_elapsed_ns": 30_000_000_000, "exchange": "BINANCE", "timestamp_exchange_ns": 2, "timestamp_local_ns": 2, "mid_price": 100.0, "signal": 0.0, "ret_mid_bps": 0.0, "p_calm": 0.1, "p_trending": 0.9, "p_shock": 0.0, "p_illiquid": 0.0},
+            {"event_index": 3, "session_elapsed_ns": 60_000_000_000, "exchange": "BINANCE", "timestamp_exchange_ns": 3, "timestamp_local_ns": 3, "mid_price": 100.0, "signal": 0.0, "ret_mid_bps": 0.0, "p_calm": 0.85, "p_trending": 0.1, "p_shock": 0.05, "p_illiquid": 0.0},
+        ]
+        calls: list[int] = []
+        monkeypatch.setattr(session, "train_on_recent", lambda n_ticks: calls.append(n_ticks))
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session.time.monotonic_ns",
+            lambda: 700 * 1_000_000_000,
+        )
+
+        session._maybe_continuous_train()
+
+        assert calls == []
+        session._log_fp.close()
+        session._publisher.close()
+        session._regime_publisher.close()
+
 
 class TestShadowRetrainDiagnostics:
     """Verify that retrain failures emit full diagnostics and are counted by error class."""
@@ -1071,6 +1153,39 @@ class TestShadowRetrainDiagnostics:
         payload = _json.loads(summary_line.split("[ShadowSummary] ", 1)[1])
         assert payload["retrain_failure_counts"] == {"ValueError": 3, "RuntimeError": 1}
         assert payload["regime_retrain_failure_counts"] == {"KeyError": 2}
+
+        session._log_fp.close()
+        session._publisher.close()
+        session._regime_publisher.close()
+
+    def test_primary_retrain_aborts_when_hpo_score_explodes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        session = self._make_session(tmp_path)
+        session._latest_primary_sanity = {"validation_loss": 2.0, "validation_ic": 0.01}
+        monkeypatch.setattr(
+            session,
+            "_collect_training_ticks",
+            lambda n_ticks: pl.DataFrame([{"timestamp_ns": 1, "best_bid": 100.0, "best_ask": 100.1, "bid_size_1": 1.0, "ask_size_1": 1.0}]),
+        )
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session._validate_alpha_input_schema",
+            lambda df: None,
+        )
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session._auto_tune_trainer_config",
+            lambda df, cfg, secondary, enabled: cfg,
+        )
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session.walk_forward_train",
+            lambda df, cfg: [{"best_selection_score": 100.0, "model_state": {}, "metrics": {}}],
+        )
+
+        session.train_on_recent(32)
+
+        captured = capsys.readouterr().out
+        assert "primary retrain aborted — score explosion" in captured
+        assert session._latest_primary_sanity["validation_loss"] == pytest.approx(2.0)
 
         session._log_fp.close()
         session._publisher.close()

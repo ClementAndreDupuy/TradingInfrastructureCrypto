@@ -154,6 +154,8 @@ class ShadowSessionConfig:
     min_continuous_train_interval_s: int = _sess["min_continuous_train_interval_s"]
     min_regime_train_interval_s: int = _sess["min_regime_train_interval_s"]
     regime_startup_warmup_s: int = _sess["regime_startup_warmup_s"]
+    max_regime_switches_per_minute_for_retrain: float = _sess.get("max_regime_switches_per_minute_for_retrain", 6.0)
+    retrain_hpo_score_explosion_factor: float = _sess.get("retrain_hpo_score_explosion_factor", 8.0)
     primary_w_return: float = _trainer_cfg["w_return"]
     primary_w_direction: float = _trainer_cfg["w_direction"]
     primary_w_risk: float = _trainer_cfg["w_risk"]
@@ -353,6 +355,18 @@ class NeuralAlphaShadowSession:
         self._regime_retrain_failure_counts: dict[str, int] = {}
         self._latest_primary_sanity: dict[str, float] = {"validation_loss": float("inf"), "validation_ic": 0.0}
         self._latest_secondary_sanity: dict[str, float] = {}
+    def _continuous_retrain_guard(self) -> tuple[bool, str]:
+        diagnostics = _summarise_timestamp_quality(self._signal_records)
+        if diagnostics["has_timestamp_issues"]:
+            return False, "ts_quality_warn"
+        churn = _summarise_regime_churn(self._signal_records)
+        switches_per_minute = float(churn["switches_per_minute"])
+        if switches_per_minute > self.cfg.max_regime_switches_per_minute_for_retrain:
+            return False, (
+                f"regime_switch_rate_high switches_per_minute={switches_per_minute:.4f} "
+                f"cap={self.cfg.max_regime_switches_per_minute_for_retrain:.4f}"
+            )
+        return True, "ok"
     @staticmethod
     def _load_regime_artifact(path: str) -> Any:
         if not Path(path).exists():
@@ -558,6 +572,17 @@ class NeuralAlphaShadowSession:
         primary_loss = float(self._latest_primary_sanity.get("validation_loss", float("inf")))
         primary_ic = float(self._latest_primary_sanity.get("validation_ic", 0.0))
         secondary_loss = float(best.get("best_selection_score", float("inf")))
+        previous_secondary_loss = float(self._latest_secondary_sanity.get("validation_loss", float("inf")))
+        if np.isfinite(previous_secondary_loss):
+            max_allowed_secondary_loss = previous_secondary_loss * self.cfg.retrain_hpo_score_explosion_factor
+            if secondary_loss > max_allowed_secondary_loss:
+                print(
+                    f"[{_utcnow()}] [Shadow] secondary retrain aborted — score explosion"
+                    f" secondary_loss={secondary_loss:.6f}"
+                    f" previous_secondary_loss={previous_secondary_loss:.6f}"
+                    f" max_allowed_secondary_loss={max_allowed_secondary_loss:.6f}"
+                )
+                return
         secondary_ic = self._estimate_validation_ic(fold_results)
         self._latest_secondary_sanity = {
             "validation_loss": secondary_loss,
@@ -669,6 +694,7 @@ class NeuralAlphaShadowSession:
         df = self._collect_training_ticks(n_ticks)
         _validate_alpha_input_schema(df)
         resume_state = self._snapshot_current_state()
+        previous_primary_loss = float(self._latest_primary_sanity.get("validation_loss", float("inf")))
         primary_cfg = _auto_tune_trainer_config(
             df,
             self._primary_trainer_config(resume_state, self._training_folds(df)),
@@ -679,8 +705,19 @@ class NeuralAlphaShadowSession:
         if not fold_results:
             return
         best = min(fold_results, key=_selection_score)
+        best_primary_loss = float(best.get("best_selection_score", float("inf")))
+        if np.isfinite(previous_primary_loss):
+            max_allowed_primary_loss = previous_primary_loss * self.cfg.retrain_hpo_score_explosion_factor
+            if best_primary_loss > max_allowed_primary_loss:
+                print(
+                    f"[{_utcnow()}] [Shadow] primary retrain aborted — score explosion"
+                    f" best_selection_score={best_primary_loss:.6f}"
+                    f" previous_best_selection_score={previous_primary_loss:.6f}"
+                    f" max_allowed_selection_score={max_allowed_primary_loss:.6f}"
+                )
+                return
         self._latest_primary_sanity = {
-            "validation_loss": float(best.get("best_selection_score", float("inf"))),
+            "validation_loss": best_primary_loss,
             "validation_ic": self._estimate_validation_ic(fold_results),
         }
         candidate_state = best["model_state"]
@@ -962,6 +999,10 @@ class NeuralAlphaShadowSession:
         now_steady_ns = time.monotonic_ns()
         elapsed_since_train_s = (now_steady_ns - self._last_continuous_train_steady_ns) / 1_000_000_000.0
         if elapsed_since_train_s < self.cfg.min_continuous_train_interval_s:
+            return
+        allowed, reason = self._continuous_retrain_guard()
+        if not allowed:
+            print(f"[{_utcnow()}] [Shadow] continuous retrain skipped — {reason}")
             return
         train_window = max(self.cfg.seq_len * 4, self.cfg.continuous_train_window_ticks)
         try:
