@@ -48,6 +48,7 @@ from research.neural_alpha.data.features import (
     compute_lob_tensor,
     compute_scalar_features,
     normalise_scalar,
+    D_LOB,
     D_SCALAR,
     N_LEVELS,
     TRADE_FLOW_FEATURE_INDICES,
@@ -120,7 +121,7 @@ def medium_df() -> pl.DataFrame:
 class TestFeatures:
     def test_lob_tensor_shape(self, small_df: pl.DataFrame) -> None:
         lob = compute_lob_tensor(small_df)
-        assert lob.shape == (200, 5, 4), f"Expected (200, 5, 4), got {lob.shape}"
+        assert lob.shape == (200, N_LEVELS, D_LOB), f"Expected (200, {N_LEVELS}, {D_LOB}), got {lob.shape}"
 
     def test_lob_tensor_dtype(self, small_df: pl.DataFrame) -> None:
         lob = compute_lob_tensor(small_df)
@@ -277,8 +278,8 @@ class TestFeatures:
 
 class TestModel:
     def test_spatial_encoder_shape(self) -> None:
-        enc = LOBSpatialEncoder(d_model=32, n_heads=2, n_layers=1, n_levels=5)
-        x = torch.randn(2, 16, 5, 4)
+        enc = LOBSpatialEncoder(d_model=32, n_heads=2, n_layers=1, n_levels=N_LEVELS)
+        x = torch.randn(2, 16, N_LEVELS, D_LOB)
         out = enc(x)
         assert out.shape == (2, 16, 32)
 
@@ -290,7 +291,7 @@ class TestModel:
 
     def test_full_model_output_shapes(self) -> None:
         model = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=16)
-        lob = torch.randn(2, 16, 5, 4)
+        lob = torch.randn(2, 16, N_LEVELS, D_LOB)
         scalar = torch.randn(2, 16, D_SCALAR)
         preds = model(lob, scalar)
         assert preds["returns"].shape == (2, 16, 4)
@@ -300,7 +301,7 @@ class TestModel:
     def test_model_gradients(self) -> None:
         model = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=16)
         criterion = MultiTaskLoss()
-        lob = torch.randn(2, 16, 5, 4)
+        lob = torch.randn(2, 16, N_LEVELS, D_LOB)
         scalar = torch.randn(2, 16, D_SCALAR)
         labels = torch.randn(2, 16, 6)
         labels[..., 4] = torch.randint(0, 3, (2, 16)).float()
@@ -316,7 +317,7 @@ class TestModel:
 
     def test_risk_head_bounded(self) -> None:
         model = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=8)
-        lob = torch.randn(1, 8, 5, 4)
+        lob = torch.randn(1, 8, N_LEVELS, D_LOB)
         scalar = torch.randn(1, 8, D_SCALAR)
         preds = model(lob, scalar)
         risk = preds["risk"].detach().numpy()
@@ -324,7 +325,7 @@ class TestModel:
 
     def test_model_exposes_risk_logits_for_stable_training(self) -> None:
         model = CryptoAlphaNet(d_spatial=16, d_temporal=32, seq_len=8)
-        lob = torch.randn(1, 8, 5, 4)
+        lob = torch.randn(1, 8, N_LEVELS, D_LOB)
         scalar = torch.randn(1, 8, D_SCALAR)
         preds = model(lob, scalar)
         assert "risk_logits" in preds
@@ -338,7 +339,7 @@ class TestLoss:
     def test_loss_positive(self) -> None:
         model = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=8)
         criterion = MultiTaskLoss()
-        lob = torch.randn(2, 8, 5, 4)
+        lob = torch.randn(2, 8, N_LEVELS, D_LOB)
         scalar = torch.randn(2, 8, D_SCALAR)
         labels = torch.zeros(2, 8, 6)
         labels[..., 4] = torch.randint(0, 3, (2, 8)).float()
@@ -352,7 +353,7 @@ class TestLoss:
         model = CryptoAlphaNet(d_spatial=32, d_temporal=64, seq_len=8)
         criterion = MultiTaskLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-        lob = torch.randn(4, 8, 5, 4)
+        lob = torch.randn(4, 8, N_LEVELS, D_LOB)
         scalar = torch.randn(4, 8, D_SCALAR)
         labels = torch.zeros(4, 8, 6)
         labels[..., 4] = torch.randint(0, 3, (4, 8)).float()
@@ -381,7 +382,7 @@ class TestDataset:
     def test_dataset_item_shapes(self, medium_df: pl.DataFrame) -> None:
         ds = LOBDataset(medium_df, DatasetConfig(seq_len=32))
         sample = ds[0]
-        assert sample["lob"].shape == (32, 5, 4)
+        assert sample["lob"].shape == (32, N_LEVELS, D_LOB)
         assert sample["scalar"].shape == (32, D_SCALAR)
         assert sample["labels"].shape == (32, 6)
         assert sample["mask"].shape == (32,)
@@ -485,7 +486,7 @@ class TestDataset:
 
     def test_nan_inputs_propagate_to_outputs(self) -> None:
         model = CryptoAlphaNet(d_spatial=16, d_temporal=32, seq_len=8)
-        lob = torch.randn(1, 8, 5, 4)
+        lob = torch.randn(1, 8, N_LEVELS, D_LOB)
         scalar = torch.randn(1, 8, D_SCALAR)
         scalar[0, 0, 0] = float("nan")
         out = model(lob, scalar)

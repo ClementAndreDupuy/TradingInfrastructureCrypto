@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..data.features import D_SCALAR, N_LEVELS
+from ..data.features import D_LOB, D_SCALAR, N_LEVELS
 
 warnings.filterwarnings(
     "ignore",
@@ -31,11 +31,12 @@ class LOBSpatialEncoder(nn.Module):
         n_heads: int = 4,
         n_layers: int = 2,
         n_levels: int = N_LEVELS,
+        d_lob_in: int = D_LOB,
         dropout: float = 0.1,
     ) -> None:
         super().__init__()
         self.n_levels = n_levels
-        self.level_proj = nn.Linear(4, d_model)
+        self.level_proj = nn.Linear(d_lob_in, d_model)
         self.pos_emb = nn.Embedding(n_levels, d_model)
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
@@ -49,8 +50,8 @@ class LOBSpatialEncoder(nn.Module):
         self.pool = nn.Sequential(nn.LayerNorm(d_model), nn.Linear(d_model, d_model))
 
     def forward(self, lob: torch.Tensor) -> torch.Tensor:
-        (batch, seq_len, levels, _) = lob.shape
-        x = lob.reshape(batch * seq_len, levels, 4)
+        (batch, seq_len, levels, d_lob) = lob.shape
+        x = lob.reshape(batch * seq_len, levels, d_lob)
         x = self.level_proj(x)
         pos = self.pos_emb(torch.arange(levels, device=x.device)).unsqueeze(0)
         x = self.encoder(x + pos)
@@ -58,7 +59,13 @@ class LOBSpatialEncoder(nn.Module):
 
 
 class TemporalEncoder(nn.Module):
-    """Transformer over time after fusing spatial and scalar features."""
+    """Transformer over time after fusing spatial and scalar features.
+
+    ``causal=True`` (default) applies a causal attention mask so that each
+    position can only attend to itself and earlier positions.  This prevents
+    future-data leakage during training, where the multi-task loss is computed
+    across all sequence positions, not just the last one.
+    """
 
     def __init__(
         self,
@@ -68,8 +75,10 @@ class TemporalEncoder(nn.Module):
         n_layers: int = 3,
         max_seq: int = 512,
         dropout: float = 0.1,
+        causal: bool = True,
     ) -> None:
         super().__init__()
+        self.causal = causal
         self.input_proj = nn.Linear(d_in, d_model)
         self.pos_enc = _SinusoidalPE(d_model, max_seq)
         encoder_layer = nn.TransformerEncoderLayer(
@@ -88,7 +97,13 @@ class TemporalEncoder(nn.Module):
     ) -> torch.Tensor:
         x = self.input_proj(x)
         x = self.pos_enc(x)
-        x = self.encoder(x, src_key_padding_mask=src_key_padding_mask)
+        causal_mask: torch.Tensor | None = None
+        if self.causal:
+            T = x.size(1)
+            causal_mask = torch.triu(
+                torch.ones(T, T, device=x.device, dtype=torch.bool), diagonal=1
+            )
+        x = self.encoder(x, mask=causal_mask, src_key_padding_mask=src_key_padding_mask)
         return self.norm(x)
 
 
@@ -133,15 +148,18 @@ class CryptoAlphaNet(nn.Module):
         dropout: float = 0.1,
         d_scalar: int = D_SCALAR,
         n_levels: int = N_LEVELS,
+        d_lob_in: int = D_LOB,
     ) -> None:
         super().__init__()
         self.n_levels = n_levels
         self.d_scalar = d_scalar
+        self.d_lob_in = d_lob_in
         self.spatial_enc = LOBSpatialEncoder(
             d_model=d_spatial,
             n_heads=n_lob_heads,
             n_layers=n_lob_layers,
             n_levels=n_levels,
+            d_lob_in=d_lob_in,
             dropout=dropout,
         )
         self.temporal_enc = TemporalEncoder(
@@ -166,7 +184,9 @@ class CryptoAlphaNet(nn.Module):
         self, lob: torch.Tensor, scalar: torch.Tensor, mask: torch.Tensor | None = None
     ) -> dict[str, torch.Tensor]:
         if lob.ndim != 4:
-            raise ValueError(f"lob must have shape (B, T, N_LEVELS, 4), got {tuple(lob.shape)}")
+            raise ValueError(
+                f"lob must have shape (B, T, N_LEVELS, {self.d_lob_in}), got {tuple(lob.shape)}"
+            )
         if scalar.ndim != 3:
             raise ValueError(f"scalar must have shape (B, T, D_SCALAR), got {tuple(scalar.shape)}")
         if lob.shape[0] != scalar.shape[0] or lob.shape[1] != scalar.shape[1]:
@@ -176,8 +196,12 @@ class CryptoAlphaNet(nn.Module):
                 f"lob level dimension must be {self.n_levels} to match IPC LOB depth, "
                 f"got {lob.shape[2]}"
             )
-        if lob.shape[-1] != 4:
-            raise ValueError("lob last dimension must be 4: [bid_px,bid_sz,ask_px,ask_sz]")
+        if lob.shape[-1] != self.d_lob_in:
+            raise ValueError(
+                f"lob last dimension must be {self.d_lob_in}: "
+                "[bid_px, bid_sz, ask_px, ask_sz, bid_oc_share, ask_oc_share], "
+                f"got {lob.shape[-1]}"
+            )
         if scalar.shape[-1] != self.d_scalar:
             raise ValueError(
                 f"scalar last dimension must be {self.d_scalar} to match feature pipeline, "

@@ -148,7 +148,7 @@ def _infer_last_window(
         )
 
     sample = dataset[len(dataset) - 1]
-    lob = sample["lob"].unsqueeze(0)  # (1, seq_len, N_LEVELS, 4)
+    lob = sample["lob"].unsqueeze(0)  # (1, seq_len, N_LEVELS, D_LOB)
     scalar = sample["scalar"].unsqueeze(0)  # (1, seq_len, D_SCALAR)
 
     with torch.no_grad():

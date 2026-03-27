@@ -11,12 +11,16 @@ _RETURN_CLIP: float = _lcfg["return_clip"]
 _ADV_SEL_THRESH: float = _lcfg["adv_sel_thresh"]
 
 N_LEVELS = 10
-BASE_SCALAR_FEATURES = 19
+D_LOB = 6  # LOB tensor channels: [bid_p, bid_s, ask_p, ask_s, bid_oc_share, ask_oc_share]
+BASE_SCALAR_FEATURES = 21
 D_SCALAR = BASE_SCALAR_FEATURES + N_LEVELS
+# Indices into the *assembled* scalar feature array returned by compute_scalar_features().
+# Assembly order: base_features[:13] + qi[N_LEVELS] + base_features[13:]
+# trade_* features land at 13 + N_LEVELS + offset-within-base[13:].
 TRADE_FLOW_FEATURE_INDICES: dict[str, int] = {
-    "trade_signed_flow": 16,
-    "trade_intensity_5": 17,
-    "trade_vs_mid_bps": 18,
+    "trade_signed_flow": 13 + N_LEVELS + 3,   # base_features[16], assembled at 26
+    "trade_intensity_5": 13 + N_LEVELS + 4,   # base_features[17], assembled at 27
+    "trade_vs_mid_bps":  13 + N_LEVELS + 5,   # base_features[18], assembled at 28
 }
 
 
@@ -106,10 +110,17 @@ def _count_weighted_depth(
 
 
 def compute_lob_tensor(df: pl.DataFrame) -> np.ndarray:
-    """Build the (T, N_LEVELS, 4) LOB tensor.
-    Each level: [normalised_bid_price, bid_size_share, normalised_ask_price, ask_size_share]
-    Prices are expressed as tick offsets from mid-price; sizes as fractional depth share."""
+    """Build the (T, N_LEVELS, D_LOB) LOB tensor.
+    Channels per level:
+        0  bid_price_norm     — tick offset from mid, normalised by spread
+        1  bid_size_share     — fractional depth share across bid levels
+        2  ask_price_norm     — tick offset from mid, normalised by spread
+        3  ask_size_share     — fractional depth share across ask levels
+        4  bid_oc_share       — per-level bid order-count fractional share (0 when unavailable)
+        5  ask_oc_share       — per-level ask order-count fractional share (0 when unavailable)
+    Prices are expressed as tick offsets from mid-price; sizes/counts as fractional share."""
     bp, bs, ap, as_ = _extract_levels(df)
+    bid_counts, ask_counts = _extract_order_counts(df)
 
     best_bid = bp[:, 0]
     best_ask = ap[:, 0]
@@ -122,7 +133,16 @@ def compute_lob_tensor(df: pl.DataFrame) -> np.ndarray:
     bid_s_norm = bs / bs.sum(axis=1, keepdims=True).clip(1e-9)
     ask_s_norm = as_ / as_.sum(axis=1, keepdims=True).clip(1e-9)
 
-    return np.stack([bid_p_norm, bid_s_norm, ask_p_norm, ask_s_norm], axis=2).astype(np.float32)
+    # Order-count fractional share per level. Zero for venues that don't publish counts
+    # (e.g. Binance REST fallback). The spatial encoder learns to ignore zero-count channels.
+    bid_oc = bid_counts.astype(np.float64)
+    ask_oc = ask_counts.astype(np.float64)
+    bid_oc_norm = bid_oc / bid_oc.sum(axis=1, keepdims=True).clip(1e-9)
+    ask_oc_norm = ask_oc / ask_oc.sum(axis=1, keepdims=True).clip(1e-9)
+
+    return np.stack(
+        [bid_p_norm, bid_s_norm, ask_p_norm, ask_s_norm, bid_oc_norm, ask_oc_norm], axis=2
+    ).astype(np.float32)
 
 
 def _lag_diff(arr: np.ndarray, lag: int) -> np.ndarray:
@@ -169,12 +189,14 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
         11 ofi_10             — order-flow imbalance lag-10
         12 ofi_20             — order-flow imbalance lag-20
         13..(13+N_LEVELS-1) qi_i — per-level queue imbalance for each level i in [1, N_LEVELS]
-        D_SCALAR-6           vol_60             — rolling 60-tick std of mid log return
-        D_SCALAR-5           vol_200            — rolling 200-tick std of mid log return
-        D_SCALAR-4           vol_ratio_5_60     — vol_5 / (vol_60 + 1e-8)
-        D_SCALAR-3           trade_signed_flow  — signed aggressor flow proxy
-        D_SCALAR-2           trade_intensity_5  — 5-tick rolling trade/depth intensity
-        D_SCALAR-1           trade_vs_mid_bps   — trade-price deviation from mid in bps
+        D_SCALAR-8           vol_60                 — rolling 60-tick std of mid log return
+        D_SCALAR-7           vol_200                — rolling 200-tick std of mid log return
+        D_SCALAR-6           vol_ratio_5_60         — vol_5 / (vol_60 + 1e-8)
+        D_SCALAR-5           trade_signed_flow      — signed aggressor flow proxy
+        D_SCALAR-4           trade_intensity_5      — 5-tick rolling trade/depth intensity
+        D_SCALAR-3           trade_vs_mid_bps       — trade-price deviation from mid in bps
+        D_SCALAR-2           best_bid_avg_order_sz  — avg size per order at best bid (0 when unavailable)
+        D_SCALAR-1           best_ask_avg_order_sz  — avg size per order at best ask (0 when unavailable)
     """
     bp, bs, ap, as_ = _extract_levels(df)
     bid_counts, ask_counts = _extract_order_counts(df)
@@ -225,6 +247,11 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
         0.0,
     )
 
+    # Average size per order at best bid/ask level — encodes queue granularity.
+    # Zero when order counts are unavailable (e.g. Binance REST fallback).
+    best_bid_avg_order_sz = eff_bs[:, 0] / (bid_counts[:, 0].astype(np.float64) + 1.0)
+    best_ask_avg_order_sz = eff_as[:, 0] / (ask_counts[:, 0].astype(np.float64) + 1.0)
+
     base_features = [
         log_ret, spread_bps, microprice - mid, obi,
         np.log1p(depth_bid), np.log1p(depth_ask),
@@ -232,6 +259,7 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
         vol_5, vol_20, ofi_5, ofi_10, ofi_20,
         vol_60, vol_200, vol_5 / (vol_60 + 1e-8),
         trade_signed_flow, trade_intensity_5, trade_vs_mid_bps,
+        best_bid_avg_order_sz, best_ask_avg_order_sz,
     ]
     features = np.stack(
         base_features[:13] + [qi[:, i] for i in range(N_LEVELS)] + base_features[13:],
