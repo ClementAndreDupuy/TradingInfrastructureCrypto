@@ -28,6 +28,7 @@ COINBASE_DEPTH_URL: str = str(_pcfg["urls"]["coinbase_depth"])
 LARGE_SELECTION_SCORE: float = float(_pcfg["large_selection_score"])
 _REQUEST_TIMEOUT_S: int = int(_pcfg["request_timeout_s"])
 _HOLDOUT_FRAC: float = float(_pcfg["holdout_frac"])
+_DIRECTION_LOSS_THRESHOLD: float = 0.80
 
 def _parse_exchange_list(raw_value: str) -> list[str]:
     return [exchange.strip().upper() for exchange in raw_value.split(",") if exchange.strip()]
@@ -286,7 +287,7 @@ def _fold_slices(total_ticks: int, n_folds: int, train_frac: float) -> list[tupl
         for index in range(n_folds)
     ]
 
-def _evaluate_state_on_holdout(df: pl.DataFrame, state_dict: dict[str, Any], cfg: TrainerConfig) -> float:
+def _evaluate_state_on_holdout(df: pl.DataFrame, state_dict: dict[str, Any], cfg: TrainerConfig) -> tuple[float, float]:
     import torch
     from torch.utils.data import DataLoader
 
@@ -296,7 +297,7 @@ def _evaluate_state_on_holdout(df: pl.DataFrame, state_dict: dict[str, Any], cfg
 
     dataset = LOBDataset(df, DatasetConfig(seq_len=cfg.seq_len))
     if len(dataset) == 0:
-        return float("inf")
+        return float("inf"), float("inf")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CryptoAlphaNet(
         d_spatial=cfg.d_spatial,
@@ -337,7 +338,7 @@ def _evaluate_state_on_holdout(df: pl.DataFrame, state_dict: dict[str, Any], cfg
             )
             batch_count += 1
     average_metrics = {name: value / max(batch_count, 1) for name, value in totals.items()}
-    return selection_score(average_metrics, cfg)
+    return selection_score(average_metrics, cfg), average_metrics["loss_direction"]
 
 def _atomic_torch_save(state_dict: dict[str, Any], output_path: Path) -> None:
     import torch
@@ -628,11 +629,20 @@ def _select_primary_state(
     holdout_df = _holdout_df(df)
     if len(holdout_df) < trainer_cfg.seq_len * 2:
         return selected_state, None, None, selected_name
-    challenger_score = _evaluate_state_on_holdout(holdout_df, challenger_state, trainer_cfg)
+    challenger_score, challenger_dir_loss = _evaluate_state_on_holdout(holdout_df, challenger_state, trainer_cfg)
+    if challenger_dir_loss >= _DIRECTION_LOSS_THRESHOLD:
+        print(
+            f"[MODEL_SELECT] challenger rejected — direction loss {challenger_dir_loss:.4f} >= {_DIRECTION_LOSS_THRESHOLD}"
+        )
+        if output_path.exists():
+            incumbent_state = torch.load(output_path, map_location="cpu", weights_only=True)
+            incumbent_score, _ = _evaluate_state_on_holdout(holdout_df, incumbent_state, trainer_cfg)
+            return incumbent_state, incumbent_score, challenger_score, "incumbent"
+        return selected_state, None, challenger_score, "rejected_anti_predictive"
     incumbent_score: float | None = None
     if output_path.exists():
         incumbent_state = torch.load(output_path, map_location="cpu", weights_only=True)
-        incumbent_score = _evaluate_state_on_holdout(holdout_df, incumbent_state, trainer_cfg)
+        incumbent_score, _ = _evaluate_state_on_holdout(holdout_df, incumbent_state, trainer_cfg)
         if incumbent_score < challenger_score:
             selected_state = incumbent_state
             selected_name = "incumbent"

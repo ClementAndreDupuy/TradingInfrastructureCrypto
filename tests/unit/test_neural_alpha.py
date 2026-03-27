@@ -1323,3 +1323,73 @@ class TestShadowTimestampMetrics:
         session._log_fp.close()
         session._publisher.close()
         session._regime_publisher.close()
+
+
+class TestDirectionLossGate:
+    def test_evaluate_state_on_holdout_returns_tuple_with_direction_loss(self) -> None:
+        from research.neural_alpha.pipeline import _evaluate_state_on_holdout
+
+        df = _make_lob_df(n_ticks=300, seed=42)
+        cfg = TrainerConfig(seq_len=16, use_amp=False)
+        model = CryptoAlphaNet(
+            d_spatial=cfg.d_spatial, d_temporal=cfg.d_temporal, seq_len=cfg.seq_len
+        )
+        result = _evaluate_state_on_holdout(df, model.state_dict(), cfg)
+
+        assert isinstance(result, tuple) and len(result) == 2
+        score, dir_loss = result
+        assert np.isfinite(score)
+        assert np.isfinite(dir_loss)
+        assert dir_loss >= 0.0
+
+    def test_random_model_direction_loss_exceeds_acceptance_threshold(self) -> None:
+        from research.neural_alpha.pipeline import _evaluate_state_on_holdout, _DIRECTION_LOSS_THRESHOLD
+
+        df = _make_lob_df(n_ticks=300, seed=42)
+        cfg = TrainerConfig(seq_len=16, use_amp=False)
+        model = CryptoAlphaNet(
+            d_spatial=cfg.d_spatial, d_temporal=cfg.d_temporal, seq_len=cfg.seq_len
+        )
+        _, dir_loss = _evaluate_state_on_holdout(df, model.state_dict(), cfg)
+
+        assert dir_loss >= _DIRECTION_LOSS_THRESHOLD
+
+    def test_select_primary_state_rejects_anti_predictive_challenger_without_incumbent(
+        self, tmp_path: Path
+    ) -> None:
+        from research.neural_alpha.pipeline import _select_primary_state
+
+        df = _make_lob_df(n_ticks=400, seed=77)
+        cfg = TrainerConfig(seq_len=16, use_amp=False)
+        model = CryptoAlphaNet(
+            d_spatial=cfg.d_spatial, d_temporal=cfg.d_temporal, seq_len=cfg.seq_len
+        )
+        fold = {"model_state": model.state_dict(), "best_selection_score": 999.0}
+        output_path = tmp_path / "model.pt"
+
+        _, _, _, selected_name = _select_primary_state(df, output_path, cfg, [fold])
+
+        assert selected_name == "rejected_anti_predictive"
+
+    def test_select_primary_state_prefers_incumbent_when_challenger_is_anti_predictive(
+        self, tmp_path: Path
+    ) -> None:
+        from research.neural_alpha.pipeline import _select_primary_state
+
+        df = _make_lob_df(n_ticks=400, seed=99)
+        cfg = TrainerConfig(seq_len=16, use_amp=False)
+        challenger_model = CryptoAlphaNet(
+            d_spatial=cfg.d_spatial, d_temporal=cfg.d_temporal, seq_len=cfg.seq_len
+        )
+        incumbent_model = CryptoAlphaNet(
+            d_spatial=cfg.d_spatial, d_temporal=cfg.d_temporal, seq_len=cfg.seq_len
+        )
+        output_path = tmp_path / "model.pt"
+        import torch as _torch
+        _torch.save(incumbent_model.state_dict(), output_path)
+        fold = {"model_state": challenger_model.state_dict(), "best_selection_score": 999.0}
+
+        selected_state, _, _, selected_name = _select_primary_state(df, output_path, cfg, [fold])
+
+        assert selected_name == "incumbent"
+        assert selected_state is not None

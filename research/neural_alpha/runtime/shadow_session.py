@@ -30,6 +30,7 @@ from ..models.trainer import TrainerConfig, walk_forward_train
 from ..operations.governance import ChampionChallengerRegistry, DriftGuard, EnsembleCanary
 from ..pipeline import (
     _auto_tune_trainer_config,
+    _DIRECTION_LOSS_THRESHOLD,
     _fetch_binance_l5,
     _fetch_coinbase_l5,
     _fetch_kraken_l5,
@@ -479,26 +480,33 @@ class NeuralAlphaShadowSession:
             action()
         except Exception:
             pass
-    def _evaluate_state_on_holdout(self, state_dict: dict[str, torch.Tensor], holdout_df: pl.DataFrame) -> float:
+    def _evaluate_state_on_holdout(self, state_dict: dict[str, torch.Tensor], holdout_df: pl.DataFrame) -> tuple[float, float]:
         dataset = LOBDataset(holdout_df, DatasetConfig(seq_len=self.cfg.seq_len))
         if len(dataset) == 0:
-            return float("inf")
+            return float("inf"), float("inf")
         loader = DataLoader(dataset, batch_size=64, shuffle=False)
         model = self._build_model(self.cfg.d_spatial, self.cfg.d_temporal)
         try:
             model.load_state_dict(state_dict, strict=True)
         except RuntimeError:
-            return float("inf")
+            return float("inf"), float("inf")
         sqerr = 0.0
         count = 0
+        dir_loss_sum = 0.0
+        dir_batches = 0
         with torch.no_grad():
             for batch in loader:
-                pred_mid = model(batch["lob"].to(self._device), batch["scalar"].to(self._device))["returns"][:, -1, 2]
+                outputs = model(batch["lob"].to(self._device), batch["scalar"].to(self._device))
+                pred_mid = outputs["returns"][:, -1, 2]
                 true_mid = batch["labels"][:, -1, 2].to(self._device)
                 diff = pred_mid - true_mid
                 sqerr += float((diff * diff).sum().item())
                 count += int(diff.numel())
-        return sqerr / max(count, 1)
+                dir_logits = outputs["direction"][:, -1, :]
+                dir_targets = batch["labels"][:, -1, 4].long().to(self._device)
+                dir_loss_sum += float(torch.nn.functional.cross_entropy(dir_logits, dir_targets).item())
+                dir_batches += 1
+        return sqerr / max(count, 1), dir_loss_sum / max(dir_batches, 1)
     def _select_primary_state(
         self,
         df: pl.DataFrame,
@@ -509,11 +517,25 @@ class NeuralAlphaShadowSession:
         holdout_df = df[int(len(df) * 0.8) :]
         if len(holdout_df) < self.cfg.seq_len * 2:
             return candidate_state, summary
-        summary["challenger"] = self._evaluate_state_on_holdout(candidate_state, holdout_df)
+        challenger_mse, challenger_dir_loss = self._evaluate_state_on_holdout(candidate_state, holdout_df)
+        summary["challenger"] = challenger_mse
+        summary["challenger_dir_loss"] = challenger_dir_loss
+        if challenger_dir_loss >= _DIRECTION_LOSS_THRESHOLD:
+            print(
+                f"[{_utcnow()}] [Shadow] challenger rejected — direction loss {challenger_dir_loss:.4f} >= {_DIRECTION_LOSS_THRESHOLD}"
+            )
+            summary["selected"] = "rejected_anti_predictive"
+            if resume_state is None:
+                return candidate_state, summary
+            incumbent_mse, _ = self._evaluate_state_on_holdout(resume_state, holdout_df)
+            summary["incumbent"] = incumbent_mse
+            summary["selected"] = "incumbent"
+            return resume_state, summary
         if resume_state is None:
             return candidate_state, summary
-        summary["incumbent"] = self._evaluate_state_on_holdout(resume_state, holdout_df)
-        if summary["challenger"] <= summary["incumbent"]:
+        incumbent_mse, _ = self._evaluate_state_on_holdout(resume_state, holdout_df)
+        summary["incumbent"] = incumbent_mse
+        if challenger_mse <= incumbent_mse:
             return candidate_state, summary
         summary["selected"] = "incumbent"
         return resume_state, summary
