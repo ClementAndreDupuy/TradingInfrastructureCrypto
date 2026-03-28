@@ -6,7 +6,7 @@ from typing import Any
 
 RING_PATH = "/tmp/trt_ipc/trt_lob_feed.bin"
 HEADER_FMT = "<8sIIIIQ32s"
-SLOT_FMT = "<B15sqd" + "d" * 40 + "I" * 20 + "dddB7s"
+SLOT_FMT = "<B15sqd" + "d" * 40 + "I" * 20 + "B7s"
 HEADER_SIZE = struct.calcsize(HEADER_FMT)
 SLOT_SIZE = struct.calcsize(SLOT_FMT)
 EXPECTED_MAGIC = b"TRTLOB01"
@@ -80,10 +80,7 @@ class CoreBridge:
             asks_s = price_size_values[30:40]
             bid_ocs = unpacked[44:54]
             ask_ocs = unpacked[54:64]
-            last_trade_price = unpacked[64]
-            last_trade_size = unpacked[65]
-            recent_traded_volume = unpacked[66]
-            trade_direction = unpacked[67]
+            trade_direction = unpacked[64]
             best_bid = float(bids_p[0])
             best_ask = float(asks_p[0])
             if best_bid <= 0.0 or best_ask <= 0.0 or best_ask <= best_bid:
@@ -96,9 +93,6 @@ class CoreBridge:
                 "symbol": symbol,
                 "best_bid": best_bid,
                 "best_ask": best_ask,
-                "last_trade_price": float(last_trade_price),
-                "last_trade_size": float(last_trade_size),
-                "recent_traded_volume": float(recent_traded_volume),
                 "trade_direction": int(trade_direction),
             }
             for i in range(10):

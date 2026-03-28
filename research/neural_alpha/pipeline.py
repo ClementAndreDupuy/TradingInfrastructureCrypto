@@ -120,15 +120,9 @@ FETCHERS: dict[str, Callable[[str], dict[str, Any] | None]] = {
 }
 
 _TRADE_FLOW_DEFAULTS: dict[str, Any] = {
-    "last_trade_price": 0.0,
-    "last_trade_size": 0.0,
-    "recent_traded_volume": 0.0,
     "trade_direction": 255,
 }
 _TRADE_COLUMNS: tuple[str, ...] = (
-    "last_trade_price",
-    "last_trade_size",
-    "recent_traded_volume",
     "trade_direction",
 )
 

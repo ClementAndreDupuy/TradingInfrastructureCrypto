@@ -182,9 +182,6 @@ def test_validate_alpha_input_schema_accepts_enriched_lob_data() -> None:
             "symbol": "BTCUSDT",
             "best_bid": 100.0,
             "best_ask": 100.1,
-            "last_trade_price": 100.05,
-            "last_trade_size": 0.2,
-            "recent_traded_volume": 0.3,
             "trade_direction": 1,
         }
         for level in range(1, 11):
@@ -205,9 +202,6 @@ def test_validate_alpha_input_schema_rejects_missing_count_columns() -> None:
             "timestamp_ns": idx + 1,
             "best_bid": 100.0,
             "best_ask": 100.1,
-            "last_trade_price": 100.05,
-            "last_trade_size": 0.2,
-            "recent_traded_volume": 0.3,
             "trade_direction": 1,
         }
         for level in range(1, 11):
