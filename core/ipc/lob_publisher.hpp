@@ -22,7 +22,7 @@ namespace trading {
         static constexpr const char *k_default_path = "/tmp/trt_ipc/trt_lob_feed.bin";
         static constexpr size_t k_capacity = 10000;
         static constexpr size_t k_levels = 10;
-        static constexpr size_t k_slot_size = 464;
+        static constexpr size_t k_slot_size = 440;
         static constexpr size_t k_header_size = 64;
 
         struct alignas(8) LobSlot {
@@ -36,9 +36,6 @@ namespace trading {
             double ask_size[k_levels];
             uint32_t bid_order_count[k_levels];
             uint32_t ask_order_count[k_levels];
-            double last_trade_price;
-            double last_trade_size;
-            double recent_traded_volume;
             uint8_t trade_direction;
             char reserved[7];
         };
@@ -134,9 +131,6 @@ namespace trading {
                 slot.bid_order_count[i] = (i < bids.size()) ? bids[i].order_count : 0;
                 slot.ask_order_count[i] = (i < asks.size()) ? asks[i].order_count : 0;
             }
-            slot.last_trade_price = trade_flow.last_trade_price;
-            slot.last_trade_size = trade_flow.last_trade_size;
-            slot.recent_traded_volume = trade_flow.recent_traded_volume;
             slot.trade_direction = trade_flow.trade_direction;
 
             header_->write_seq.store(write_seq + 1, std::memory_order_release);
