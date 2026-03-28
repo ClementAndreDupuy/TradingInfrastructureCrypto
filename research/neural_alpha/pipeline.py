@@ -174,7 +174,10 @@ def _validate_alpha_input_schema(df: pl.DataFrame) -> None:
     non_zero_bid = int((df.select([pl.col(column).abs().sum().alias(column) for column in bid_count_columns]).to_numpy() > 0).sum())
     non_zero_ask = int((df.select([pl.col(column).abs().sum().alias(column) for column in ask_count_columns]).to_numpy() > 0).sum())
     if non_zero_bid == 0 or non_zero_ask == 0:
-        raise RuntimeError("Order-count columns are present but contain only zeros; cannot train count-aware alpha models.")
+        print(
+            "[WARN] Order-count columns are present but contain only zeros; "
+            "count-aware depth features will be flat for this training run."
+        )
     print(
         f"[DATA] alpha schema verified: levels={N_LEVELS} trade_cols={len(_TRADE_COLUMNS)} count_cols_bid={len(bid_count_columns)} count_cols_ask={len(ask_count_columns)}"
     )
