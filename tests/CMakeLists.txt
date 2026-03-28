@@ -279,6 +279,27 @@ set_tests_properties(LiveConnectorsTest PROPERTIES
     LABELS "unit;execution"
 )
 
+add_executable(binance_futures_connector_test
+    unit/binance_futures_connector_test.cpp
+)
+
+target_link_libraries(binance_futures_connector_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(binance_futures_connector_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME BinanceFuturesConnectorTest COMMAND binance_futures_connector_test)
+set_tests_properties(BinanceFuturesConnectorTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;execution"
+)
+
 
 # Deterministic connector contract tests (state-machine invariants)
 add_executable(connector_contract_test

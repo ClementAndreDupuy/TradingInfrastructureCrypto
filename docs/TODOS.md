@@ -1,7 +1,7 @@
 # Project TODOs
 
 ### CRITICAL
-- [ ] **FUT-BN-1: Add Binance USDⓈ-M futures connector skeleton (REST signing + endpoint routing)**
+- [x] **FUT-BN-1: Add Binance USDⓈ-M futures connector skeleton (REST signing + endpoint routing)**
   - Scope: create `core/execution/binance/binance_futures_connector.{hpp,cpp}` built on `LiveConnectorBase`, with futures-specific base URL (`/fapi`) and signed request builder.
   - Acceptance criteria:
     - Connector compiles and links in the existing CMake target.
