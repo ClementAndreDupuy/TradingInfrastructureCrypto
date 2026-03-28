@@ -1,7 +1,104 @@
 # Project TODOs
 
-### CRITICAL 
+### CRITICAL
+- [ ] **FUT-BN-1: Add Binance USDⓈ-M futures connector skeleton (REST signing + endpoint routing)**
+  - Scope: create `core/execution/binance/binance_futures_connector.{hpp,cpp}` built on `LiveConnectorBase`, with futures-specific base URL (`/fapi`) and signed request builder.
+  - Acceptance criteria:
+    - Connector compiles and links in the existing CMake target.
+    - `submit_order`, `cancel_order`, `replace_order`, `query_order`, and `cancel_all` route to Binance futures endpoints only (no `/api/v3`).
+    - HMAC signature/timestamp/recvWindow behavior is covered by deterministic unit tests.
+
+- [ ] **FUT-BN-2: Futures order model + side semantics for long/short**
+  - Scope: extend execution order schema to represent futures position direction safely (e.g., `position_side`, `reduce_only`, `close_position`, `time_in_force`, `working_type`).
+  - Acceptance criteria:
+    - Long/short intent can be represented without overloading spot fields.
+    - Binance hedge-mode and one-way-mode payload mapping is explicit and unit-tested.
+    - Invalid combinations (e.g., `close_position=true` with quantity) are rejected pre-flight with deterministic error codes.
+
+- [ ] **FUT-BN-3: Exchange filters + pre-trade validation for futures contracts**
+  - Scope: ingest futures `exchangeInfo` filters (tick size, step size, min notional, trigger constraints), enforce in hot path before REST calls.
+  - Acceptance criteria:
+    - Validation rejects malformed orders before network submission.
+    - Quantity/price normalization obeys contract precision and does not violate filter bounds.
+    - Unit tests cover edge cases for BTCUSDT and at least one alt perpetual.
+
+- [ ] **FUT-BN-4: Position and leverage state reconciliation**
+  - Scope: add futures reconciliation snapshot fetchers for positions, open orders, and account risk; wire into `ReconciliationService` and `PositionLedger`.
+  - Acceptance criteria:
+    - Reconciliation detects drift for both net and hedge-mode positions.
+    - Local ledger is corrected after reconnect without duplicate fills.
+    - Quarantine path is triggered when drift exceeds configured threshold.
+
 ### HIGH
+- [ ] **FUT-BN-5: Funding-rate and mark-price risk gates**
+  - Scope: add risk checks that can block/scale orders based on projected funding cost, mark/index divergence, and max leverage per symbol.
+  - Acceptance criteria:
+    - Risk module can reject new exposure when leverage or maintenance margin thresholds are breached.
+    - Funding-aware sizing path is configurable via `config/` and covered by unit tests.
+    - Rejections expose stable reason codes for observability.
+
+- [ ] **FUT-BN-6: Connector failure-injection + live contract tests for futures**
+  - Scope: mirror existing connector tests for futures endpoints and error taxonomy (auth, rate limit, timestamp skew, reduce-only violation).
+  - Acceptance criteria:
+    - New futures test suite validates operation state invariants in failure paths.
+    - Existing spot connector tests remain unchanged and passing.
+    - Replayable deterministic fixtures are added for all expected Binance error classes.
+
+- [ ] **FUT-BN-7: Runtime config + kill-switch integration for futures venues**
+  - Scope: introduce futures connector config (base URLs, recvWindow, hedge mode, leverage caps) and ensure global kill switch and cancel-all semantics include futures open orders.
+  - Acceptance criteria:
+    - Futures connector can be enabled/disabled per environment without code changes.
+    - Kill switch issues futures `cancelAllOpenOrders` and blocks fresh submits until reset.
+    - Startup validation fails fast on missing futures credentials/config keys.
+
+
+- [ ] **FUT-BN-11: Validate spot-orderbook alpha execution on futures (basis + latency controls)**
+  - Scope: support strategy mode where alpha is derived from spot L2/trade-flow signals while execution occurs on Binance perpetual futures.
+  - Acceptance criteria:
+    - Signal pipeline explicitly tags source venue/instrument (`spot`) and execution venue/instrument (`futures`) for every decision.
+    - Pre-trade guardrails bound allowable spot-perp basis divergence and stale-signal latency before submitting futures orders.
+    - Backtest/replay shows PnL attribution split between alpha edge and basis slippage, with fail-safe downgrade when basis regime breaks.
+
+- [ ] **FUT-BN-12: Runtime strategy-mode switch (spot-only portfolio vs futures-only long/short)**
+  - Scope: add explicit runtime mode selection so the engine can run either (A) spot-only portfolio management flow or (B) futures-only long/short flow, with no mixed execution in a single mode.
+  - Acceptance criteria:
+    - Startup config supports a single required enum mode: `spot_only` or `futures_only`.
+    - In `spot_only`, all futures connectors/orders are disabled at compile/runtime boundaries and risk checks validate spot-only assumptions.
+    - In `futures_only`, spot execution paths are disabled and futures position/risk checks (long/short, leverage, margin) are mandatory.
+    - Mode transitions require controlled restart and emit an auditable configuration event.
+
 ### MEDIUM
+- [ ] **FUT-BN-8: Shadow-mode rollout plan for Binance futures**
+  - Scope: shadow execution path for futures with no live order placement, plus metrics for slippage, reject rate, and reconciliation drift.
+  - Acceptance criteria:
+    - Shadow mode reuses production code paths except final submit side effects.
+    - Daily report includes futures-specific health metrics and drift deltas.
+    - Go-live checklist defines promotion criteria and rollback conditions.
+
+- [ ] **FUT-BN-9: Observability and audit trail for futures lifecycle**
+  - Scope: structured logs + metrics for futures request/response latencies, error buckets, and order lifecycle transitions.
+  - Acceptance criteria:
+    - Metrics include per-endpoint p50/p95/p99 latency and reject taxonomy.
+    - Audit logs can correlate `client_order_id` to Binance futures order IDs and reconciliation events.
+    - No secrets appear in logs.
+
 ### LOW
-### RESEARCH 
+- [ ] **FUT-BN-10: Multi-Assets Mode and portfolio-margin compatibility review**
+  - Scope: document compatibility matrix for one-way vs hedge mode, single-asset vs multi-assets mode, and future portfolio-margin migration.
+  - Acceptance criteria:
+    - Supported combinations are explicitly documented with constraints.
+    - Unsupported account modes fail with clear startup diagnostics.
+
+### RESEARCH
+- [ ] **FUT-R-1: Evaluate basis/term-structure alpha for hedge timing**
+  - Scope: research signal utility from perp basis, funding regime, and spot-perp dislocation for inventory hedging.
+  - Acceptance criteria:
+    - Offline report quantifies incremental alpha and drawdown impact.
+    - Candidate features and productionization risk are documented.
+
+- [ ] **FUT-R-2: Research spot/futures coupling for hedging overlay (deferred)**
+  - Scope: investigate later-phase coupling where spot and futures can be co-activated for hedge overlays (e.g., basis hedges, inventory neutralization).
+  - Acceptance criteria:
+    - Research note defines candidate coupling architectures, risk controls, and failure modes.
+    - Backtest/replay quantifies whether hedge overlay improves drawdown/variance without degrading core alpha.
+    - Output includes go/no-go criteria before any production implementation task is created.
