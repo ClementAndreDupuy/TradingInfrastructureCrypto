@@ -157,4 +157,93 @@ TEST(BinanceFuturesConnectorTest, SignedQueryIncludesTimestampRecvWindowAndSigna
     ASSERT_EQ(c.submit_order(make_order(7001)), ConnectorResult::OK);
 }
 
+TEST(BinanceFuturesConnectorTest, OneWayModeMapsToBothPositionSide) {
+    BinanceFuturesConnector c("k", "s", "https://futures.test", 4000);
+    ScopedMockTransport transport([&](const char *method, const std::string &url,
+                                      const std::string &, const std::vector<std::string> &) {
+        EXPECT_EQ(std::strcmp(method, "POST"), 0);
+        EXPECT_TRUE(contains(url, "positionSide=BOTH"));
+        EXPECT_TRUE(contains(url, "reduceOnly=true"));
+        return http::HttpResponse{200, R"({"orderId":8001})"};
+    });
+
+    Order order = make_order(8001);
+    order.futures_position_mode = FuturesPositionMode::ONE_WAY;
+    order.futures_position_side = FuturesPositionSide::UNSPECIFIED;
+    order.reduce_only = true;
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    ASSERT_EQ(c.submit_order(order), ConnectorResult::OK);
+}
+
+TEST(BinanceFuturesConnectorTest, HedgeModeRequiresExplicitLongShortPositionSide) {
+    BinanceFuturesConnector c("k", "s", "https://futures.test", 4000);
+    Order invalid = make_order(8101);
+    invalid.futures_position_mode = FuturesPositionMode::HEDGE;
+    invalid.futures_position_side = FuturesPositionSide::UNSPECIFIED;
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    EXPECT_EQ(c.submit_order(invalid), ConnectorResult::ERROR_FUTURES_POSITION_SIDE_REQUIRED);
+
+    ScopedMockTransport transport([&](const char *method, const std::string &url,
+                                      const std::string &, const std::vector<std::string> &) {
+        EXPECT_EQ(std::strcmp(method, "POST"), 0);
+        EXPECT_TRUE(contains(url, "positionSide=LONG"));
+        return http::HttpResponse{200, R"({"orderId":8102})"};
+    });
+
+    Order valid = make_order(8102);
+    valid.futures_position_mode = FuturesPositionMode::HEDGE;
+    valid.futures_position_side = FuturesPositionSide::LONG;
+    ASSERT_EQ(c.submit_order(valid), ConnectorResult::OK);
+}
+
+TEST(BinanceFuturesConnectorTest, RejectsClosePositionWithQuantityConflict) {
+    BinanceFuturesConnector c("k", "s", "https://futures.test", 4000);
+    ScopedMockTransport transport([](const char *, const std::string &, const std::string &,
+                                     const std::vector<std::string> &) {
+        ADD_FAILURE() << "unexpected HTTP call";
+        return http::HttpResponse{500, ""};
+    });
+
+    Order order = make_order(8201);
+    order.type = OrderType::STOP_LIMIT;
+    order.stop_price = 99.5;
+    order.close_position = true;
+    order.quantity = 0.01;
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    EXPECT_EQ(c.submit_order(order), ConnectorResult::ERROR_FUTURES_CLOSE_POSITION_CONFLICT);
+}
+
+TEST(BinanceFuturesConnectorTest, NormalizesPerpSymbolForFuturesEndpoints) {
+    BinanceFuturesConnector c("k", "s", "https://futures.test", 4000);
+    ScopedMockTransport transport([&](const char *method, const std::string &url,
+                                      const std::string &, const std::vector<std::string> &) {
+        EXPECT_EQ(std::strcmp(method, "POST"), 0);
+        EXPECT_TRUE(contains(url, "symbol=BTCUSDT"));
+        EXPECT_FALSE(contains(url, "PERP"));
+        return http::HttpResponse{200, R"({"orderId":8301})"};
+    });
+
+    Order order = make_order(8301);
+    std::strncpy(order.symbol, "BTC-USDT-PERP", sizeof(order.symbol) - 1);
+    order.symbol[sizeof(order.symbol) - 1] = '\0';
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    ASSERT_EQ(c.submit_order(order), ConnectorResult::OK);
+}
+
+TEST(BinanceFuturesConnectorTest, KeepsBtcUsdtStableForFuturesEndpoints) {
+    BinanceFuturesConnector c("k", "s", "https://futures.test", 4000);
+    ScopedMockTransport transport([&](const char *method, const std::string &url,
+                                      const std::string &, const std::vector<std::string> &) {
+        EXPECT_EQ(std::strcmp(method, "POST"), 0);
+        EXPECT_TRUE(contains(url, "symbol=BTCUSDT"));
+        return http::HttpResponse{200, R"({"orderId":8302})"};
+    });
+
+    Order order = make_order(8302);
+    std::strncpy(order.symbol, "BTCUSDT", sizeof(order.symbol) - 1);
+    order.symbol[sizeof(order.symbol) - 1] = '\0';
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    ASSERT_EQ(c.submit_order(order), ConnectorResult::OK);
+}
+
 } 

@@ -25,6 +25,11 @@ namespace trading {
             return symbol != nullptr && symbol[0] != '\0';
         }
 
+        std::string map_binance_futures_symbol(const char *symbol) {
+            return SymbolMapper::map_for_binance_usdm_futures(
+                symbol == nullptr ? std::string() : std::string(symbol));
+        }
+
         std::string encode_component(const std::string &value) {
             static constexpr char hex[] = "0123456789ABCDEF";
             std::string out;
@@ -60,6 +65,28 @@ namespace trading {
             return side == Side::BID ? "BUY" : "SELL";
         }
 
+        std::string position_side_string(FuturesPositionSide side) {
+            switch (side) {
+                case FuturesPositionSide::LONG:
+                    return "LONG";
+                case FuturesPositionSide::SHORT:
+                    return "SHORT";
+                case FuturesPositionSide::UNSPECIFIED:
+                    return "BOTH";
+            }
+            return "BOTH";
+        }
+
+        std::string working_type_string(FuturesWorkingType type) {
+            switch (type) {
+                case FuturesWorkingType::CONTRACT_PRICE:
+                    return "CONTRACT_PRICE";
+                case FuturesWorkingType::MARK_PRICE:
+                    return "MARK_PRICE";
+            }
+            return "CONTRACT_PRICE";
+        }
+
         std::string tif_string(TimeInForce tif) {
             switch (tif) {
                 case TimeInForce::GTC:
@@ -74,30 +101,66 @@ namespace trading {
             return "GTC";
         }
 
-        bool validate_order_request(const Order &order) {
+        ConnectorResult validate_order_request(const Order &order) {
             if (!has_non_empty_symbol(order.symbol))
-                return false;
-            if (order.quantity <= 0.0)
-                return false;
-            if (order.type == OrderType::STOP_LIMIT)
-                return false;
-            if (order.type != OrderType::MARKET && order.price <= 0.0)
-                return false;
-            return true;
+                return ConnectorResult::ERROR_INVALID_ORDER;
+            if (order.close_position) {
+                if (order.type != OrderType::STOP_LIMIT || order.quantity > 0.0)
+                    return ConnectorResult::ERROR_FUTURES_CLOSE_POSITION_CONFLICT;
+            } else {
+                if (order.quantity <= 0.0)
+                    return ConnectorResult::ERROR_INVALID_ORDER;
+            }
+            if (order.type == OrderType::LIMIT && order.price <= 0.0)
+                return ConnectorResult::ERROR_INVALID_ORDER;
+            if (order.type == OrderType::STOP_LIMIT && order.stop_price <= 0.0)
+                return ConnectorResult::ERROR_INVALID_ORDER;
+            if (order.futures_position_mode == FuturesPositionMode::HEDGE) {
+                if (order.futures_position_side != FuturesPositionSide::LONG &&
+                    order.futures_position_side != FuturesPositionSide::SHORT) {
+                    return ConnectorResult::ERROR_FUTURES_POSITION_SIDE_REQUIRED;
+                }
+            } else {
+                if (order.futures_position_side == FuturesPositionSide::LONG ||
+                    order.futures_position_side == FuturesPositionSide::SHORT) {
+                    return ConnectorResult::ERROR_FUTURES_POSITION_SIDE_INVALID;
+                }
+            }
+            return ConnectorResult::OK;
         }
 
         bool build_order_params(const Order &order, const std::string &client_order_id,
-                                std::vector<Param> &params) {
-            if (!validate_order_request(order))
+                                std::vector<Param> &params, ConnectorResult &validation_result) {
+            validation_result = validate_order_request(order);
+            if (validation_result != ConnectorResult::OK)
                 return false;
 
-            params.emplace_back("symbol", SymbolMapper::map_for_exchange(Exchange::BINANCE, order.symbol));
+            params.emplace_back("symbol", map_binance_futures_symbol(order.symbol));
             params.emplace_back("side", side_string(order.side));
             params.emplace_back("newClientOrderId", client_order_id);
+            params.emplace_back("positionSide", position_side_string(
+                                    order.futures_position_mode == FuturesPositionMode::HEDGE
+                                        ? order.futures_position_side
+                                        : FuturesPositionSide::UNSPECIFIED));
+            if (order.reduce_only)
+                params.emplace_back("reduceOnly", "true");
 
             if (order.type == OrderType::MARKET) {
                 params.emplace_back("type", "MARKET");
-                params.emplace_back("quantity", format_decimal(order.quantity));
+                if (!order.close_position)
+                    params.emplace_back("quantity", format_decimal(order.quantity));
+                return true;
+            }
+
+            if (order.type == OrderType::STOP_LIMIT) {
+                params.emplace_back("type", "STOP_MARKET");
+                params.emplace_back("workingType", working_type_string(order.futures_working_type));
+                params.emplace_back("stopPrice", format_decimal(order.stop_price));
+                if (order.close_position) {
+                    params.emplace_back("closePosition", "true");
+                } else {
+                    params.emplace_back("quantity", format_decimal(order.quantity));
+                }
                 return true;
             }
 
@@ -206,9 +269,10 @@ namespace trading {
                                                   const std::string &idempotency_key,
                                                   std::string &venue_order_id) -> ConnectorResult {
         std::vector<Param> params;
+        ConnectorResult validation_result = ConnectorResult::OK;
         if (!build_order_params(order, build_client_order_id(idempotency_key, order.client_order_id),
-                                params)) {
-            return ConnectorResult::ERROR_INVALID_ORDER;
+                                params, validation_result)) {
+            return validation_result;
         }
         params.emplace_back("timestamp", std::to_string(http::now_ms()));
         params.emplace_back("recvWindow", std::to_string(recv_window_ms_));
@@ -226,7 +290,7 @@ namespace trading {
 
     auto BinanceFuturesConnector::cancel_at_venue(const VenueOrderEntry &entry) -> ConnectorResult {
         std::vector<Param> params = {
-            {"symbol", SymbolMapper::map_for_exchange(Exchange::BINANCE, entry.symbol)},
+            {"symbol", map_binance_futures_symbol(entry.symbol)},
             {"orderId", entry.venue_order_id},
             {"timestamp", std::to_string(http::now_ms())},
             {"recvWindow", std::to_string(recv_window_ms_)}
@@ -249,11 +313,12 @@ namespace trading {
             {"symbol", SymbolMapper::map_for_exchange(Exchange::BINANCE, entry.symbol)},
             {"orderId", entry.venue_order_id}
         };
+        ConnectorResult validation_result = ConnectorResult::OK;
         if (!build_order_params(replacement,
                                 build_client_order_id(make_idempotency_key(replacement.client_order_id),
                                                       replacement.client_order_id),
-                                params)) {
-            return ConnectorResult::ERROR_INVALID_ORDER;
+                                params, validation_result)) {
+            return validation_result;
         }
         params.emplace_back("timestamp", std::to_string(http::now_ms()));
         params.emplace_back("recvWindow", std::to_string(recv_window_ms_));
@@ -272,7 +337,7 @@ namespace trading {
     auto BinanceFuturesConnector::query_at_venue(const VenueOrderEntry &entry,
                                                  FillUpdate &status) -> ConnectorResult {
         std::vector<Param> params = {
-            {"symbol", SymbolMapper::map_for_exchange(Exchange::BINANCE, entry.symbol)},
+            {"symbol", map_binance_futures_symbol(entry.symbol)},
             {"orderId", entry.venue_order_id},
             {"timestamp", std::to_string(http::now_ms())},
             {"recvWindow", std::to_string(recv_window_ms_)}
@@ -293,7 +358,7 @@ namespace trading {
             return ConnectorResult::ERROR_INVALID_ORDER;
 
         std::vector<Param> params = {
-            {"symbol", SymbolMapper::map_for_exchange(Exchange::BINANCE, symbol)},
+            {"symbol", map_binance_futures_symbol(symbol)},
             {"timestamp", std::to_string(http::now_ms())},
             {"recvWindow", std::to_string(recv_window_ms_)}
         };
