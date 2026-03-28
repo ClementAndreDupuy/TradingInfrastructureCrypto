@@ -1,0 +1,8 @@
+{
+  "trained_at_ns": 1774696065728653000,
+  "sanity_passed": false,
+  "validation_loss": 1.1478168795956512,
+  "validation_ic": 0.0,
+  "primary_validation_loss": 0.758266535001538,
+  "primary_validation_ic": 0.0
+}
