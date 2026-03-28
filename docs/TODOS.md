@@ -22,7 +22,7 @@
     - Quantity/price normalization obeys contract precision and does not violate filter bounds.
     - Unit tests cover edge cases for BTCUSDT and at least one alt perpetual.
 
-- [ ] **FUT-BN-4: Position and leverage state reconciliation**
+- [x] **FUT-BN-4: Position and leverage state reconciliation**
   - Scope: add futures reconciliation snapshot fetchers for positions, open orders, and account risk; wire into `ReconciliationService` and `PositionLedger`.
   - Acceptance criteria:
     - Reconciliation detects drift for both net and hedge-mode positions.

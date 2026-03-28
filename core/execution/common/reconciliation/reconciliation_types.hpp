@@ -58,8 +58,10 @@ namespace trading {
 
     struct ReconciledPosition {
         char symbol[16] = {};
+        char position_side[8] = {};
         double quantity = 0.0;
         double avg_entry_price = 0.0;
+        double leverage = 0.0;
     };
 
     struct ReconciliationSnapshot {

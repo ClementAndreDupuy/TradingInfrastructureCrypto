@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -227,6 +228,33 @@ namespace trading {
                 return end != value.c_str() ? parsed : 0.0;
             }
             return 0.0;
+        }
+
+        std::string json_string(const nlohmann::json &json, const char *key) {
+            const auto it = json.find(key);
+            if (it == json.end())
+                return std::string();
+            if (it->is_string())
+                return it->get<std::string>();
+            if (it->is_number_unsigned())
+                return std::to_string(it->get<uint64_t>());
+            if (it->is_number_integer())
+                return std::to_string(it->get<int64_t>());
+            if (it->is_number_float())
+                return format_decimal(it->get<double>());
+            return std::string();
+        }
+
+        uint64_t parse_client_order_id(const std::string &client_order_id) {
+            uint64_t value = 0;
+            bool found_digit = false;
+            for (char c: client_order_id) {
+                if (c >= '0' && c <= '9') {
+                    found_digit = true;
+                    value = value * 10 + static_cast<uint64_t>(c - '0');
+                }
+            }
+            return found_digit ? value : 0;
         }
 
         OrderState parse_order_status(const std::string &raw) {
@@ -574,6 +602,126 @@ namespace trading {
     auto BinanceFuturesConnector::fetch_reconciliation_snapshot(ReconciliationSnapshot &snapshot)
         -> ConnectorResult {
         snapshot.clear();
-        return ConnectorResult::ERROR_UNKNOWN;
+
+        const std::vector<Param> base_params = {
+            {"timestamp", std::to_string(http::now_ms())},
+            {"recvWindow", std::to_string(recv_window_ms_)}
+        };
+
+        const std::string balance_payload = encode_params(base_params);
+        const auto balance_response =
+                http::get(api_url() + "/fapi/v2/balance?" + balance_payload + "&signature=" +
+                          hmac_sha256_hex_for_payload(balance_payload),
+                          binance_api_headers());
+        if (!balance_response.ok())
+            return classify_response(balance_response);
+        const auto balance_json = nlohmann::json::parse(balance_response.body, nullptr, false);
+        if (!balance_json.is_array())
+            return ConnectorResult::ERROR_UNKNOWN;
+        for (const auto &item: balance_json) {
+            ReconciledBalance balance;
+            copy_cstr(balance.asset, sizeof(balance.asset), json_string(item, "asset"));
+            balance.available = json_number(item, "availableBalance");
+            balance.total = json_number(item, "balance");
+            if (!snapshot.balances.push(balance))
+                return ConnectorResult::ERROR_UNKNOWN;
+        }
+
+        const std::string open_orders_payload = encode_params(base_params);
+        const auto open_orders_response =
+                http::get(api_url() + "/fapi/v1/openOrders?" + open_orders_payload + "&signature=" +
+                          hmac_sha256_hex_for_payload(open_orders_payload),
+                          binance_api_headers());
+        if (!open_orders_response.ok())
+            return classify_response(open_orders_response);
+        const auto open_orders_json = nlohmann::json::parse(open_orders_response.body, nullptr, false);
+        if (!open_orders_json.is_array())
+            return ConnectorResult::ERROR_UNKNOWN;
+
+        std::set<std::string> symbols;
+        for (const auto &item: open_orders_json) {
+            ReconciledOrder order;
+            const std::string symbol = json_string(item, "symbol");
+            if (!symbol.empty())
+                symbols.insert(symbol);
+            order.client_order_id = parse_client_order_id(json_string(item, "clientOrderId"));
+            copy_cstr(order.venue_order_id, sizeof(order.venue_order_id), json_string(item, "orderId"));
+            copy_cstr(order.symbol, sizeof(order.symbol), symbol);
+            order.side = json_string(item, "side") == "SELL" ? Side::ASK : Side::BID;
+            order.quantity = json_number(item, "origQty");
+            order.filled_quantity = json_number(item, "executedQty");
+            order.price = json_number(item, "price");
+            order.state = parse_order_status(json_string(item, "status"));
+            if (!snapshot.open_orders.push(order))
+                return ConnectorResult::ERROR_UNKNOWN;
+        }
+
+        const std::string position_payload = encode_params(base_params);
+        const auto position_response =
+                http::get(api_url() + "/fapi/v2/positionRisk?" + position_payload + "&signature=" +
+                          hmac_sha256_hex_for_payload(position_payload),
+                          binance_api_headers());
+        if (!position_response.ok())
+            return classify_response(position_response);
+        const auto position_json = nlohmann::json::parse(position_response.body, nullptr, false);
+        if (!position_json.is_array())
+            return ConnectorResult::ERROR_UNKNOWN;
+        for (const auto &item: position_json) {
+            ReconciledPosition position;
+            const std::string symbol = json_string(item, "symbol");
+            copy_cstr(position.symbol, sizeof(position.symbol), symbol);
+            copy_cstr(position.position_side, sizeof(position.position_side),
+                      json_string(item, "positionSide"));
+            if (position.position_side[0] == '\0')
+                copy_cstr(position.position_side, sizeof(position.position_side), "BOTH");
+            position.quantity = json_number(item, "positionAmt");
+            position.avg_entry_price = json_number(item, "entryPrice");
+            position.leverage = json_number(item, "leverage");
+            if (position.quantity != 0.0 && !symbol.empty())
+                symbols.insert(symbol);
+            if (!snapshot.positions.push(position))
+                return ConnectorResult::ERROR_UNKNOWN;
+        }
+
+        for (const std::string &symbol: symbols) {
+            std::vector<Param> trade_params = {
+                {"symbol", symbol},
+                {"timestamp", std::to_string(http::now_ms())},
+                {"recvWindow", std::to_string(recv_window_ms_)}
+            };
+            const std::string trade_payload = encode_params(trade_params);
+            const auto trades_response =
+                    http::get(api_url() + "/fapi/v1/userTrades?" + trade_payload + "&signature=" +
+                              hmac_sha256_hex_for_payload(trade_payload),
+                              binance_api_headers());
+            if (trades_response.status == 404 || trades_response.status == 405 ||
+                trades_response.status == 501) {
+                continue;
+            }
+            if (!trades_response.ok())
+                return classify_response(trades_response);
+            const auto trades_json = nlohmann::json::parse(trades_response.body, nullptr, false);
+            if (!trades_json.is_array())
+                return ConnectorResult::ERROR_UNKNOWN;
+            for (const auto &item: trades_json) {
+                ReconciledFill fill;
+                fill.exchange = Exchange::BINANCE;
+                fill.client_order_id = parse_client_order_id(json_string(item, "clientOrderId"));
+                copy_cstr(fill.venue_order_id, sizeof(fill.venue_order_id), json_string(item, "orderId"));
+                copy_cstr(fill.venue_trade_id, sizeof(fill.venue_trade_id), json_string(item, "id"));
+                copy_cstr(fill.symbol, sizeof(fill.symbol), json_string(item, "symbol"));
+                fill.side = json_string(item, "side") == "SELL" ? Side::ASK : Side::BID;
+                fill.quantity = std::fabs(json_number(item, "qty"));
+                fill.price = json_number(item, "price");
+                fill.notional = fill.quantity * fill.price;
+                fill.fee = std::fabs(json_number(item, "commission"));
+                copy_cstr(fill.fee_asset, sizeof(fill.fee_asset), json_string(item, "commissionAsset"));
+                fill.exchange_ts_ns = static_cast<int64_t>(json_number(item, "time")) * 1000000LL;
+                if (!snapshot.fills.push(fill))
+                    return ConnectorResult::ERROR_UNKNOWN;
+            }
+        }
+
+        return ConnectorResult::OK;
     }
 }
