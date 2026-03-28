@@ -30,6 +30,15 @@
     - Quarantine path is triggered when drift exceeds configured threshold.
 
 ### HIGH
+
+- [ ] **RISK-ACC-1: Venue-aware capital accounting + live session PnL ledger**
+  - Scope: add per-venue starting equity configuration, wire reconciled free balances into pre-trade affordability checks, and produce live-mode end-of-session PnL/equity summary aligned with shadow metrics schema.
+  - Acceptance criteria:
+    - Runtime config supports per-venue starting equity and minimum free-collateral buffers for BINANCE/KRAKEN/OKX/COINBASE.
+    - Order submission is blocked or clipped when venue free balance/collateral cannot fund intended order + fee buffer.
+    - Live engine emits periodic and shutdown metrics for per-venue and global `{start_equity, end_equity, realized_pnl, unrealized_pnl, fees, net_pnl, return_pct}`.
+    - Drawdown checks are driven by the live session accounting PnL source and validated by unit/integration tests.
+
 - [ ] **FUT-BN-5: Funding-rate and mark-price risk gates**
   - Scope: add risk checks that can block/scale orders based on projected funding cost, mark/index divergence, and max leverage per symbol.
   - Acceptance criteria:
