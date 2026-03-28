@@ -78,11 +78,30 @@
 
 - [ ] **FUT-BN-13: Portfolio intent engine futures long/short mapping from alpha**
   - Scope: extend `PortfolioIntentEngine`/strategy intent generation so alpha sign and confidence map deterministically to futures long/short/flat targets per symbol, including reduce/flip behavior for existing exposure.
+  - Detailed flow (alpha read -> target position):
+    1. Read normalized alpha (`signal_bps`, `size_fraction`, `risk_score`) and current position state (qty, side, leverage headroom, margin mode, health flags).
+    2. Apply gating in fixed order: kill-switch / venue health -> risk-off/regime blocks -> staleness checks -> basis/funding guards (when enabled).
+    3. Convert alpha sign + magnitude into a signed target exposure:
+       - `signal_bps > +entry_bps` => positive target (long),
+       - `signal_bps < -entry_bps` => negative target (short),
+       - `|signal_bps| <= deadband_bps` => flat hold/flatten policy.
+    4. Apply sizing multipliers (confidence, risk score, regime scale, health scale) and clamp by max position, leverage, and collateral.
+    5. Resolve transition plan from current to target (`add`, `reduce`, `flatten`, `flip`) with explicit order sequencing for `long -> short` and `short -> long`.
+    6. Emit execution intents with futures direction fields (`position_side`, `reduce_only`, `close_position`) and auditable reason codes.
   - Acceptance criteria:
     - Positive alpha generates long intent, negative alpha generates short intent, and near-zero alpha resolves to flat/no-trade via configurable deadband.
     - Target-position transitions (`long -> short`, `short -> long`, `long/short -> flat`) are explicit and risk-checked before order emission.
     - Generated intents include futures-specific direction metadata (`position_side`, `reduce_only`/close semantics) so execution does not infer direction from spot fields.
-    - Unit/integration tests validate deterministic sizing + direction outcomes for representative alpha/regime/risk inputs.
+    - Unit/integration tests validate deterministic outcomes for all transition classes (`flat->long`, `flat->short`, `long->short`, `short->long`, `long->flat`, `short->flat`) under representative alpha/regime/risk inputs.
+
+- [ ] **FUT-BN-14: Shadow runtime futures config surface (`run_shadow` + `futures.yaml`)**
+  - Scope: add explicit shadow runtime configuration for futures execution mode so operators can run spot-only or futures-only shadow sessions without ad-hoc CLI args.
+  - Acceptance criteria:
+    - Add `config/shadow/futures.yaml` with required schema (`enabled`, `strategy_mode`, `position_mode`, `default_leverage`, per-symbol leverage caps, deadband/flip controls).
+    - Extend `config/shadow/runtime.yaml` with `strategy_mode` (`spot_only` / `futures_only`) and `futures_config` path.
+    - Update `deploy/run_shadow.sh` to read these keys, validate combinations, and pass deterministic engine args/config wiring.
+    - Startup fails fast with clear diagnostics if `strategy_mode=futures_only` and futures config/credentials are missing.
+    - Shadow startup logs include resolved strategy mode + futures config path for auditability.
 
 ### MEDIUM
 - [ ] **FUT-BN-8: Shadow-mode rollout plan for Binance futures**
