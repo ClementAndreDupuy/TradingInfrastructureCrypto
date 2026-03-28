@@ -113,6 +113,7 @@ install(TARGETS binance_feed kraken_feed coinbase_feed okx_feed
 
 add_library(execution
         execution/binance/binance_connector.cpp
+        execution/binance/binance_futures_connector.cpp
         execution/kraken/kraken_connector.cpp
         execution/okx/okx_connector.cpp
         execution/coinbase/coinbase_connector.cpp
