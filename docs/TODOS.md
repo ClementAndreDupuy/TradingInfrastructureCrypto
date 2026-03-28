@@ -8,14 +8,14 @@
     - `submit_order`, `cancel_order`, `replace_order`, `query_order`, and `cancel_all` route to Binance futures endpoints only (no `/api/v3`).
     - HMAC signature/timestamp/recvWindow behavior is covered by deterministic unit tests.
 
-- [ ] **FUT-BN-2: Futures order model + side semantics for long/short**
+- [x] **FUT-BN-2: Futures order model + side semantics for long/short**
   - Scope: extend execution order schema to represent futures position direction safely (e.g., `position_side`, `reduce_only`, `close_position`, `time_in_force`, `working_type`).
   - Acceptance criteria:
     - Long/short intent can be represented without overloading spot fields.
     - Binance hedge-mode and one-way-mode payload mapping is explicit and unit-tested.
     - Invalid combinations (e.g., `close_position=true` with quantity) are rejected pre-flight with deterministic error codes.
 
-- [ ] **FUT-BN-3: Exchange filters + pre-trade validation for futures contracts**
+- [x] **FUT-BN-3: Exchange filters + pre-trade validation for futures contracts**
   - Scope: ingest futures `exchangeInfo` filters (tick size, step size, min notional, trigger constraints), enforce in hot path before REST calls.
   - Acceptance criteria:
     - Validation rejects malformed orders before network submission.

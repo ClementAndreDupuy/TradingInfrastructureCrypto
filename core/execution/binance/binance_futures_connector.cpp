@@ -6,8 +6,10 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -263,14 +265,198 @@ namespace trading {
                 return true;
             return json.value("status", std::string()) == "CANCELED";
         }
+
+        double normalize_down(double value, double step) {
+            if (step <= 0.0)
+                return value;
+            const long double ratio = static_cast<long double>(value) / static_cast<long double>(step);
+            const long double clipped = std::floor(ratio + 1e-12L);
+            return static_cast<double>(clipped * static_cast<long double>(step));
+        }
+
+        double abs_diff(double a, double b) {
+            return std::fabs(a - b);
+        }
+
+        bool within_step_tolerance(double original, double normalized, double step) {
+            const double epsilon = std::max(step * 1e-8, 1e-12);
+            return abs_diff(original, normalized) <= epsilon;
+        }
+
+        bool parse_double_field(const nlohmann::json &json, const char *key, double &out) {
+            const auto it = json.find(key);
+            if (it == json.end())
+                return false;
+            if (it->is_number()) {
+                out = it->get<double>();
+                return true;
+            }
+            if (it->is_string()) {
+                const std::string s = it->get<std::string>();
+                char *end = nullptr;
+                const double v = std::strtod(s.c_str(), &end);
+                if (end != s.c_str()) {
+                    out = v;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        bool parse_symbol_filters(const std::string &body, BinanceFuturesSymbolFilters &out) {
+            const auto json = nlohmann::json::parse(body, nullptr, false);
+            if (json.is_discarded())
+                return false;
+            const auto symbols_it = json.find("symbols");
+            if (symbols_it == json.end() || !symbols_it->is_array() || symbols_it->empty())
+                return false;
+
+            const auto &symbol = (*symbols_it)[0];
+            parse_double_field(symbol, "triggerProtect", out.trigger_protect);
+            const auto filters_it = symbol.find("filters");
+            if (filters_it == symbol.end() || !filters_it->is_array())
+                return false;
+
+            for (const auto &filter: *filters_it) {
+                const std::string filter_type = filter.value("filterType", std::string());
+                if (filter_type == "PRICE_FILTER") {
+                    parse_double_field(filter, "minPrice", out.min_price);
+                    parse_double_field(filter, "maxPrice", out.max_price);
+                    parse_double_field(filter, "tickSize", out.tick_size);
+                } else if (filter_type == "LOT_SIZE") {
+                    parse_double_field(filter, "minQty", out.min_qty);
+                    parse_double_field(filter, "maxQty", out.max_qty);
+                    parse_double_field(filter, "stepSize", out.step_size);
+                } else if (filter_type == "MARKET_LOT_SIZE") {
+                    parse_double_field(filter, "minQty", out.min_market_qty);
+                    parse_double_field(filter, "maxQty", out.max_market_qty);
+                    parse_double_field(filter, "stepSize", out.market_step_size);
+                } else if (filter_type == "MIN_NOTIONAL" || filter_type == "NOTIONAL") {
+                    parse_double_field(filter, "notional", out.min_notional);
+                    if (out.min_notional <= 0.0)
+                        parse_double_field(filter, "minNotional", out.min_notional);
+                }
+            }
+
+            out.valid = out.tick_size > 0.0 && out.step_size > 0.0;
+            return out.valid;
+        }
+
+        ConnectorResult normalize_and_validate_order(const BinanceFuturesSymbolFilters &filters, Order &order) {
+            if (order.type == OrderType::LIMIT) {
+                const double normalized_price = normalize_down(order.price, filters.tick_size);
+                if (normalized_price <= 0.0 || !within_step_tolerance(order.price, normalized_price, filters.tick_size))
+                    return ConnectorResult::ERROR_FUTURES_PRICE_FILTER_VIOLATION;
+                order.price = normalized_price;
+                if ((filters.min_price > 0.0 && order.price + 1e-12 < filters.min_price) ||
+                    (filters.max_price > 0.0 && order.price - 1e-12 > filters.max_price)) {
+                    return ConnectorResult::ERROR_FUTURES_PRICE_FILTER_VIOLATION;
+                }
+            }
+
+            if (order.type == OrderType::STOP_LIMIT) {
+                const double normalized_stop = normalize_down(order.stop_price, filters.tick_size);
+                if (normalized_stop <= 0.0 ||
+                    !within_step_tolerance(order.stop_price, normalized_stop, filters.tick_size)) {
+                    return ConnectorResult::ERROR_FUTURES_TRIGGER_CONSTRAINT_VIOLATION;
+                }
+                order.stop_price = normalized_stop;
+                if ((filters.min_price > 0.0 && order.stop_price + 1e-12 < filters.min_price) ||
+                    (filters.max_price > 0.0 && order.stop_price - 1e-12 > filters.max_price)) {
+                    return ConnectorResult::ERROR_FUTURES_TRIGGER_CONSTRAINT_VIOLATION;
+                }
+                if (order.price > 0.0 && filters.trigger_protect > 0.0) {
+                    const double distance_ratio = std::fabs(order.stop_price - order.price) / order.price;
+                    if (distance_ratio - filters.trigger_protect > 1e-12)
+                        return ConnectorResult::ERROR_FUTURES_TRIGGER_CONSTRAINT_VIOLATION;
+                }
+            }
+
+            if (!order.close_position) {
+                const bool is_market = order.type == OrderType::MARKET;
+                const double min_qty = is_market && filters.min_market_qty > 0.0
+                                           ? filters.min_market_qty
+                                           : filters.min_qty;
+                const double max_qty = is_market && filters.max_market_qty > 0.0
+                                           ? filters.max_market_qty
+                                           : filters.max_qty;
+                const double step_size = is_market && filters.market_step_size > 0.0
+                                             ? filters.market_step_size
+                                             : filters.step_size;
+                const double normalized_qty = normalize_down(order.quantity, step_size);
+                if (normalized_qty <= 0.0 || !within_step_tolerance(order.quantity, normalized_qty, step_size))
+                    return ConnectorResult::ERROR_FUTURES_QTY_FILTER_VIOLATION;
+                order.quantity = normalized_qty;
+                if ((min_qty > 0.0 && order.quantity + 1e-12 < min_qty) ||
+                    (max_qty > 0.0 && order.quantity - 1e-12 > max_qty)) {
+                    return ConnectorResult::ERROR_FUTURES_QTY_FILTER_VIOLATION;
+                }
+
+                if (filters.min_notional > 0.0) {
+                    double reference_price = 0.0;
+                    if (order.type == OrderType::LIMIT)
+                        reference_price = order.price;
+                    if (order.type == OrderType::STOP_LIMIT)
+                        reference_price = order.stop_price;
+                    if (reference_price > 0.0) {
+                        const double notional = reference_price * order.quantity;
+                        if (notional + 1e-12 < filters.min_notional)
+                            return ConnectorResult::ERROR_FUTURES_MIN_NOTIONAL_VIOLATION;
+                    }
+                }
+            }
+            return ConnectorResult::OK;
+        }
+    }
+
+    auto BinanceFuturesConnector::connect() -> ConnectorResult {
+        const ConnectorResult result = LiveConnectorBase::connect();
+        if (result != ConnectorResult::OK)
+            return result;
+        symbol_filters_.clear();
+        return ConnectorResult::OK;
+    }
+
+    auto BinanceFuturesConnector::get_symbol_filters(const std::string &symbol,
+                                                     BinanceFuturesSymbolFilters &filters)
+        -> ConnectorResult {
+        const auto cache_it = symbol_filters_.find(symbol);
+        if (cache_it != symbol_filters_.end()) {
+            filters = cache_it->second;
+            return ConnectorResult::OK;
+        }
+
+        const std::string url = api_url() + "/fapi/v1/exchangeInfo?symbol=" + symbol;
+        const auto response = http::get(url, {});
+        if (!response.ok())
+            return classify_response(response);
+
+        BinanceFuturesSymbolFilters parsed;
+        if (!parse_symbol_filters(response.body, parsed))
+            return ConnectorResult::ERROR_FUTURES_FILTERS_UNAVAILABLE;
+        symbol_filters_.emplace(symbol, parsed);
+        filters = parsed;
+        return ConnectorResult::OK;
     }
 
     auto BinanceFuturesConnector::submit_to_venue(const Order &order,
                                                   const std::string &idempotency_key,
                                                   std::string &venue_order_id) -> ConnectorResult {
+        const std::string mapped_symbol = map_binance_futures_symbol(order.symbol);
+        BinanceFuturesSymbolFilters filters;
+        ConnectorResult filters_result = get_symbol_filters(mapped_symbol, filters);
+        if (filters_result != ConnectorResult::OK)
+            return filters_result;
+
+        Order normalized_order = order;
+        const ConnectorResult pretrade_result = normalize_and_validate_order(filters, normalized_order);
+        if (pretrade_result != ConnectorResult::OK)
+            return pretrade_result;
+
         std::vector<Param> params;
         ConnectorResult validation_result = ConnectorResult::OK;
-        if (!build_order_params(order, build_client_order_id(idempotency_key, order.client_order_id),
+        if (!build_order_params(normalized_order,
+                                build_client_order_id(idempotency_key, normalized_order.client_order_id),
                                 params, validation_result)) {
             return validation_result;
         }
@@ -309,14 +495,25 @@ namespace trading {
         if (std::string_view(entry.symbol) != std::string_view(replacement.symbol))
             return ConnectorResult::ERROR_INVALID_ORDER;
 
+        const std::string mapped_symbol = map_binance_futures_symbol(replacement.symbol);
+        BinanceFuturesSymbolFilters filters;
+        ConnectorResult filters_result = get_symbol_filters(mapped_symbol, filters);
+        if (filters_result != ConnectorResult::OK)
+            return filters_result;
+
+        Order normalized_replacement = replacement;
+        const ConnectorResult pretrade_result = normalize_and_validate_order(filters, normalized_replacement);
+        if (pretrade_result != ConnectorResult::OK)
+            return pretrade_result;
+
         std::vector<Param> params = {
-            {"symbol", SymbolMapper::map_for_exchange(Exchange::BINANCE, entry.symbol)},
+            {"symbol", map_binance_futures_symbol(entry.symbol)},
             {"orderId", entry.venue_order_id}
         };
         ConnectorResult validation_result = ConnectorResult::OK;
-        if (!build_order_params(replacement,
-                                build_client_order_id(make_idempotency_key(replacement.client_order_id),
-                                                      replacement.client_order_id),
+        if (!build_order_params(normalized_replacement,
+                                build_client_order_id(make_idempotency_key(normalized_replacement.client_order_id),
+                                                      normalized_replacement.client_order_id),
                                 params, validation_result)) {
             return validation_result;
         }

@@ -56,6 +56,12 @@ std::string query_value(const std::string &query, const std::string &key) {
     return query.substr(start + token.size(), end - (start + token.size()));
 }
 
+std::string exchange_info_for(const std::string& symbol, const std::string& min_notional = "5") {
+    return std::string(R"({"symbols":[{"symbol":")") + symbol +
+           R"(","triggerProtect":"0.0500","filters":[{"filterType":"PRICE_FILTER","minPrice":"0.10","maxPrice":"1000000","tickSize":"0.10"},{"filterType":"LOT_SIZE","minQty":"0.001","maxQty":"1000","stepSize":"0.001"},{"filterType":"MARKET_LOT_SIZE","minQty":"0.001","maxQty":"500","stepSize":"0.001"},{"filterType":"MIN_NOTIONAL","notional":")" +
+           min_notional + R"("}]}]})";
+}
+
 Order make_order(uint64_t id) {
     Order o{};
     o.client_order_id = id;
@@ -83,6 +89,9 @@ TEST(BinanceFuturesConnectorTest, RoutesOnlyToFapiEndpoints) {
     ScopedMockTransport transport([&](const char *method, const std::string &url,
                                       const std::string &, const std::vector<std::string> &) {
         EXPECT_FALSE(contains(url, "/api/v3"));
+        if (std::strcmp(method, "GET") == 0 && contains(url, "/fapi/v1/exchangeInfo?symbol=BTCUSDT")) {
+            return http::HttpResponse{200, exchange_info_for("BTCUSDT")};
+        }
         if (std::strcmp(method, "POST") == 0 && contains(url, "/fapi/v1/order?")) {
             ++submit_calls;
             EXPECT_TRUE(contains(url, "recvWindow=7777"));
@@ -138,6 +147,9 @@ TEST(BinanceFuturesConnectorTest, SignedQueryIncludesTimestampRecvWindowAndSigna
 
     ScopedMockTransport transport([&](const char *method, const std::string &url,
                                       const std::string &, const std::vector<std::string> &) {
+        if (std::strcmp(method, "GET") == 0 && contains(url, "/fapi/v1/exchangeInfo?symbol=BTCUSDT")) {
+            return http::HttpResponse{200, exchange_info_for("BTCUSDT")};
+        }
         EXPECT_EQ(std::strcmp(method, "POST"), 0);
         ASSERT_TRUE(contains(url, "/fapi/v1/order?"));
 
@@ -161,6 +173,9 @@ TEST(BinanceFuturesConnectorTest, OneWayModeMapsToBothPositionSide) {
     BinanceFuturesConnector c("k", "s", "https://futures.test", 4000);
     ScopedMockTransport transport([&](const char *method, const std::string &url,
                                       const std::string &, const std::vector<std::string> &) {
+        if (std::strcmp(method, "GET") == 0 && contains(url, "/fapi/v1/exchangeInfo?symbol=BTCUSDT")) {
+            return http::HttpResponse{200, exchange_info_for("BTCUSDT")};
+        }
         EXPECT_EQ(std::strcmp(method, "POST"), 0);
         EXPECT_TRUE(contains(url, "positionSide=BOTH"));
         EXPECT_TRUE(contains(url, "reduceOnly=true"));
@@ -185,6 +200,9 @@ TEST(BinanceFuturesConnectorTest, HedgeModeRequiresExplicitLongShortPositionSide
 
     ScopedMockTransport transport([&](const char *method, const std::string &url,
                                       const std::string &, const std::vector<std::string> &) {
+        if (std::strcmp(method, "GET") == 0 && contains(url, "/fapi/v1/exchangeInfo?symbol=BTCUSDT")) {
+            return http::HttpResponse{200, exchange_info_for("BTCUSDT")};
+        }
         EXPECT_EQ(std::strcmp(method, "POST"), 0);
         EXPECT_TRUE(contains(url, "positionSide=LONG"));
         return http::HttpResponse{200, R"({"orderId":8102})"};
@@ -217,6 +235,9 @@ TEST(BinanceFuturesConnectorTest, NormalizesPerpSymbolForFuturesEndpoints) {
     BinanceFuturesConnector c("k", "s", "https://futures.test", 4000);
     ScopedMockTransport transport([&](const char *method, const std::string &url,
                                       const std::string &, const std::vector<std::string> &) {
+        if (std::strcmp(method, "GET") == 0 && contains(url, "/fapi/v1/exchangeInfo?symbol=BTCUSDT")) {
+            return http::HttpResponse{200, exchange_info_for("BTCUSDT")};
+        }
         EXPECT_EQ(std::strcmp(method, "POST"), 0);
         EXPECT_TRUE(contains(url, "symbol=BTCUSDT"));
         EXPECT_FALSE(contains(url, "PERP"));
@@ -234,6 +255,9 @@ TEST(BinanceFuturesConnectorTest, KeepsBtcUsdtStableForFuturesEndpoints) {
     BinanceFuturesConnector c("k", "s", "https://futures.test", 4000);
     ScopedMockTransport transport([&](const char *method, const std::string &url,
                                       const std::string &, const std::vector<std::string> &) {
+        if (std::strcmp(method, "GET") == 0 && contains(url, "/fapi/v1/exchangeInfo?symbol=BTCUSDT")) {
+            return http::HttpResponse{200, exchange_info_for("BTCUSDT")};
+        }
         EXPECT_EQ(std::strcmp(method, "POST"), 0);
         EXPECT_TRUE(contains(url, "symbol=BTCUSDT"));
         return http::HttpResponse{200, R"({"orderId":8302})"};
@@ -244,6 +268,63 @@ TEST(BinanceFuturesConnectorTest, KeepsBtcUsdtStableForFuturesEndpoints) {
     order.symbol[sizeof(order.symbol) - 1] = '\0';
     ASSERT_EQ(c.connect(), ConnectorResult::OK);
     ASSERT_EQ(c.submit_order(order), ConnectorResult::OK);
+}
+
+TEST(BinanceFuturesConnectorTest, RejectsQuantityStepViolationBeforeSubmit) {
+    BinanceFuturesConnector c("k", "s", "https://futures.test", 4000);
+    ScopedMockTransport transport([](const char *method, const std::string &url, const std::string &,
+                                     const std::vector<std::string> &) {
+        if (std::strcmp(method, "GET") == 0 && contains(url, "/fapi/v1/exchangeInfo?symbol=BTCUSDT")) {
+            return http::HttpResponse{200, exchange_info_for("BTCUSDT")};
+        }
+        ADD_FAILURE() << "unexpected HTTP call";
+        return http::HttpResponse{500, ""};
+    });
+
+    Order order = make_order(8401);
+    order.quantity = 0.0015;
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    EXPECT_EQ(c.submit_order(order), ConnectorResult::ERROR_FUTURES_QTY_FILTER_VIOLATION);
+}
+
+TEST(BinanceFuturesConnectorTest, RejectsMinNotionalViolationForAltPerp) {
+    BinanceFuturesConnector c("k", "s", "https://futures.test", 4000);
+    ScopedMockTransport transport([](const char *method, const std::string &url, const std::string &,
+                                     const std::vector<std::string> &) {
+        if (std::strcmp(method, "GET") == 0 && contains(url, "/fapi/v1/exchangeInfo?symbol=ETHUSDT")) {
+            return http::HttpResponse{200, exchange_info_for("ETHUSDT", "100")};
+        }
+        ADD_FAILURE() << "unexpected HTTP call";
+        return http::HttpResponse{500, ""};
+    });
+
+    Order order = make_order(8402);
+    std::strncpy(order.symbol, "ETHUSDT", sizeof(order.symbol) - 1);
+    order.symbol[sizeof(order.symbol) - 1] = '\0';
+    order.price = 50.0;
+    order.quantity = 1.0;
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    EXPECT_EQ(c.submit_order(order), ConnectorResult::ERROR_FUTURES_MIN_NOTIONAL_VIOLATION);
+}
+
+TEST(BinanceFuturesConnectorTest, RejectsStopTriggerProtectViolation) {
+    BinanceFuturesConnector c("k", "s", "https://futures.test", 4000);
+    ScopedMockTransport transport([](const char *method, const std::string &url, const std::string &,
+                                     const std::vector<std::string> &) {
+        if (std::strcmp(method, "GET") == 0 && contains(url, "/fapi/v1/exchangeInfo?symbol=BTCUSDT")) {
+            return http::HttpResponse{200, exchange_info_for("BTCUSDT")};
+        }
+        ADD_FAILURE() << "unexpected HTTP call";
+        return http::HttpResponse{500, ""};
+    });
+
+    Order order = make_order(8403);
+    order.type = OrderType::STOP_LIMIT;
+    order.price = 100.0;
+    order.stop_price = 120.0;
+    order.quantity = 0.01;
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    EXPECT_EQ(c.submit_order(order), ConnectorResult::ERROR_FUTURES_TRIGGER_CONSTRAINT_VIOLATION);
 }
 
 } 
