@@ -123,12 +123,6 @@ flowchart LR
 
 ## Recent updates
 
-- ✅ **Execution engine rebuild landed**: `core/engine` now drives a target-position state machine for both live and shadow operation, with explicit transition states (`FLAT`, `ENTERING`, `HOLDING`, `REDUCING`, `FLATTENING`, `HALTED`).
-- ✅ **Adaptive venue quality routing added**: `core/execution` now updates routing scores using fill probability, markout, reject rate, cancel latency, and health-derived bounded penalties before order routing decisions.
-- ✅ **Live reconciliation flow unified with target-position logic**: live mode consumes reconciliation snapshots and drift checks through the same execution loop used by shadow mode (with reconciliation intentionally skipped in shadow).
-- ✅ **Four fully working venues for feeds and orders**: Binance, Kraken, OKX, and Coinbase are represented as live production connectors on both the market data path (`core/feeds`) and execution path (`core/execution` router stack).
-- ✅ **Neural network now consumes data directly from `core/`**: `research/neural_alpha` receives normalized market data, order book state, and execution telemetry directly from core components for model training/inference inputs.
-
 - **`core/feeds`**: Maintains real-time exchange market data streams and validates message order before updating internal state.
 - **`core/orderbook`**: Stores the in-memory book per symbol; execution logic reads this for spread, depth, and microstructure signals.
 - **`core/risk`**: Gatekeeper in front of trading actions; enforces limits and can halt trading fast.

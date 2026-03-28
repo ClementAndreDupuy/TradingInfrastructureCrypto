@@ -1,6 +1,6 @@
 symbol: BTCUSDT
 venues: BINANCE,KRAKEN,OKX,COINBASE
-duration_secs: 4000
+duration_secs: 108000
 interval_ms: 1000
 env_file: config/shadow/trading.env
 signal_file: /tmp/trt_ipc/neural_alpha_signal.bin
