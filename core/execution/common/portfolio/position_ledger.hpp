@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../../common/types.hpp"
+#include "../reconciliation/reconciliation_types.hpp"
 
 #include <algorithm>
 #include <array>
@@ -14,6 +15,7 @@ namespace trading {
         char symbol[16];
         double position;
         double avg_entry_price;
+        double leverage;
         double realized_pnl;
         double unrealized_pnl;
         double pending_bid_qty;
@@ -110,18 +112,60 @@ namespace trading {
             return out;
         }
 
+        void reconcile_positions(Exchange exchange,
+                                 const ReconciliationSnapshot &snapshot) noexcept {
+            for (auto &venue: venues_) {
+                if (venue.active && venue.exchange == exchange)
+                    venue.marked_for_reconcile = true;
+            }
+
+            for (size_t i = 0; i < snapshot.positions.size; ++i) {
+                const auto &position = snapshot.positions.items[i];
+                auto *venue = find_or_create_venue(exchange, position.symbol);
+                if (!venue)
+                    continue;
+                venue->position = position.quantity;
+                venue->avg_entry_price = position.avg_entry_price;
+                venue->leverage = position.leverage;
+                venue->marked_for_reconcile = false;
+                if (venue->position == 0.0) {
+                    venue->has_inventory_age = false;
+                    venue->opened_at = std::chrono::steady_clock::time_point{};
+                } else if (!venue->has_inventory_age) {
+                    venue->opened_at = std::chrono::steady_clock::now();
+                    venue->has_inventory_age = true;
+                }
+                copy_symbol(symbol_, position.symbol);
+            }
+
+            for (auto &venue: venues_) {
+                if (!venue.active || venue.exchange != exchange)
+                    continue;
+                if (!venue.marked_for_reconcile)
+                    continue;
+                venue.position = 0.0;
+                venue.avg_entry_price = 0.0;
+                venue.leverage = 0.0;
+                venue.has_inventory_age = false;
+                venue.opened_at = std::chrono::steady_clock::time_point{};
+                venue.marked_for_reconcile = false;
+            }
+        }
+
     private:
         struct VenuePosition {
             Exchange exchange;
             char symbol[16];
             double position;
             double avg_entry_price;
+            double leverage;
             double realized_pnl;
             double pending_bid_qty;
             double pending_ask_qty;
             double mid_price;
             std::chrono::steady_clock::time_point opened_at{};
             bool has_inventory_age;
+            bool marked_for_reconcile;
             bool active;
         };
 
@@ -189,6 +233,7 @@ namespace trading {
             out.avg_entry_price = venue.avg_entry_price;
             out.realized_pnl = venue.realized_pnl;
             out.unrealized_pnl = compute_unrealized_pnl(venue);
+            out.leverage = venue.leverage;
             out.pending_bid_qty = venue.pending_bid_qty;
             out.pending_ask_qty = venue.pending_ask_qty;
             out.mid_price = venue.mid_price;

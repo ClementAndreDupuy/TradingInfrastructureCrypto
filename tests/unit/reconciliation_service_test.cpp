@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <functional>
 #include <string_view>
 #include <utility>
 
@@ -58,6 +59,8 @@ class TestReconnectConnector : public LiveConnectorBase {
 
     ConnectorResult fetch_reconciliation_snapshot(ReconciliationSnapshot& snapshot) override {
         ++snapshot_calls;
+        if (snapshot_provider)
+            return snapshot_provider(snapshot);
         snapshot.clear();
 
         ReconciledOrder order;
@@ -81,6 +84,7 @@ class TestReconnectConnector : public LiveConnectorBase {
     int reconcile_calls = 0;
     int snapshot_calls = 0;
     ConnectorResult reconcile_result = ConnectorResult::OK;
+    std::function<ConnectorResult(ReconciliationSnapshot&)> snapshot_provider;
 
   protected:
     ConnectorResult submit_to_venue(const Order&, const std::string&, std::string&) override {
@@ -850,6 +854,65 @@ TEST(ReconciliationServiceTest, AuthSnapshotFailureQuarantinesImmediately) {
     ASSERT_NE(state, nullptr);
     EXPECT_EQ(state->last_action, ReconciliationService::DriftAction::QUARANTINE_VENUE);
     EXPECT_EQ(state->last_severity, ReconciliationService::SeverityLevel::CRITICAL);
+}
+
+TEST(ReconciliationServiceTest, PositionSideDriftTriggersQuarantineForHedgeMode) {
+    TestReconnectConnector connector;
+    ReconciliationService service;
+    ASSERT_TRUE(service.register_connector(connector));
+
+    ReconciliationSnapshot canonical;
+    ReconciledPosition long_pos;
+    std::strncpy(long_pos.symbol, "BTCUSDT", sizeof(long_pos.symbol) - 1);
+    std::strncpy(long_pos.position_side, "LONG", sizeof(long_pos.position_side) - 1);
+    long_pos.quantity = 1.0;
+    long_pos.avg_entry_price = 100.0;
+    ASSERT_TRUE(canonical.positions.push(long_pos));
+    ASSERT_TRUE(service.set_canonical_snapshot(Exchange::BINANCE, canonical));
+
+    connector.snapshot_provider = [](ReconciliationSnapshot& snapshot) {
+        snapshot.clear();
+        ReconciledPosition short_pos;
+        std::strncpy(short_pos.symbol, "BTCUSDT", sizeof(short_pos.symbol) - 1);
+        std::strncpy(short_pos.position_side, "SHORT", sizeof(short_pos.position_side) - 1);
+        short_pos.quantity = -1.0;
+        short_pos.avg_entry_price = 100.0;
+        return snapshot.positions.push(short_pos) ? ConnectorResult::OK
+                                                  : ConnectorResult::ERROR_UNKNOWN;
+    };
+
+    EXPECT_EQ(service.reconcile_on_reconnect(), ConnectorResult::ERROR_UNKNOWN);
+    EXPECT_TRUE(service.is_quarantined(Exchange::BINANCE));
+    const auto* state = service.state_for(Exchange::BINANCE);
+    ASSERT_NE(state, nullptr);
+    EXPECT_EQ(state->last_mismatch, ReconciliationService::MismatchClass::POSITION_DRIFT);
+}
+
+TEST(ReconciliationServiceTest, ReconcileCycleAppliesSnapshotIntoBoundPositionLedger) {
+    TestReconnectConnector connector;
+    ReconciliationService service;
+    PositionLedger ledger;
+    service.bind_position_ledger(&ledger);
+    ASSERT_TRUE(service.register_connector(connector));
+
+    connector.snapshot_provider = [](ReconciliationSnapshot& snapshot) {
+        snapshot.clear();
+        ReconciledPosition pos;
+        std::strncpy(pos.symbol, "BTCUSDT", sizeof(pos.symbol) - 1);
+        std::strncpy(pos.position_side, "BOTH", sizeof(pos.position_side) - 1);
+        pos.quantity = 2.0;
+        pos.avg_entry_price = 99.0;
+        pos.leverage = 10.0;
+        return snapshot.positions.push(pos) ? ConnectorResult::OK
+                                            : ConnectorResult::ERROR_UNKNOWN;
+    };
+
+    ASSERT_EQ(service.reconcile_on_reconnect(), ConnectorResult::OK);
+    const auto snapshot = ledger.snapshot();
+    EXPECT_DOUBLE_EQ(snapshot.global_position, 2.0);
+    ASSERT_EQ(snapshot.venue_count, 1U);
+    EXPECT_DOUBLE_EQ(snapshot.venues[0].avg_entry_price, 99.0);
+    EXPECT_DOUBLE_EQ(snapshot.venues[0].leverage, 10.0);
 }
 
 } // namespace

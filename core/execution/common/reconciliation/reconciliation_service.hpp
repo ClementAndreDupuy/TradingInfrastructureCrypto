@@ -2,6 +2,7 @@
 
 #include "../../../common/logging.hpp"
 #include "../connectors/live_connector_base.hpp"
+#include "../portfolio/position_ledger.hpp"
 #include "reconciliation_types.hpp"
 
 #include <array>
@@ -130,6 +131,8 @@ namespace trading {
             return true;
         }
 
+        void bind_position_ledger(PositionLedger *ledger) noexcept { position_ledger_ = ledger; }
+
         ConnectorResult reconcile_on_reconnect() { return run_reconciliation_cycle(true); }
 
         bool mark_reconnect_required(Exchange exchange) {
@@ -256,6 +259,8 @@ namespace trading {
                 } else {
                     states_[i].last_drift_check_ts_ns = ts_ns;
                 }
+                if (position_ledger_ != nullptr)
+                    position_ledger_->reconcile_positions(states_[i].exchange, snapshot);
                 states_[i].last_mismatch = MismatchClass::NONE;
                 states_[i].last_action = DriftAction::NONE;
                 states_[i].last_severity = SeverityLevel::INFO;
@@ -320,6 +325,10 @@ namespace trading {
                     return mismatch(MismatchClass::NONE, DriftAction::QUARANTINE_VENUE,
                                     SeverityLevel::CRITICAL, "positive position with invalid entry",
                                     true);
+                }
+                if (position.leverage < 0.0) {
+                    return mismatch(MismatchClass::NONE, DriftAction::QUARANTINE_VENUE,
+                                    SeverityLevel::CRITICAL, "negative leverage", true);
                 }
             }
 
@@ -386,7 +395,8 @@ namespace trading {
             for (size_t i = 0; i < canonical.positions.size; ++i) {
                 const ReconciledPosition &internal_position = canonical.positions.items[i];
                 const ReconciledPosition *venue_position =
-                        find_position(venue, internal_position.symbol);
+                        find_position(venue, internal_position.symbol,
+                                      internal_position.position_side);
                 if (!venue_position ||
                     drift(venue_position->quantity, internal_position.quantity) >
                     thresholds_.max_position_drift ||
@@ -573,10 +583,12 @@ namespace trading {
         }
 
         static const ReconciledPosition *find_position(const ReconciliationSnapshot &snapshot,
-                                                       const char *symbol) noexcept {
+                                                       const char *symbol,
+                                                       const char *position_side) noexcept {
             for (size_t i = 0; i < snapshot.positions.size; ++i) {
                 const ReconciledPosition &candidate = snapshot.positions.items[i];
-                if (cstr_eq(candidate.symbol, symbol))
+                if (cstr_eq(candidate.symbol, symbol) &&
+                    cstr_eq(candidate.position_side, position_side))
                     return &candidate;
             }
             return nullptr;
@@ -677,6 +689,7 @@ namespace trading {
         std::array<bool, MAX_CONNECTORS> reconnect_required_{};
         RemediationHook cancel_all_hook_;
         RemediationHook risk_halt_hook_;
+        PositionLedger *position_ledger_ = nullptr;
         std::array<ReconciliationIncident, MAX_INCIDENT_TRAIL> incident_trail_{};
         size_t incident_count_;
         uint32_t dropped_incident_count_;

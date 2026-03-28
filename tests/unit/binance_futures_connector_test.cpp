@@ -19,6 +19,12 @@ class ScopedMockTransport {
     ~ScopedMockTransport() { http::clear_mock_transport(); }
 };
 
+class TestableBinanceFuturesConnector : public BinanceFuturesConnector {
+  public:
+    using BinanceFuturesConnector::BinanceFuturesConnector;
+    using BinanceFuturesConnector::fetch_reconciliation_snapshot;
+};
+
 bool contains(const std::string &s, const char *token) {
     return s.find(token) != std::string::npos;
 }
@@ -325,6 +331,73 @@ TEST(BinanceFuturesConnectorTest, RejectsStopTriggerProtectViolation) {
     order.quantity = 0.01;
     ASSERT_EQ(c.connect(), ConnectorResult::OK);
     EXPECT_EQ(c.submit_order(order), ConnectorResult::ERROR_FUTURES_TRIGGER_CONSTRAINT_VIOLATION);
+}
+
+TEST(BinanceFuturesConnectorTest, FetchesFuturesReconciliationSnapshotWithPositionsAndLeverage) {
+    TestableBinanceFuturesConnector c("k", "s", "https://futures.test", 4000);
+    int position_calls = 0;
+    int open_order_calls = 0;
+    int balance_calls = 0;
+    int trades_calls = 0;
+
+    ScopedMockTransport transport([&](const char *method, const std::string &url,
+                                      const std::string &, const std::vector<std::string> &) {
+        if (std::strcmp(method, "GET") != 0)
+            return http::HttpResponse{404, ""};
+        if (contains(url, "/fapi/v2/balance?")) {
+            ++balance_calls;
+            return http::HttpResponse{
+                200,
+                R"([{"asset":"USDT","balance":"1100","availableBalance":"1000"}])"};
+        }
+        if (contains(url, "/fapi/v1/openOrders?")) {
+            ++open_order_calls;
+            return http::HttpResponse{
+                200,
+                R"([{"orderId":"123","symbol":"BTCUSDT","clientOrderId":"TRT-123-BINANCE","side":"BUY","origQty":"0.50","executedQty":"0.10","price":"100.0","status":"NEW"}])"};
+        }
+        if (contains(url, "/fapi/v2/positionRisk?")) {
+            ++position_calls;
+            return http::HttpResponse{
+                200,
+                R"([{"symbol":"BTCUSDT","positionAmt":"0.40","entryPrice":"99.5","positionSide":"LONG","leverage":"15"},{"symbol":"BTCUSDT","positionAmt":"-0.10","entryPrice":"101.0","positionSide":"SHORT","leverage":"15"}])"};
+        }
+        if (contains(url, "/fapi/v1/userTrades?symbol=BTCUSDT")) {
+            ++trades_calls;
+            return http::HttpResponse{
+                200,
+                R"([{"id":"9001","orderId":"123","clientOrderId":"TRT-123-BINANCE","symbol":"BTCUSDT","side":"BUY","qty":"0.1","price":"100.0","commission":"0.0005","commissionAsset":"USDT","time":1700000000000}])"};
+        }
+        return http::HttpResponse{404, ""};
+    });
+
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    ReconciliationSnapshot snapshot;
+    ASSERT_EQ(c.fetch_reconciliation_snapshot(snapshot), ConnectorResult::OK);
+
+    ASSERT_EQ(snapshot.balances.size, 1U);
+    EXPECT_STREQ(snapshot.balances.items[0].asset, "USDT");
+    EXPECT_DOUBLE_EQ(snapshot.balances.items[0].total, 1100.0);
+    EXPECT_DOUBLE_EQ(snapshot.balances.items[0].available, 1000.0);
+
+    ASSERT_EQ(snapshot.open_orders.size, 1U);
+    EXPECT_EQ(snapshot.open_orders.items[0].client_order_id, 123U);
+    EXPECT_STREQ(snapshot.open_orders.items[0].symbol, "BTCUSDT");
+
+    ASSERT_EQ(snapshot.positions.size, 2U);
+    EXPECT_STREQ(snapshot.positions.items[0].position_side, "LONG");
+    EXPECT_DOUBLE_EQ(snapshot.positions.items[0].leverage, 15.0);
+    EXPECT_STREQ(snapshot.positions.items[1].position_side, "SHORT");
+    EXPECT_DOUBLE_EQ(snapshot.positions.items[1].quantity, -0.10);
+
+    ASSERT_EQ(snapshot.fills.size, 1U);
+    EXPECT_STREQ(snapshot.fills.items[0].venue_trade_id, "9001");
+    EXPECT_DOUBLE_EQ(snapshot.fills.items[0].quantity, 0.1);
+
+    EXPECT_EQ(balance_calls, 1);
+    EXPECT_EQ(open_order_calls, 1);
+    EXPECT_EQ(position_calls, 1);
+    EXPECT_EQ(trades_calls, 1);
 }
 
 } 
