@@ -22,6 +22,33 @@ namespace trading {
         bool kill_on_breach;
     };
 
+    struct FuturesRiskGateSymbolConfig {
+        char symbol[16] = {};
+        double max_leverage = 0.0;
+    };
+
+    struct FuturesRiskGateConfig {
+        bool enabled = false;
+        double max_projected_funding_cost_bps = 0.0;
+        double funding_cost_scale_start_bps = 0.0;
+        double min_funding_scale = 1.0;
+        double max_mark_index_divergence_bps = 0.0;
+        double max_maintenance_margin_ratio = 0.0;
+        double default_max_leverage = 0.0;
+        std::array<FuturesRiskGateSymbolConfig, 16> symbol_limits = {};
+        size_t symbol_limit_count = 0;
+    };
+
+    struct FuturesRiskContext {
+        double collateral_notional = 0.0;
+        double current_abs_notional = 0.0;
+        double maintenance_margin_ratio = 0.0;
+        double mark_price = 0.0;
+        double index_price = 0.0;
+        double funding_rate_bps = 0.0;
+        double hours_to_funding = 8.0;
+    };
+
     enum class GlobalRiskCheckResult : uint8_t {
         OK = 0,
         INVALID_INPUT = 1,
@@ -30,6 +57,10 @@ namespace trading {
         CONCENTRATION_CAP = 4,
         VENUE_CAP = 5,
         CROSS_VENUE_NETTING_CAP = 6,
+        FUTURES_LEVERAGE_CAP = 7,
+        FUTURES_MAINTENANCE_MARGIN_CAP = 8,
+        FUTURES_MARK_INDEX_DIVERGENCE_CAP = 9,
+        FUTURES_FUNDING_COST_CAP = 10,
     };
 
     class GlobalRiskControls {
@@ -40,6 +71,13 @@ namespace trading {
 
         GlobalRiskControls(const GlobalRiskConfig &cfg, KillSwitch &kill_switch) noexcept
             : cfg_(cfg), kill_switch_(kill_switch) {
+            for (auto &state: symbol_states_)
+                state.active.store(false, std::memory_order_relaxed);
+        }
+
+        GlobalRiskControls(const GlobalRiskConfig &cfg, const FuturesRiskGateConfig &futures_cfg,
+                           KillSwitch &kill_switch) noexcept
+            : cfg_(cfg), futures_cfg_(futures_cfg), kill_switch_(kill_switch) {
             for (auto &state: symbol_states_)
                 state.active.store(false, std::memory_order_relaxed);
         }
@@ -119,6 +157,35 @@ namespace trading {
             return GlobalRiskCheckResult::OK;
         }
 
+        GlobalRiskCheckResult check_futures_order(Exchange exchange, const char *symbol,
+                                                  double signed_notional,
+                                                  const FuturesRiskContext &ctx,
+                                                  double &scaled_notional) const noexcept {
+            scaled_notional = signed_notional;
+            const GlobalRiskCheckResult gate = check_futures_gate(symbol, signed_notional, ctx,
+                                                                  scaled_notional);
+            if (gate != GlobalRiskCheckResult::OK)
+                return gate;
+            return check_order(exchange, symbol, scaled_notional);
+        }
+
+        GlobalRiskCheckResult commit_futures_order(Exchange exchange, const char *symbol,
+                                                   double signed_notional,
+                                                   const FuturesRiskContext &ctx,
+                                                   double &scaled_notional) noexcept {
+            const GlobalRiskCheckResult check =
+                check_futures_order(exchange, symbol, signed_notional, ctx, scaled_notional);
+            if (check != GlobalRiskCheckResult::OK) {
+                if (cfg_.kill_on_breach)
+                    kill_switch_.trigger(KillReason::CIRCUIT_BREAKER);
+                LOG_ERROR("Global futures risk breach", "check", result_to_string(check), "symbol",
+                          symbol, "exchange", exchange_to_string(exchange), "signed_notional",
+                          signed_notional, "scaled_notional", scaled_notional);
+                return check;
+            }
+            return commit_order(exchange, symbol, scaled_notional);
+        }
+
         double gross_notional() const noexcept {
             return gross_notional_.load(std::memory_order_acquire);
         }
@@ -141,6 +208,14 @@ namespace trading {
                     return "VENUE_CAP";
                 case GlobalRiskCheckResult::CROSS_VENUE_NETTING_CAP:
                     return "CROSS_VENUE_NETTING_CAP";
+                case GlobalRiskCheckResult::FUTURES_LEVERAGE_CAP:
+                    return "FUTURES_LEVERAGE_CAP";
+                case GlobalRiskCheckResult::FUTURES_MAINTENANCE_MARGIN_CAP:
+                    return "FUTURES_MAINTENANCE_MARGIN_CAP";
+                case GlobalRiskCheckResult::FUTURES_MARK_INDEX_DIVERGENCE_CAP:
+                    return "FUTURES_MARK_INDEX_DIVERGENCE_CAP";
+                case GlobalRiskCheckResult::FUTURES_FUNDING_COST_CAP:
+                    return "FUTURES_FUNDING_COST_CAP";
                 default:
                     return "UNKNOWN";
             }
@@ -155,6 +230,7 @@ namespace trading {
         };
 
         GlobalRiskConfig cfg_;
+        FuturesRiskGateConfig futures_cfg_{};
         KillSwitch &kill_switch_;
 
         std::atomic<double> gross_notional_{0.0};
@@ -219,5 +295,73 @@ namespace trading {
             state.active.store(true, std::memory_order_release);
             return &state;
         }
+
+        double max_leverage_for_symbol(const char *symbol) const noexcept {
+            for (size_t i = 0; i < futures_cfg_.symbol_limit_count; ++i) {
+                if (std::strncmp(futures_cfg_.symbol_limits[i].symbol, symbol,
+                                 sizeof(futures_cfg_.symbol_limits[i].symbol)) == 0)
+                    return futures_cfg_.symbol_limits[i].max_leverage;
+            }
+            return futures_cfg_.default_max_leverage;
+        }
+
+        GlobalRiskCheckResult check_futures_gate(const char *symbol, double signed_notional,
+                                                 const FuturesRiskContext &ctx,
+                                                 double &scaled_notional) const noexcept {
+            if (!futures_cfg_.enabled)
+                return GlobalRiskCheckResult::OK;
+            if (!symbol || symbol[0] == '\0')
+                return GlobalRiskCheckResult::INVALID_INPUT;
+            if (!std::isfinite(ctx.collateral_notional) || ctx.collateral_notional <= 0.0 ||
+                !std::isfinite(ctx.current_abs_notional) || ctx.current_abs_notional < 0.0 ||
+                !std::isfinite(ctx.mark_price) || ctx.mark_price <= 0.0 || !std::isfinite(ctx.index_price) ||
+                ctx.index_price <= 0.0 || !std::isfinite(ctx.maintenance_margin_ratio) ||
+                ctx.maintenance_margin_ratio < 0.0 || !std::isfinite(ctx.funding_rate_bps) ||
+                !std::isfinite(ctx.hours_to_funding) || ctx.hours_to_funding < 0.0)
+                return GlobalRiskCheckResult::INVALID_INPUT;
+
+            if (futures_cfg_.max_maintenance_margin_ratio > 0.0 &&
+                ctx.maintenance_margin_ratio > futures_cfg_.max_maintenance_margin_ratio) {
+                return GlobalRiskCheckResult::FUTURES_MAINTENANCE_MARGIN_CAP;
+            }
+
+            if (futures_cfg_.max_mark_index_divergence_bps > 0.0) {
+                const double divergence_bps = std::abs(ctx.mark_price - ctx.index_price) /
+                                              ctx.index_price * 1e4;
+                if (divergence_bps > futures_cfg_.max_mark_index_divergence_bps)
+                    return GlobalRiskCheckResult::FUTURES_MARK_INDEX_DIVERGENCE_CAP;
+            }
+
+            const double max_leverage = max_leverage_for_symbol(symbol);
+            if (max_leverage > 0.0) {
+                const double projected_abs_notional = ctx.current_abs_notional + std::abs(signed_notional);
+                const double projected_leverage = projected_abs_notional / ctx.collateral_notional;
+                if (projected_leverage > max_leverage)
+                    return GlobalRiskCheckResult::FUTURES_LEVERAGE_CAP;
+            }
+
+            const double projected_funding_cost_bps =
+                std::abs(ctx.funding_rate_bps) * (ctx.hours_to_funding / 8.0);
+            if (futures_cfg_.max_projected_funding_cost_bps > 0.0 &&
+                projected_funding_cost_bps > futures_cfg_.max_projected_funding_cost_bps) {
+                return GlobalRiskCheckResult::FUTURES_FUNDING_COST_CAP;
+            }
+
+            if (futures_cfg_.funding_cost_scale_start_bps > 0.0 &&
+                futures_cfg_.max_projected_funding_cost_bps >
+                    futures_cfg_.funding_cost_scale_start_bps &&
+                projected_funding_cost_bps > futures_cfg_.funding_cost_scale_start_bps) {
+                const double span = futures_cfg_.max_projected_funding_cost_bps -
+                                    futures_cfg_.funding_cost_scale_start_bps;
+                const double t =
+                    std::clamp((projected_funding_cost_bps - futures_cfg_.funding_cost_scale_start_bps) /
+                                   span,
+                               0.0, 1.0);
+                const double scale = 1.0 - t * (1.0 - futures_cfg_.min_funding_scale);
+                scaled_notional = signed_notional * std::clamp(scale, futures_cfg_.min_funding_scale, 1.0);
+            }
+
+            return GlobalRiskCheckResult::OK;
+        }
     };
-} 
+}

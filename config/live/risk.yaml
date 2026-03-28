@@ -34,3 +34,14 @@ global_risk:
   max_symbol_concentration_pct: 30.0
   max_venue_notional: 6500
   max_cross_venue_net_notional: 2500
+
+futures_risk:
+  futures_risk_enabled: 1
+  futures_max_projected_funding_cost_bps: 12.0
+  futures_funding_cost_scale_start_bps: 4.0
+  futures_min_funding_scale: 0.4
+  futures_max_mark_index_divergence_bps: 30.0
+  futures_max_maintenance_margin_ratio: 0.65
+  futures_default_max_leverage: 8.0
+  futures_max_leverage_BTCUSDT: 12.0
+  futures_max_leverage_ETHUSDT: 10.0

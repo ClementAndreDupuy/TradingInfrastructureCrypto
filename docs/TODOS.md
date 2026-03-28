@@ -39,7 +39,7 @@
     - Live engine emits periodic and shutdown metrics for per-venue and global `{start_equity, end_equity, realized_pnl, unrealized_pnl, fees, net_pnl, return_pct}`.
     - Drawdown checks are driven by the live session accounting PnL source and validated by unit/integration tests.
 
-- [ ] **FUT-BN-5: Funding-rate and mark-price risk gates**
+- [x] **FUT-BN-5: Funding-rate and mark-price risk gates**
   - Scope: add risk checks that can block/scale orders based on projected funding cost, mark/index divergence, and max leverage per symbol.
   - Acceptance criteria:
     - Risk module can reject new exposure when leverage or maintenance margin thresholds are breached.

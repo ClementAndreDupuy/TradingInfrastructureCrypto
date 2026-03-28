@@ -5,6 +5,8 @@
 
 #include <cctype>
 #include <cstdint>
+#include <cstring>
+#include <array>
 #include <fstream>
 #include <string>
 #include <unordered_map>
@@ -14,6 +16,7 @@ namespace trading {
     struct RiskRuntimeConfig {
         CircuitBreakerConfig circuit_breaker;
         GlobalRiskConfig global_risk;
+        FuturesRiskGateConfig futures_risk;
         int64_t heartbeat_timeout_ns = KillSwitch::DEFAULT_HEARTBEAT_TIMEOUT_NS;
         double target_range_usd = 50.0;
         size_t max_book_levels = 10000;
@@ -92,6 +95,41 @@ namespace trading {
             double concentration_pct = out.global_risk.max_symbol_concentration * 100.0;
             apply_double(values, "max_symbol_concentration_pct", concentration_pct);
             out.global_risk.max_symbol_concentration = concentration_pct / 100.0;
+
+            int32_t futures_risk_enabled = out.futures_risk.enabled ? 1 : 0;
+            apply_int(values, "futures_risk_enabled", futures_risk_enabled);
+            out.futures_risk.enabled = futures_risk_enabled != 0;
+            apply_double(values, "futures_max_projected_funding_cost_bps",
+                         out.futures_risk.max_projected_funding_cost_bps);
+            apply_double(values, "futures_funding_cost_scale_start_bps",
+                         out.futures_risk.funding_cost_scale_start_bps);
+            apply_double(values, "futures_min_funding_scale", out.futures_risk.min_funding_scale);
+            apply_double(values, "futures_max_mark_index_divergence_bps",
+                         out.futures_risk.max_mark_index_divergence_bps);
+            apply_double(values, "futures_max_maintenance_margin_ratio",
+                         out.futures_risk.max_maintenance_margin_ratio);
+            apply_double(values, "futures_default_max_leverage",
+                         out.futures_risk.default_max_leverage);
+
+            const std::array<const char *, 8> symbol_keys = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT",
+                                                              "XRPUSDT", "ADAUSDT", "DOGEUSDT", "LTCUSDT"};
+            out.futures_risk.symbol_limit_count = 0;
+            for (const char *symbol: symbol_keys) {
+                std::string key("futures_max_leverage_");
+                key += symbol;
+                auto it = values.find(key);
+                if (it == values.end())
+                    continue;
+                if (out.futures_risk.symbol_limit_count >= out.futures_risk.symbol_limits.size())
+                    break;
+                double max_leverage = 0.0;
+                if (!parse_double(it->second, max_leverage) || max_leverage <= 0.0)
+                    continue;
+                auto &entry = out.futures_risk.symbol_limits[out.futures_risk.symbol_limit_count++];
+                std::strncpy(entry.symbol, symbol, sizeof(entry.symbol) - 1);
+                entry.symbol[sizeof(entry.symbol) - 1] = '\0';
+                entry.max_leverage = max_leverage;
+            }
 
             apply_double(values, "binance_taker", out.binance_taker_fee_bps);
             apply_double(values, "BINANCE", out.binance_taker_fee_bps);
