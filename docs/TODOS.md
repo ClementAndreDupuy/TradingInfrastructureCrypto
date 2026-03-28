@@ -71,6 +71,7 @@
 - [ ] **FUT-BN-8: Shadow-mode rollout plan for Binance futures**
   - Scope: shadow execution path for futures with no live order placement, plus metrics for slippage, reject rate, and reconciliation drift.
   - Acceptance criteria:
+    - Shadow mode can run as a dedicated session with futures trading explicitly activated (`futures_enabled=true`) while final order placement side effects remain disabled.
     - Shadow mode reuses production code paths except final submit side effects.
     - Daily report includes futures-specific health metrics and drift deltas.
     - Go-live checklist defines promotion criteria and rollback conditions.
