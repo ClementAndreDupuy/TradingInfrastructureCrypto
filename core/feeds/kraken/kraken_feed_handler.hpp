@@ -72,6 +72,8 @@ namespace trading {
         size_t ask_depth_for_test() const { return asks_.size(); }
 
         static uint32_t crc32_for_test(const std::string &data);
+        static constexpr size_t k_subscribed_depth = 100;
+        uint32_t subscribed_depth_{k_subscribed_depth};
 
     private:
         Result fetch_tick_size();
@@ -130,9 +132,6 @@ namespace trading {
 
         void trigger_resnapshot(const std::string &reason);
 
-        // WebSocket subscription depth; matches "depth":100 in the subscribe message.
-        static constexpr size_t k_subscribed_depth = 100;
-        uint32_t subscribed_depth_{k_subscribed_depth};
         std::map<double, std::pair<std::string, std::string>, std::greater<double> > bids_;
         std::map<double, std::pair<std::string, std::string> > asks_;
     };

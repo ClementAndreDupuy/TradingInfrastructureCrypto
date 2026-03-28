@@ -1,146 +1,150 @@
-(.venv) clementandredupuy@Mac ThamesRiverTrading % ./deploy/run_shadow.sh --venues OKX,BINANCE --symbol SOLUSDT
-[2026-03-26T20:14:21Z] [shadow] [INFO] Starting python shadow session with python3.11 (symbol=SOLUSDT, exchanges=OKX,BINANCE, signals -> /tmp/trt_ipc/neural_alpha_signal.bin, log=/Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl)
-[2026-03-26T20:14:21Z] [shadow] [INFO] Starting C++ shadow runner symbol=SOLUSDT venues=OKX,BINANCE duration=4000s interval=1000ms
-2026-03-26 20:14:21.588931583 [INFO ] [Binance] FeedHandler created symbol=SOLUSDT
-2026-03-26 20:14:21.588975791 [INFO ] [Kraken] FeedHandler created symbol=SOLUSDT
-2026-03-26 20:14:21.588986916 [INFO ] [OKX] FeedHandler created symbol=SOLUSDT inst_id=SOL-USDT
-2026-03-26 20:14:21.588997499 [INFO ] [Coinbase] FeedHandler created symbol=SOLUSDT
-2026-03-26 20:14:21.862246619 [INFO ] [Binance] Tick size fetched symbol=SOLUSDT tick_size=0.01
-2026-03-26 20:14:22.109966863 [INFO ] [OKX] Tick size fetched symbol=SOLUSDT tick_size=0.01
-2026-03-26 20:14:22.109981613 [INFO ] Grid configuration target_range_usd=50 binance_tick=0.01 binance_levels=5000 binance_range_usd=50 kraken_tick=1 kraken_levels=50 kraken_range_usd=50 okx_tick=0.01 okx_levels=5000 okx_range_usd=50 coinbase_tick=1 coinbase_levels=50 coinbase_range_usd=50
-[2026/03/26 20:14:22:1138] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
-2026-03-26 20:14:22.113840912 [INFO ] [Binance] Starting feed handler symbol=SOLUSDT
-2026-03-26 20:14:23.112608487 [INFO ] [Binance] WebSocket established, fetching snapshot symbol=SOLUSDT
-2026-03-26 20:14:23.112616362 [INFO ] [Binance] Fetching snapshot symbol=SOLUSDT
-2026-03-26 20:14:23.416305657 [INFO ] [OrderBook] Grid bounds symbol=SOLUSDT exchange=BINANCE tick_size=0.01 capacity_levels=5000 active_levels=5000 base=61.71 top=111.71 dynamic_range_from_snapshot=false
-2026-03-26 20:14:23.416450282 [WARN ] [OrderBook] Snapshot levels out of grid range symbol=SOLUSDT skipped=4352 total=9292
-2026-03-26 20:14:23.416451282 [INFO ] [OrderBook] Snapshot applied symbol=SOLUSDT sequence=28474546556 base_price=61.71 bids=4292 asks=5000
-2026-03-26 20:14:23.416474324 [INFO ] [Binance] Snapshot received symbol=SOLUSDT sequence=28474546556 bids=4292 asks=5000 snapshot_latency_ms=280
-2026-03-26 20:14:23.421629750 [INFO ] [Binance] No buffered bridge delta required sequence=28474546556 skipped=0
-2026-03-26 20:14:23.421637166 [INFO ] [Binance] Feed handler started symbol=SOLUSDT
-2026-03-26 20:14:23.421638500 [INFO ] [OKX] Starting feed handler symbol=SOLUSDT
-[2026/03/26 20:14:23:4217] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
-2026-03-26 20:14:24.164818024 [INFO ] [OKX] WebSocket established symbol=SOLUSDT
-2026-03-26 20:14:24.650712581 [INFO ] [OrderBook] Grid bounds symbol=SOLUSDT exchange=OKX tick_size=0.01 capacity_levels=5000 active_levels=5000 base=61.69 top=111.69 dynamic_range_from_snapshot=false
-2026-03-26 20:14:24.650725790 [INFO ] [OrderBook] Snapshot applied symbol=SOLUSDT sequence=29708721290 base_price=61.69 bids=400 asks=400
-2026-03-26 20:14:24.650744123 [INFO ] [OKX] Applied buffered deltas applied=0 skipped=0
-2026-03-26 20:14:24.650747081 [INFO ] [OKX] WS snapshot applied symbol=SOLUSDT seq=29708721290
-2026-03-26 20:14:24.650752540 [INFO ] [OKX] feed handler started symbol=SOLUSDT
-2026-03-26 20:14:24.650754748 [WARN ] venue credential missing venue=OKX field=api_key
-2026-03-26 20:14:24.650755123 [WARN ] venue credential missing venue=OKX field=api_secret
-2026-03-26 20:14:24.650755456 [WARN ] venue credential missing venue=OKX field=api_passphrase
-2026-03-26 20:14:24.651870042 [INFO ] trading_engine started mode=shadow venues=OKX,BINANCE symbol=SOLUSDT
-2026-03-26 20:14:24.651946542 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:14:24.651947625 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:14:24.651950833 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0 p_shock=0 p_illiquid=0 healthy_venues=2 enabled_venues=2 current_position=0 target_position=0 position_delta=0 expected_cost_bps=9.2 max_shortfall_bps=10.2 flatten_now=0 urgency=2
-[2026-03-26T20:16:02.592Z] [ShadowSummary] {"average_dominant_confidence": 0.8612352660164929, "confidence_gate": 86, "dominant_regime": "illiquid", "dominant_regime_change_count": 0, "horizon_gate": 7, "ic": 0.048236768577230416, "icir": 6.089698339530194, "mean_effective_bps": -5.2129266539005314, "mean_raw_bps": -133.27551271879312, "regime_retrain_failure_counts": {}, "retrain_failure_counts": {}, "safe_mode_gate": 30, "seconds_since_last_continuous_train": 100.369796292, "seconds_since_last_regime_train": 100.369796292, "std_effective_bps": 37.780694837878, "switches_per_minute": 0.0, "ticks": 99, "ts_quality": "ok", "venue_health": {"BINANCE": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}, "OKX": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}}}
-2026-03-26 20:17:25.240395693 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:17:25.240396818 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:17:25.240399776 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0 p_shock=0 p_illiquid=0 healthy_venues=2 enabled_venues=2 current_position=0 target_position=0 position_delta=0 expected_cost_bps=9.2 max_shortfall_bps=10.2 flatten_now=0 urgency=2
-[2026-03-26T20:17:42.894Z] [ShadowSummary] {"average_dominant_confidence": 0.836154947437607, "confidence_gate": 165, "dominant_regime": "illiquid", "dominant_regime_change_count": 0, "horizon_gate": 16, "ic": 0.061098815638252146, "icir": 30.745209037457883, "mean_effective_bps": -14.003229949941588, "mean_raw_bps": -98.2369594837553, "regime_retrain_failure_counts": {}, "retrain_failure_counts": {}, "safe_mode_gate": 30, "seconds_since_last_continuous_train": 200.671858084, "seconds_since_last_regime_train": 200.671858084, "std_effective_bps": 62.2352759630145, "switches_per_minute": 0.0, "ticks": 199, "ts_quality": "ok", "venue_health": {"BINANCE": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}, "OKX": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}}}
-[2026-03-26T20:19:23.167Z] [ShadowSummary] {"average_dominant_confidence": 0.8365285286546658, "confidence_gate": 253, "dominant_regime": "illiquid", "dominant_regime_change_count": 0, "horizon_gate": 23, "ic": -0.055382081435924414, "icir": -6.989287276412079, "mean_effective_bps": -12.070684379159806, "mean_raw_bps": -105.53423826112396, "regime_retrain_failure_counts": {}, "retrain_failure_counts": {}, "safe_mode_gate": 46, "seconds_since_last_continuous_train": 300.944830709, "seconds_since_last_regime_train": 300.944830709, "std_effective_bps": 56.70920630720385, "switches_per_minute": 0.0, "ticks": 299, "ts_quality": "ok", "venue_health": {"BINANCE": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}, "OKX": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}}}
-2026-03-26 20:20:25.823326419 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:20:25.823327377 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:20:25.823330461 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0 p_shock=0 p_illiquid=0 healthy_venues=2 enabled_venues=2 current_position=0 target_position=0 position_delta=0 expected_cost_bps=9.2 max_shortfall_bps=10.2 flatten_now=0 urgency=2
-[2026-03-26T20:21:03.450Z] [ShadowSummary] {"average_dominant_confidence": 0.8148272979017559, "confidence_gate": 328, "dominant_regime": "illiquid", "dominant_regime_change_count": 0, "horizon_gate": 38, "ic": -0.050893371962704895, "icir": -6.628288149252609, "mean_effective_bps": -9.045450198919253, "mean_raw_bps": -111.68393649552998, "regime_retrain_failure_counts": {}, "retrain_failure_counts": {}, "safe_mode_gate": 146, "seconds_since_last_continuous_train": 401.228103209, "seconds_since_last_regime_train": 401.228103209, "std_effective_bps": 49.36902033483618, "switches_per_minute": 0.0, "ticks": 399, "ts_quality": "ok", "venue_health": {"BINANCE": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}, "OKX": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}}}
-[2026-03-26T20:22:43.815Z] [ShadowSummary] {"average_dominant_confidence": 0.8094462601253015, "confidence_gate": 419, "dominant_regime": "illiquid", "dominant_regime_change_count": 2, "horizon_gate": 44, "ic": -0.04390568858243679, "icir": -11.126346603906546, "mean_effective_bps": -8.378265899622846, "mean_raw_bps": -109.54888854810375, "regime_retrain_failure_counts": {}, "retrain_failure_counts": {}, "safe_mode_gate": 237, "seconds_since_last_continuous_train": 501.593601, "seconds_since_last_regime_train": 501.593601, "std_effective_bps": 50.979406177750015, "switches_per_minute": 0.2403634123131433, "ticks": 499, "ts_quality": "ok", "venue_health": {"BINANCE": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}, "OKX": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}}}
-2026-03-26 20:23:26.391385786 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:23:26.391387078 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:23:26.391392578 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0 p_shock=0 p_illiquid=0 healthy_venues=2 enabled_venues=2 current_position=0 target_position=0 position_delta=0 expected_cost_bps=9.2 max_shortfall_bps=10.2 flatten_now=0 urgency=2
-[2026-03-26T20:24:23.134Z] [Shadow] continuous retrain started processed_ticks=119231 window_ticks=1000
+(.venv) clementandredupuy@Mac ThamesRiverTrading % ./deploy/run_shadow.sh --venues OKX,KRAKEN,BINANCE --symbol SOLUSDT
+[2026-03-27T23:41:00Z] [shadow] [INFO] Starting python shadow session with python3.11 (symbol=SOLUSDT, exchanges=OKX,KRAKEN,BINANCE, signals -> /tmp/trt_ipc/neural_alpha_signal.bin, log=/Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl)
+[2026-03-27T23:41:00Z] [shadow] [INFO] Starting C++ shadow runner symbol=SOLUSDT venues=OKX,KRAKEN,BINANCE duration=4000s interval=1000ms
+2026-03-27 23:41:00.655184834 [INFO ] [Binance] FeedHandler created symbol=SOLUSDT
+2026-03-27 23:41:00.655428459 [INFO ] [Kraken] FeedHandler created symbol=SOLUSDT
+2026-03-27 23:41:00.655443000 [INFO ] [OKX] FeedHandler created symbol=SOLUSDT inst_id=SOL-USDT
+2026-03-27 23:41:00.655455750 [INFO ] [Coinbase] FeedHandler created symbol=SOLUSDT
+2026-03-27 23:41:00.655474250 [INFO ] Grid configuration target_range_usd=50 max_book_levels=30000 binance_tick=1 binance_levels=50 binance_range_usd=50 kraken_tick=1 kraken_levels=50 kraken_range_usd=50 okx_tick=1 okx_levels=50 okx_range_usd=50 coinbase_tick=1 coinbase_levels=50 coinbase_range_usd=50
+2026-03-27 23:41:00.655798417 [INFO ] [Binance] Starting feed handler symbol=SOLUSDT
+2026-03-27 23:41:00.928946625 [INFO ] [Binance] Tick size fetched symbol=SOLUSDT tick_size=0.01
+[2026/03/27 23:41:00:9290] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+2026-03-27 23:41:02.012221917 [INFO ] [Binance] WebSocket established, fetching snapshot symbol=SOLUSDT
+2026-03-27 23:41:02.012231375 [INFO ] [Binance] Fetching snapshot symbol=SOLUSDT
+2026-03-27 23:41:02.336282125 [INFO ] [OrderBook] Grid bounds symbol=SOLUSDT exchange=BINANCE tick_size=1 capacity_levels=50 active_levels=50 base=57.87 top=107.87 dynamic_range_from_snapshot=false
+2026-03-27 23:41:02.336414792 [WARN ] [OrderBook] Snapshot levels out of grid range symbol=SOLUSDT skipped=4017 total=8933
+2026-03-27 23:41:02.336416000 [INFO ] [OrderBook] Snapshot applied symbol=SOLUSDT sequence=28486041283 base_price=57.87 bids=3933 asks=5000
+2026-03-27 23:41:02.336426084 [INFO ] [Binance] Snapshot received symbol=SOLUSDT sequence=28486041283 bids=3933 asks=5000 snapshot_latency_ms=302
+2026-03-27 23:41:02.341283000 [INFO ] [Binance] No buffered bridge delta required sequence=28486041283 skipped=0
+2026-03-27 23:41:02.341292000 [INFO ] [Binance] Feed handler started symbol=SOLUSDT
+2026-03-27 23:41:02.341312584 [INFO ] [Kraken] Starting feed handler symbol=SOLUSDT
+2026-03-27 23:41:05.536456542 [INFO ] [Kraken] Tick size fetched symbol=SOLUSDT tick_size=0.01
+[2026/03/27 23:41:05:5373] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+2026-03-27 23:41:06.714658375 [INFO ] [Kraken] WebSocket established, waiting for snapshot symbol=SOLUSDT
+2026-03-27 23:41:06.814776875 [INFO ] [OrderBook] Grid bounds symbol=SOLUSDT exchange=KRAKEN tick_size=1 capacity_levels=50 active_levels=50 base=57.87 top=107.87 dynamic_range_from_snapshot=false
+2026-03-27 23:41:06.814781292 [INFO ] [OrderBook] Snapshot applied symbol=SOLUSDT sequence=0 base_price=57.87 bids=100 asks=100
+2026-03-27 23:41:06.814796834 [INFO ] [Kraken] Feed handler started symbol=SOLUSDT
+2026-03-27 23:41:06.814798042 [INFO ] [OKX] Starting feed handler symbol=SOLUSDT
+2026-03-27 23:41:07.058036250 [INFO ] [OKX] Tick size fetched symbol=SOLUSDT tick_size=0.01
+[2026/03/27 23:41:07:0580] N: lws_create_context: LWS: 4.5.5-unknown, NET CLI SRV H1 H2 WS SS-JSON-POL ConMon IPV6-on
+2026-03-27 23:41:07.756259417 [INFO ] [OKX] WebSocket established symbol=SOLUSDT
+2026-03-27 23:41:08.363825334 [INFO ] [OrderBook] Grid bounds symbol=SOLUSDT exchange=OKX tick_size=1 capacity_levels=50 active_levels=50 base=57.86 top=107.86 dynamic_range_from_snapshot=false
+2026-03-27 23:41:08.363839084 [INFO ] [OrderBook] Snapshot applied symbol=SOLUSDT sequence=29721084178 base_price=57.86 bids=400 asks=400
+2026-03-27 23:41:08.363844417 [INFO ] [OKX] Applied buffered deltas applied=0 skipped=0
+2026-03-27 23:41:08.363849750 [INFO ] [OKX] WS snapshot applied symbol=SOLUSDT seq=29721084178
+2026-03-27 23:41:08.363856875 [INFO ] [OKX] feed handler started symbol=SOLUSDT
+2026-03-27 23:41:08.363860250 [WARN ] venue credential missing venue=OKX field=api_key
+2026-03-27 23:41:08.363900667 [WARN ] venue credential missing venue=OKX field=api_secret
+2026-03-27 23:41:08.363900917 [WARN ] venue credential missing venue=OKX field=api_passphrase
+2026-03-27 23:41:08.364260375 [INFO ] trading_engine started mode=shadow venues=OKX,KRAKEN,BINANCE symbol=SOLUSDT
+2026-03-27 23:41:08.364278125 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-27 23:41:08.364279209 [INFO ] venue quality exchange=KRAKEN fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-27 23:41:08.364280292 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-27 23:41:08.364283834 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0 p_shock=0 p_illiquid=0 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=9.2 max_shortfall_bps=10.2 flatten_now=0 urgency=2
+2026-03-27 23:44:08.913636209 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-27 23:44:08.913639250 [INFO ] venue quality exchange=KRAKEN fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-27 23:44:08.913640209 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-27 23:44:08.913643875 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0 p_shock=0 p_illiquid=0 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=9.2 max_shortfall_bps=10.2 flatten_now=0 urgency=2
+2026-03-27 23:47:09.428841709 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-27 23:47:09.428843084 [INFO ] venue quality exchange=KRAKEN fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-27 23:47:09.428844000 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-27 23:47:09.428849542 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0 p_shock=0 p_illiquid=0 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=9.2 max_shortfall_bps=10.2 flatten_now=0 urgency=2
 [DATA] alpha schema verified: levels=10 trade_cols=4 count_cols_bid=10 count_cols_ask=10
 [HPO] tuning primary model over 6 trials
-[HPO] primary trial 1/6 score=2.375670 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.5, 'w_risk': 0.5}
-[HPO] primary trial 2/6 score=2.428288 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.5, 'w_risk': 0.8}
-[HPO] primary trial 3/6 score=2.472217 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.5, 'w_risk': 1.1}
-[HPO] primary trial 4/6 score=3.311417 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.7, 'w_risk': 0.5}
-[HPO] primary trial 5/6 score=3.346751 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.7, 'w_risk': 0.8}
-[HPO] primary trial 6/6 score=3.398113 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.7, 'w_risk': 1.1}
-[HPO] selected primary score=2.375670
-2026-03-26 20:26:26.926862766 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:26:26.926865392 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:26:26.926869892 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0 p_shock=0 p_illiquid=0 healthy_venues=2 enabled_venues=2 current_position=0 target_position=0 position_delta=0 expected_cost_bps=9.2 max_shortfall_bps=10.2 flatten_now=0 urgency=2
-[2026-03-26T20:26:39.428Z] [Shadow] model retrain done  ticks=1000  best_fold_loss=0.495211  oos_mse=0.000184  selected=challenger
-[HPO] tuning secondary model over 6 trials
-[HPO] secondary trial 1/6 score=36.152606 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.8, 'w_risk': 0.6}
-[HPO] secondary trial 2/6 score=36.261457 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.8, 'w_risk': 0.8}
-[HPO] secondary trial 3/6 score=36.368627 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.8, 'w_risk': 1.0}
-[HPO] secondary trial 4/6 score=45.104645 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 1.0, 'w_risk': 0.6}
-[HPO] secondary trial 5/6 score=45.215708 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 1.0, 'w_risk': 0.8}
-[HPO] secondary trial 6/6 score=45.324176 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 1.0, 'w_risk': 1.0}
-[HPO] selected secondary score=36.152606
-[2026-03-26T20:27:59.651Z] [Shadow] continuous retrain completed processed_ticks=119231
-[2026-03-26T20:28:13.937Z] [Regime] trained  names=['calm', 'illiquid', 'trending', 'shock']  spread_means=[4.953106, 7.429658, 4.953106, 4.953106]  spread_range=2.476552
-[2026-03-26T20:28:13.938Z] [Shadow] regime retrain done  regimes=[calm, illiquid, trending, shock]
-[2026-03-26T20:28:13.954Z] [ShadowSummary] {"average_dominant_confidence": 0.8061508933019268, "confidence_gate": 504, "dominant_regime": "calm", "dominant_regime_change_count": 3, "horizon_gate": 54, "ic": -0.0491686224178251, "icir": -11.297802455501914, "mean_effective_bps": -7.13622751941649, "mean_raw_bps": -100.0253413570266, "regime_retrain_failure_counts": {}, "retrain_failure_counts": {}, "safe_mode_gate": 290, "seconds_since_last_continuous_train": 230.821177875, "seconds_since_last_regime_train": 14.303184667, "std_effective_bps": 46.7853459917527, "switches_per_minute": 0.2170286718477379, "ticks": 598, "ts_quality": "ok", "venue_health": {"BINANCE": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}, "OKX": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}}}
-2026-03-26 20:29:27.832277027 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:29:27.832278194 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:29:27.832281944 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0 p_shock=0 p_illiquid=0 healthy_venues=2 enabled_venues=2 current_position=0 target_position=0 position_delta=0 expected_cost_bps=9.2 max_shortfall_bps=10.2 flatten_now=0 urgency=2
-[2026-03-26T20:29:54.627Z] [ShadowSummary] {"average_dominant_confidence": 0.7690249357911478, "confidence_gate": 589, "dominant_regime": "calm", "dominant_regime_change_count": 17, "horizon_gate": 62, "ic": -0.024043186957363735, "icir": -6.217381432648441, "mean_effective_bps": -6.106537320412621, "mean_raw_bps": -94.29367352410277, "regime_retrain_failure_counts": {}, "retrain_failure_counts": {}, "safe_mode_gate": 320, "seconds_since_last_continuous_train": 331.493774125, "seconds_since_last_regime_train": 114.975780917, "std_effective_bps": 49.14653082666499, "switches_per_minute": 1.0967071036705751, "ticks": 699, "ts_quality": "warn", "venue_health": {"BINANCE": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}, "OKX": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}}}
-[2026-03-26T20:31:35.203Z] [ShadowSummary] {"average_dominant_confidence": 0.7432656869225461, "confidence_gate": 675, "dominant_regime": "calm", "dominant_regime_change_count": 31, "horizon_gate": 65, "ic": -0.0074456565383011096, "icir": -3.068995757227334, "mean_effective_bps": -5.254624702866296, "mean_raw_bps": -85.4480569396583, "regime_retrain_failure_counts": {}, "retrain_failure_counts": {}, "safe_mode_gate": 320, "seconds_since_last_continuous_train": 432.070569291, "seconds_since_last_regime_train": 215.552576083, "std_effective_bps": 48.966066973477425, "switches_per_minute": 1.8047160364270536, "ticks": 799, "ts_quality": "warn", "venue_health": {"BINANCE": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}, "OKX": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}}}
-2026-03-26 20:32:27.952014650 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:32:27.952015983 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:32:27.952020858 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0 p_shock=0 p_illiquid=0 healthy_venues=2 enabled_venues=2 current_position=0 target_position=0 position_delta=0 expected_cost_bps=9.2 max_shortfall_bps=10.2 flatten_now=0 urgency=2
-[2026-03-26T20:33:15.773Z] [ShadowSummary] {"average_dominant_confidence": 0.7211104385131912, "confidence_gate": 763, "dominant_regime": "calm", "dominant_regime_change_count": 47, "horizon_gate": 69, "ic": -0.008282628498185266, "icir": -1.3161297222212913, "mean_effective_bps": -5.253321979116147, "mean_raw_bps": -81.39754254971781, "regime_retrain_failure_counts": {}, "retrain_failure_counts": {}, "safe_mode_gate": 320, "seconds_since_last_continuous_train": 532.640421416, "seconds_since_last_regime_train": 316.122428208, "std_effective_bps": 47.1286385824658, "switches_per_minute": 2.492921386004403, "ticks": 899, "ts_quality": "warn", "venue_health": {"BINANCE": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}, "OKX": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}}}
-[2026-03-26T20:34:23.177Z] [Shadow] continuous retrain started processed_ticks=164105 window_ticks=1000
+[HPO] primary trial 1/6 score=1.097969 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.5, 'w_risk': 0.5}
+[HPO] primary trial 2/6 score=1.410957 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.5, 'w_risk': 0.8}
 [DATA] alpha schema verified: levels=10 trade_cols=4 count_cols_bid=10 count_cols_ask=10
 [HPO] tuning primary model over 6 trials
-[HPO] primary trial 1/6 score=95.461749 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.5, 'w_risk': 0.5}
-[HPO] primary trial 2/6 score=95.473594 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.5, 'w_risk': 0.8}
-2026-03-26 20:35:28.041083390 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:35:28.041084681 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:35:28.041089890 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0 p_shock=0 p_illiquid=0 healthy_venues=2 enabled_venues=2 current_position=0 target_position=0 position_delta=0 expected_cost_bps=9.2 max_shortfall_bps=10.2 flatten_now=0 urgency=2
-[HPO] primary trial 3/6 score=95.481371 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.5, 'w_risk': 1.1}
-[HPO] primary trial 4/6 score=133.637828 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.7, 'w_risk': 0.5}
-[HPO] primary trial 5/6 score=133.649469 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.7, 'w_risk': 0.8}
-[HPO] primary trial 6/6 score=133.660411 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.7, 'w_risk': 1.1}
-[HPO] selected primary score=95.461749
-[2026-03-26T20:36:47.355Z] [Shadow] model retrain done  ticks=1000  best_fold_loss=0.638801  oos_mse=0.000174  selected=challenger
+  [pretrain] epoch 1/5  loss=3.6744
+  [pretrain] epoch 2/5  loss=3.0674
+  [pretrain] epoch 3/5  loss=2.5804
+  [pretrain] epoch 4/5  loss=2.4950
+  [pretrain] epoch 5/5  loss=2.3907
+[HPO] primary trial 3/6 score=1.715779 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.5, 'w_risk': 1.1}
+  [pretrain] epoch 1/5  loss=2.8534
+  [pretrain] epoch 2/5  loss=1.7957
+  [pretrain] epoch 3/5  loss=1.5638
+[HPO] primary trial 4/6 score=1.405921 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.7, 'w_risk': 0.5}
+  [pretrain] epoch 4/5  loss=1.4395
+  [pretrain] epoch 5/5  loss=1.3398
+2026-03-27 23:50:09.857482459 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-27 23:50:09.857485334 [INFO ] venue quality exchange=KRAKEN fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-27 23:50:09.857488125 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-27 23:50:09.857497042 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0 p_shock=0 p_illiquid=0 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=9.2 max_shortfall_bps=10.2 flatten_now=0 urgency=2
+[HPO] primary trial 5/6 score=1.706952 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.7, 'w_risk': 0.8}
+[HPO] primary trial 1/6 score=0.681733 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.1, 'w_risk': 0.5}
+  [pretrain] epoch 1/5  loss=3.6744
+  [pretrain] epoch 2/5  loss=3.0674
+  [pretrain] epoch 3/5  loss=2.5804
+  [pretrain] epoch 4/5  loss=2.4950
+  [pretrain] epoch 5/5  loss=2.3907
+[HPO] primary trial 6/6 score=1.986576 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.7, 'w_risk': 1.1}
+[HPO] selected primary score=1.097969
+  [pretrain] epoch 1/5  loss=2.8534
+  [pretrain] epoch 2/5  loss=1.7957
+  [pretrain] epoch 3/5  loss=1.5638
+[2026-03-27T23:51:15.600Z] [Shadow] model retrain done  ticks=1000  best_fold_loss=1.186328  oos_mse=0.001024  selected=challenger
 [HPO] tuning secondary model over 6 trials
-[HPO] secondary trial 1/6 score=183.910773 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.8, 'w_risk': 0.6}
-[HPO] secondary trial 2/6 score=184.016780 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.8, 'w_risk': 0.8}
-[HPO] secondary trial 3/6 score=184.122095 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.8, 'w_risk': 1.0}
-[HPO] secondary trial 4/6 score=229.803402 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 1.0, 'w_risk': 0.6}
-[HPO] secondary trial 5/6 score=229.911004 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 1.0, 'w_risk': 0.8}
-[HPO] secondary trial 6/6 score=230.017644 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 1.0, 'w_risk': 1.0}
-[HPO] selected secondary score=183.910773
-[2026-03-26T20:38:08.904Z] [Shadow] continuous retrain completed processed_ticks=164105
-2026-03-26 20:38:28.769718274 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:38:28.769719524 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
-2026-03-26 20:38:28.769724524 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0 p_shock=0 p_illiquid=0 healthy_venues=2 enabled_venues=2 current_position=0 target_position=0 position_delta=0 expected_cost_bps=9.2 max_shortfall_bps=10.2 flatten_now=0 urgency=2
-[2026-03-26T20:38:30.476Z] [Regime] trained  names=['calm', 'illiquid', 'trending', 'shock']  spread_means=[0.01, 0.01, 0.01, 0.01]  spread_range=0.0
-[2026-03-26T20:38:30.476Z] [Shadow] regime retrain skipped — degenerate clusters  spread_range=0.0000 (< 0.3 threshold)
-[2026-03-26T20:38:30.494Z] [ShadowSummary] {"average_dominant_confidence": 0.7093151321743567, "confidence_gate": 820, "dominant_regime": "calm", "dominant_regime_change_count": 55, "horizon_gate": 71, "ic": -0.006416059993118478, "icir": 2.291249853984052, "mean_effective_bps": -4.938257796454627, "mean_raw_bps": -78.49243770336142, "regime_retrain_failure_counts": {}, "retrain_failure_counts": {}, "safe_mode_gate": 320, "seconds_since_last_continuous_train": 247.318018667, "seconds_since_last_regime_train": 21.590406959, "std_effective_bps": 45.95031399450658, "switches_per_minute": 2.2822773047955245, "ticks": 966, "ts_quality": "warn", "venue_health": {"BINANCE": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}, "OKX": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}}}
+  [pretrain] epoch 4/5  loss=1.4395
+  [pretrain] epoch 5/5  loss=1.3398
+[HPO] secondary trial 1/6 score=1.520377 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.8, 'w_risk': 0.6}
+[HPO] primary trial 2/6 score=1.008473 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.1, 'w_risk': 0.8}
+[HPO] secondary trial 2/6 score=1.700038 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.8, 'w_risk': 0.8}
+  [pretrain] epoch 1/5  loss=3.6744
+  [pretrain] epoch 2/5  loss=3.0674
+  [pretrain] epoch 3/5  loss=2.5804
+  [pretrain] epoch 4/5  loss=2.4950
+[HPO] secondary trial 3/6 score=1.880917 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.8, 'w_risk': 1.0}
+  [pretrain] epoch 5/5  loss=2.3907
+  [pretrain] epoch 1/5  loss=2.8534
+[HPO] secondary trial 4/6 score=1.765605 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 1.0, 'w_risk': 0.6}
+  [pretrain] epoch 2/5  loss=1.7957
+[HPO] secondary trial 5/6 score=1.944207 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 1.0, 'w_risk': 0.8}
+  [pretrain] epoch 3/5  loss=1.5638
+  [pretrain] epoch 4/5  loss=1.4395
+[HPO] secondary trial 6/6 score=2.123458 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 1.0, 'w_risk': 1.0}
+[HPO] selected secondary score=1.520377
+  [pretrain] epoch 5/5  loss=1.3398
+[2026-03-27T23:53:00.960Z] [Shadow] secondary model disabled — failed sanity checks secondary_loss=1.451699 primary_loss=1.005953 secondary_ic=0.000000 primary_ic=0.000000
+[HPO] primary trial 3/6 score=1.332856 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.1, 'w_risk': 1.1}
+  [pretrain] epoch 1/5  loss=3.6744
+  [pretrain] epoch 2/5  loss=3.0674
+2026-03-27 23:53:10.326195000 [INFO ] venue quality exchange=BINANCE fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-27 23:53:10.326196292 [INFO ] venue quality exchange=KRAKEN fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-27 23:53:10.326197417 [INFO ] venue quality exchange=OKX fill_probability=0.5 passive_markout_bps=0 taker_markout_bps=0 reject_rate=0 cancel_latency_penalty_bps=0 health_penalty_bps=0 stability_penalty_bps=0 quality_penalty_bps=2 sample_count=0
+2026-03-27 23:53:10.326201292 [INFO ] portfolio intent intent=hold reason=none reason_codes=none signal_bps=0 risk_score=0 p_shock=0 p_illiquid=0 healthy_venues=3 enabled_venues=3 current_position=0 target_position=0 position_delta=0 expected_cost_bps=9.2 max_shortfall_bps=10.2 flatten_now=0 urgency=2
+  [pretrain] epoch 3/5  loss=2.5804
+  [pretrain] epoch 4/5  loss=2.4950
+  [pretrain] epoch 5/5  loss=2.3907
+  [pretrain] epoch 1/5  loss=2.8534
 ^C
 Interrupt received — stopping session...
-[2026-03-26T20:40:02Z] [shadow] [INFO] Final shadow session statistics from /Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl
-[2026-03-26T20:40:02.812Z] [ShadowSummary] {"average_dominant_confidence": 0.7002781181257162, "confidence_gate": 911, "dominant_regime": "trending", "dominant_regime_change_count": 62, "horizon_gate": 72, "ic": -0.006457389503750847, "icir": -2.60283792608558, "mean_effective_bps": -4.50884407502379, "mean_raw_bps": -73.91304758312234, "regime_retrain_failure_counts": {}, "retrain_failure_counts": {}, "safe_mode_gate": 328, "seconds_since_last_continuous_train": 339.63645425, "seconds_since_last_regime_train": 113.908842542, "std_effective_bps": 43.92908818860017, "switches_per_minute": 2.4198977488382596, "ticks": 1058, "ts_quality": "warn", "venue_health": {"BINANCE": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}, "OKX": {"health_state": "healthy", "health_transition_count": 2, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 1, "resnapshot_loop": 0, "snapshot_rejection": 1}}}}
-Shadow session complete.
+[2026-03-27T23:53:36Z] [shadow] [INFO] Final shadow session statistics from /Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl
 ============================================================
   Shadow Session Report
 ============================================================
 
 ── Signal statistics ────────────────────────────────────────
-  Signals generated   : 1006
-  Session duration    : 24.8 min
-  Mean signal         : -4.2289 bps
-  Signal std          : 43.4726 bps
-  Max |signal|        : 571.6201 bps
-  Mean raw signal     : -69.7445 bps
-  Raw signal std      : 187.7389 bps
-  Avg risk score      : 0.1241
+  Signals generated   : 34
+  Session duration    : 0.5 min
+  Mean signal         : 122.1799 bps
+  Signal std          : 775.9280 bps
+  Max |signal|        : 2598.8424 bps
+  Mean raw signal     : 122.1799 bps
+  Raw signal std      : 775.9280 bps
+  Avg risk score      : 0.4892
 
 ── Alpha quality ────────────────────────────────────────────
-  Realised IC         : -0.0132
-  ICIR (annualised)   : -2.7994
-  Safe-mode events    : 328  (32.6% of ticks)
-  Gated events        : 957  (95.1% of ticks)
+  Realised IC         : 0.4457
+  ICIR (annualised)   : 0.0000
+  Safe-mode events    : 0  (0.0% of ticks)
+  Gated events        : 0  (0.0% of ticks)
 
 ── Regime distribution (session avg) ────────────────────────
-  p_calm              : 0.254
-  p_trending          : 0.191
-  p_shock             : 0.088
-  p_illiquid          : 0.466
+  p_calm              : 1.000
+  p_trending          : 0.000
+  p_shock             : 0.000
+  p_illiquid          : 0.000
 
 ── Readiness check ──────────────────────────────────────────
   Run >= 2 weeks before promoting to live.
@@ -149,33 +153,33 @@ Shadow session complete.
   ICIR (annualised) target: > 0.5.
 
 ============================================================
-[2026-03-26T20:40:02Z] [shadow] [ERROR] trading_engine exited with status 130
-[2026-03-26T20:40:02Z] [shadow] [INFO] Final shadow session statistics from /Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl
+[2026-03-27T23:53:36Z] [shadow] [ERROR] trading_engine exited with status 130
+[2026-03-27T23:53:36Z] [shadow] [INFO] Final shadow session statistics from /Users/clementandredupuy/Desktop/ThamesRiverTrading/logs/neural_alpha_shadow.jsonl
 ============================================================
   Shadow Session Report
 ============================================================
 
 ── Signal statistics ────────────────────────────────────────
-  Signals generated   : 1006
-  Session duration    : 24.8 min
-  Mean signal         : -4.2289 bps
-  Signal std          : 43.4726 bps
-  Max |signal|        : 571.6201 bps
-  Mean raw signal     : -69.7445 bps
-  Raw signal std      : 187.7389 bps
-  Avg risk score      : 0.1241
+  Signals generated   : 34
+  Session duration    : 0.5 min
+  Mean signal         : 122.1799 bps
+  Signal std          : 775.9280 bps
+  Max |signal|        : 2598.8424 bps
+  Mean raw signal     : 122.1799 bps
+  Raw signal std      : 775.9280 bps
+  Avg risk score      : 0.4892
 
 ── Alpha quality ────────────────────────────────────────────
-  Realised IC         : -0.0132
-  ICIR (annualised)   : -2.7994
-  Safe-mode events    : 328  (32.6% of ticks)
-  Gated events        : 957  (95.1% of ticks)
+  Realised IC         : 0.4457
+  ICIR (annualised)   : 0.0000
+  Safe-mode events    : 0  (0.0% of ticks)
+  Gated events        : 0  (0.0% of ticks)
 
 ── Regime distribution (session avg) ────────────────────────
-  p_calm              : 0.254
-  p_trending          : 0.191
-  p_shock             : 0.088
-  p_illiquid          : 0.466
+  p_calm              : 1.000
+  p_trending          : 0.000
+  p_shock             : 0.000
+  p_illiquid          : 0.000
 
 ── Readiness check ──────────────────────────────────────────
   Run >= 2 weeks before promoting to live.
@@ -184,9 +188,42 @@ Shadow session complete.
   ICIR (annualised) target: > 0.5.
 
 ============================================================
-(.venv) clementandredupuy@Mac ThamesRiverTrading % 2026-03-26 20:40:03.171405563 [INFO ] [Binance] Stopping feed handler symbol=SOLUSDT
-2026-03-26 20:40:03.172619065 [INFO ] [OKX] Stopping feed handler symbol=SOLUSDT
-2026-03-26 20:40:03.174241151 [INFO ] Shadow session summary realized_pnl_usd=0 unrealized_pnl_usd=0 fees_paid_usd=0 total_pnl_usd=0 total_pnl_pct=0 net_cashflow_usd=0 gross_notional_usd=0 net_position=0 total_fills=0 opened_positions=0 state=FLAT bin_opened=0 kra_opened=0 okx_opened=0 cb_opened=0 bin_active=0 kra_active=0 okx_active=0 cb_active=0
-2026-03-26 20:40:03.174241360 [INFO ] trading_engine shutdown complete
+(.venv) clementandredupuy@Mac ThamesRiverTrading % 2026-03-27 23:53:36.390027375 [INFO ] [Binance] Stopping feed handler symbol=SOLUSDT
+2026-03-27 23:53:36.391497750 [INFO ] [Kraken] Stopping feed handler symbol=SOLUSDT
+2026-03-27 23:53:36.392434209 [INFO ] [OKX] Stopping feed handler symbol=SOLUSDT
+2026-03-27 23:53:36.395267209 [INFO ] Shadow session summary realized_pnl_usd=0 unrealized_pnl_usd=0 fees_paid_usd=0 total_pnl_usd=0 total_pnl_pct=0 net_cashflow_usd=0 gross_notional_usd=0 net_position=0 total_fills=0 opened_positions=0 state=FLAT bin_opened=0 kra_opened=0 okx_opened=0 cb_opened=0 bin_active=0 kra_active=0 okx_active=0 cb_active=0
+2026-03-27 23:53:36.395267667 [INFO ] trading_engine shutdown complete
 
-(.venv) clementandredupuy@Mac ThamesRiverTrading %
+(.venv) clementandredupuy@Mac ThamesRiverTrading %   [pretrain] epoch 2/5  loss=1.7957
+
+(.venv) clementandredupuy@Mac ThamesRiverTrading %   [pretrain] epoch 3/5  loss=1.5638
+  [pretrain] epoch 4/5  loss=1.4395
+  [pretrain] epoch 5/5  loss=1.3398
+[HPO] primary trial 4/6 score=0.796753 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.2, 'w_risk': 0.5}
+  [pretrain] epoch 1/5  loss=3.6744
+  [pretrain] epoch 2/5  loss=3.0674
+  [pretrain] epoch 3/5  loss=2.5804
+  [pretrain] epoch 4/5  loss=2.4950
+  [pretrain] epoch 5/5  loss=2.3907
+  [pretrain] epoch 1/5  loss=2.8534
+[2026-03-27T23:54:41.291Z] [ShadowSummary] {"average_dominant_confidence": 1.0, "confidence_gate": 99, "dominant_regime": "calm", "dominant_regime_change_count": 0, "horizon_gate": 50, "ic": 0.2758999743148612, "icir": 86.56794590327705, "mean_effective_bps": -224.83822296966207, "mean_raw_bps": -224.83822296966207, "regime_retrain_failure_counts": {}, "retrain_failure_counts": {}, "safe_mode_gate": 0, "seconds_since_last_continuous_train": 2367.993385542, "seconds_since_last_regime_train": 2367.993385542, "std_effective_bps": 560.766881351044, "switches_per_minute": 0.0, "ticks": 99, "ts_quality": "ok", "venue_health": {"COINBASE": {"health_state": "degraded", "health_transition_count": 1, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 0, "resnapshot_loop": 0, "snapshot_rejection": 1}}}}
+  [pretrain] epoch 2/5  loss=1.7957
+  [pretrain] epoch 3/5  loss=1.5638
+  [pretrain] epoch 4/5  loss=1.4395
+  [pretrain] epoch 5/5  loss=1.3398
+[HPO] primary trial 5/6 score=1.125527 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.2, 'w_risk': 0.8}
+  [pretrain] epoch 1/5  loss=3.6744
+  [pretrain] epoch 2/5  loss=3.0674
+  [pretrain] epoch 3/5  loss=2.5804
+  [pretrain] epoch 4/5  loss=2.4950
+  [pretrain] epoch 5/5  loss=2.3907
+  [pretrain] epoch 1/5  loss=2.8534
+  [pretrain] epoch 2/5  loss=1.7957
+  [pretrain] epoch 3/5  loss=1.5638
+  [pretrain] epoch 4/5  loss=1.4395
+  [pretrain] epoch 5/5  loss=1.3398
+
+(.venv) clementandredupuy@Mac ThamesRiverTrading % [2026-03-27T23:56:21.851Z] [ShadowSummary] {"average_dominant_confidence": 1.0, "confidence_gate": 199, "dominant_regime": "calm", "dominant_regime_change_count": 0, "horizon_gate": 102, "ic": 0.11811338272401768, "icir": 27.87053394955129, "mean_effective_bps": -173.75091231198766, "mean_raw_bps": -173.75091231198766, "regime_retrain_failure_counts": {}, "retrain_failure_counts": {}, "safe_mode_gate": 0, "seconds_since_last_continuous_train": 2468.554206834, "seconds_since_last_regime_train": 2468.554206834, "std_effective_bps": 481.81141891854514, "switches_per_minute": 0.0, "ticks": 199, "ts_quality": "ok", "venue_health": {"COINBASE": {"health_state": "degraded", "health_transition_count": 1, "health_transition_root_causes": {"bridge_gap": 0, "recovered": 0, "resnapshot_loop": 0, "snapshot_rejection": 1}}}}
+[HPO] primary trial 6/6 score=1.449551 params={'lr': 0.0002, 'dropout': 0.05, 'batch_size': 32, 'w_direction': 0.2, 'w_risk': 1.1}
+[HPO] selected primary score=0.681733
+  [pretrain] epoch 1/5  loss=3.6744

@@ -39,7 +39,6 @@ namespace trading {
         };
 
         static constexpr size_t MAX_BUFFER_SIZE = 8192;
-        // REST snapshot depth used for grid sizing; matches limit=5000 in fetch_snapshot().
         static constexpr size_t k_snapshot_depth = 5000;
 
         struct SyncStats {

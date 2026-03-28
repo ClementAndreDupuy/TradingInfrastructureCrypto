@@ -5,7 +5,7 @@ venue_quality_log_heartbeat_secs: 180
 
 default_latency_penalty_bps: 0.5
 default_risk_penalty_bps: 0.2
-default_fill_probability: 0.70
+default_fill_probability: 0.90
 default_queue_ahead_qty: 0.20
 default_toxicity_bps: 0.4
 

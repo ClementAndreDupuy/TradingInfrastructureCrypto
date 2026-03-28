@@ -371,16 +371,11 @@ auto main(int argc, char **argv) -> int {
             return capped < max_book_levels ? capped : max_book_levels;
         };
 
-        // All four venues share the same $1 grid tick so their OrderBook price ranges are
-        // identical (max_book_levels × 1.0 USD).  Each feed handler still fetches the
-        // exchange's native tick during start() for use by the execution connectors.
         const double binance_tick  = engine::k_default_fallback_tick_size;
         const double kraken_tick   = engine::k_default_fallback_tick_size;
         const double okx_tick      = engine::k_default_fallback_tick_size;
         const double coinbase_tick = engine::k_default_fallback_tick_size;
 
-        // Cap each venue at 2 × its subscription depth (one side below mid, one above).
-        // Coinbase provides the full L2 book so it uses the global max_book_levels ceiling.
         const size_t binance_levels = std::min(levels_for_tick(binance_tick),
                                                BinanceFeedHandler::k_snapshot_depth * 2);
         const size_t kraken_levels = std::min(levels_for_tick(kraken_tick),
