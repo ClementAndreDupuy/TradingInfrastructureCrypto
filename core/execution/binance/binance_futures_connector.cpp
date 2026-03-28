@@ -181,6 +181,21 @@ namespace trading {
         }
 
         ConnectorResult classify_response(const http::HttpResponse &response) {
+            const auto json = nlohmann::json::parse(response.body, nullptr, false);
+            if (!json.is_discarded() && json.is_object()) {
+                const auto code_it = json.find("code");
+                if (code_it != json.end() && code_it->is_number_integer()) {
+                    const int code = code_it->get<int>();
+                    if (code == -2015 || code == -2014)
+                        return ConnectorResult::AUTH_FAILED;
+                    if (code == -1003 || code == -1008 || code == -1015)
+                        return ConnectorResult::ERROR_RATE_LIMIT;
+                    if (code == -1021)
+                        return ConnectorResult::ERROR_REST_FAILURE;
+                    if (code == -2022)
+                        return ConnectorResult::ERROR_INVALID_ORDER;
+                }
+            }
             if (response.status == 401 || response.status == 403)
                 return ConnectorResult::AUTH_FAILED;
             if (response.status == 429)
