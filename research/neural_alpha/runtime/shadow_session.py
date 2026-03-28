@@ -377,9 +377,33 @@ class NeuralAlphaShadowSession:
             return None
     def _build_model(self, d_spatial: int = 64, d_temporal: int = 128, n_temp_layers: int = 3) -> CryptoAlphaNet:
         return CryptoAlphaNet(d_spatial=d_spatial, d_temporal=d_temporal, n_temp_layers=n_temp_layers, seq_len=self.cfg.seq_len).to(self._device).eval()
+    @staticmethod
+    def _migrate_state_dict(
+        state_dict: dict[str, torch.Tensor],
+        model: CryptoAlphaNet,
+    ) -> dict[str, torch.Tensor]:
+        migrated = dict(state_dict)
+        for name, param in model.named_parameters():
+            if name not in migrated:
+                continue
+            ckpt_shape = migrated[name].shape
+            model_shape = param.shape
+            if ckpt_shape == model_shape:
+                continue
+            if len(ckpt_shape) != len(model_shape):
+                continue
+            if all(c <= m for c, m in zip(ckpt_shape, model_shape)):
+                padded = torch.zeros(model_shape, dtype=migrated[name].dtype)
+                slices = tuple(slice(0, c) for c in ckpt_shape)
+                padded[slices] = migrated[name]
+                migrated[name] = padded
+        return migrated
+
     def load_model(self, path: str) -> None:
         self._model = self._build_model(self.cfg.d_spatial, self.cfg.d_temporal)
-        self._model.load_state_dict(torch.load(path, map_location=self._device, weights_only=True))
+        raw = torch.load(path, map_location=self._device, weights_only=True)
+        state_dict = self._migrate_state_dict(raw, self._model)
+        self._model.load_state_dict(state_dict)
     def load_secondary_model(self, path: str) -> None:
         meta_path = Path(path).with_suffix(".json")
         if meta_path.exists():
@@ -396,7 +420,9 @@ class NeuralAlphaShadowSession:
             d_temporal=_SECONDARY_D_TEMPORAL,
             n_temp_layers=_SECONDARY_N_TEMP_LAYERS,
         )
-        self._secondary_model.load_state_dict(torch.load(path, map_location=self._device, weights_only=True))
+        raw = torch.load(path, map_location=self._device, weights_only=True)
+        state_dict = self._migrate_state_dict(raw, self._secondary_model)
+        self._secondary_model.load_state_dict(state_dict)
         self._reset_canary()
     def _reset_canary(self) -> None:
         self._canary = EnsembleCanary(
