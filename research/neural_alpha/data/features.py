@@ -110,9 +110,10 @@ def compute_lob_tensor(df: pl.DataFrame) -> np.ndarray:
     bid_oc_norm = bid_oc / bid_oc.sum(axis=1, keepdims=True).clip(1e-9)
     ask_oc_norm = ask_oc / ask_oc.sum(axis=1, keepdims=True).clip(1e-9)
 
-    return np.stack(
+    lob = np.stack(
         [bid_p_norm, bid_s_norm, ask_p_norm, ask_s_norm, bid_oc_norm, ask_oc_norm], axis=2
-    ).astype(np.float32)
+    )
+    return np.nan_to_num(lob, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
 
 
 def _lag_diff(arr: np.ndarray, lag: int) -> np.ndarray:
