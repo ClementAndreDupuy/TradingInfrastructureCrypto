@@ -82,6 +82,44 @@ _TRADE_FLOW_SCHEMA_DEFAULTS: dict[str, Any] = {
 }
 
 
+def _finite_float(value: Any, default: float = 0.0) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+    if not np.isfinite(parsed):
+        return float(default)
+    return parsed
+
+
+def _sanitise_signal_info(signal_info: dict[str, Any]) -> dict[str, Any]:
+    sanitised = dict(signal_info)
+    float_fields = (
+        "mid_price",
+        "ret_1tick_bps",
+        "ret_10tick_bps",
+        "ret_mid_bps",
+        "ret_long_bps",
+        "risk_score",
+        "size_fraction",
+        "signal",
+        "dir_p_down",
+        "dir_p_flat",
+        "dir_p_up",
+        "primary_signal",
+        "ensemble_signal",
+        "p_calm",
+        "p_trending",
+        "p_shock",
+        "p_illiquid",
+    )
+    for field in float_fields:
+        sanitised[field] = _finite_float(sanitised.get(field, 0.0), 0.0)
+    sanitised["horizon_ticks"] = int(sanitised.get("horizon_ticks", 0) or 0)
+    sanitised["gating_reasons"] = list(sanitised.get("gating_reasons", []))
+    return sanitised
+
+
 def _ensure_trade_flow_schema(df: pl.DataFrame) -> pl.DataFrame:
     if len(df) == 0:
         return df
@@ -487,7 +525,10 @@ class NeuralAlphaShadowSession:
         tmp_out = out_path.with_suffix(out_path.suffix + ".tmp")
         torch.save(state_dict, tmp_out)
         tmp_out.replace(out_path)
-        out_path.with_suffix(".json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        meta_path = out_path.with_suffix(".json")
+        tmp_meta = meta_path.with_suffix(meta_path.suffix + ".tmp")
+        tmp_meta.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        tmp_meta.replace(meta_path)
     @staticmethod
     def _best_effort(action: Callable[[], None]) -> None:
         try:
@@ -603,6 +644,8 @@ class NeuralAlphaShadowSession:
                 f" primary_ic={primary_ic:.6f}"
             )
             out_path.parent.mkdir(parents=True, exist_ok=True)
+            if out_path.exists():
+                out_path.unlink()
             out_path.with_suffix(".json").write_text(
                 json.dumps(
                     {
@@ -814,16 +857,31 @@ class NeuralAlphaShadowSession:
         lob_t, scalar_t = inputs
         with torch.no_grad():
             primary_output = self._model(lob_t, scalar_t)
-        returns = primary_output["returns"][0, -1].cpu().numpy()
-        risk = float(primary_output["risk"][0, -1].cpu().item())
-        primary_signal = float(returns[2])
+        returns = np.nan_to_num(
+            primary_output["returns"][0, -1].cpu().numpy(),
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+        )
+        risk = _finite_float(primary_output["risk"][0, -1].cpu().item(), 1.0)
+        primary_signal = _finite_float(returns[2], 0.0)
         raw_signal_bps = primary_signal * 10_000.0
         if self._secondary_model is not None:
             with torch.no_grad():
-                secondary_returns = self._secondary_model(lob_t, scalar_t)["returns"][0, -1].cpu().numpy()
-            raw_signal_bps = (raw_signal_bps + float(secondary_returns[2]) * 10_000.0) / 2.0
-        dir_probs = torch.softmax(primary_output["direction"][0, -1], dim=-1).cpu().numpy()
-        ret_1tick_bps = float(returns[0]) * 10_000.0
+                secondary_returns = np.nan_to_num(
+                    self._secondary_model(lob_t, scalar_t)["returns"][0, -1].cpu().numpy(),
+                    nan=0.0,
+                    posinf=0.0,
+                    neginf=0.0,
+                )
+            raw_signal_bps = (raw_signal_bps + _finite_float(secondary_returns[2], 0.0) * 10_000.0) / 2.0
+        dir_probs = np.nan_to_num(
+            torch.softmax(primary_output["direction"][0, -1], dim=-1).cpu().numpy(),
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+        )
+        ret_1tick_bps = _finite_float(returns[0], 0.0) * 10_000.0
         signal_bps, size_scale, gating_reasons, safe_mode_active = self._apply_signal_gates(
             raw_signal_bps, risk, dir_probs, ret_1tick_bps
         )
@@ -833,8 +891,11 @@ class NeuralAlphaShadowSession:
         last_tick = self._ring[-1]
         exchange_ts, local_ts = _extract_tick_timestamps(last_tick)
         self._session_event_index += 1
-        mid_price = (last_tick.get("best_bid", last_tick.get("bid_price_1", 0.0)) + last_tick.get("best_ask", last_tick.get("ask_price_1", 0.0))) / 2.0
-        return {
+        mid_price = (
+            _finite_float(last_tick.get("best_bid", last_tick.get("bid_price_1", 0.0)), 0.0)
+            + _finite_float(last_tick.get("best_ask", last_tick.get("ask_price_1", 0.0)), 0.0)
+        ) / 2.0
+        signal_info = {
             "timestamp_ns": local_ts,
             "timestamp_exchange_ns": exchange_ts,
             "timestamp_local_ns": local_ts,
@@ -862,6 +923,7 @@ class NeuralAlphaShadowSession:
             "ensemble_signal": raw_signal_bps / 10_000.0,
             **self._infer_regime_probabilities(),
         }
+        return _sanitise_signal_info(signal_info)
     def _trigger_safe_mode(self, reason: str) -> None:
         if self._safe_mode_cooldown_ticks_remaining > 0:
             return
@@ -929,8 +991,9 @@ class NeuralAlphaShadowSession:
         exchange = str(signal_info.get("exchange", "UNKNOWN")).upper()
         if exchange in self._venue_stats:
             self._venue_stats[exchange].ticks_used += 1
-        self._signal_records.append(signal_info)
-        self._log_fp.write(json.dumps(signal_info) + "\n")
+        sanitised_signal_info = _sanitise_signal_info(signal_info)
+        self._signal_records.append(sanitised_signal_info)
+        self._log_fp.write(json.dumps(sanitised_signal_info, allow_nan=False) + "\n")
         self._log_fp.flush()
     def _compute_ic_metrics(self) -> tuple[float, float]:
         sig_aligned, out_aligned = _build_signal_alignment(self._signal_records)

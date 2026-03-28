@@ -103,6 +103,7 @@ def pretrain_spatial(
     lr: float,
     device: torch.device,
     noise_std: float = 0.02,
+    verbose: bool = True,
 ) -> None:
     optimizer = torch.optim.Adam(model.spatial_enc.parameters(), lr=lr)
     model.spatial_enc.train()
@@ -112,7 +113,8 @@ def pretrain_spatial(
         lob = first_batch["lob"].float()
         temporal_std = float(lob.std(dim=1).mean())
         if temporal_std < 0.0001:
-            print(f"  [pretrain] skipped — LOB near-constant across time (temporal std={temporal_std:.2e})")
+            if verbose:
+                print(f"  [pretrain] skipped — LOB near-constant across time (temporal std={temporal_std:.2e})")
             return
     for epoch in range(epochs):
         total_loss = 0.0
@@ -139,7 +141,7 @@ def pretrain_spatial(
             optimizer.step()
             total_loss += float(loss.item())
             n_batches += 1
-        if n_batches > 0:
+        if n_batches > 0 and verbose:
             print(f"  [pretrain] epoch {epoch + 1}/{epochs}  loss={total_loss / n_batches:.4f}")
 
 
@@ -309,7 +311,15 @@ def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
         if cfg.pretrain and cfg.pretrain_epochs > 0:
             if cfg.verbose:
                 print(f"  Pre-training spatial encoder ({cfg.pretrain_epochs} epochs)…")
-            pretrain_spatial(model, train_loader, cfg.pretrain_epochs, cfg.lr, device, cfg.adv_noise_std)
+            pretrain_spatial(
+                model,
+                train_loader,
+                cfg.pretrain_epochs,
+                cfg.lr,
+                device,
+                cfg.adv_noise_std,
+                verbose=cfg.verbose,
+            )
         optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
         scheduler = _make_warmup_cosine_scheduler(optimizer, warmup_epochs=cfg.lr_warmup_epochs, total_epochs=cfg.epochs)
         scaler = torch.amp.GradScaler('cuda',enabled=cfg.use_amp and device.type == "cuda")
