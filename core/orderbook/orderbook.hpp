@@ -129,7 +129,7 @@ namespace trading {
             size_t idx;
             if (!price_to_index(delta.price, idx)) {
                 if (should_recenter(delta)) {
-                    recenter_grid(delta.price);
+                    recenter_grid(delta.price, delta.side);
                     if (!price_to_index(delta.price, idx)) {
                         LOG_WARN("[OrderBook] Delta price still out of recentered grid", "price", delta.price,
                                  "base", base_price_.load(), "range", active_price_range());
@@ -341,10 +341,43 @@ namespace trading {
                    out_of_range_streak_ >= k_recenter_streak_trigger_;
         }
 
-        void recenter_grid(double anchor_price) {
+        void recenter_grid(double anchor_price, Side anchor_side) {
             const double old_base = base_price_.load(std::memory_order_acquire);
             const size_t levels = active_levels();
-            const double new_base = anchor_price - static_cast<double>(levels / 2) * tick_size_;
+
+            // Capture the opposite touch BEFORE shifting any data.  If both the
+            // anchor and the opposite touch fit inside a grid of `levels` ticks we
+            // centre the window on their midpoint so neither side sits at the
+            // extreme edge.  This prevents the ping-pong where recentering for a
+            // bid wipes the ask data (large shift), causing the very next ask delta
+            // to hard-breach and recenter again.
+            const double opposite_touch =
+                (anchor_side == Side::BID) ? get_best_ask() : get_best_bid();
+
+            double new_base;
+            if (opposite_touch > 0.0) {
+                const double lo = std::min(anchor_price, opposite_touch);
+                const double hi = std::max(anchor_price, opposite_touch);
+                const double required_ticks = (hi - lo) / tick_size_;
+                if (required_ticks < static_cast<double>(levels)) {
+                    // Both prices fit: centre the grid on their midpoint and
+                    // snap to the nearest tick boundary so index_to_price()
+                    // still recovers exact prices for tick-aligned inputs.
+                    const double mid = (lo + hi) / 2.0;
+                    const double raw_base = mid - static_cast<double>(levels / 2) * tick_size_;
+                    new_base = std::round(raw_base / tick_size_) * tick_size_;
+                } else {
+                    // Grid too narrow to cover both sides; fall back to centering
+                    // on the anchor so at least the triggering price lands in range.
+                    new_base = anchor_price - static_cast<double>(levels / 2) * tick_size_;
+                }
+            } else {
+                new_base = anchor_price - static_cast<double>(levels / 2) * tick_size_;
+            }
+
+            if (new_base <= 0.0) {
+                new_base = tick_size_;
+            }
             const int64_t shift_ticks =
                     static_cast<int64_t>(std::llround((old_base - new_base) / tick_size_));
 

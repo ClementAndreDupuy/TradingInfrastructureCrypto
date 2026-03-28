@@ -741,6 +741,82 @@ TEST(OrderBook, SnapshotAcceptedWhenMinorityOutOfRange) {
     EXPECT_TRUE(book.is_initialized());
 }
 
+// Regression test for the oscillating-recenter bug.
+//
+// Before the fix, recenter_grid centred the grid solely on the anchor price.
+// When the shift was large enough to push ALL existing data out of range the
+// opposite side of the book became empty.  delta_improves_touch() then returned
+// true for *any* price on that side (because best == 0), so the very next delta
+// triggered another hard-breach recenter, bouncing the grid back and forth
+// indefinitely.
+//
+// After the fix, recenter_grid captures the opposite touch before shifting.
+// When both prices fit in the grid the window is centred on their midpoint,
+// keeping both sides in range.  The oscillation cannot start.
+TEST(OrderBook, NoOscillationBidRecenterPreservesAskSide) {
+    // 20 000-level grid, tick = 1.0.
+    // After snapshot at 50 000 / 50 001 the grid spans [40 000, 60 000].
+    OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
+    book.apply_snapshot(make_snapshot(50000.0, 50001.0, 2, 1.0, 100));
+
+    // Seed an ask level that is well inside the initial grid.
+    ASSERT_EQ(book.apply_delta(make_delta(Side::ASK, 55000.0, 3.0, 101)), Result::SUCCESS);
+    EXPECT_DOUBLE_EQ(book.get_best_ask(), 50001.0);
+
+    // Four consecutive out-of-range bid deltas at 65 000 trigger a streak-based
+    // recenter.  Out-of-range deltas that don't yet trigger a recenter are
+    // silently dropped (Result::SUCCESS).  65 000 and the current best ask
+    // (50 001, from the snapshot) are 14 999 ticks apart — well within the
+    // 20 000-level grid — so the fix centres the window on their midpoint
+    // rather than on the anchor alone, keeping the ask side in range.
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 65000.0, 1.0, 102)), Result::SUCCESS); // dropped
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 65000.0, 1.1, 103)), Result::SUCCESS); // dropped
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 65000.0, 1.2, 104)), Result::SUCCESS); // dropped
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 65000.0, 1.3, 105)), Result::SUCCESS); // triggers recenter
+
+    // Bid must be in the book.
+    EXPECT_DOUBLE_EQ(book.get_best_bid(), 65000.0);
+
+    // Ask side must still be in range — the recenter should have preserved it.
+    // Without the fix the large shift would wipe the ask data, get_best_ask()
+    // would return 0, and the next ask delta would immediately fire another recenter.
+    EXPECT_GT(book.get_best_ask(), 0.0);
+
+    const double base_after_recenter = book.base_price();
+
+    // A normal ask update on the preserved side must NOT trigger another recenter.
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 55000.0, 4.0, 106)), Result::SUCCESS);
+    EXPECT_DOUBLE_EQ(book.base_price(), base_after_recenter);
+}
+
+TEST(OrderBook, NoOscillationAskRecenterPreservesBidSide) {
+    OrderBook book("BTCUSDT", Exchange::BINANCE, 1.0, 20000);
+    book.apply_snapshot(make_snapshot(50000.0, 50001.0, 2, 1.0, 100));
+
+    // Seed a bid level well inside the initial grid.
+    ASSERT_EQ(book.apply_delta(make_delta(Side::BID, 45000.0, 2.0, 101)), Result::SUCCESS);
+
+    // Four out-of-range ask deltas at 35 000 trigger a streak-based recenter.
+    // Non-triggering out-of-range deltas are silently dropped (SUCCESS).
+    // 35 000 and the current best bid (50 000, from the snapshot) are 15 000
+    // ticks apart — within the 20 000-level grid — so the fix centres the
+    // window on their midpoint, keeping the bid side in range.
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 35000.0, 1.0, 102)), Result::SUCCESS); // dropped
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 35000.0, 1.1, 103)), Result::SUCCESS); // dropped
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 35000.0, 1.2, 104)), Result::SUCCESS); // dropped
+    EXPECT_EQ(book.apply_delta(make_delta(Side::ASK, 35000.0, 1.3, 105)), Result::SUCCESS); // triggers recenter
+
+    EXPECT_DOUBLE_EQ(book.get_best_ask(), 35000.0);
+
+    // Bid side must be preserved.
+    EXPECT_GT(book.get_best_bid(), 0.0);
+
+    const double base_after_recenter = book.base_price();
+
+    EXPECT_EQ(book.apply_delta(make_delta(Side::BID, 45000.0, 3.0, 106)), Result::SUCCESS);
+    EXPECT_DOUBLE_EQ(book.base_price(), base_after_recenter);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
