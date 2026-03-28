@@ -76,6 +76,14 @@
     - In `futures_only`, spot execution paths are disabled and futures position/risk checks (long/short, leverage, margin) are mandatory.
     - Mode transitions require controlled restart and emit an auditable configuration event.
 
+- [ ] **FUT-BN-13: Portfolio intent engine futures long/short mapping from alpha**
+  - Scope: extend `PortfolioIntentEngine`/strategy intent generation so alpha sign and confidence map deterministically to futures long/short/flat targets per symbol, including reduce/flip behavior for existing exposure.
+  - Acceptance criteria:
+    - Positive alpha generates long intent, negative alpha generates short intent, and near-zero alpha resolves to flat/no-trade via configurable deadband.
+    - Target-position transitions (`long -> short`, `short -> long`, `long/short -> flat`) are explicit and risk-checked before order emission.
+    - Generated intents include futures-specific direction metadata (`position_side`, `reduce_only`/close semantics) so execution does not infer direction from spot fields.
+    - Unit/integration tests validate deterministic sizing + direction outcomes for representative alpha/regime/risk inputs.
+
 ### MEDIUM
 - [ ] **FUT-BN-8: Shadow-mode rollout plan for Binance futures**
   - Scope: shadow execution path for futures with no live order placement, plus metrics for slippage, reject rate, and reconciliation drift.
