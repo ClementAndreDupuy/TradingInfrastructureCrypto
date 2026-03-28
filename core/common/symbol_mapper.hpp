@@ -51,11 +51,36 @@ namespace trading {
             return map_all(std::move(symbol)).for_exchange(ex);
         }
 
+        [[nodiscard]] static std::string map_for_binance_usdm_futures(std::string symbol) {
+            symbol = normalize_binance_futures_symbol(std::move(symbol));
+            return map_for_exchange(Exchange::BINANCE, std::move(symbol));
+        }
+
     private:
         struct ParsedSymbol {
             std::string base;
             std::string quote;
         };
+
+        static std::string normalize_binance_futures_symbol(std::string symbol) {
+            std::transform(symbol.begin(), symbol.end(), symbol.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+
+            static constexpr std::array<std::string_view, 3> suffixes = {"_PERP", "-PERP", "PERP"};
+            for (const auto suffix: suffixes) {
+                if (symbol.size() >= suffix.size() &&
+                    std::string_view(symbol).substr(symbol.size() - suffix.size()) == suffix) {
+                    symbol.resize(symbol.size() - suffix.size());
+                    break;
+                }
+            }
+
+            while (!symbol.empty() &&
+                   (symbol.back() == '-' || symbol.back() == '_' || symbol.back() == '/')) {
+                symbol.pop_back();
+            }
+            return symbol;
+        }
 
         static ParsedSymbol parse_symbol(std::string symbol) {
             if (symbol.empty()) {

@@ -108,6 +108,22 @@ namespace trading {
         GTX = 3,
     };
 
+    enum class FuturesPositionMode : uint8_t {
+        ONE_WAY = 0,
+        HEDGE = 1,
+    };
+
+    enum class FuturesPositionSide : uint8_t {
+        UNSPECIFIED = 0,
+        LONG = 1,
+        SHORT = 2,
+    };
+
+    enum class FuturesWorkingType : uint8_t {
+        CONTRACT_PRICE = 0,
+        MARK_PRICE = 1,
+    };
+
     enum class OrderState : uint8_t {
         PENDING = 0,
         OPEN = 1,
@@ -124,6 +140,9 @@ namespace trading {
         ERROR_INVALID_ORDER = 3,
         ERROR_REST_FAILURE = 4,
         AUTH_FAILED = 5,
+        ERROR_FUTURES_POSITION_SIDE_REQUIRED = 6,
+        ERROR_FUTURES_POSITION_SIDE_INVALID = 7,
+        ERROR_FUTURES_CLOSE_POSITION_CONFLICT = 8,
         ERROR_UNKNOWN = 255,
     };
 
@@ -137,6 +156,11 @@ namespace trading {
         double price = 0.0;
         double stop_price = 0.0;
         double quantity = 0.0;
+        FuturesPositionMode futures_position_mode = FuturesPositionMode::ONE_WAY;
+        FuturesPositionSide futures_position_side = FuturesPositionSide::UNSPECIFIED;
+        FuturesWorkingType futures_working_type = FuturesWorkingType::CONTRACT_PRICE;
+        bool reduce_only = false;
+        bool close_position = false;
         int64_t submit_ts_ns = 0;
     };
 
