@@ -12,13 +12,9 @@ _ADV_SEL_THRESH: float = _lcfg["adv_sel_thresh"]
 
 N_LEVELS = 10
 D_LOB = 6
-BASE_SCALAR_FEATURES = 21
+BASE_SCALAR_FEATURES = 18
 D_SCALAR = BASE_SCALAR_FEATURES + N_LEVELS
-TRADE_FLOW_FEATURE_INDICES: dict[str, int] = {
-    "trade_signed_flow": 13 + N_LEVELS + 3,
-    "trade_intensity_5": 13 + N_LEVELS + 4,
-    "trade_vs_mid_bps":  13 + N_LEVELS + 5,
-}
+TRADE_FLOW_FEATURE_INDICES: dict[str, int] = {}
 
 
 def _safe_col(df: pl.DataFrame, name: str, default: float = 0.0) -> np.ndarray:
@@ -176,20 +172,6 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
     vol_200 = _rolling_std(log_ret, 200)
 
     qi = (eff_bs - eff_as) / (eff_bs + eff_as + 1e-8)
-    last_trade_price = _safe_col(df, "last_trade_price")
-    last_trade_size = np.abs(_safe_col(df, "last_trade_size"))
-    recent_traded_volume = np.clip(_safe_col(df, "recent_traded_volume"), 0.0, None)
-    trade_direction_raw = _safe_col(df, "trade_direction", default=255.0)
-    trade_direction = np.where(trade_direction_raw >= 255.0, 0.0, np.where(trade_direction_raw > 0.0, 1.0, -1.0))
-    trade_signed_flow = trade_direction * last_trade_size
-    trade_intensity = recent_traded_volume / (total_depth + 1e-8)
-    trade_intensity_5 = np.convolve(trade_intensity, np.ones(5, dtype=np.float64), mode="full")[: len(trade_intensity)]
-    trade_intensity_5 = trade_intensity_5 / np.minimum(np.arange(len(trade_intensity_5)) + 1, 5)
-    trade_vs_mid_bps = np.where(
-        (mid > 0) & (last_trade_price > 0),
-        (last_trade_price - mid) / mid * 1e4,
-        0.0,
-    )
 
     best_bid_avg_order_sz = eff_bs[:, 0] / (bid_counts[:, 0].astype(np.float64) + 1.0)
     best_ask_avg_order_sz = eff_as[:, 0] / (ask_counts[:, 0].astype(np.float64) + 1.0)
@@ -200,7 +182,6 @@ def compute_scalar_features(df: pl.DataFrame) -> np.ndarray:
         ofi_1, log_ret * total_depth,
         vol_5, vol_20, ofi_5, ofi_10, ofi_20,
         vol_60, vol_200, vol_5 / (vol_60 + 1e-8),
-        trade_signed_flow, trade_intensity_5, trade_vs_mid_bps,
         best_bid_avg_order_sz, best_ask_avg_order_sz,
     ]
     features = np.stack(

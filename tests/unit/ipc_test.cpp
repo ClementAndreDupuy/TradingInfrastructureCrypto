@@ -368,20 +368,8 @@ TEST(LobPublisher, SlotTradeFlowFieldsMatchPublishedData) {
     ASSERT_NE(m, MAP_FAILED);
     const char* slot0 = m + trading::LobPublisher::k_header_size;
 
-    double last_trade_price = 0.0;
-    std::memcpy(&last_trade_price, slot0 + 432, 8);
-    EXPECT_NEAR(last_trade_price, 100.12, 1e-9);
-
-    double last_trade_size = 0.0;
-    std::memcpy(&last_trade_size, slot0 + 440, 8);
-    EXPECT_NEAR(last_trade_size, 0.75, 1e-9);
-
-    double recent_traded_volume = 0.0;
-    std::memcpy(&recent_traded_volume, slot0 + 448, 8);
-    EXPECT_NEAR(recent_traded_volume, 3.5, 1e-9);
-
     uint8_t trade_direction = 0;
-    std::memcpy(&trade_direction, slot0 + 456, 1);
+    std::memcpy(&trade_direction, slot0 + 432, 1);
     EXPECT_EQ(trade_direction, 1u);
 
     ::munmap(const_cast<char*>(m), total);

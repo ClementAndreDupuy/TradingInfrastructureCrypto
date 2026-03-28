@@ -75,9 +75,6 @@ _NOTIONAL_SCALE_BUCKETS: tuple[tuple[float, float], ...] = (
 FetchFn = Callable[[str], dict[str, Any] | None]
 _FETCHERS = {"BINANCE": _fetch_binance_l5, "KRAKEN": _fetch_kraken_l5, "OKX": _fetch_okx_l5, "COINBASE": _fetch_coinbase_l5}
 _TRADE_FLOW_SCHEMA_DEFAULTS: dict[str, Any] = {
-    "last_trade_price": 0.0,
-    "last_trade_size": 0.0,
-    "recent_traded_volume": 0.0,
     "trade_direction": 255,
 }
 
