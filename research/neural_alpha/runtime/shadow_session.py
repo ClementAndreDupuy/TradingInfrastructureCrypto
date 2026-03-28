@@ -392,7 +392,14 @@ class NeuralAlphaShadowSession:
         self._latest_secondary_sanity: dict[str, float] = {}
     def _continuous_retrain_guard(self) -> tuple[bool, str]:
         diagnostics = _summarise_timestamp_quality(self._signal_records)
-        if diagnostics["has_timestamp_issues"]:
+        _corruption_keys = (
+            "exchange_missing",
+            "local_missing",
+            "exchange_non_monotonic",
+            "local_non_monotonic",
+            "event_index_non_monotonic",
+        )
+        if any(int(diagnostics[key]) > 0 for key in _corruption_keys):
             return False, "ts_quality_warn"
         churn = _summarise_regime_churn(self._signal_records)
         switches_per_minute = float(churn["switches_per_minute"])
@@ -816,7 +823,7 @@ class NeuralAlphaShadowSession:
             direction_confidence = float(dir_probs[2] if signal_bps > 0 else dir_probs[0])
             size_scale *= self._confidence_scale(direction_confidence)
             gating_reasons.append("confidence_gate")
-        if signal_bps > 0 and ret_1tick_bps <= 0 or signal_bps < 0 and ret_1tick_bps >= 0:
+        if signal_bps > 0 and ret_1tick_bps < 0 or signal_bps < 0 and ret_1tick_bps > 0:
             size_scale *= 0.35
             gating_reasons.append("horizon_disagreement_gate")
         safe_mode_active = self._safe_mode_ticks_remaining > 0
@@ -969,7 +976,7 @@ class NeuralAlphaShadowSession:
             stats.consecutive_missing_polls += 1
             stats.last_source = "bridge_unavailable" if not stats.startup_confirmed else "bridge_resnapshot"
             if stats.startup_confirmed:
-                if stats.consecutive_missing_polls >= 3:
+                if stats.consecutive_missing_polls >= 10:
                     stats.resnapshot_count += 1
                     self._transition_venue_health(exchange, "degraded", "resnapshot_loop")
             else:
