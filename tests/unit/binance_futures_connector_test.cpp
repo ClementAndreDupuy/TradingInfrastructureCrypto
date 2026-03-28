@@ -3,8 +3,11 @@
 
 #include <gtest/gtest.h>
 #include <openssl/hmac.h>
+#include <nlohmann/json.hpp>
 
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -80,6 +83,23 @@ Order make_order(uint64_t id) {
     std::strncpy(o.symbol, "BTCUSDT", sizeof(o.symbol) - 1);
     o.symbol[sizeof(o.symbol) - 1] = '\0';
     return o;
+}
+
+std::filesystem::path futures_fixture_path() {
+    const std::filesystem::path here(__FILE__);
+    return here.parent_path().parent_path() / "data" / "binance" / "futures_error_fixtures.json";
+}
+
+ConnectorResult connector_result_from_name(const std::string& name) {
+    if (name == "AUTH_FAILED")
+        return ConnectorResult::AUTH_FAILED;
+    if (name == "ERROR_RATE_LIMIT")
+        return ConnectorResult::ERROR_RATE_LIMIT;
+    if (name == "ERROR_REST_FAILURE")
+        return ConnectorResult::ERROR_REST_FAILURE;
+    if (name == "ERROR_INVALID_ORDER")
+        return ConnectorResult::ERROR_INVALID_ORDER;
+    return ConnectorResult::ERROR_UNKNOWN;
 }
 
 } 
@@ -398,6 +418,116 @@ TEST(BinanceFuturesConnectorTest, FetchesFuturesReconciliationSnapshotWithPositi
     EXPECT_EQ(open_order_calls, 1);
     EXPECT_EQ(position_calls, 1);
     EXPECT_EQ(trades_calls, 1);
+}
+
+TEST(BinanceFuturesConnectorTest, AppliesDeterministicErrorFixturesForSubmitClassification) {
+    BinanceFuturesConnector c("k", "s", "https://futures.test", 4000);
+    std::ifstream fixture_stream(futures_fixture_path());
+    ASSERT_TRUE(fixture_stream.good());
+
+    nlohmann::json fixtures;
+    fixture_stream >> fixtures;
+    ASSERT_TRUE(fixtures.is_array());
+
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+    for (const auto& fixture : fixtures) {
+        const int status = fixture.value("status", 0);
+        const std::string body = fixture.value("body", std::string("{}"));
+        const ConnectorResult expected =
+            connector_result_from_name(fixture.value("expected", std::string()));
+        const int expected_attempts = fixture.value("expected_attempts", 1);
+        int submit_attempts = 0;
+        int exchange_info_calls = 0;
+
+        ScopedMockTransport transport([&](const char *method, const std::string &url,
+                                          const std::string &, const std::vector<std::string> &) {
+            if (std::strcmp(method, "GET") == 0 && contains(url, "/fapi/v1/exchangeInfo?symbol=BTCUSDT")) {
+                ++exchange_info_calls;
+                return http::HttpResponse{200, exchange_info_for("BTCUSDT")};
+            }
+            if (std::strcmp(method, "POST") == 0 && contains(url, "/fapi/v1/order?")) {
+                ++submit_attempts;
+                return http::HttpResponse{status, body};
+            }
+            return http::HttpResponse{404, ""};
+        });
+
+        Order order = make_order(9000 + fixture.value("id", 0));
+        EXPECT_EQ(c.submit_order(order), expected);
+        EXPECT_EQ(submit_attempts, expected_attempts);
+        EXPECT_EQ(exchange_info_calls, 1);
+        EXPECT_EQ(c.venue_order_map().get(order.client_order_id), nullptr);
+    }
+}
+
+TEST(BinanceFuturesConnectorTest, MaintainsStateInvariantsAcrossFailurePaths) {
+    BinanceFuturesConnector c("k", "s", "https://futures.test", 4000);
+    ASSERT_EQ(c.connect(), ConnectorResult::OK);
+
+    {
+        ScopedMockTransport transport([&](const char *method, const std::string &url,
+                                          const std::string &, const std::vector<std::string> &) {
+            if (std::strcmp(method, "GET") == 0 && contains(url, "/fapi/v1/exchangeInfo?symbol=BTCUSDT"))
+                return http::HttpResponse{200, exchange_info_for("BTCUSDT")};
+            if (std::strcmp(method, "POST") == 0 && contains(url, "/fapi/v1/order?"))
+                return http::HttpResponse{200, R"({"orderId":9101})"};
+            return http::HttpResponse{404, ""};
+        });
+        ASSERT_EQ(c.submit_order(make_order(9101)), ConnectorResult::OK);
+    }
+
+    const VenueOrderEntry* seeded = c.venue_order_map().get(9101);
+    ASSERT_NE(seeded, nullptr);
+
+    {
+        int attempts = 0;
+        ScopedMockTransport transport([&](const char *method, const std::string &url,
+                                          const std::string &, const std::vector<std::string> &) {
+            if (std::strcmp(method, "DELETE") == 0 && contains(url, "/fapi/v1/order?")) {
+                ++attempts;
+                return http::HttpResponse{500, "{}"};
+            }
+            return http::HttpResponse{404, ""};
+        });
+        EXPECT_EQ(c.cancel_order(9101), ConnectorResult::ERROR_REST_FAILURE);
+        EXPECT_EQ(attempts, 3);
+        EXPECT_NE(c.venue_order_map().get(9101), nullptr);
+    }
+
+    {
+        int attempts = 0;
+        ScopedMockTransport transport([&](const char *method, const std::string &url,
+                                          const std::string &, const std::vector<std::string> &) {
+            if (std::strcmp(method, "GET") == 0 && contains(url, "/fapi/v1/order?")) {
+                ++attempts;
+                return http::HttpResponse{429, R"({"code":-1003,"msg":"Too many requests."})"};
+            }
+            return http::HttpResponse{404, ""};
+        });
+
+        FillUpdate status{};
+        status.new_state = OrderState::PENDING;
+        EXPECT_EQ(c.query_order(9101, status), ConnectorResult::ERROR_RATE_LIMIT);
+        EXPECT_EQ(attempts, 3);
+        EXPECT_EQ(status.new_state, OrderState::PENDING);
+    }
+
+    {
+        ScopedMockTransport transport([&](const char *method, const std::string &url,
+                                          const std::string &, const std::vector<std::string> &) {
+            if (std::strcmp(method, "GET") == 0 && contains(url, "/fapi/v1/exchangeInfo?symbol=BTCUSDT"))
+                return http::HttpResponse{200, exchange_info_for("BTCUSDT")};
+            if (std::strcmp(method, "PUT") == 0 && contains(url, "/fapi/v1/order?"))
+                return http::HttpResponse{400, R"({"code":-2022,"msg":"ReduceOnly Order is rejected."})"};
+            return http::HttpResponse{404, ""};
+        });
+
+        Order replacement = make_order(9102);
+        replacement.reduce_only = true;
+        EXPECT_EQ(c.replace_order(9101, replacement), ConnectorResult::ERROR_INVALID_ORDER);
+        EXPECT_NE(c.venue_order_map().get(9101), nullptr);
+        EXPECT_EQ(c.venue_order_map().get(9102), nullptr);
+    }
 }
 
 } 

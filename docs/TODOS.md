@@ -46,7 +46,7 @@
     - Funding-aware sizing path is configurable via `config/` and covered by unit tests.
     - Rejections expose stable reason codes for observability.
 
-- [ ] **FUT-BN-6: Connector failure-injection + live contract tests for futures**
+- [x] **FUT-BN-6: Connector failure-injection + live contract tests for futures**
   - Scope: mirror existing connector tests for futures endpoints and error taxonomy (auth, rate limit, timestamp skew, reduce-only violation).
   - Acceptance criteria:
     - New futures test suite validates operation state invariants in failure paths.

@@ -1,0 +1,34 @@
+[
+  {
+    "id": 1,
+    "class": "auth",
+    "status": 401,
+    "body": "{\"code\":-2015,\"msg\":\"Invalid API-key, IP, or permissions for action.\"}",
+    "expected": "AUTH_FAILED",
+    "expected_attempts": 1
+  },
+  {
+    "id": 2,
+    "class": "rate_limit",
+    "status": 429,
+    "body": "{\"code\":-1003,\"msg\":\"Too many requests.\"}",
+    "expected": "ERROR_RATE_LIMIT",
+    "expected_attempts": 3
+  },
+  {
+    "id": 3,
+    "class": "timestamp_skew",
+    "status": 400,
+    "body": "{\"code\":-1021,\"msg\":\"Timestamp for this request is outside of the recvWindow.\"}",
+    "expected": "ERROR_REST_FAILURE",
+    "expected_attempts": 3
+  },
+  {
+    "id": 4,
+    "class": "reduce_only_violation",
+    "status": 400,
+    "body": "{\"code\":-2022,\"msg\":\"ReduceOnly Order is rejected.\"}",
+    "expected": "ERROR_INVALID_ORDER",
+    "expected_attempts": 1
+  }
+]
