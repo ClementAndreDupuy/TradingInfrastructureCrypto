@@ -2,7 +2,24 @@
 
 #include "../common/connectors/live_connector_base.hpp"
 
+#include <unordered_map>
+
 namespace trading {
+    struct BinanceFuturesSymbolFilters {
+        bool valid = false;
+        double min_price = 0.0;
+        double max_price = 0.0;
+        double tick_size = 0.0;
+        double min_qty = 0.0;
+        double max_qty = 0.0;
+        double step_size = 0.0;
+        double min_market_qty = 0.0;
+        double max_market_qty = 0.0;
+        double market_step_size = 0.0;
+        double min_notional = 0.0;
+        double trigger_protect = 0.0;
+    };
+
     class BinanceFuturesConnector : public LiveConnectorBase {
     public:
         BinanceFuturesConnector(const std::string &api_key, const std::string &api_secret,
@@ -11,6 +28,7 @@ namespace trading {
             : LiveConnectorBase(Exchange::BINANCE, api_key, api_secret, api_url, retry_policy, ""),
               recv_window_ms_(recv_window_ms) {
         }
+        ConnectorResult connect() override;
 
     protected:
         ConnectorResult submit_to_venue(const Order &order, const std::string &idempotency_key,
@@ -23,6 +41,9 @@ namespace trading {
         ConnectorResult fetch_reconciliation_snapshot(ReconciliationSnapshot &snapshot) override;
 
     private:
+        ConnectorResult get_symbol_filters(const std::string &symbol, BinanceFuturesSymbolFilters &filters);
+
         uint32_t recv_window_ms_;
+        std::unordered_map<std::string, BinanceFuturesSymbolFilters> symbol_filters_;
     };
 }
