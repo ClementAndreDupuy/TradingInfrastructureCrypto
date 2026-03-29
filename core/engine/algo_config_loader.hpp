@@ -36,6 +36,12 @@ namespace trading {
         std::vector<FuturesLeverageCap> leverage_caps;
     };
 
+    enum class StrategyMode : uint8_t {
+        UNKNOWN = 0,
+        SPOT_ONLY = 1,
+        FUTURES_ONLY = 2,
+    };
+
     struct EngineConfig {
         int reconnect_interval_secs;
         int reconciliation_interval_secs;
@@ -57,6 +63,7 @@ namespace trading {
         std::string shadow_log_path;
         int retry_max_attempts;
         int retry_backoff_ms;
+        StrategyMode strategy_mode = StrategyMode::UNKNOWN;
         BinanceFuturesRuntimeConfig binance_futures;
     };
 
@@ -111,6 +118,7 @@ namespace trading {
             apply_double(values, "min_entry_signal_bps", out.min_entry_signal_bps);
             apply_double(values, "alpha_exit_buffer_bps", out.alpha_exit_buffer_bps);
             apply_double(values, "negative_reversal_signal_bps", out.negative_reversal_signal_bps);
+            apply_double(values, "deadband_signal_bps", out.deadband_signal_bps);
             apply_double(values, "max_risk_score", out.max_risk_score);
             apply_double(values, "shock_enter_threshold", out.shock_enter_threshold);
             apply_double(values, "shock_exit_threshold", out.shock_exit_threshold);
@@ -118,6 +126,8 @@ namespace trading {
             apply_double(values, "illiquid_exit_threshold", out.illiquid_exit_threshold);
             apply_int(values, "regime_persistence_ticks", out.regime_persistence_ticks);
             apply_int64(values, "stale_inventory_ms", out.stale_inventory_ms);
+            apply_int64(values, "stale_signal_ms", out.stale_signal_ms);
+            apply_double(values, "max_basis_divergence_bps", out.max_basis_divergence_bps);
             apply_double(values, "stale_inventory_alpha_hold_bps",
                          out.stale_inventory_alpha_hold_bps);
             apply_double(values, "health_reduce_ratio", out.health_reduce_ratio);
@@ -191,6 +201,7 @@ namespace trading {
             apply_string(values, "shadow_log_path", out.shadow_log_path);
             apply_int(values, "retry_max_attempts", out.retry_max_attempts);
             apply_int(values, "retry_backoff_ms", out.retry_backoff_ms);
+            apply_strategy_mode(values, "strategy_mode", out.strategy_mode);
             apply_bool(values, "binance_futures_enabled", out.binance_futures.enabled);
             apply_string(values, "binance_futures_rest_url", out.binance_futures.rest_url);
             apply_uint32(values, "binance_futures_recv_window_ms",
@@ -309,6 +320,28 @@ namespace trading {
                 field = static_cast<uint32_t>(parsed);
             } catch (...) {
             }
+        }
+
+        static void apply_strategy_mode(const ValueMap &values, const char *key, StrategyMode &field) {
+            auto it = values.find(key);
+            if (it == values.end())
+                return;
+            const std::string value = to_lower(it->second);
+            if (value == "spot_only") {
+                field = StrategyMode::SPOT_ONLY;
+                return;
+            }
+            if (value == "futures_only") {
+                field = StrategyMode::FUTURES_ONLY;
+                return;
+            }
+            field = StrategyMode::UNKNOWN;
+        }
+
+        static std::string to_lower(std::string value) {
+            for (char &ch: value)
+                ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+            return value;
         }
 
         static void apply_bool(const ValueMap &values, const char *key, bool &field) {

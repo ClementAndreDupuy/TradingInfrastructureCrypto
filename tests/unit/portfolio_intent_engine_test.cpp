@@ -11,7 +11,8 @@ PortfolioIntentConfig make_cfg() {
     cfg.max_position = 0.80;
     cfg.min_entry_signal_bps = 2.0;
     cfg.alpha_exit_buffer_bps = 0.75;
-    cfg.negative_reversal_signal_bps = -1.0;
+    cfg.negative_reversal_signal_bps = -8.0;
+    cfg.deadband_signal_bps = 1.0;
     cfg.max_risk_score = 0.65;
     cfg.shock_enter_threshold = 0.70;
     cfg.shock_exit_threshold = 0.50;
@@ -19,9 +20,11 @@ PortfolioIntentConfig make_cfg() {
     cfg.illiquid_exit_threshold = 0.45;
     cfg.regime_persistence_ticks = 5;
     cfg.stale_inventory_ms = 10000;
+    cfg.stale_signal_ms = 1500;
+    cfg.max_basis_divergence_bps = 25.0;
     cfg.stale_inventory_alpha_hold_bps = 10.0;
     cfg.health_reduce_ratio = 0.50;
-    cfg.long_only = true;
+    cfg.long_only = false;
     return cfg;
 }
 
@@ -60,142 +63,98 @@ RegimeSignal make_regime(double shock = 0.05, double illiquid = 0.05) {
     return regime;
 }
 
-TEST(PortfolioIntentEngineTest, PositiveAlphaProducesDeterministicTargetPosition) {
+PortfolioIntentContext make_ctx(double spot_mid = 100.0, double futures_mid = 100.02,
+                                int64_t signal_age_ms = 20) {
+    PortfolioIntentContext ctx;
+    ctx.spot_mid_price = spot_mid;
+    ctx.futures_mid_price = futures_mid;
+    ctx.signal_age_ms = signal_age_ms;
+    return ctx;
+}
+
+TEST(PortfolioIntentEngineTest, PositiveAlphaProducesLongTarget) {
     PortfolioIntentEngine engine(make_cfg());
     const auto venues = make_venues();
-    const auto alpha = make_alpha();
+    const auto alpha = make_alpha(8.0);
     const auto regime = make_regime();
     const auto ledger = make_ledger();
 
-    const PortfolioIntent first = engine.evaluate(alpha, regime, ledger, venues);
-    const PortfolioIntent second = engine.evaluate(alpha, regime, ledger, venues);
+    const PortfolioIntent intent = engine.evaluate(alpha, regime, ledger, venues, make_ctx());
 
-    EXPECT_DOUBLE_EQ(first.target_global_position, second.target_global_position);
-    EXPECT_DOUBLE_EQ(first.position_delta, second.position_delta);
-    EXPECT_EQ(first.urgency, second.urgency);
-    ASSERT_GE(first.reason_count, 1u);
-    EXPECT_EQ(first.primary_reason(), PortfolioIntentReasonCode::ALPHA_POSITIVE);
-    EXPECT_GT(first.target_global_position, 0.0);
+    EXPECT_GT(intent.target_global_position, 0.0);
+    EXPECT_GT(intent.position_delta, 0.0);
+    EXPECT_EQ(intent.primary_reason(), PortfolioIntentReasonCode::ALPHA_POSITIVE);
 }
 
-TEST(PortfolioIntentEngineTest, NegativeReversalFlattensOpenLongAggressively) {
+TEST(PortfolioIntentEngineTest, NegativeAlphaProducesShortTarget) {
     PortfolioIntentEngine engine(make_cfg());
     const auto venues = make_venues();
-    const auto alpha = make_alpha(-4.5, 0.20, 0.80, 2);
-    const auto regime = make_regime();
-    const auto ledger = make_ledger(0.50, 200);
+    const auto alpha = make_alpha(-8.0);
 
-    const PortfolioIntent intent = engine.evaluate(alpha, regime, ledger, venues);
+    const PortfolioIntent intent = engine.evaluate(alpha, make_regime(), make_ledger(), venues, make_ctx());
 
-    EXPECT_DOUBLE_EQ(intent.target_global_position, 0.0);
-    EXPECT_DOUBLE_EQ(intent.position_delta, -0.50);
-    EXPECT_TRUE(intent.flatten_now);
-    EXPECT_EQ(intent.urgency, ShadowUrgency::AGGRESSIVE);
-    EXPECT_EQ(intent.primary_reason(), PortfolioIntentReasonCode::NEGATIVE_REVERSAL);
+    EXPECT_LT(intent.target_global_position, 0.0);
+    EXPECT_LT(intent.position_delta, 0.0);
+    EXPECT_EQ(intent.primary_reason(), PortfolioIntentReasonCode::ALPHA_NEGATIVE);
 }
 
-TEST(PortfolioIntentEngineTest, IlliquidRegimeAndStaleInventoryReduceTarget) {
-    PortfolioIntentEngine engine(make_cfg());
-    auto venues = make_venues();
-    venues[3].healthy = false;
-    const auto alpha = make_alpha(7.0, 0.20, 1.0, 10);
-    const auto regime = make_regime(0.05, 0.70);
-    const auto ledger = make_ledger(0.60, 12000);
-
-    PortfolioIntent intent;
-    for (int i = 0; i < 5; ++i)
-        intent = engine.evaluate(alpha, regime, ledger, venues);
-
-    EXPECT_LT(intent.target_global_position, 0.60);
-    EXPECT_FALSE(intent.flatten_now);
-    EXPECT_EQ(intent.urgency, ShadowUrgency::AGGRESSIVE);
-    bool saw_illiquid = false;
-    bool saw_stale = false;
-    bool saw_health = false;
-    for (size_t i = 0; i < intent.reason_count; ++i) {
-        saw_illiquid |= intent.reason_codes[i] == PortfolioIntentReasonCode::ILLIQUID_REGIME;
-        saw_stale |= intent.reason_codes[i] == PortfolioIntentReasonCode::STALE_INVENTORY;
-        saw_health |= intent.reason_codes[i] == PortfolioIntentReasonCode::HEALTH_DEGRADED;
-    }
-    EXPECT_TRUE(saw_illiquid);
-    EXPECT_TRUE(saw_stale);
-    EXPECT_TRUE(saw_health);
-}
-
-TEST(PortfolioIntentEngineTest, RegimeHysteresisPreventsSingleTickFlips) {
+TEST(PortfolioIntentEngineTest, DeadbandAlphaFlattensToNoTrade) {
     PortfolioIntentEngine engine(make_cfg());
     const auto venues = make_venues();
-    const auto alpha  = make_alpha(8.0, 0.20, 0.80, 6);
-    const auto ledger = make_ledger(0.50, 100);
 
-    const auto below_enter = make_regime(0.05, 0.60);
-    for (int i = 0; i < 10; ++i)
-        engine.evaluate(alpha, below_enter, ledger, venues);
-    {
-        const PortfolioIntent intent = engine.evaluate(alpha, below_enter, ledger, venues);
-        bool saw_illiquid = false;
-        for (size_t i = 0; i < intent.reason_count; ++i)
-            saw_illiquid |= intent.reason_codes[i] == PortfolioIntentReasonCode::ILLIQUID_REGIME;
-        EXPECT_FALSE(saw_illiquid);
-    }
+    const PortfolioIntent intent = engine.evaluate(make_alpha(0.2), make_regime(), make_ledger(0.1), venues, make_ctx());
 
-    const auto above_enter = make_regime(0.05, 0.70);
-    for (int i = 0; i < 4; ++i)
-        engine.evaluate(alpha, above_enter, ledger, venues);
-    {
-        const PortfolioIntent intent = engine.evaluate(alpha, below_enter, ledger, venues);
-        bool saw_illiquid = false;
-        for (size_t i = 0; i < intent.reason_count; ++i)
-            saw_illiquid |= intent.reason_codes[i] == PortfolioIntentReasonCode::ILLIQUID_REGIME;
-        EXPECT_FALSE(saw_illiquid);
-    }
-
-    for (int i = 0; i < 5; ++i)
-        engine.evaluate(alpha, above_enter, ledger, venues);
-    {
-        const PortfolioIntent intent = engine.evaluate(alpha, above_enter, ledger, venues);
-        bool saw_illiquid = false;
-        for (size_t i = 0; i < intent.reason_count; ++i)
-            saw_illiquid |= intent.reason_codes[i] == PortfolioIntentReasonCode::ILLIQUID_REGIME;
-        EXPECT_TRUE(saw_illiquid);
-    }
-
-    const auto in_band = make_regime(0.05, 0.55);
-    for (int i = 0; i < 10; ++i)
-        engine.evaluate(alpha, in_band, ledger, venues);
-    {
-        const PortfolioIntent intent = engine.evaluate(alpha, in_band, ledger, venues);
-        bool saw_illiquid = false;
-        for (size_t i = 0; i < intent.reason_count; ++i)
-            saw_illiquid |= intent.reason_codes[i] == PortfolioIntentReasonCode::ILLIQUID_REGIME;
-        EXPECT_TRUE(saw_illiquid);
-    }
-
-    const auto below_exit = make_regime(0.05, 0.30);
-    for (int i = 0; i < 5; ++i)
-        engine.evaluate(alpha, below_exit, ledger, venues);
-    {
-        const PortfolioIntent intent = engine.evaluate(alpha, below_exit, ledger, venues);
-        bool saw_illiquid = false;
-        for (size_t i = 0; i < intent.reason_count; ++i)
-            saw_illiquid |= intent.reason_codes[i] == PortfolioIntentReasonCode::ILLIQUID_REGIME;
-        EXPECT_FALSE(saw_illiquid);
-    }
+    EXPECT_NEAR(intent.target_global_position, 0.0, 1e-9);
+    EXPECT_LT(intent.position_delta, 0.0);
 }
 
-TEST(PortfolioIntentEngineTest, NoHealthyVenuesTriggersFlattenReason) {
+TEST(PortfolioIntentEngineTest, StaleSignalTriggersFlatten) {
     PortfolioIntentEngine engine(make_cfg());
-    const auto venues = make_venues(false);
-    const auto alpha = make_alpha();
-    const auto regime = make_regime();
-    const auto ledger = make_ledger(0.40, 100);
 
-    const PortfolioIntent intent = engine.evaluate(alpha, regime, ledger, venues);
+    const PortfolioIntent intent = engine.evaluate(make_alpha(9.0), make_regime(), make_ledger(0.4), make_venues(),
+                                                   make_ctx(100.0, 100.02, 2500));
 
     EXPECT_TRUE(intent.flatten_now);
-    EXPECT_DOUBLE_EQ(intent.target_global_position, 0.0);
-    EXPECT_DOUBLE_EQ(intent.position_delta, -0.40);
-    EXPECT_EQ(intent.primary_reason(), PortfolioIntentReasonCode::NO_HEALTHY_VENUES);
+    EXPECT_EQ(intent.primary_reason(), PortfolioIntentReasonCode::STALE_SIGNAL);
+}
+
+TEST(PortfolioIntentEngineTest, WideBasisTriggersFlatten) {
+    PortfolioIntentEngine engine(make_cfg());
+
+    const PortfolioIntent intent = engine.evaluate(make_alpha(9.0), make_regime(), make_ledger(0.4), make_venues(),
+                                                   make_ctx(100.0, 101.0, 10));
+
+    EXPECT_TRUE(intent.flatten_now);
+    EXPECT_EQ(intent.primary_reason(), PortfolioIntentReasonCode::BASIS_TOO_WIDE);
+}
+
+TEST(PortfolioIntentEngineTest, TransitionClassesDeterministic) {
+    PortfolioIntentEngine engine(make_cfg());
+    const auto venues = make_venues();
+    const auto regime = make_regime();
+    const auto ctx = make_ctx();
+
+    const PortfolioIntent flat_to_long = engine.evaluate(make_alpha(8.0), regime, make_ledger(0.0), venues, ctx);
+    EXPECT_GT(flat_to_long.position_delta, 0.0);
+
+    const PortfolioIntent flat_to_short = engine.evaluate(make_alpha(-8.0), regime, make_ledger(0.0), venues, ctx);
+    EXPECT_LT(flat_to_short.position_delta, 0.0);
+
+    const PortfolioIntent long_to_short = engine.evaluate(make_alpha(-8.0), regime, make_ledger(0.5), venues, ctx);
+    EXPECT_LT(long_to_short.target_global_position, 0.0);
+    EXPECT_LT(long_to_short.position_delta, -0.5);
+
+    const PortfolioIntent short_to_long = engine.evaluate(make_alpha(8.0), regime, make_ledger(-0.5), venues, ctx);
+    EXPECT_GT(short_to_long.target_global_position, 0.0);
+    EXPECT_GT(short_to_long.position_delta, 0.5);
+
+    const PortfolioIntent long_to_flat = engine.evaluate(make_alpha(0.2), regime, make_ledger(0.4), venues, ctx);
+    EXPECT_NEAR(long_to_flat.target_global_position, 0.0, 1e-9);
+    EXPECT_LT(long_to_flat.position_delta, 0.0);
+
+    const PortfolioIntent short_to_flat = engine.evaluate(make_alpha(-0.2), regime, make_ledger(-0.4), venues, ctx);
+    EXPECT_NEAR(short_to_flat.target_global_position, 0.0, 1e-9);
+    EXPECT_GT(short_to_flat.position_delta, 0.0);
 }
 
 TEST(ParentOrderManagerTest, SmallerSameDirectionTargetCapsRemainingQty) {

@@ -1,3 +1,4 @@
+strategy_mode: spot_only
 reconnect_interval_secs: 1
 reconciliation_interval_secs: 30
 portfolio_log_heartbeat_secs: 180
@@ -26,3 +27,9 @@ shadow_latency_jitter_ns: 50000
 shadow_impact_slippage_per_notional_bps: 0.8
 shadow_queue_match_fraction_per_check: 0.35
 shadow_log_path: shadow_decisions.jsonl
+
+binance_futures_enabled: false
+binance_futures_rest_url: https://fapi.binance.com
+binance_futures_recv_window_ms: 5000
+binance_futures_hedge_mode: false
+binance_futures_default_leverage_cap: 5.0

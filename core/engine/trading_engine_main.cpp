@@ -95,6 +95,18 @@ namespace {
 
     void stop_handler(int) { g_running.store(false, std::memory_order_release); }
 
+    auto strategy_mode_to_string(trading::StrategyMode mode) -> const char * {
+        switch (mode) {
+            case trading::StrategyMode::SPOT_ONLY:
+                return "spot_only";
+            case trading::StrategyMode::FUTURES_ONLY:
+                return "futures_only";
+            case trading::StrategyMode::UNKNOWN:
+            default:
+                return "unknown";
+        }
+    }
+
     void setup_signal_handlers() {
         std::signal(SIGINT, stop_handler);
         std::signal(SIGTERM, stop_handler);
@@ -348,10 +360,18 @@ auto main(int argc, char **argv) -> int {
             return 2;
         }
 
+        if (engine_cfg.strategy_mode == StrategyMode::UNKNOWN) {
+            LOG_ERROR("Engine config missing valid strategy_mode", "required_values",
+                      "spot_only,futures_only");
+            return 2;
+        }
+        const bool futures_only_mode = engine_cfg.strategy_mode == StrategyMode::FUTURES_ONLY;
+        const bool spot_only_mode = engine_cfg.strategy_mode == StrategyMode::SPOT_ONLY;
+
         const bool run_binance = has_venue(opts.venues, "BINANCE");
-        const bool run_kraken = has_venue(opts.venues, "KRAKEN");
-        const bool run_okx = has_venue(opts.venues, "OKX");
-        const bool run_coinbase = has_venue(opts.venues, "COINBASE");
+        const bool run_kraken = has_venue(opts.venues, "KRAKEN") && spot_only_mode;
+        const bool run_okx = has_venue(opts.venues, "OKX") && spot_only_mode;
+        const bool run_coinbase = has_venue(opts.venues, "COINBASE") && spot_only_mode;
 
         BinanceFeedHandler binance_feed(opts.symbol, engine_cfg.binance_rest_url,
                                         engine_cfg.binance_ws_url);
@@ -437,7 +457,13 @@ auto main(int argc, char **argv) -> int {
             log_loaded_credential("COINBASE", "api_secret", coinbase_api_secret);
         }
 
-        const bool binance_futures_enabled = engine_cfg.binance_futures.enabled;
+        const bool binance_futures_enabled = engine_cfg.binance_futures.enabled && futures_only_mode;
+        if (futures_only_mode && !engine_cfg.binance_futures.enabled) {
+            LOG_ERROR("Futures-only mode requires futures connector enabled", "strategy_mode",
+                      strategy_mode_to_string(engine_cfg.strategy_mode));
+            return 2;
+        }
+
         if (binance_futures_enabled) {
             if (engine_cfg.binance_futures.rest_url.empty()) {
                 LOG_ERROR("Binance futures runtime config invalid", "key",
@@ -616,7 +642,11 @@ auto main(int argc, char **argv) -> int {
         auto last_venue_quality_log = std::chrono::steady_clock::time_point{};
 
         LOG_INFO("trading_engine started", "mode", opts.mode.c_str(), "venues", opts.venues.c_str(),
-                 "symbol", opts.symbol.c_str());
+                 "symbol", opts.symbol.c_str(), "strategy_mode",
+                 strategy_mode_to_string(engine_cfg.strategy_mode));
+        LOG_INFO("strategy mode audit", "event", "startup_config", "strategy_mode",
+                 strategy_mode_to_string(engine_cfg.strategy_mode), "transition_requires_restart", 1,
+                 "alpha_source", "spot", "execution_target", futures_only_mode ? "futures" : "spot");
 
         bool kill_switch_cancel_issued = false;
         const auto issue_kill_switch_cancels = [&]() {
@@ -709,7 +739,24 @@ auto main(int argc, char **argv) -> int {
                     }
 
                     ConnectorResult res = ConnectorResult::ERROR_UNKNOWN;
-                    if (opts.mode == "shadow") {
+                    if (futures_only_mode) {
+                        child_order.exchange = Exchange::BINANCE;
+                        child_order.futures_position_mode = engine_cfg.binance_futures.hedge_mode
+                                                                 ? FuturesPositionMode::HEDGE
+                                                                 : FuturesPositionMode::ONE_WAY;
+                        child_order.futures_position_side =
+                                side == Side::BID ? FuturesPositionSide::LONG : FuturesPositionSide::SHORT;
+                        const bool reducing_position =
+                                (portfolio_snapshot.global_position > 0.0 && side == Side::ASK && intent_metadata.target_position >= 0.0) ||
+                                (portfolio_snapshot.global_position < 0.0 && side == Side::BID && intent_metadata.target_position <= 0.0);
+                        child_order.reduce_only = reducing_position;
+                        if (opts.mode == "shadow") {
+                            shadow_engine.binance_connector().set_intent_metadata(intent_metadata);
+                            res = shadow_engine.binance_connector().submit_order(child_order);
+                        } else {
+                            res = binance_futures.submit_order(child_order);
+                        }
+                    } else if (opts.mode == "shadow") {
                         switch (child.exchange) {
                             case Exchange::BINANCE:
                                 shadow_engine.binance_connector().set_intent_metadata(intent_metadata);
@@ -815,8 +862,17 @@ auto main(int argc, char **argv) -> int {
                 portfolio_snapshot.global_position = shadow_engine.net_position();
                 portfolio_snapshot.oldest_inventory_age_ms = shadow_engine.inventory_age_ms();
             }
+            const int64_t now_epoch_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            PortfolioIntentContext intent_ctx;
+            intent_ctx.spot_mid_price = binance_book.mid_price();
+            intent_ctx.futures_mid_price = futures_only_mode ? binance_book.mid_price() : 0.0;
+            intent_ctx.signal_age_ms = alpha_signal.ts_ns > 0 && now_epoch_ns > alpha_signal.ts_ns
+                                            ? (now_epoch_ns - alpha_signal.ts_ns) / 1000000
+                                            : 0;
             const PortfolioIntent intent =
-                    intent_engine.evaluate(alpha_signal, regime_signal, portfolio_snapshot, bid_quotes);
+                    intent_engine.evaluate(alpha_signal, regime_signal, portfolio_snapshot, bid_quotes,
+                                           intent_ctx);
             const ShadowIntentMetadata intent_metadata =
                     build_intent_metadata(alpha_signal, portfolio_snapshot.global_position, intent);
             const std::string reason_codes = join_reason_codes(intent);
@@ -864,7 +920,8 @@ auto main(int argc, char **argv) -> int {
                          "enabled_venues", static_cast<unsigned long long>(log_enabled_venues),
                          "current_position", portfolio_snapshot.global_position, "target_position",
                          intent.target_global_position, "position_delta", intent.position_delta,
-                         "expected_cost_bps", intent.expected_cost_bps, "max_shortfall_bps",
+                         "expected_cost_bps", intent.expected_cost_bps, "basis_slippage_bps",
+                         intent.basis_slippage_bps, "alpha_edge_bps", intent.alpha_edge_bps, "max_shortfall_bps",
                          intent.max_shortfall_bps, "flatten_now", intent.flatten_now ? 1 : 0,
                          "urgency", static_cast<int>(intent.urgency));
             }

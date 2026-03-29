@@ -61,14 +61,14 @@
     - Startup validation fails fast on missing futures credentials/config keys.
 
 
-- [ ] **FUT-BN-11: Validate spot-orderbook alpha execution on futures (basis + latency controls)**
+- [x] **FUT-BN-11: Validate spot-orderbook alpha execution on futures (basis + latency controls)**
   - Scope: support strategy mode where alpha is derived from spot L2/trade-flow signals while execution occurs on Binance perpetual futures.
   - Acceptance criteria:
     - Signal pipeline explicitly tags source venue/instrument (`spot`) and execution venue/instrument (`futures`) for every decision.
     - Pre-trade guardrails bound allowable spot-perp basis divergence and stale-signal latency before submitting futures orders.
     - Backtest/replay shows PnL attribution split between alpha edge and basis slippage, with fail-safe downgrade when basis regime breaks.
 
-- [ ] **FUT-BN-12: Runtime strategy-mode switch (spot-only portfolio vs futures-only long/short)**
+- [x] **FUT-BN-12: Runtime strategy-mode switch (spot-only portfolio vs futures-only long/short)**
   - Scope: add explicit runtime mode selection so the engine can run either (A) spot-only portfolio management flow or (B) futures-only long/short flow, with no mixed execution in a single mode.
   - Acceptance criteria:
     - Startup config supports a single required enum mode: `spot_only` or `futures_only`.
@@ -76,7 +76,7 @@
     - In `futures_only`, spot execution paths are disabled and futures position/risk checks (long/short, leverage, margin) are mandatory.
     - Mode transitions require controlled restart and emit an auditable configuration event.
 
-- [ ] **FUT-BN-13: Portfolio intent engine futures long/short mapping from alpha**
+- [x] **FUT-BN-13: Portfolio intent engine futures long/short mapping from alpha**
   - Scope: extend `PortfolioIntentEngine`/strategy intent generation so alpha sign and confidence map deterministically to futures long/short/flat targets per symbol, including reduce/flip behavior for existing exposure.
   - Detailed flow (alpha read -> target position):
     1. Read normalized alpha (`signal_bps`, `size_fraction`, `risk_score`) and current position state (qty, side, leverage headroom, margin mode, health flags).
