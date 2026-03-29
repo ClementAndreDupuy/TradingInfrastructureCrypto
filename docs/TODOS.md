@@ -31,7 +31,7 @@
 
 ### HIGH
 
-- [ ] **RISK-ACC-1: Venue-aware capital accounting + live session PnL ledger**
+- [x] **RISK-ACC-1: Venue-aware capital accounting + live session PnL ledger**
   - Scope: add per-venue starting equity configuration, wire reconciled free balances into pre-trade affordability checks, and produce live-mode end-of-session PnL/equity summary aligned with shadow metrics schema.
   - Acceptance criteria:
     - Runtime config supports per-venue starting equity and minimum free-collateral buffers for BINANCE/KRAKEN/OKX/COINBASE.

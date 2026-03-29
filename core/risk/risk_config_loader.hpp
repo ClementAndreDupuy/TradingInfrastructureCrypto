@@ -14,6 +14,11 @@
 
 namespace trading {
     struct RiskRuntimeConfig {
+        struct VenueCapitalConfig {
+            double starting_equity_usd = 0.0;
+            double min_free_collateral_buffer_usd = 0.0;
+        };
+
         CircuitBreakerConfig circuit_breaker;
         GlobalRiskConfig global_risk;
         FuturesRiskGateConfig futures_risk;
@@ -24,6 +29,7 @@ namespace trading {
         double kraken_taker_fee_bps = 10.0;
         double okx_taker_fee_bps = 8.0;
         double coinbase_taker_fee_bps = 6.0;
+        std::array<VenueCapitalConfig, 4> venue_capital{};
     };
 
     class RiskConfigLoader {
@@ -140,10 +146,43 @@ namespace trading {
             apply_double(values, "coinbase_taker", out.coinbase_taker_fee_bps);
             apply_double(values, "COINBASE", out.coinbase_taker_fee_bps);
 
+            apply_double(values, "capital_start_equity_usd_BINANCE",
+                         out.venue_capital[venue_index(Exchange::BINANCE)].starting_equity_usd);
+            apply_double(values, "capital_start_equity_usd_KRAKEN",
+                         out.venue_capital[venue_index(Exchange::KRAKEN)].starting_equity_usd);
+            apply_double(values, "capital_start_equity_usd_OKX",
+                         out.venue_capital[venue_index(Exchange::OKX)].starting_equity_usd);
+            apply_double(values, "capital_start_equity_usd_COINBASE",
+                         out.venue_capital[venue_index(Exchange::COINBASE)].starting_equity_usd);
+
+            apply_double(values, "capital_min_free_collateral_usd_BINANCE",
+                         out.venue_capital[venue_index(Exchange::BINANCE)].min_free_collateral_buffer_usd);
+            apply_double(values, "capital_min_free_collateral_usd_KRAKEN",
+                         out.venue_capital[venue_index(Exchange::KRAKEN)].min_free_collateral_buffer_usd);
+            apply_double(values, "capital_min_free_collateral_usd_OKX",
+                         out.venue_capital[venue_index(Exchange::OKX)].min_free_collateral_buffer_usd);
+            apply_double(values, "capital_min_free_collateral_usd_COINBASE",
+                         out.venue_capital[venue_index(Exchange::COINBASE)].min_free_collateral_buffer_usd);
+
             return true;
         }
 
     private:
+        static size_t venue_index(Exchange exchange) {
+            switch (exchange) {
+                case Exchange::BINANCE:
+                    return 0;
+                case Exchange::OKX:
+                    return 1;
+                case Exchange::COINBASE:
+                    return 2;
+                case Exchange::KRAKEN:
+                    return 3;
+                default:
+                    return 0;
+            }
+        }
+
         static std::vector<std::string> candidate_paths(const std::string &path) {
             if (path.empty() || path[0] == '/')
                 return {path};
