@@ -12,10 +12,11 @@
 #include <string_view>
 
 namespace trading {
-    struct LiveSessionVenueMetrics {
-        Exchange exchange = Exchange::UNKNOWN;
-        double start_equity = 0.0;
-        double end_equity = 0.0;
+        struct LiveSessionVenueMetrics {
+            Exchange exchange = Exchange::UNKNOWN;
+            bool configured = false;
+            double start_equity = 0.0;
+            double end_equity = 0.0;
         double realized_pnl = 0.0;
         double unrealized_pnl = 0.0;
         double fees = 0.0;
@@ -50,8 +51,11 @@ namespace trading {
         void configure_venue(Exchange exchange, double start_equity,
                              double min_free_collateral_buffer) noexcept {
             VenueState &state = venues_[venue_index(exchange)];
+            state.metrics.configured = true;
             state.metrics.start_equity = std::max(0.0, start_equity);
+            state.metrics.end_equity = state.metrics.start_equity;
             state.metrics.min_free_collateral_buffer = std::max(0.0, min_free_collateral_buffer);
+            update_derived(state.metrics);
         }
 
         void ingest_reconciliation(Exchange exchange, const ReconciliationSnapshot &snapshot,
@@ -72,6 +76,8 @@ namespace trading {
                 return false;
 
             const VenueState &state = venues_[venue_index(exchange)];
+            if (!state.metrics.configured)
+                return false;
             const double required_buffer = state.metrics.min_free_collateral_buffer;
             const std::string_view quote_asset = infer_quote_asset(symbol);
             const std::string_view base_asset = infer_base_asset(symbol, quote_asset);
@@ -95,6 +101,8 @@ namespace trading {
                 return false;
 
             const VenueState &state = venues_[venue_index(exchange)];
+            if (!state.metrics.configured)
+                return false;
             const double applied_leverage = std::max(1.0, leverage);
             const double notional = quantity * price;
             const double initial_margin = notional / applied_leverage;
@@ -113,6 +121,8 @@ namespace trading {
         LiveSessionGlobalMetrics global_metrics() const noexcept {
             LiveSessionGlobalMetrics out;
             for (const auto &state: venues_) {
+                if (!state.metrics.configured)
+                    continue;
                 out.start_equity += state.metrics.start_equity;
                 out.end_equity += state.metrics.end_equity;
                 out.unrealized_pnl += state.metrics.unrealized_pnl;

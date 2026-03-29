@@ -139,3 +139,17 @@
     - Research note defines candidate coupling architectures, risk controls, and failure modes.
     - Backtest/replay quantifies whether hedge overlay improves drawdown/variance without degrading core alpha.
     - Output includes go/no-go criteria before any production implementation task is created.
+
+- [ ] **FUT-BN-15: Wire futures risk gates into live submit path**
+  - Scope: use `GlobalRiskControls::commit_futures_order(...)` from `trading_engine_main.cpp` in `futures_only` mode, with a fully populated `FuturesRiskContext` from live connector/account data.
+  - Acceptance criteria:
+    - Futures submit path no longer uses generic `commit_order(...)` when `strategy_mode=futures_only`.
+    - Rejection reason codes for leverage, maintenance margin, mark/index divergence, and projected funding are observable in logs/metrics.
+    - Integration tests validate both hard rejection and funding-aware notional scaling behavior.
+
+- [ ] **FUT-BN-16: Use true futures mid for basis guard in intent engine**
+  - Scope: provide a real futures mid/mark source to `PortfolioIntentContext.futures_mid_price` in futures mode and verify basis divergence gating behavior.
+  - Acceptance criteria:
+    - `futures_mid_price` is sourced from futures market data (not spot fallback).
+    - `max_basis_divergence_bps` trigger behavior is deterministic in unit/integration tests.
+    - Portfolio-intent logs include both spot and futures mid values used in basis computation for auditability.
