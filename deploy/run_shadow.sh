@@ -8,6 +8,8 @@ ENGINE_BIN="${ENGINE_BIN:-$REPO_ROOT/build/bin/trading_engine}"
 ENV_FILE_DEFAULT="$REPO_ROOT/config/shadow/trading.env"
 CONFIG_FILE_DEFAULT="$REPO_ROOT/config/shadow/runtime.yaml"
 PYTHON_BIN="${PYTHON_BIN:-}"
+RUNTIME_MODE_DIR_NAME=""
+RUNTIME_MODE_DIR_PATH=""
 
 timestamp() {
     date -u +"%Y-%m-%dT%H:%M:%SZ"
@@ -40,6 +42,26 @@ read_yaml_value() {
     ' "$file_path"
 }
 
+read_yaml_map_entries() {
+    local file_path="$1"
+    local map_key="$2"
+    awk -v map_key="$map_key" '
+        BEGIN { in_map = 0 }
+        $0 ~ "^[[:space:]]*" map_key ":[[:space:]]*$" { in_map = 1; next }
+        in_map == 1 && $0 ~ "^[^[:space:]]" { in_map = 0 }
+        in_map == 1 && $0 ~ "^[[:space:]]+[A-Za-z0-9_]+:[[:space:]]*" {
+            line = $0
+            gsub(/^[[:space:]]+/, "", line)
+            split(line, parts, ":")
+            key = parts[1]
+            sub(/^[^:]*:[[:space:]]*/, "", line)
+            sub(/[[:space:]]+#.*/, "", line)
+            gsub(/^["\047]|["\047]$/, "", line)
+            print key "=" line
+        }
+    ' "$file_path"
+}
+
 resolve_config_path() {
     local raw_path="$1"
     if [[ "$raw_path" = /* ]]; then
@@ -60,6 +82,7 @@ apply_config_defaults() {
     local train_ticks_from_cfg train_epochs_from_cfg report_interval_from_cfg
     local alpha_seq_len_from_cfg alpha_log_path_from_cfg
     local continuous_train_every_ticks_from_cfg continuous_train_window_ticks_from_cfg
+    local strategy_mode_from_cfg futures_config_from_cfg
 
     local safe_mode_ticks_from_cfg drift_min_samples_from_cfg drift_ic_floor_from_cfg
 
@@ -80,6 +103,8 @@ apply_config_defaults() {
     alpha_log_path_from_cfg="$(read_yaml_value "$CONFIG_FILE" "alpha_log_path")"
     continuous_train_every_ticks_from_cfg="$(read_yaml_value "$CONFIG_FILE" "continuous_train_every_ticks")"
     continuous_train_window_ticks_from_cfg="$(read_yaml_value "$CONFIG_FILE" "continuous_train_window_ticks")"
+    strategy_mode_from_cfg="$(read_yaml_value "$CONFIG_FILE" "strategy_mode")"
+    futures_config_from_cfg="$(read_yaml_value "$CONFIG_FILE" "futures_config")"
 
     safe_mode_ticks_from_cfg="$(read_yaml_value "$CONFIG_FILE" "safe_mode_ticks")"
     drift_min_samples_from_cfg="$(read_yaml_value "$CONFIG_FILE" "drift_min_samples")"
@@ -102,6 +127,8 @@ apply_config_defaults() {
     [[ -n "$alpha_log_path_from_cfg" ]] && ALPHA_LOG_PATH="$(resolve_config_path "$alpha_log_path_from_cfg")"
     [[ -n "$continuous_train_every_ticks_from_cfg" ]] && CONTINUOUS_TRAIN_EVERY_TICKS="$continuous_train_every_ticks_from_cfg"
     [[ -n "$continuous_train_window_ticks_from_cfg" ]] && CONTINUOUS_TRAIN_WINDOW_TICKS="$continuous_train_window_ticks_from_cfg"
+    [[ -n "$strategy_mode_from_cfg" ]] && STRATEGY_MODE="$strategy_mode_from_cfg"
+    [[ -n "$futures_config_from_cfg" ]] && FUTURES_CONFIG="$(resolve_config_path "$futures_config_from_cfg")"
 
     [[ -n "$safe_mode_ticks_from_cfg" ]] && SAFE_MODE_TICKS="$safe_mode_ticks_from_cfg"
     [[ -n "$drift_min_samples_from_cfg" ]] && DRIFT_MIN_SAMPLES="$drift_min_samples_from_cfg"
@@ -134,6 +161,8 @@ Options:
   --report-interval <SEC>       Python shadow summary cadence (default: 60)
   --continuous-train-every-ticks <N>  Ticks between incremental retrains (default: 400)
   --continuous-train-window-ticks <N> Tick window used for each retrain (default: 1000)
+  --strategy-mode <MODE>        Runtime strategy mode: spot_only or futures_only
+  --futures-config <PATH>       Futures runtime YAML path (default: config/shadow/futures.yaml)
   --safe-mode-ticks <N>         Ticks of zeroed signal after a drift/canary event (default: 30)
   --drift-min-samples <N>       Minimum outcomes before DriftGuard can fire (default: 100)
   --drift-ic-floor <FLOAT>      IC floor below which DriftGuard fires (default: -0.08)
@@ -159,6 +188,8 @@ MODEL_PATH_SET=0
 SECONDARY_MODEL_PATH_SET=0
 SKIP_ALPHA=0
 CONFIG_FILE="$CONFIG_FILE_DEFAULT"
+STRATEGY_MODE="${STRATEGY_MODE:-spot_only}"
+FUTURES_CONFIG="${FUTURES_CONFIG:-}"
 EXTRA_ARGS=()
 
 for ((i = 1; i <= $#; i++)); do
@@ -189,6 +220,8 @@ while [[ $# -gt 0 ]]; do
         --report-interval) REPORT_INTERVAL="$2"; shift 2 ;;
         --continuous-train-every-ticks) CONTINUOUS_TRAIN_EVERY_TICKS="$2"; shift 2 ;;
         --continuous-train-window-ticks) CONTINUOUS_TRAIN_WINDOW_TICKS="$2"; shift 2 ;;
+        --strategy-mode) STRATEGY_MODE="$2"; shift 2 ;;
+        --futures-config) FUTURES_CONFIG="$(resolve_config_path "$2")"; shift 2 ;;
         --safe-mode-ticks) SAFE_MODE_TICKS="$2"; shift 2 ;;
         --drift-min-samples) DRIFT_MIN_SAMPLES="$2"; shift 2 ;;
         --drift-ic-floor) DRIFT_IC_FLOOR="$2"; shift 2 ;;
@@ -199,6 +232,15 @@ while [[ $# -gt 0 ]]; do
         *) log_error "Unknown argument: $1"; usage; exit 1 ;;
     esac
 done
+
+if [[ -z "$FUTURES_CONFIG" ]]; then
+    FUTURES_CONFIG="$REPO_ROOT/config/shadow/futures.yaml"
+fi
+
+if [[ "$STRATEGY_MODE" != "spot_only" && "$STRATEGY_MODE" != "futures_only" ]]; then
+    log_error "Invalid strategy_mode=$STRATEGY_MODE (expected spot_only or futures_only)"
+    exit 1
+fi
 
 SYMBOL_TAG="$(echo "$SYMBOL" | tr '[:upper:]' '[:lower:]')"
 if [[ "$MODEL_PATH_SET" -eq 0 ]]; then
@@ -219,12 +261,6 @@ if [[ -f "$ENV_FILE" ]]; then
     log_info "Loading env file: $ENV_FILE"
     # shellcheck disable=SC1090
     source "$ENV_FILE"
-fi
-
-if [[ ! -x "$ENGINE_BIN" ]]; then
-    log_error "Missing trading_engine binary at $ENGINE_BIN"
-    log_info "Build first: mkdir -p build && cd build && cmake .. && make -j\$(nproc)"
-    exit 1
 fi
 
 set_shadow_creds() {
@@ -451,7 +487,112 @@ if [[ " ${VENUE_LIST[*]} " == *" COINBASE "* ]]; then
     unset _cb_key _cb_secret
 fi
 
-engine_args=(--mode shadow --venues "$VENUES" --symbol "$SYMBOL" --loop-interval-ms "$INTERVAL_MS")
+FUTURES_ENABLED="false"
+FUTURES_STRATEGY_MODE=""
+FUTURES_POSITION_MODE=""
+FUTURES_DEFAULT_LEVERAGE=""
+FUTURES_DEADBAND_SIGNAL_BPS=""
+FUTURES_FLIP_ENABLED=""
+FUTURES_FLIP_MIN_ABS_SIGNAL_BPS=""
+FUTURES_LEVERAGE_CAP_ENTRIES=()
+
+if [[ -f "$FUTURES_CONFIG" ]]; then
+    FUTURES_ENABLED="$(read_yaml_value "$FUTURES_CONFIG" "enabled")"
+    FUTURES_STRATEGY_MODE="$(read_yaml_value "$FUTURES_CONFIG" "strategy_mode")"
+    FUTURES_POSITION_MODE="$(read_yaml_value "$FUTURES_CONFIG" "position_mode")"
+    FUTURES_DEFAULT_LEVERAGE="$(read_yaml_value "$FUTURES_CONFIG" "default_leverage")"
+    FUTURES_DEADBAND_SIGNAL_BPS="$(read_yaml_value "$FUTURES_CONFIG" "deadband_signal_bps")"
+    FUTURES_FLIP_ENABLED="$(read_yaml_value "$FUTURES_CONFIG" "flip_enabled")"
+    FUTURES_FLIP_MIN_ABS_SIGNAL_BPS="$(read_yaml_value "$FUTURES_CONFIG" "flip_min_abs_signal_bps")"
+    while IFS= read -r entry; do
+        [[ -n "$entry" ]] && FUTURES_LEVERAGE_CAP_ENTRIES+=("$entry")
+    done < <(read_yaml_map_entries "$FUTURES_CONFIG" "leverage_caps")
+fi
+
+if [[ "$STRATEGY_MODE" == "futures_only" ]]; then
+    if [[ ! -f "$FUTURES_CONFIG" ]]; then
+        log_error "strategy_mode=futures_only requires futures config file: $FUTURES_CONFIG"
+        exit 1
+    fi
+    if [[ "$FUTURES_ENABLED" != "true" ]]; then
+        log_error "strategy_mode=futures_only requires futures enabled=true in $FUTURES_CONFIG"
+        exit 1
+    fi
+    if [[ -z "$FUTURES_DEFAULT_LEVERAGE" ]]; then
+        log_error "strategy_mode=futures_only requires default_leverage in $FUTURES_CONFIG"
+        exit 1
+    fi
+    if [[ "$FUTURES_POSITION_MODE" != "one_way" && "$FUTURES_POSITION_MODE" != "hedge" ]]; then
+        log_error "Invalid futures position_mode=$FUTURES_POSITION_MODE (expected one_way or hedge)"
+        exit 1
+    fi
+    if [[ -n "$FUTURES_STRATEGY_MODE" && "$FUTURES_STRATEGY_MODE" != "$STRATEGY_MODE" ]]; then
+        log_error "futures.yaml strategy_mode=$FUTURES_STRATEGY_MODE does not match runtime strategy_mode=$STRATEGY_MODE"
+        exit 1
+    fi
+    if [[ -z "${BINANCE_API_KEY:-}" || -z "${BINANCE_API_SECRET:-}" ]]; then
+        log_error "strategy_mode=futures_only requires BINANCE_API_KEY and BINANCE_API_SECRET credentials"
+        exit 1
+    fi
+fi
+
+RUNTIME_MODE_DIR_NAME="shadow_runtime_$$"
+RUNTIME_MODE_DIR_PATH="$REPO_ROOT/config/$RUNTIME_MODE_DIR_NAME"
+mkdir -p "$RUNTIME_MODE_DIR_PATH"
+ln -s "$REPO_ROOT/config/shadow/risk.yaml" "$RUNTIME_MODE_DIR_PATH/risk.yaml"
+ln -s "$REPO_ROOT/config/shadow/routing.yaml" "$RUNTIME_MODE_DIR_PATH/routing.yaml"
+ln -s "$REPO_ROOT/config/shadow/venue_quality.yaml" "$RUNTIME_MODE_DIR_PATH/venue_quality.yaml"
+
+ENGINE_BASE_FILE="$REPO_ROOT/config/shadow/engine.yaml"
+ENGINE_RUNTIME_FILE="$RUNTIME_MODE_DIR_PATH/engine.yaml"
+awk -v strategy_mode="$STRATEGY_MODE" -v futures_enabled="$FUTURES_ENABLED" \
+    -v futures_hedge_mode="$([[ "$FUTURES_POSITION_MODE" == "hedge" ]] && echo "true" || echo "false")" \
+    -v futures_default_leverage="$FUTURES_DEFAULT_LEVERAGE" '
+    BEGIN {
+        fs_enabled = (futures_enabled == "" ? "false" : futures_enabled);
+        fs_hedge = (futures_hedge_mode == "" ? "false" : futures_hedge_mode);
+    }
+    /^strategy_mode:/ { print "strategy_mode: " strategy_mode; next }
+    /^binance_futures_enabled:/ { print "binance_futures_enabled: " fs_enabled; next }
+    /^binance_futures_hedge_mode:/ { print "binance_futures_hedge_mode: " fs_hedge; next }
+    /^binance_futures_default_leverage_cap:/ {
+        if (futures_default_leverage != "") {
+            print "binance_futures_default_leverage_cap: " futures_default_leverage;
+            next
+        }
+    }
+    /^binance_futures_leverage_cap_/ { next }
+    { print }
+' "$ENGINE_BASE_FILE" > "$ENGINE_RUNTIME_FILE"
+
+if [[ "${#FUTURES_LEVERAGE_CAP_ENTRIES[@]}" -gt 0 ]]; then
+    for entry in "${FUTURES_LEVERAGE_CAP_ENTRIES[@]}"; do
+        cap_symbol="${entry%%=*}"
+        cap_value="${entry#*=}"
+        if [[ -n "$cap_symbol" && -n "$cap_value" ]]; then
+            echo "binance_futures_leverage_cap_${cap_symbol}: ${cap_value}" >> "$ENGINE_RUNTIME_FILE"
+        fi
+    done
+fi
+
+if [[ -n "$FUTURES_DEADBAND_SIGNAL_BPS" ]]; then
+    PORTFOLIO_BASE_FILE="$REPO_ROOT/config/shadow/portfolio.yaml"
+    PORTFOLIO_RUNTIME_FILE="$RUNTIME_MODE_DIR_PATH/portfolio.yaml"
+    awk -v deadband_signal_bps="$FUTURES_DEADBAND_SIGNAL_BPS" -v strategy_mode="$STRATEGY_MODE" '
+        /^deadband_signal_bps:/ { print "deadband_signal_bps: " deadband_signal_bps; next }
+        /^long_only:/ {
+            if (strategy_mode == "futures_only") {
+                print "long_only: false";
+                next
+            }
+        }
+        { print }
+    ' "$PORTFOLIO_BASE_FILE" > "$PORTFOLIO_RUNTIME_FILE"
+else
+    ln -s "$REPO_ROOT/config/shadow/portfolio.yaml" "$RUNTIME_MODE_DIR_PATH/portfolio.yaml"
+fi
+
+engine_args=(--mode "$RUNTIME_MODE_DIR_NAME" --venues "$VENUES" --symbol "$SYMBOL" --loop-interval-ms "$INTERVAL_MS")
 if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
     engine_args+=("${EXTRA_ARGS[@]}")
 fi
@@ -481,6 +622,9 @@ cleanup() {
     if [[ -n "$PY_PID" ]]; then
         kill "$PY_PID" 2>/dev/null || true
         wait "$PY_PID" 2>/dev/null || true
+    fi
+    if [[ -n "$RUNTIME_MODE_DIR_PATH" && -d "$RUNTIME_MODE_DIR_PATH" ]]; then
+        rm -rf "$RUNTIME_MODE_DIR_PATH"
     fi
     print_shadow_summary
 }
@@ -520,7 +664,14 @@ if [[ "$SKIP_ALPHA" -eq 0 ]]; then
     PY_PID=$!
 fi
 
-log_info "Starting C++ shadow runner symbol=$SYMBOL venues=$VENUES duration=${DURATION_SECS}s interval=${INTERVAL_MS}ms"
+log_info "Resolved startup strategy_mode=$STRATEGY_MODE futures_config=$FUTURES_CONFIG position_mode=${FUTURES_POSITION_MODE:-n/a} flip_enabled=${FUTURES_FLIP_ENABLED:-n/a} flip_min_abs_signal_bps=${FUTURES_FLIP_MIN_ABS_SIGNAL_BPS:-n/a}"
+log_info "Starting C++ shadow runner symbol=$SYMBOL venues=$VENUES duration=${DURATION_SECS}s interval=${INTERVAL_MS}ms runtime_mode_dir=$RUNTIME_MODE_DIR_NAME"
+
+if [[ ! -x "$ENGINE_BIN" ]]; then
+    log_error "Missing trading_engine binary at $ENGINE_BIN"
+    log_info "Build first: mkdir -p build && cd build && cmake .. && make -j\$(nproc)"
+    exit 1
+fi
 
 if [[ "$RUN_ONCE" -eq 1 ]]; then
     DURATION_SECS="$(awk "BEGIN { printf \"%.3f\", ($INTERVAL_MS * 2)/1000 }")"
