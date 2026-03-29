@@ -39,6 +39,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 namespace {
     using namespace trading;
@@ -583,22 +584,35 @@ auto main(int argc, char **argv) -> int {
         VenueQualityModel venue_quality_model(vq_cfg);
         engine::VenueQualityRuntime venue_quality_runtime(venue_quality_model);
         LiveSessionAccounting live_session_accounting;
-        live_session_accounting.configure_venue(
-            Exchange::BINANCE,
-            risk_cfg.venue_capital[0].starting_equity_usd,
-            risk_cfg.venue_capital[0].min_free_collateral_buffer_usd);
-        live_session_accounting.configure_venue(
-            Exchange::OKX,
-            risk_cfg.venue_capital[1].starting_equity_usd,
-            risk_cfg.venue_capital[1].min_free_collateral_buffer_usd);
-        live_session_accounting.configure_venue(
-            Exchange::COINBASE,
-            risk_cfg.venue_capital[2].starting_equity_usd,
-            risk_cfg.venue_capital[2].min_free_collateral_buffer_usd);
-        live_session_accounting.configure_venue(
-            Exchange::KRAKEN,
-            risk_cfg.venue_capital[3].starting_equity_usd,
-            risk_cfg.venue_capital[3].min_free_collateral_buffer_usd);
+        std::vector<Exchange> active_accounting_venues;
+        if (run_binance) {
+            live_session_accounting.configure_venue(
+                Exchange::BINANCE,
+                risk_cfg.venue_capital[0].starting_equity_usd,
+                risk_cfg.venue_capital[0].min_free_collateral_buffer_usd);
+            active_accounting_venues.push_back(Exchange::BINANCE);
+        }
+        if (run_okx) {
+            live_session_accounting.configure_venue(
+                Exchange::OKX,
+                risk_cfg.venue_capital[1].starting_equity_usd,
+                risk_cfg.venue_capital[1].min_free_collateral_buffer_usd);
+            active_accounting_venues.push_back(Exchange::OKX);
+        }
+        if (run_coinbase) {
+            live_session_accounting.configure_venue(
+                Exchange::COINBASE,
+                risk_cfg.venue_capital[2].starting_equity_usd,
+                risk_cfg.venue_capital[2].min_free_collateral_buffer_usd);
+            active_accounting_venues.push_back(Exchange::COINBASE);
+        }
+        if (run_kraken) {
+            live_session_accounting.configure_venue(
+                Exchange::KRAKEN,
+                risk_cfg.venue_capital[3].starting_equity_usd,
+                risk_cfg.venue_capital[3].min_free_collateral_buffer_usd);
+            active_accounting_venues.push_back(Exchange::KRAKEN);
+        }
 
         const auto mid_price_for_exchange = [&](Exchange exchange) -> double {
             switch (exchange) {
@@ -957,7 +971,7 @@ auto main(int argc, char **argv) -> int {
                          "end_equity", global.end_equity, "realized_pnl", global.realized_pnl,
                          "unrealized_pnl", global.unrealized_pnl, "fees", global.fees, "net_pnl",
                          global.net_pnl, "return_pct", global.return_pct);
-                for (Exchange ex: {Exchange::BINANCE, Exchange::KRAKEN, Exchange::OKX, Exchange::COINBASE}) {
+                for (Exchange ex: active_accounting_venues) {
                     const auto venue = live_session_accounting.venue_metrics(ex);
                     LOG_INFO("live session accounting venue", "venue", exchange_to_string(ex),
                              "start_equity", venue.start_equity, "end_equity", venue.end_equity,
@@ -1176,7 +1190,7 @@ auto main(int argc, char **argv) -> int {
                      global.end_equity, "realized_pnl", global.realized_pnl, "unrealized_pnl",
                      global.unrealized_pnl, "fees", global.fees, "net_pnl", global.net_pnl,
                      "return_pct", global.return_pct);
-            for (Exchange ex: {Exchange::BINANCE, Exchange::KRAKEN, Exchange::OKX, Exchange::COINBASE}) {
+            for (Exchange ex: active_accounting_venues) {
                 const auto venue = live_session_accounting.venue_metrics(ex);
                 LOG_INFO("live session summary venue", "venue", exchange_to_string(ex),
                          "start_equity", venue.start_equity, "end_equity", venue.end_equity,
