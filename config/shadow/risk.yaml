@@ -19,3 +19,11 @@ fees:
   COINBASE: 6.0
   KRAKEN:   10.0
 heartbeat_timeout_ms:         3000
+capital_start_equity_usd_BINANCE: 10000.0
+capital_start_equity_usd_KRAKEN: 5000.0
+capital_start_equity_usd_OKX: 5000.0
+capital_start_equity_usd_COINBASE: 5000.0
+capital_min_free_collateral_usd_BINANCE: 250.0
+capital_min_free_collateral_usd_KRAKEN: 125.0
+capital_min_free_collateral_usd_OKX: 125.0
+capital_min_free_collateral_usd_COINBASE: 125.0

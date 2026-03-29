@@ -83,6 +83,14 @@ TEST(GlobalRiskControlsTest, LoadsGlobalLimitsFromConfigFile) {
     EXPECT_DOUBLE_EQ(cfg.futures_risk.max_maintenance_margin_ratio, 0.65);
     EXPECT_DOUBLE_EQ(cfg.futures_risk.default_max_leverage, 8.0);
     ASSERT_GE(cfg.futures_risk.symbol_limit_count, static_cast<size_t>(2));
+    EXPECT_DOUBLE_EQ(cfg.venue_capital[0].starting_equity_usd, 10000.0);
+    EXPECT_DOUBLE_EQ(cfg.venue_capital[1].starting_equity_usd, 5000.0);
+    EXPECT_DOUBLE_EQ(cfg.venue_capital[2].starting_equity_usd, 5000.0);
+    EXPECT_DOUBLE_EQ(cfg.venue_capital[3].starting_equity_usd, 5000.0);
+    EXPECT_DOUBLE_EQ(cfg.venue_capital[0].min_free_collateral_buffer_usd, 250.0);
+    EXPECT_DOUBLE_EQ(cfg.venue_capital[1].min_free_collateral_buffer_usd, 125.0);
+    EXPECT_DOUBLE_EQ(cfg.venue_capital[2].min_free_collateral_buffer_usd, 125.0);
+    EXPECT_DOUBLE_EQ(cfg.venue_capital[3].min_free_collateral_buffer_usd, 125.0);
 }
 
 TEST(GlobalRiskControlsTest, RejectsFuturesExposureOnLeverageAndMaintenanceCaps) {

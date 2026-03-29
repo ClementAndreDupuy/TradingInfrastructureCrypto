@@ -8,6 +8,7 @@
 #include "../execution/kraken/kraken_connector.hpp"
 #include "../execution/okx/okx_connector.hpp"
 #include "../execution/common/portfolio/portfolio_intent_engine.hpp"
+#include "../execution/common/portfolio/live_session_accounting.hpp"
 #include "../execution/common/reconciliation/reconciliation_service.hpp"
 #include "../execution/common/quality/venue_quality_model.hpp"
 #include "../execution/router/smart_order_router.hpp"
@@ -581,6 +582,23 @@ auto main(int argc, char **argv) -> int {
 
         VenueQualityModel venue_quality_model(vq_cfg);
         engine::VenueQualityRuntime venue_quality_runtime(venue_quality_model);
+        LiveSessionAccounting live_session_accounting;
+        live_session_accounting.configure_venue(
+            Exchange::BINANCE,
+            risk_cfg.venue_capital[0].starting_equity_usd,
+            risk_cfg.venue_capital[0].min_free_collateral_buffer_usd);
+        live_session_accounting.configure_venue(
+            Exchange::OKX,
+            risk_cfg.venue_capital[1].starting_equity_usd,
+            risk_cfg.venue_capital[1].min_free_collateral_buffer_usd);
+        live_session_accounting.configure_venue(
+            Exchange::COINBASE,
+            risk_cfg.venue_capital[2].starting_equity_usd,
+            risk_cfg.venue_capital[2].min_free_collateral_buffer_usd);
+        live_session_accounting.configure_venue(
+            Exchange::KRAKEN,
+            risk_cfg.venue_capital[3].starting_equity_usd,
+            risk_cfg.venue_capital[3].min_free_collateral_buffer_usd);
 
         const auto mid_price_for_exchange = [&](Exchange exchange) -> double {
             switch (exchange) {
@@ -724,6 +742,34 @@ auto main(int argc, char **argv) -> int {
 
                     const double signed_notional = child.quantity * child_order.price *
                                                    (side == Side::BID ? 1.0 : -1.0);
+                    if (opts.mode != "shadow") {
+                        const double fee_bps =
+                            child.exchange == Exchange::BINANCE ? risk_cfg.binance_taker_fee_bps
+                            : child.exchange == Exchange::KRAKEN ? risk_cfg.kraken_taker_fee_bps
+                            : child.exchange == Exchange::OKX ? risk_cfg.okx_taker_fee_bps
+                            : risk_cfg.coinbase_taker_fee_bps;
+                        bool affordable = false;
+                        if (futures_only_mode) {
+                            const double leverage_guess =
+                                engine_cfg.binance_futures.default_leverage_cap > 0.0
+                                    ? engine_cfg.binance_futures.default_leverage_cap
+                                    : std::max(1.0, risk_cfg.futures_risk.default_max_leverage);
+                            affordable = live_session_accounting.can_afford_futures_order(
+                                Exchange::BINANCE, child.quantity, child_order.price, fee_bps,
+                                leverage_guess);
+                        } else {
+                            affordable = live_session_accounting.can_afford_spot_order(
+                                child.exchange, child_order.symbol, side, child.quantity,
+                                child_order.price, fee_bps);
+                        }
+                        if (!affordable) {
+                            LOG_WARN("capital-accounting blocked submit", "venue",
+                                     exchange_to_string(child.exchange), "side",
+                                     side == Side::BID ? "BID" : "ASK", "qty", child.quantity,
+                                     "price", child_order.price);
+                            continue;
+                        }
+                    }
                     if (global_risk.commit_order(child.exchange, child_order.symbol,
                                                  signed_notional) != GlobalRiskCheckResult::OK) {
                         LOG_WARN("global-risk blocked submit", "venue",
@@ -731,7 +777,8 @@ auto main(int argc, char **argv) -> int {
                         continue;
                     }
 
-                    if (circuit_breaker.check_drawdown(circuit_breaker.realized_pnl()) !=
+                    if (circuit_breaker.check_drawdown(
+                            live_session_accounting.global_metrics().net_pnl) !=
                         CircuitCheckResult::OK) {
                         LOG_WARN("circuit-breaker: drawdown limit reached, halting submissions");
                         issue_kill_switch_cancels();
@@ -902,6 +949,25 @@ auto main(int argc, char **argv) -> int {
                              static_cast<unsigned long long>(snap.sample_count));
                 }
             }
+            if (opts.mode != "shadow" &&
+                (portfolio_log_state.last_log_time == std::chrono::steady_clock::time_point{} ||
+                 now - portfolio_log_state.last_log_time >= portfolio_log_heartbeat)) {
+                const auto global = live_session_accounting.global_metrics();
+                LOG_INFO("live session accounting global", "start_equity", global.start_equity,
+                         "end_equity", global.end_equity, "realized_pnl", global.realized_pnl,
+                         "unrealized_pnl", global.unrealized_pnl, "fees", global.fees, "net_pnl",
+                         global.net_pnl, "return_pct", global.return_pct);
+                for (Exchange ex: {Exchange::BINANCE, Exchange::KRAKEN, Exchange::OKX, Exchange::COINBASE}) {
+                    const auto venue = live_session_accounting.venue_metrics(ex);
+                    LOG_INFO("live session accounting venue", "venue", exchange_to_string(ex),
+                             "start_equity", venue.start_equity, "end_equity", venue.end_equity,
+                             "realized_pnl", venue.realized_pnl, "unrealized_pnl",
+                             venue.unrealized_pnl, "fees", venue.fees, "net_pnl", venue.net_pnl,
+                             "return_pct", venue.return_pct, "free_collateral",
+                             venue.free_collateral, "min_free_buffer",
+                             venue.min_free_collateral_buffer);
+                }
+            }
 
             if (should_log_portfolio_intent) {
                 update_portfolio_intent_log_state(portfolio_log_state, intent_metadata, reason_codes,
@@ -984,6 +1050,24 @@ auto main(int argc, char **argv) -> int {
                 if (drift_res != ConnectorResult::OK) {
                     LOG_WARN("periodic_reconciliation failed", "code", static_cast<int>(drift_res));
                 }
+                const auto refresh_accounting = [&](Exchange exchange, bool enabled,
+                                                    const BookManager &book) {
+                    if (!enabled)
+                        return;
+                    const ReconciliationSnapshot *snapshot =
+                            reconciliation.latest_snapshot_for(exchange);
+                    if (!snapshot)
+                        return;
+                    const double mark_price = book.mid_price() > 0.0
+                                                  ? book.mid_price()
+                                                  : portfolio_snapshot.mid_price;
+                    live_session_accounting.ingest_reconciliation(
+                        exchange, *snapshot, opts.symbol.c_str(), mark_price);
+                };
+                refresh_accounting(Exchange::BINANCE, run_binance, binance_book);
+                refresh_accounting(Exchange::KRAKEN, run_kraken, kraken_book);
+                refresh_accounting(Exchange::OKX, run_okx, okx_book);
+                refresh_accounting(Exchange::COINBASE, run_coinbase, coinbase_book);
                 next_reconciliation = reconciliation_now + reconciliation_interval;
             }
 
@@ -1086,6 +1170,22 @@ auto main(int argc, char **argv) -> int {
                 shadow_engine.check_fills();
             }
             shadow_engine.log_summary();
+        } else {
+            const auto global = live_session_accounting.global_metrics();
+            LOG_INFO("live session summary", "start_equity", global.start_equity, "end_equity",
+                     global.end_equity, "realized_pnl", global.realized_pnl, "unrealized_pnl",
+                     global.unrealized_pnl, "fees", global.fees, "net_pnl", global.net_pnl,
+                     "return_pct", global.return_pct);
+            for (Exchange ex: {Exchange::BINANCE, Exchange::KRAKEN, Exchange::OKX, Exchange::COINBASE}) {
+                const auto venue = live_session_accounting.venue_metrics(ex);
+                LOG_INFO("live session summary venue", "venue", exchange_to_string(ex),
+                         "start_equity", venue.start_equity, "end_equity", venue.end_equity,
+                         "realized_pnl", venue.realized_pnl, "unrealized_pnl",
+                         venue.unrealized_pnl, "fees", venue.fees, "net_pnl", venue.net_pnl,
+                         "return_pct", venue.return_pct, "free_collateral",
+                         venue.free_collateral, "min_free_buffer",
+                         venue.min_free_collateral_buffer);
+            }
         }
 
         LOG_INFO("trading_engine shutdown complete");

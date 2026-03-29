@@ -435,6 +435,27 @@ set_tests_properties(GlobalRiskControlsTest PROPERTIES
     LABELS "unit;risk"
 )
 
+add_executable(live_session_accounting_test
+    unit/live_session_accounting_test.cpp
+)
+
+target_link_libraries(live_session_accounting_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(live_session_accounting_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME LiveSessionAccountingTest COMMAND live_session_accounting_test)
+set_tests_properties(LiveSessionAccountingTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;risk;execution"
+)
+
 # Idempotency journal + deterministic recovery tests
 add_executable(idempotency_recovery_test
     unit/idempotency_recovery_test.cpp
