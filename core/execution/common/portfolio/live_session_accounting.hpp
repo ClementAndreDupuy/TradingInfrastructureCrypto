@@ -43,7 +43,7 @@ namespace trading {
 
         LiveSessionAccounting() {
             for (size_t i = 0; i < venues_.size(); ++i) {
-                venues_[i].exchange = index_to_exchange(i);
+                venues_[i].metrics.exchange = index_to_exchange(i);
             }
         }
 

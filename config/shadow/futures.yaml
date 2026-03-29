@@ -1,4 +1,4 @@
-enabled: false
+enabled: true
 strategy_mode: futures_only
 position_mode: one_way
 default_leverage: 5.0

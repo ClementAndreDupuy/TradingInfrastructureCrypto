@@ -794,8 +794,8 @@ auto main(int argc, char **argv) -> int {
                         child_order.futures_position_side =
                                 side == Side::BID ? FuturesPositionSide::LONG : FuturesPositionSide::SHORT;
                         const bool reducing_position =
-                                (portfolio_snapshot.global_position > 0.0 && side == Side::ASK && intent_metadata.target_position >= 0.0) ||
-                                (portfolio_snapshot.global_position < 0.0 && side == Side::BID && intent_metadata.target_position <= 0.0);
+                                (intent_metadata.current_position > 0.0 && side == Side::ASK && intent_metadata.target_position >= 0.0) ||
+                                (intent_metadata.current_position < 0.0 && side == Side::BID && intent_metadata.target_position <= 0.0);
                         child_order.reduce_only = reducing_position;
                         if (opts.mode == "shadow") {
                             shadow_engine.binance_connector().set_intent_metadata(intent_metadata);

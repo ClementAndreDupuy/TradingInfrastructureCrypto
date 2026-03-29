@@ -69,5 +69,5 @@ Thumbs.db
 # Source-code packages named data/ (not data storage)
 !research/neural_alpha/data/
 
-config/trading.env
+config/shadow/trading.env
 config/shadow/trading.env

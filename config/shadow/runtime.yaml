@@ -19,5 +19,5 @@ safe_mode_ticks: 30
 drift_min_samples: 100
 drift_ic_floor: -0.08
 
-strategy_mode: spot_only
+strategy_mode: futures_only
 futures_config: config/shadow/futures.yaml

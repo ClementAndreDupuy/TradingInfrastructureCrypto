@@ -177,11 +177,11 @@ TEST(BinanceFuturesConnectorTest, SignedQueryIncludesTimestampRecvWindowAndSigna
             return http::HttpResponse{200, exchange_info_for("BTCUSDT")};
         }
         EXPECT_EQ(std::strcmp(method, "POST"), 0);
-        ASSERT_TRUE(contains(url, "/fapi/v1/order?"));
+        EXPECT_TRUE(contains(url, "/fapi/v1/order?"));
 
         const std::string query = extract_query(url);
         const std::string signature = query_value(query, "signature");
-        ASSERT_FALSE(signature.empty());
+        EXPECT_FALSE(signature.empty());
 
         const std::string payload = query.substr(0, query.find("&signature="));
         EXPECT_FALSE(query_value(query, "timestamp").empty());
