@@ -94,7 +94,7 @@
     - Generated intents include futures-specific direction metadata (`position_side`, `reduce_only`/close semantics) so execution does not infer direction from spot fields.
     - Unit/integration tests validate deterministic outcomes for all transition classes (`flat->long`, `flat->short`, `long->short`, `short->long`, `long->flat`, `short->flat`) under representative alpha/regime/risk inputs.
 
-- [ ] **FUT-BN-14: Shadow runtime futures config surface (`run_shadow` + `futures.yaml`)**
+- [x] **FUT-BN-14: Shadow runtime futures config surface (`run_shadow` + `futures.yaml`)**
   - Scope: add explicit shadow runtime configuration for futures execution mode so operators can run spot-only or futures-only shadow sessions without ad-hoc CLI args.
   - Acceptance criteria:
     - Add `config/shadow/futures.yaml` with required schema (`enabled`, `strategy_mode`, `position_mode`, `default_leverage`, per-symbol leverage caps, deadband/flip controls).

@@ -1,0 +1,10 @@
+enabled: false
+strategy_mode: futures_only
+position_mode: one_way
+default_leverage: 5.0
+leverage_caps:
+  BTCUSDT: 8.0
+  ETHUSDT: 6.0
+deadband_signal_bps: 1.0
+flip_enabled: true
+flip_min_abs_signal_bps: 2.0
