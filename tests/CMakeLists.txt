@@ -215,6 +215,27 @@ set_tests_properties(VenueQualityRuntimeTest PROPERTIES
     LABELS "unit;execution"
 )
 
+add_executable(algo_config_loader_test
+    unit/algo_config_loader_test.cpp
+)
+
+target_link_libraries(algo_config_loader_test
+    execution
+    trading_common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_include_directories(algo_config_loader_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+add_test(NAME AlgoConfigLoaderTest COMMAND algo_config_loader_test)
+set_tests_properties(AlgoConfigLoaderTest PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;engine"
+)
+
 add_executable(venue_quality_model_test
     unit/venue_quality_model_test.cpp
 )

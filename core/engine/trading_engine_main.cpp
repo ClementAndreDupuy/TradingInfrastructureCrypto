@@ -1,6 +1,7 @@
 #include "../common/logging.hpp"
 #include "../common/symbol_mapper.hpp"
 #include "../execution/binance/binance_connector.hpp"
+#include "../execution/binance/binance_futures_connector.hpp"
 #include "../execution/coinbase/coinbase_connector.hpp"
 #include "../execution/common/orders/child_order_scheduler.hpp"
 #include "../execution/common/orders/parent_order_manager.hpp"
@@ -436,10 +437,47 @@ auto main(int argc, char **argv) -> int {
             log_loaded_credential("COINBASE", "api_secret", coinbase_api_secret);
         }
 
+        const bool binance_futures_enabled = engine_cfg.binance_futures.enabled;
+        if (binance_futures_enabled) {
+            if (engine_cfg.binance_futures.rest_url.empty()) {
+                LOG_ERROR("Binance futures runtime config invalid", "key",
+                          "binance_futures_rest_url");
+                return 2;
+            }
+            if (engine_cfg.binance_futures.recv_window_ms == 0U) {
+                LOG_ERROR("Binance futures runtime config invalid", "key",
+                          "binance_futures_recv_window_ms");
+                return 2;
+            }
+            if (engine_cfg.binance_futures.default_leverage_cap <= 0.0) {
+                LOG_ERROR("Binance futures runtime config invalid", "key",
+                          "binance_futures_default_leverage_cap");
+                return 2;
+            }
+            for (const auto &cap: engine_cfg.binance_futures.leverage_caps) {
+                if (cap.max_leverage <= 0.0) {
+                    LOG_ERROR("Binance futures runtime config invalid", "key",
+                              "binance_futures_leverage_cap", "symbol", cap.symbol.c_str());
+                    return 2;
+                }
+            }
+            if (binance_api_key.empty() || binance_api_secret.empty()) {
+                LOG_ERROR("Binance credentials missing", "required_keys",
+                          "BINANCE_API_KEY,BINANCE_API_SECRET");
+                return 2;
+            }
+            log_loaded_credential("BINANCE", "api_key", binance_api_key);
+            log_loaded_credential("BINANCE", "api_secret", binance_api_secret);
+        }
+
         const RetryPolicy retry_policy{engine_cfg.retry_max_attempts, engine_cfg.retry_backoff_ms};
         BinanceConnector binance(
             binance_api_key, binance_api_secret,
             opts.mode == "shadow" ? "mock://binance" : engine_cfg.binance_rest_url, retry_policy);
+        BinanceFuturesConnector binance_futures(
+            binance_api_key, binance_api_secret,
+            opts.mode == "shadow" ? "mock://binance-futures" : engine_cfg.binance_futures.rest_url,
+            engine_cfg.binance_futures.recv_window_ms, retry_policy);
         KrakenConnector kraken(kraken_api_key, kraken_api_secret,
                                opts.mode == "shadow" ? "mock://kraken" : engine_cfg.kraken_rest_url,
                                retry_policy);
@@ -503,6 +541,9 @@ auto main(int argc, char **argv) -> int {
             any_reconnected |= connect_if_needed(kraken, run_kraken, reconciliation);
             any_reconnected |= connect_if_needed(okx, run_okx, reconciliation);
             any_reconnected |= connect_if_needed(coinbase, run_coinbase, reconciliation);
+        }
+        if (binance_futures_enabled && !binance_futures.is_connected()) {
+            (void) binance_futures.connect();
         }
 
         if (any_reconnected) {
@@ -577,8 +618,26 @@ auto main(int argc, char **argv) -> int {
         LOG_INFO("trading_engine started", "mode", opts.mode.c_str(), "venues", opts.venues.c_str(),
                  "symbol", opts.symbol.c_str());
 
+        bool kill_switch_cancel_issued = false;
+        const auto issue_kill_switch_cancels = [&]() {
+            if (kill_switch_cancel_issued || !kill_switch.is_active())
+                return;
+            kill_switch_cancel_issued = true;
+            if (run_binance)
+                (void) binance.cancel_all(opts.symbol.c_str());
+            if (binance_futures_enabled)
+                (void) binance_futures.cancel_all(opts.symbol.c_str());
+            if (run_kraken)
+                (void) kraken.cancel_all(opts.symbol.c_str());
+            if (run_okx)
+                (void) okx.cancel_all(opts.symbol.c_str());
+            if (run_coinbase)
+                (void) coinbase.cancel_all(opts.symbol.c_str());
+        };
+
         while (g_running.load(std::memory_order_acquire)) {
             if (kill_switch.is_active()) {
+                issue_kill_switch_cancels();
                 break;
             }
 
@@ -610,9 +669,14 @@ auto main(int argc, char **argv) -> int {
                 };
                 for (size_t i = 0; i < decision.routing.child_count; ++i) {
                     const auto &child = decision.routing.children[i];
+                    if (kill_switch.is_active()) {
+                        issue_kill_switch_cancels();
+                        break;
+                    }
 
                     if (circuit_breaker.check_order_rate() != CircuitCheckResult::OK) {
                         LOG_WARN("circuit-breaker: order rate limit reached, halting submissions");
+                        issue_kill_switch_cancels();
                         break;
                     }
 
@@ -640,6 +704,7 @@ auto main(int argc, char **argv) -> int {
                     if (circuit_breaker.check_drawdown(circuit_breaker.realized_pnl()) !=
                         CircuitCheckResult::OK) {
                         LOG_WARN("circuit-breaker: drawdown limit reached, halting submissions");
+                        issue_kill_switch_cancels();
                         break;
                     }
 
@@ -843,6 +908,9 @@ auto main(int argc, char **argv) -> int {
                 recovered_connection |= connect_if_needed(kraken, run_kraken, reconciliation);
                 recovered_connection |= connect_if_needed(okx, run_okx, reconciliation);
                 recovered_connection |= connect_if_needed(coinbase, run_coinbase, reconciliation);
+                if (binance_futures_enabled && !binance_futures.is_connected()) {
+                    (void) binance_futures.connect();
+                }
 
                 if (recovered_connection) {
                     const ConnectorResult reconcile_res = reconciliation.reconcile_on_reconnect();
@@ -868,6 +936,9 @@ auto main(int argc, char **argv) -> int {
         if (run_binance) {
             binance.disconnect();
             binance_feed.stop();
+        }
+        if (binance_futures_enabled) {
+            binance_futures.disconnect();
         }
         if (run_kraken) {
             kraken.disconnect();
