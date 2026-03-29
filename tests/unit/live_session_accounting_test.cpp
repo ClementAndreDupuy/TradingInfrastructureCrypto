@@ -127,4 +127,28 @@ TEST(LiveSessionAccountingTest, DeduplicatesFeesAcrossRepeatedSnapshots) {
     EXPECT_DOUBLE_EQ(venue.fees, 2.0);
 }
 
+TEST(LiveSessionAccountingTest, StartsFlatBeforeFirstReconciliation) {
+    LiveSessionAccounting accounting;
+    accounting.configure_venue(Exchange::BINANCE, 10000.0, 250.0);
+
+    const auto venue = accounting.venue_metrics(Exchange::BINANCE);
+    EXPECT_DOUBLE_EQ(venue.start_equity, 10000.0);
+    EXPECT_DOUBLE_EQ(venue.end_equity, 10000.0);
+    EXPECT_DOUBLE_EQ(venue.net_pnl, 0.0);
+    EXPECT_DOUBLE_EQ(venue.realized_pnl, 0.0);
+    EXPECT_DOUBLE_EQ(venue.return_pct, 0.0);
+}
+
+TEST(LiveSessionAccountingTest, GlobalMetricsIgnoreUnconfiguredVenues) {
+    LiveSessionAccounting accounting;
+    accounting.configure_venue(Exchange::BINANCE, 10000.0, 250.0);
+
+    ReconciliationSnapshot snapshot = make_spot_snapshot();
+    accounting.ingest_reconciliation(Exchange::BINANCE, snapshot, "BTCUSDT", 50000.0);
+
+    const auto global = accounting.global_metrics();
+    EXPECT_DOUBLE_EQ(global.start_equity, 10000.0);
+    EXPECT_DOUBLE_EQ(global.end_equity, 10101.0);
+}
+
 } 
