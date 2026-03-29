@@ -22,6 +22,20 @@ namespace trading {
         double toxicity_bps;
     };
 
+    struct FuturesLeverageCap {
+        std::string symbol;
+        double max_leverage;
+    };
+
+    struct BinanceFuturesRuntimeConfig {
+        bool enabled;
+        std::string rest_url;
+        uint32_t recv_window_ms;
+        bool hedge_mode;
+        double default_leverage_cap;
+        std::vector<FuturesLeverageCap> leverage_caps;
+    };
+
     struct EngineConfig {
         int reconnect_interval_secs;
         int reconciliation_interval_secs;
@@ -43,6 +57,7 @@ namespace trading {
         std::string shadow_log_path;
         int retry_max_attempts;
         int retry_backoff_ms;
+        BinanceFuturesRuntimeConfig binance_futures;
     };
 
     class AlgoConfigLoader {
@@ -176,6 +191,29 @@ namespace trading {
             apply_string(values, "shadow_log_path", out.shadow_log_path);
             apply_int(values, "retry_max_attempts", out.retry_max_attempts);
             apply_int(values, "retry_backoff_ms", out.retry_backoff_ms);
+            apply_bool(values, "binance_futures_enabled", out.binance_futures.enabled);
+            apply_string(values, "binance_futures_rest_url", out.binance_futures.rest_url);
+            apply_uint32(values, "binance_futures_recv_window_ms",
+                         out.binance_futures.recv_window_ms);
+            apply_bool(values, "binance_futures_hedge_mode", out.binance_futures.hedge_mode);
+            apply_double(values, "binance_futures_default_leverage_cap",
+                         out.binance_futures.default_leverage_cap);
+            out.binance_futures.leverage_caps.clear();
+            for (const auto &entry: values) {
+                static constexpr std::string_view prefix = "binance_futures_leverage_cap_";
+                if (entry.first.rfind(std::string(prefix), 0) != 0)
+                    continue;
+                try {
+                    const double max_leverage = std::stod(entry.second);
+                    if (max_leverage <= 0.0)
+                        continue;
+                    const std::string symbol = entry.first.substr(prefix.size());
+                    if (symbol.empty())
+                        continue;
+                    out.binance_futures.leverage_caps.push_back({symbol, max_leverage});
+                } catch (...) {
+                }
+            }
             return true;
         }
 
@@ -258,6 +296,17 @@ namespace trading {
                 return;
             try {
                 field = static_cast<int64_t>(std::stoll(it->second));
+            } catch (...) {
+            }
+        }
+
+        static void apply_uint32(const ValueMap &values, const char *key, uint32_t &field) {
+            auto it = values.find(key);
+            if (it == values.end())
+                return;
+            try {
+                const auto parsed = std::stoul(it->second);
+                field = static_cast<uint32_t>(parsed);
             } catch (...) {
             }
         }

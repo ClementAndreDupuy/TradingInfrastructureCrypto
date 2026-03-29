@@ -53,7 +53,7 @@
     - Existing spot connector tests remain unchanged and passing.
     - Replayable deterministic fixtures are added for all expected Binance error classes.
 
-- [ ] **FUT-BN-7: Runtime config + kill-switch integration for futures venues**
+- [x] **FUT-BN-7: Runtime config + kill-switch integration for futures venues**
   - Scope: introduce futures connector config (base URLs, recvWindow, hedge mode, leverage caps) and ensure global kill switch and cancel-all semantics include futures open orders.
   - Acceptance criteria:
     - Futures connector can be enabled/disabled per environment without code changes.
