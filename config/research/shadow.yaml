@@ -1,6 +1,6 @@
 ipc:
-  signal_file: /tmp/trt_ipc/neural_alpha_signal.bin
-  regime_signal_file: /tmp/trt_ipc/regime_signal.bin
+  signal_file: /tmp/trt_ipc/trt_alpha.bin
+  regime_signal_file: /tmp/trt_ipc/trt_regime.bin
   max_exchange_jump_ns: 60000000000
 direction_gate: 0.55
 horizon_candidates:
