@@ -174,7 +174,6 @@
 ## RESEARCH
 
 - [x] **NA-R-3: Stabilize neural-alpha continuous retrain under illiquid windows**
-  - Source: `docs/reports/LOG_ANALYSIS_SOLUSDT_2026-03-31.md`
   - Scope: diagnose and harden continuous retraining when order-count channels are flat and risk labels are sparse.
   - Acceptance criteria:
     - [x] Retrain diagnostics log `risk_pos`, `risk_neg`, and resulting `risk_pos_weight` per fold/window.
@@ -185,7 +184,6 @@
 
 
 - [ ] **NA-R-4: Gate continuous retrain on window-quality health before HPO**
-  - Source: `docs/reports/LOG_ANALYSIS_SOLUSDT_2026-03-31.md`
   - Scope: prevent low-information windows from producing noisy retrains that are predictably rejected.
   - Acceptance criteria:
     - [ ] Continuous retrain is skipped when order-count non-zero coverage is below a configurable threshold.
@@ -194,7 +192,6 @@
     - [ ] Unit tests cover skip vs proceed behavior across healthy and unhealthy windows.
 
 - [ ] **NA-R-5: Investigate retrain rejection drivers across data, regime, and deployment gates**
-  - Source: `docs/reports/LOG_ANALYSIS_SOLUSDT_2026-03-31.md`
   - Scope: isolate why continuous retraining frequently fails model promotion in shadow runs.
   - Focus areas:
     - [ ] degraded count features
