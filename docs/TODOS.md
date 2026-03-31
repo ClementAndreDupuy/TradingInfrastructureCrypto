@@ -7,24 +7,24 @@
 
 ## CRITICAL
 
-- [ ] **PORT-C1: Fix live config YAML key mismatch — regime thresholds all zero at runtime**
+- [x] **PORT-C1: Fix live config YAML key mismatch — regime thresholds all zero at runtime**
   - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / CRITICAL-1
   - Files: `config/live/portfolio.yaml`, `core/engine/algo_config_loader.hpp:123–127`, `core/engine/trading_engine_main.cpp`
   - Problem: `config/live/portfolio.yaml` uses legacy key names (`shock_flatten_threshold`, `illiquid_reduce_threshold`) that `AlgoConfigLoader::load_portfolio` never reads. The five fields `shock_enter_threshold`, `shock_exit_threshold`, `illiquid_enter_threshold`, `illiquid_exit_threshold`, `regime_persistence_ticks` remain zero. With `persistence = 0` the regime hysteresis activates on the very first tick and oscillates every 500 ms, generating aggressive flatten orders continuously while any position is open.
   - Acceptance criteria:
-    - [ ] `config/live/portfolio.yaml` contains all five keys with explicit values matching intended live thresholds.
-    - [ ] `PortfolioIntentConfig portfolio_cfg;` declaration in `trading_engine_main.cpp` is changed to `PortfolioIntentConfig portfolio_cfg{};` (zero-initialize before load).
-    - [ ] A startup assertion (or loader validation) rejects a zero `shock_enter_threshold` or `regime_persistence_ticks` and aborts with a clear error message before entering the main loop.
-    - [ ] Unit test added that constructs `PortfolioIntentEngine` with live config values and verifies shock/illiquid regime does **not** activate when `p_shock = 0.05` and `p_illiquid = 0.05`.
+    - [x] `config/live/portfolio.yaml` contains all five keys with explicit values matching intended live thresholds.
+    - [x] `PortfolioIntentConfig portfolio_cfg;` declaration in `trading_engine_main.cpp` is changed to `PortfolioIntentConfig portfolio_cfg{};` (zero-initialize before load).
+    - [x] A startup assertion (or loader validation) rejects a zero `shock_enter_threshold` or `regime_persistence_ticks` and aborts with a clear error message before entering the main loop.
+    - [x] Unit test added that constructs `PortfolioIntentEngine` with live config values and verifies shock/illiquid regime does **not** activate when `p_shock = 0.05` and `p_illiquid = 0.05`.
 
-- [ ] **PORT-C2: `oldest_inventory_age_ms` never populated in live mode — stale inventory exit inoperative**
+- [x] **PORT-C2: `oldest_inventory_age_ms` never populated in live mode — stale inventory exit inoperative**
   - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / CRITICAL-2
   - Files: `core/engine/trading_engine_main.cpp:247–288` (`build_live_portfolio_snapshot`), `core/execution/common/portfolio/portfolio_intent_engine.hpp:120–121`
   - Problem: `build_live_portfolio_snapshot` sums positions from reconciliation but never sets `oldest_inventory_age_ms`, which stays zero. The stale-inventory condition `0 >= stale_inventory_ms` is permanently false, rendering the 5-second forced-exit in `config/live/portfolio.yaml` completely dead in live mode. Shadow mode is unaffected.
   - Acceptance criteria:
-    - [ ] Live mode populates `oldest_inventory_age_ms` in `PositionLedgerSnapshot` — either by switching to `PositionLedger::snapshot()` (preferred) or by extending `build_live_portfolio_snapshot` to carry age from reconciliation data.
-    - [ ] Integration test verifies that a position held beyond `stale_inventory_ms` in live/reconciliation mode triggers `STALE_INVENTORY` reason and a non-zero `position_delta` targeting flat.
-    - [ ] Inventory age is included in the `portfolio intent` log line for observability.
+    - [x] Live mode populates `oldest_inventory_age_ms` in `PositionLedgerSnapshot` — either by switching to `PositionLedger::snapshot()` (preferred) or by extending `build_live_portfolio_snapshot` to carry age from reconciliation data.
+    - [x] Integration test verifies that a position held beyond `stale_inventory_ms` in live/reconciliation mode triggers `STALE_INVENTORY` reason and a non-zero `position_delta` targeting flat.
+    - [x] Inventory age is included in the `portfolio intent` log line for observability.
 
 ---
 
