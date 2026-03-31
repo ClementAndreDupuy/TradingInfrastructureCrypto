@@ -249,7 +249,7 @@ def _build_signal_alignment(records: list[dict[str, Any]]) -> tuple[np.ndarray, 
 def _extract_signal_series(records: list[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray]:
     ordered = _ordered_records(records)
     raw_signals_bps = np.asarray([float(record.get("signal", 0.0)) * 10_000.0 for record in ordered], dtype=np.float64)
-    effective_signals_bps = np.asarray([float(record.get("ret_mid_bps", 0.0)) for record in ordered], dtype=np.float64)
+    effective_signals_bps = np.asarray([float(record.get("effective_signal_bps", record.get("ret_mid_bps", 0.0))) for record in ordered], dtype=np.float64)
     return raw_signals_bps, effective_signals_bps
 
 def _summarise_regime_churn(records: list[dict[str, Any]]) -> dict[str, float | int | str | None]:
@@ -771,11 +771,11 @@ class NeuralAlphaShadowSession:
         if not _has_nonzero_order_counts(df):
             count_activity = _order_count_activity(df)
             print(
-                f"[{_utcnow()}] [Shadow] continuous retrain skipped — all-zero order-count window"
+                f"[{_utcnow()}] [Shadow] continuous retrain proceeding with all-zero order-count window"
                 f" bid_non_zero={count_activity['non_zero_bid_columns']}"
                 f" ask_non_zero={count_activity['non_zero_ask_columns']}"
+                f" — count-aware depth features will be flat (OKX feed degraded)"
             )
-            return
         resume_state = self._snapshot_current_state()
         previous_primary_loss = float(self._latest_primary_sanity.get("validation_loss", float("inf")))
         primary_cfg = _auto_tune_trainer_config(
@@ -947,8 +947,9 @@ class NeuralAlphaShadowSession:
             "mid_price": mid_price,
             "ret_1tick_bps": ret_1tick_bps,
             "ret_10tick_bps": float(returns[1]) * 10_000.0,
-            "ret_mid_bps": signal_bps,
+            "ret_mid_bps": float(returns[2]) * 10_000.0,
             "ret_long_bps": float(returns[3]) * 10_000.0,
+            "effective_signal_bps": signal_bps * size_scale,
             "risk_score": risk,
             "size_fraction": size_fraction,
             "horizon_ticks": selected_horizon_ticks,
@@ -956,7 +957,7 @@ class NeuralAlphaShadowSession:
             "dir_p_down": float(dir_probs[0]),
             "dir_p_flat": float(dir_probs[1]),
             "dir_p_up": float(dir_probs[2]),
-            "gated": signal_bps == 0.0 and raw_signal_bps != 0.0,
+            "gated": len(gating_reasons) > 0,
             "safe_mode": safe_mode_active,
             "safe_mode_reason": self._safe_mode_reason if safe_mode_active else None,
             "gating_reasons": gating_reasons,
