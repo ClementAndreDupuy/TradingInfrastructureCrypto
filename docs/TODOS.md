@@ -183,6 +183,30 @@
     - [x] Add a regime-composition gate for retrain windows (e.g., max illiquid concentration threshold) and unit tests for gate behavior.
     - [x] Add a replay/fixture test that reproduces the 2026-03-31 score jump and verifies mitigation keeps selection scores bounded.
 
+
+- [ ] **NA-R-4: Gate continuous retrain on window-quality health before HPO**
+  - Source: `docs/reports/LOG_ANALYSIS_SOLUSDT_2026-03-31.md`
+  - Scope: prevent low-information windows from producing noisy retrains that are predictably rejected.
+  - Acceptance criteria:
+    - [ ] Continuous retrain is skipped when order-count non-zero coverage is below a configurable threshold.
+    - [ ] Continuous retrain is skipped when risk positive prevalence is below a configurable threshold (or fallback class-weight cap is applied).
+    - [ ] Retrain logs include a single structured `window_health` line with order-count coverage, risk prevalence, and dominant regime share.
+    - [ ] Unit tests cover skip vs proceed behavior across healthy and unhealthy windows.
+
+- [ ] **NA-R-5: Investigate retrain rejection drivers across data, regime, and deployment gates**
+  - Source: `docs/reports/LOG_ANALYSIS_SOLUSDT_2026-03-31.md`
+  - Scope: isolate why continuous retraining frequently fails model promotion in shadow runs.
+  - Focus areas:
+    - [ ] degraded count features
+    - [ ] highly skewed risk labels
+    - [ ] strong regime concentration
+    - [ ] strict deployment sanity checks
+  - Acceptance criteria:
+    - [ ] Produce a per-window diagnostic table linking each focus area to retrain outcome (`selected=incumbent` vs promoted).
+    - [ ] Quantify marginal impact of each focus area on direction loss and composite selection score.
+    - [ ] Propose concrete threshold/config updates for each focus area with rollback-safe defaults.
+    - [ ] Add an implementation plan that sequences low-risk telemetry first, then gating changes.
+
 - [ ] **FUT-R-1: Evaluate basis/term-structure alpha for hedge timing**
   - Scope: research signal utility from perp basis, funding regime, and spot-perp dislocation for inventory hedging.
   - Acceptance criteria:
