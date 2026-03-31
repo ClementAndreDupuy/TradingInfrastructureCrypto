@@ -53,6 +53,7 @@ session:
   regime_startup_warmup_s: 180
   max_regime_switches_per_minute_for_retrain: 6.0
   retrain_hpo_score_explosion_factor: 8.0
+  max_illiquid_concentration_for_retrain: 0.85
 metrics:
   ic_window: 20
   max_exchange_jump_ns: 60000000000

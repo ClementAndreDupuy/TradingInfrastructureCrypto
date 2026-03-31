@@ -76,7 +76,7 @@ def _augment_lob(lob: torch.Tensor, noise_std: float = 0.02) -> torch.Tensor:
     return x
 
 
-def _class_weights_from_loader(loader: DataLoader, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+def _class_weights_from_loader(loader: DataLoader, device: torch.device) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
     direction_counts = np.zeros(3, dtype=np.float64)
     risk_pos = 0.0
     risk_total = 0.0
@@ -90,9 +90,15 @@ def _class_weights_from_loader(loader: DataLoader, device: torch.device) -> tupl
     direction_weights = direction_counts.sum() / (len(direction_counts) * direction_counts)
     risk_neg = max(risk_total - risk_pos, 1.0)
     risk_pos_weight = torch.tensor([risk_neg / max(risk_pos, 1.0)], dtype=torch.float32, device=device)
+    risk_stats = {
+        "risk_pos": float(risk_pos),
+        "risk_neg": float(risk_neg),
+        "risk_pos_weight": float(risk_pos_weight.item()),
+    }
     return (
         torch.tensor(direction_weights, dtype=torch.float32, device=device),
         risk_pos_weight,
+        risk_stats,
     )
 
 
@@ -298,7 +304,13 @@ def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
         ).to(device)
         if cfg.resume_state_dict is not None:
             model.load_state_dict(cfg.resume_state_dict, strict=False)
-        direction_weights, risk_pos_weight = _class_weights_from_loader(train_loader, device)
+        direction_weights, risk_pos_weight, risk_stats = _class_weights_from_loader(train_loader, device)
+        if cfg.verbose:
+            print(
+                f"  Risk class weights: risk_pos={risk_stats['risk_pos']:.1f} "
+                f"risk_neg={risk_stats['risk_neg']:.1f} "
+                f"risk_pos_weight={risk_stats['risk_pos_weight']:.6f}"
+            )
         criterion = MultiTaskLoss(
             w_return=cfg.w_return,
             w_direction=cfg.w_direction,
@@ -387,6 +399,7 @@ def walk_forward_train(df, cfg: TrainerConfig | None = None) -> list[dict]:
                 "risk_scores": outputs["risk"],
                 "labels": labels,
                 "model_state": best_state,
+                "risk_stats": risk_stats,
             }
         )
         if cfg.verbose:
