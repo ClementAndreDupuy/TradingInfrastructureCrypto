@@ -173,6 +173,16 @@
 
 ## RESEARCH
 
+- [ ] **NA-R-3: Stabilize neural-alpha continuous retrain under illiquid windows**
+  - Source: `docs/reports/LOG_ANALYSIS_SOLUSDT_2026-03-31.md`
+  - Scope: diagnose and harden continuous retraining when order-count channels are flat and risk labels are sparse.
+  - Acceptance criteria:
+    - [ ] Retrain diagnostics log `risk_pos`, `risk_neg`, and resulting `risk_pos_weight` per fold/window.
+    - [ ] HPO logging includes per-component validation losses (`loss_return`, `loss_direction`, `loss_risk`) to localize explosion source.
+    - [ ] Continuous retrain is skipped (or downgraded) when order-count columns are all-zero for the window.
+    - [ ] Add a regime-composition gate for retrain windows (e.g., max illiquid concentration threshold) and unit tests for gate behavior.
+    - [ ] Add a replay/fixture test that reproduces the 2026-03-31 score jump and verifies mitigation keeps selection scores bounded.
+
 - [ ] **FUT-R-1: Evaluate basis/term-structure alpha for hedge timing**
   - Scope: research signal utility from perp basis, funding regime, and spot-perp dislocation for inventory hedging.
   - Acceptance criteria:
