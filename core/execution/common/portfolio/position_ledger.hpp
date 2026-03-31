@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../../common/logging.hpp"
 #include "../../../common/types.hpp"
 #include "../reconciliation/reconciliation_types.hpp"
 
@@ -132,7 +133,19 @@ namespace trading {
                     venue->has_inventory_age = false;
                     venue->opened_at = std::chrono::steady_clock::time_point{};
                 } else if (!venue->has_inventory_age) {
-                    venue->opened_at = std::chrono::steady_clock::now();
+                    if (position.opened_at_ns > 0) {
+                        using namespace std::chrono;
+                        const int64_t now_sys = duration_cast<nanoseconds>(
+                            system_clock::now().time_since_epoch()).count();
+                        const int64_t age_ns = now_sys > position.opened_at_ns
+                                                   ? now_sys - position.opened_at_ns
+                                                   : 0;
+                        venue->opened_at = steady_clock::now() - nanoseconds(age_ns);
+                    } else {
+                        LOG_WARN("inventory_age_reset: no open timestamp from reconciliation",
+                                 "symbol", position.symbol, "quantity", position.quantity);
+                        venue->opened_at = std::chrono::steady_clock::now();
+                    }
                     venue->has_inventory_age = true;
                 }
                 copy_symbol(symbol_, position.symbol);

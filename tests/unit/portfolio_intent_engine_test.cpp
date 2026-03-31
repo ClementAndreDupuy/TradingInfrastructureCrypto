@@ -1,6 +1,9 @@
 #include "core/execution/common/portfolio/portfolio_intent_engine.hpp"
+#include "core/execution/common/portfolio/position_ledger.hpp"
 #include "core/execution/common/orders/parent_order_manager.hpp"
+#include "core/ipc/alpha_signal.hpp"
 
+#include <cstring>
 #include <gtest/gtest.h>
 
 namespace trading {
@@ -321,6 +324,100 @@ TEST(PortfolioIntentEngineTest, PositiveReversalDoesNotTriggerForLong) {
     for (size_t i = 0; i < intent.reason_count; ++i) {
         EXPECT_NE(intent.reason_codes[i], PortfolioIntentReasonCode::POSITIVE_REVERSAL);
     }
+}
+
+TEST(PortfolioIntentEngineTest, DeadbandSignalYieldsAlphaDecayRegardlessOfSign) {
+    PortfolioIntentConfig cfg = make_cfg();
+    cfg.deadband_signal_bps = 3.0;
+    cfg.min_entry_signal_bps = 2.0;
+    PortfolioIntentEngine engine(cfg);
+    const auto venues = make_venues();
+
+    const PortfolioIntent long_in_deadband = engine.evaluate(
+        make_alpha(2.5), make_regime(), make_ledger(), venues, make_ctx());
+    EXPECT_NEAR(long_in_deadband.target_global_position, 0.0, 1e-9);
+    EXPECT_EQ(long_in_deadband.primary_reason(), PortfolioIntentReasonCode::ALPHA_DECAY);
+
+    const PortfolioIntent short_in_deadband = engine.evaluate(
+        make_alpha(-2.5), make_regime(), make_ledger(), venues, make_ctx());
+    EXPECT_NEAR(short_in_deadband.target_global_position, 0.0, 1e-9);
+    EXPECT_EQ(short_in_deadband.primary_reason(), PortfolioIntentReasonCode::ALPHA_DECAY);
+}
+
+TEST(PortfolioIntentEngineTest, AlphaSignalReaderStalenessMatchesIntentEngineThreshold) {
+    const int64_t stale_signal_ms = 1500;
+    const int64_t stale_ns = stale_signal_ms * 1'000'000LL;
+    AlphaSignalReader reader(AlphaSignalReader::k_default_path, 2.0, 0.65, stale_ns);
+
+    PortfolioIntentConfig cfg = make_cfg();
+    cfg.stale_signal_ms = stale_signal_ms;
+    PortfolioIntentEngine engine(cfg);
+
+    const PortfolioIntent stale_intent = engine.evaluate(
+        make_alpha(9.0), make_regime(), make_ledger(0.4), make_venues(),
+        make_ctx(100.0, 100.02, stale_signal_ms + 100));
+
+    EXPECT_TRUE(stale_intent.flatten_now);
+    EXPECT_EQ(stale_intent.primary_reason(), PortfolioIntentReasonCode::STALE_SIGNAL);
+}
+
+TEST(PortfolioIntentEngineTest, ReconciliationPreservesInventoryAgeWhenTimestampProvided) {
+    PositionLedger ledger;
+    ReconciliationSnapshot snap;
+    ReconciledPosition pos{};
+    std::strncpy(pos.symbol, "BTCUSDT", sizeof(pos.symbol));
+    pos.quantity = 0.5;
+    pos.avg_entry_price = 40000.0;
+
+    using namespace std::chrono;
+    const int64_t age_ms = 8000;
+    const int64_t now_sys_ns = duration_cast<nanoseconds>(
+        system_clock::now().time_since_epoch()).count();
+    pos.opened_at_ns = now_sys_ns - age_ms * 1'000'000LL;
+    snap.positions.push(pos);
+
+    ledger.reconcile_positions(Exchange::BINANCE, snap);
+    const PositionLedgerSnapshot snapshot = ledger.snapshot();
+
+    EXPECT_GE(snapshot.oldest_inventory_age_ms, age_ms - 100);
+    EXPECT_LE(snapshot.oldest_inventory_age_ms, age_ms + 500);
+}
+
+TEST(PortfolioIntentEngineTest, ReconciliationWithNoTimestampSetsAgeToNow) {
+    PositionLedger ledger;
+    ReconciliationSnapshot snap;
+    ReconciledPosition pos{};
+    std::strncpy(pos.symbol, "BTCUSDT", sizeof(pos.symbol));
+    pos.quantity = 0.5;
+    pos.avg_entry_price = 40000.0;
+    pos.opened_at_ns = 0;
+    snap.positions.push(pos);
+
+    ledger.reconcile_positions(Exchange::BINANCE, snap);
+    const PositionLedgerSnapshot snapshot = ledger.snapshot();
+
+    EXPECT_LE(snapshot.oldest_inventory_age_ms, 500);
+}
+
+TEST(PortfolioIntentEngineTest, FuturesMidPriceWideBasisTriggersFlatten) {
+    PortfolioIntentEngine engine(make_cfg());
+    const auto venues = make_venues();
+    const auto alpha = make_alpha(9.0);
+
+    PortfolioIntentContext ctx;
+    ctx.spot_mid_price = 100.0;
+    ctx.futures_mid_price = 100.3;
+    ctx.signal_age_ms = 10;
+
+    const PortfolioIntent intent = engine.evaluate(alpha, make_regime(), make_ledger(0.4), venues, ctx);
+
+    EXPECT_TRUE(intent.flatten_now);
+    bool has_basis = false;
+    for (size_t i = 0; i < intent.reason_count; ++i) {
+        if (intent.reason_codes[i] == PortfolioIntentReasonCode::BASIS_TOO_WIDE)
+            has_basis = true;
+    }
+    EXPECT_TRUE(has_basis);
 }
 
 TEST(ParentOrderManagerTest, SmallerSameDirectionTargetCapsRemainingQty) {

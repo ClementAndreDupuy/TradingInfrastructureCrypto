@@ -157,8 +157,9 @@ namespace trading {
             }
 
             double target = 0.0;
-            const bool positive_entry = alpha_signal.signal_bps >= cfg_.min_entry_signal_bps && edge_positive;
-            const bool negative_entry = alpha_signal.signal_bps <= -cfg_.min_entry_signal_bps && edge_negative;
+            const bool in_deadband = std::abs(alpha_signal.signal_bps) <= cfg_.deadband_signal_bps;
+            const bool positive_entry = !in_deadband && alpha_signal.signal_bps >= cfg_.min_entry_signal_bps && edge_positive;
+            const bool negative_entry = !in_deadband && alpha_signal.signal_bps <= -cfg_.min_entry_signal_bps && edge_negative;
             if (positive_entry || negative_entry) {
                 const double alpha_scale = std::clamp(
                     (std::abs(alpha_signal.signal_bps) - expected_cost_bps) /
@@ -179,9 +180,6 @@ namespace trading {
             } else {
                 append_reason(out, PortfolioIntentReasonCode::ALPHA_DECAY);
             }
-
-            if (std::abs(alpha_signal.signal_bps) <= cfg_.deadband_signal_bps)
-                target = 0.0;
 
             const bool alpha_strong = std::abs(alpha_signal.signal_bps) >= cfg_.stale_inventory_alpha_hold_bps;
             if (illiquid_regime || (stale_inventory && !alpha_strong)) {
