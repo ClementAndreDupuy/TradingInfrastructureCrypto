@@ -1,155 +1,196 @@
 # Project TODOs
 
-### CRITICAL
-- [x] **FUT-BN-1: Add Binance USDⓈ-M futures connector skeleton (REST signing + endpoint routing)**
-  - Scope: create `core/execution/binance/binance_futures_connector.{hpp,cpp}` built on `LiveConnectorBase`, with futures-specific base URL (`/fapi`) and signed request builder.
+> Completed items are archived in `docs/reports/TODOS_ARCHIVE_*.md`.  
+> Last cleaned: 2026-03-31 — portfolio long/short audit findings added.
+
+---
+
+## CRITICAL
+
+- [ ] **PORT-C1: Fix live config YAML key mismatch — regime thresholds all zero at runtime**
+  - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / CRITICAL-1
+  - Files: `config/live/portfolio.yaml`, `core/engine/algo_config_loader.hpp:123–127`, `core/engine/trading_engine_main.cpp`
+  - Problem: `config/live/portfolio.yaml` uses legacy key names (`shock_flatten_threshold`, `illiquid_reduce_threshold`) that `AlgoConfigLoader::load_portfolio` never reads. The five fields `shock_enter_threshold`, `shock_exit_threshold`, `illiquid_enter_threshold`, `illiquid_exit_threshold`, `regime_persistence_ticks` remain zero. With `persistence = 0` the regime hysteresis activates on the very first tick and oscillates every 500 ms, generating aggressive flatten orders continuously while any position is open.
   - Acceptance criteria:
-    - Connector compiles and links in the existing CMake target.
-    - `submit_order`, `cancel_order`, `replace_order`, `query_order`, and `cancel_all` route to Binance futures endpoints only (no `/api/v3`).
-    - HMAC signature/timestamp/recvWindow behavior is covered by deterministic unit tests.
+    - [ ] `config/live/portfolio.yaml` contains all five keys with explicit values matching intended live thresholds.
+    - [ ] `PortfolioIntentConfig portfolio_cfg;` declaration in `trading_engine_main.cpp` is changed to `PortfolioIntentConfig portfolio_cfg{};` (zero-initialize before load).
+    - [ ] A startup assertion (or loader validation) rejects a zero `shock_enter_threshold` or `regime_persistence_ticks` and aborts with a clear error message before entering the main loop.
+    - [ ] Unit test added that constructs `PortfolioIntentEngine` with live config values and verifies shock/illiquid regime does **not** activate when `p_shock = 0.05` and `p_illiquid = 0.05`.
 
-- [x] **FUT-BN-2: Futures order model + side semantics for long/short**
-  - Scope: extend execution order schema to represent futures position direction safely (e.g., `position_side`, `reduce_only`, `close_position`, `time_in_force`, `working_type`).
+- [ ] **PORT-C2: `oldest_inventory_age_ms` never populated in live mode — stale inventory exit inoperative**
+  - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / CRITICAL-2
+  - Files: `core/engine/trading_engine_main.cpp:247–288` (`build_live_portfolio_snapshot`), `core/execution/common/portfolio/portfolio_intent_engine.hpp:120–121`
+  - Problem: `build_live_portfolio_snapshot` sums positions from reconciliation but never sets `oldest_inventory_age_ms`, which stays zero. The stale-inventory condition `0 >= stale_inventory_ms` is permanently false, rendering the 5-second forced-exit in `config/live/portfolio.yaml` completely dead in live mode. Shadow mode is unaffected.
   - Acceptance criteria:
-    - Long/short intent can be represented without overloading spot fields.
-    - Binance hedge-mode and one-way-mode payload mapping is explicit and unit-tested.
-    - Invalid combinations (e.g., `close_position=true` with quantity) are rejected pre-flight with deterministic error codes.
+    - [ ] Live mode populates `oldest_inventory_age_ms` in `PositionLedgerSnapshot` — either by switching to `PositionLedger::snapshot()` (preferred) or by extending `build_live_portfolio_snapshot` to carry age from reconciliation data.
+    - [ ] Integration test verifies that a position held beyond `stale_inventory_ms` in live/reconciliation mode triggers `STALE_INVENTORY` reason and a non-zero `position_delta` targeting flat.
+    - [ ] Inventory age is included in the `portfolio intent` log line for observability.
 
-- [x] **FUT-BN-3: Exchange filters + pre-trade validation for futures contracts**
-  - Scope: ingest futures `exchangeInfo` filters (tick size, step size, min notional, trigger constraints), enforce in hot path before REST calls.
+---
+
+## HIGH
+
+- [ ] **PORT-H1: `edge_positive` gate not applied to short entries — misleading `ALPHA_NEGATIVE` reason code**
+  - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / HIGH-1
+  - File: `core/execution/common/portfolio/portfolio_intent_engine.hpp:126, 154–175`
+  - Problem: Long entry requires `signal_bps > expected_cost_bps` (`edge_positive`); short entry does not. When `|signal_bps| < expected_cost_bps` for a short, `alpha_scale` zeros out the magnitude (correct, no position taken), but `ALPHA_NEGATIVE` is still appended as the reason code. Consumers of logs and metrics will believe a short entry was warranted. For longs the equivalent condition correctly emits `ALPHA_DECAY`.
   - Acceptance criteria:
-    - Validation rejects malformed orders before network submission.
-    - Quantity/price normalization obeys contract precision and does not violate filter bounds.
-    - Unit tests cover edge cases for BTCUSDT and at least one alt perpetual.
+    - [ ] `negative_entry` requires `std::abs(alpha_signal.signal_bps) > expected_cost_bps` in addition to the existing threshold check.
+    - [ ] When `|signal| <= expected_cost` for a short, reason code is `ALPHA_DECAY`, not `ALPHA_NEGATIVE`.
+    - [ ] Unit tests cover: (a) short entry with sufficient edge → `ALPHA_NEGATIVE` + negative target; (b) short signal below cost → `ALPHA_DECAY` + zero target; (c) symmetry with equivalent long cases.
 
-- [x] **FUT-BN-4: Position and leverage state reconciliation**
-  - Scope: add futures reconciliation snapshot fetchers for positions, open orders, and account risk; wire into `ReconciliationService` and `PositionLedger`.
+- [ ] **PORT-H2: `AlphaSignalReader` members `fd_` and `ptr_` not initialized in constructor**
+  - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / HIGH-2
+  - File: `core/ipc/alpha_signal.hpp:28–31, 134–138`
+  - Problem: Constructor initializes `path_`, `signal_min_bps_`, `risk_max_` but leaves `fd_` and `ptr_` uninitialized. The destructor calls `close()` which checks `fd_ >= 0` — undefined behaviour if `open()` was never called, potentially invoking `::close()` on a live file descriptor belonging to another component.
   - Acceptance criteria:
-    - Reconciliation detects drift for both net and hedge-mode positions.
-    - Local ledger is corrected after reconnect without duplicate fills.
-    - Quarantine path is triggered when drift exceeds configured threshold.
+    - [ ] `fd_` is declared with in-class default `= -1`; `ptr_` is declared with in-class default `= nullptr`.
+    - [ ] No other behavior changed.
+    - [ ] Existing `AlphaSignalReader` unit/IPC tests continue to pass.
 
-### HIGH
-
-- [x] **RISK-ACC-1: Venue-aware capital accounting + live session PnL ledger**
-  - Scope: add per-venue starting equity configuration, wire reconciled free balances into pre-trade affordability checks, and produce live-mode end-of-session PnL/equity summary aligned with shadow metrics schema.
+- [ ] **PORT-H3: `allows_long()` / `allows_short()` fail-open with no observable warning when IPC unavailable**
+  - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / HIGH-3
+  - File: `core/ipc/alpha_signal.hpp:97–113`
+  - Problem: When `ptr_ == nullptr` (shared-memory file absent or `open()` failed), both methods return `true`, allowing all trades without any signal gate. `SmartOrderRouter::route_with_alpha` relies on these gates. No log warning is emitted, so the operator has no indication that ungated order flow is occurring.
   - Acceptance criteria:
-    - Runtime config supports per-venue starting equity and minimum free-collateral buffers for BINANCE/KRAKEN/OKX/COINBASE.
-    - Order submission is blocked or clipped when venue free balance/collateral cannot fund intended order + fee buffer.
-    - Live engine emits periodic and shutdown metrics for per-venue and global `{start_equity, end_equity, realized_pnl, unrealized_pnl, fees, net_pnl, return_pct}`.
-    - Drawdown checks are driven by the live session accounting PnL source and validated by unit/integration tests.
+    - [ ] A throttled `LOG_WARN` (at most once per N seconds, configurable) is emitted from `allows_long()` and `allows_short()` when `!ptr_`.
+    - [ ] The decision to fail-open vs fail-closed is explicitly documented in a comment adjacent to the `if (!ptr_) return true` lines.
+    - [ ] Unit test verifies the warning fires exactly once per throttle window when reader is not opened.
 
-- [x] **FUT-BN-5: Funding-rate and mark-price risk gates**
-  - Scope: add risk checks that can block/scale orders based on projected funding cost, mark/index divergence, and max leverage per symbol.
+- [ ] **PORT-H4: No symmetric `positive_reversal` exit for shorts; live/shadow reversal threshold mismatch**
+  - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / HIGH-5
+  - Files: `config/live/portfolio.yaml:4`, `config/shadow/portfolio.yaml:4`, `core/execution/common/portfolio/portfolio_intent_engine.hpp:117, 145`
+  - Problem: Only `negative_reversal_signal_bps` exists; there is no `positive_reversal_signal_bps` to urgently exit a short when signal flips strongly bullish. Short exits in shadow mode depend on the `positive_entry` path flipping the target sign (which is functionally correct but lacks an explicit reason code and urgency guarantee). Additionally, the live threshold (`–1.0`) and shadow threshold (`–3.0`) differ substantially, creating a train/prod mismatch.
   - Acceptance criteria:
-    - Risk module can reject new exposure when leverage or maintenance margin thresholds are breached.
-    - Funding-aware sizing path is configurable via `config/` and covered by unit tests.
-    - Rejections expose stable reason codes for observability.
+    - [ ] `positive_reversal_signal_bps` config field added to `PortfolioIntentConfig` and both YAML files.
+    - [ ] `PortfolioIntentEngine::evaluate` checks `signal_bps >= positive_reversal_signal_bps` when holding a short position and triggers `flatten_now` with urgency `AGGRESSIVE` and a new `POSITIVE_REVERSAL` reason code.
+    - [ ] A new `PortfolioIntentReasonCode::POSITIVE_REVERSAL` enum value is added and handled in `reason_code_to_string`.
+    - [ ] Live and shadow `negative_reversal_signal_bps` values are reconciled; any intentional divergence is documented with a comment in the YAML.
+    - [ ] Unit tests cover `short → flatten` via positive reversal for both threshold-exactly-met and exceeded cases.
 
-- [x] **FUT-BN-6: Connector failure-injection + live contract tests for futures**
-  - Scope: mirror existing connector tests for futures endpoints and error taxonomy (auth, rate limit, timestamp skew, reduce-only violation).
+- [ ] **PORT-H5: Wire futures risk gates (`commit_futures_order`) into live submit path**
+  - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / HIGH-4 (also tracked as FUT-BN-15)
+  - File: `core/engine/trading_engine_main.cpp:787–792`
+  - Problem: In both spot and futures modes, order submission calls `global_risk.commit_order(...)`. The futures-specific `GlobalRiskControls::commit_futures_order(...)` — enforcing leverage caps, maintenance margin, and mark/index divergence — is never invoked. Futures risk constraints are fully implemented but unreachable.
   - Acceptance criteria:
-    - New futures test suite validates operation state invariants in failure paths.
-    - Existing spot connector tests remain unchanged and passing.
-    - Replayable deterministic fixtures are added for all expected Binance error classes.
+    - [ ] In the `futures_only_mode` branch, `global_risk.commit_futures_order(...)` is called with a fully populated `FuturesRiskContext` (leverage, mark price, maintenance margin, funding rate from `BinanceFuturesConnector`).
+    - [ ] Rejection reason codes for leverage, margin, mark/index divergence, and funding are logged.
+    - [ ] Integration tests cover hard rejection and funding-aware notional scaling.
+    - [ ] Generic `commit_order` is no longer called for futures submits.
 
-- [x] **FUT-BN-7: Runtime config + kill-switch integration for futures venues**
-  - Scope: introduce futures connector config (base URLs, recvWindow, hedge mode, leverage caps) and ensure global kill switch and cancel-all semantics include futures open orders.
+---
+
+## MEDIUM
+
+- [ ] **PORT-M1: `ALPHA_NEGATIVE` reason code appended before deadband zero-out**
+  - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / MEDIUM-1
+  - File: `core/execution/common/portfolio/portfolio_intent_engine.hpp:169–178`
+  - Problem: The `ALPHA_NEGATIVE` (or `ALPHA_POSITIVE`) reason is appended before the deadband check clears the target to zero. A signal within the deadband that also exceeds the short-entry threshold emits `ALPHA_NEGATIVE` with zero position delta, misleading log and metric consumers.
   - Acceptance criteria:
-    - Futures connector can be enabled/disabled per environment without code changes.
-    - Kill switch issues futures `cancelAllOpenOrders` and blocks fresh submits until reset.
-    - Startup validation fails fast on missing futures credentials/config keys.
+    - [ ] Deadband check occurs before reason-code appending, or the reason code is overridden to `ALPHA_DECAY` when `|signal| <= deadband_signal_bps`.
+    - [ ] Unit test verifies that a signal within deadband always yields `ALPHA_DECAY` reason code regardless of sign.
 
-
-- [x] **FUT-BN-11: Validate spot-orderbook alpha execution on futures (basis + latency controls)**
-  - Scope: support strategy mode where alpha is derived from spot L2/trade-flow signals while execution occurs on Binance perpetual futures.
+- [ ] **PORT-M2: `NeuralAlphaMarketMaker` posts ask (short-initiating) orders without checking `long_only`**
+  - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / MEDIUM-2
+  - File: `core/execution/market_maker.hpp:170–176`
+  - Problem: `post_ask` is gated only on `(net_pos - qty) >= -cfg_.max_position`. When `long_only = true` in live mode and `net_pos = 0`, this allows an ask that would push the position to `–qty`. The `PortfolioIntentEngine` would then attempt to flatten, creating a rapid order/cancel oscillation.
   - Acceptance criteria:
-    - Signal pipeline explicitly tags source venue/instrument (`spot`) and execution venue/instrument (`futures`) for every decision.
-    - Pre-trade guardrails bound allowable spot-perp basis divergence and stale-signal latency before submitting futures orders.
-    - Backtest/replay shows PnL attribution split between alpha edge and basis slippage, with fail-safe downgrade when basis regime breaks.
+    - [ ] `long_only` flag added to `MarketMakerConfig`.
+    - [ ] `post_ask` gated on `!long_only || net_pos > 0` (only reduce existing longs, never initiate shorts, in long-only mode).
+    - [ ] Unit test verifies that when `long_only = true`, market maker never submits an ask that would result in a short position.
 
-- [x] **FUT-BN-12: Runtime strategy-mode switch (spot-only portfolio vs futures-only long/short)**
-  - Scope: add explicit runtime mode selection so the engine can run either (A) spot-only portfolio management flow or (B) futures-only long/short flow, with no mixed execution in a single mode.
+- [ ] **PORT-M3: Three independent staleness thresholds with no unified configuration source**
+  - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / MEDIUM-3
+  - Files: `core/ipc/alpha_signal.hpp:23` (`STALE_NS = 2 s`), `config/live/portfolio.yaml:8` (`stale_signal_ms: 1500`), `core/execution/market_maker.hpp:42` (`cfg_.stale_ns`)
+  - Problem: Three components each implement an independent staleness check with different values (2 000 ms, 1 500 ms, per-MM config). A signal aged 1 600 ms is stale to the intent engine but live to the routing gate, allowing an order to be routed on a signal the intent engine would have blocked.
   - Acceptance criteria:
-    - Startup config supports a single required enum mode: `spot_only` or `futures_only`.
-    - In `spot_only`, all futures connectors/orders are disabled at compile/runtime boundaries and risk checks validate spot-only assumptions.
-    - In `futures_only`, spot execution paths are disabled and futures position/risk checks (long/short, leverage, margin) are mandatory.
-    - Mode transitions require controlled restart and emit an auditable configuration event.
+    - [ ] `STALE_NS` compile-time constant in `AlphaSignalReader` is replaced by a constructor parameter sourced from the same `stale_signal_ms` config key used by `PortfolioIntentEngine`.
+    - [ ] `MarketMakerConfig::stale_ns` is removed or aligned; the MM reads from the shared config value.
+    - [ ] All three consumers use the same runtime-configurable value. One config key (`stale_signal_ms`) governs all.
+    - [ ] Unit tests for `AlphaSignalReader::allows_long()` and the intent engine `STALE_SIGNAL` path use identical thresholds.
 
-- [x] **FUT-BN-13: Portfolio intent engine futures long/short mapping from alpha**
-  - Scope: extend `PortfolioIntentEngine`/strategy intent generation so alpha sign and confidence map deterministically to futures long/short/flat targets per symbol, including reduce/flip behavior for existing exposure.
-  - Detailed flow (alpha read -> target position):
-    1. Read normalized alpha (`signal_bps`, `size_fraction`, `risk_score`) and current position state (qty, side, leverage headroom, margin mode, health flags).
-    2. Apply gating in fixed order: kill-switch / venue health -> risk-off/regime blocks -> staleness checks -> basis/funding guards (when enabled).
-    3. Convert alpha sign + magnitude into a signed target exposure:
-       - `signal_bps > +entry_bps` => positive target (long),
-       - `signal_bps < -entry_bps` => negative target (short),
-       - `|signal_bps| <= deadband_bps` => flat hold/flatten policy.
-    4. Apply sizing multipliers (confidence, risk score, regime scale, health scale) and clamp by max position, leverage, and collateral.
-    5. Resolve transition plan from current to target (`add`, `reduce`, `flatten`, `flip`) with explicit order sequencing for `long -> short` and `short -> long`.
-    6. Emit execution intents with futures direction fields (`position_side`, `reduce_only`, `close_position`) and auditable reason codes.
+- [ ] **PORT-M4: Reconciliation resets inventory age for pre-existing positions**
+  - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / MEDIUM-4
+  - File: `core/execution/common/portfolio/position_ledger.hpp:131–136`
+  - Problem: On the first reconciliation after startup, any venue with a non-zero position that lacks `has_inventory_age` has `opened_at` set to `now()`, silently restarting the stale-inventory timer. A position held before a restart will not trigger a forced exit for `stale_inventory_ms` regardless of its true age.
   - Acceptance criteria:
-    - Positive alpha generates long intent, negative alpha generates short intent, and near-zero alpha resolves to flat/no-trade via configurable deadband.
-    - Target-position transitions (`long -> short`, `short -> long`, `long/short -> flat`) are explicit and risk-checked before order emission.
-    - Generated intents include futures-specific direction metadata (`position_side`, `reduce_only`/close semantics) so execution does not infer direction from spot fields.
-    - Unit/integration tests validate deterministic outcomes for all transition classes (`flat->long`, `flat->short`, `long->short`, `short->long`, `long->flat`, `short->flat`) under representative alpha/regime/risk inputs.
+    - [ ] If `ReconciliationSnapshot` carries position age (or open timestamp), `reconcile_positions` propagates it into `opened_at` rather than using `now()`.
+    - [ ] If the snapshot does not carry age, a `LOG_WARN` is emitted noting that inventory age was reset for a non-zero position.
+    - [ ] Unit test covers reconciliation of a pre-existing position: `has_inventory_age` is set and `opened_at` is not clamped to now when a valid age is available.
 
-- [x] **FUT-BN-14: Shadow runtime futures config surface (`run_shadow` + `futures.yaml`)**
-  - Scope: add explicit shadow runtime configuration for futures execution mode so operators can run spot-only or futures-only shadow sessions without ad-hoc CLI args.
+- [ ] **PORT-M5: Use true futures mid price for basis guard in intent engine**
+  - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / MEDIUM-5 (also tracked as FUT-BN-16)
+  - File: `core/engine/trading_engine_main.cpp:930`
+  - Problem: `intent_ctx.futures_mid_price` is set to `binance_book.mid_price()` (spot) in futures mode, making `compute_basis_bps` return 0.0 always. The `max_basis_divergence_bps: 25.0` guard is permanently inactive in futures mode.
   - Acceptance criteria:
-    - Add `config/shadow/futures.yaml` with required schema (`enabled`, `strategy_mode`, `position_mode`, `default_leverage`, per-symbol leverage caps, deadband/flip controls).
-    - Extend `config/shadow/runtime.yaml` with `strategy_mode` (`spot_only` / `futures_only`) and `futures_config` path.
-    - Update `deploy/run_shadow.sh` to read these keys, validate combinations, and pass deterministic engine args/config wiring.
-    - Startup fails fast with clear diagnostics if `strategy_mode=futures_only` and futures config/credentials are missing.
-    - Shadow startup logs include resolved strategy mode + futures config path for auditability.
+    - [ ] `futures_mid_price` is sourced from `BinanceFuturesConnector` mark/contract mid when `futures_only_mode = true`.
+    - [ ] `max_basis_divergence_bps` correctly triggers `BASIS_TOO_WIDE` flatten when basis exceeds threshold in futures mode.
+    - [ ] Portfolio-intent log line includes both `spot_mid` and `futures_mid` values used in basis computation.
+    - [ ] Unit/integration test verifies `BASIS_TOO_WIDE` fires deterministically in futures mode when injected basis exceeds threshold.
 
-### MEDIUM
 - [ ] **FUT-BN-8: Shadow-mode rollout plan for Binance futures**
   - Scope: shadow execution path for futures with no live order placement, plus metrics for slippage, reject rate, and reconciliation drift.
   - Acceptance criteria:
-    - Shadow mode can run as a dedicated session with futures trading explicitly activated (`futures_enabled=true`) while final order placement side effects remain disabled.
-    - Shadow mode reuses production code paths except final submit side effects.
-    - Daily report includes futures-specific health metrics and drift deltas.
-    - Go-live checklist defines promotion criteria and rollback conditions.
+    - [ ] Shadow mode can run as a dedicated session with futures trading explicitly activated (`futures_enabled=true`) while final order-placement side effects remain disabled.
+    - [ ] Shadow mode reuses production code paths except final submit side effects.
+    - [ ] Daily report includes futures-specific health metrics and drift deltas.
+    - [ ] Go-live checklist defines promotion criteria and rollback conditions.
 
 - [ ] **FUT-BN-9: Observability and audit trail for futures lifecycle**
   - Scope: structured logs + metrics for futures request/response latencies, error buckets, and order lifecycle transitions.
   - Acceptance criteria:
-    - Metrics include per-endpoint p50/p95/p99 latency and reject taxonomy.
-    - Audit logs can correlate `client_order_id` to Binance futures order IDs and reconciliation events.
-    - No secrets appear in logs.
+    - [ ] Metrics include per-endpoint p50/p95/p99 latency and reject taxonomy.
+    - [ ] Audit logs can correlate `client_order_id` to Binance futures order IDs and reconciliation events.
+    - [ ] No secrets appear in logs.
 
-### LOW
+---
+
+## LOW
+
+- [ ] **PORT-L1: `check_stop` in `NeuralAlphaMarketMaker` ignores its `AlphaSignal` parameter**
+  - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / LOW-1
+  - File: `core/execution/market_maker.hpp:193`
+  - Problem: `void check_stop(double mid, const AlphaSignal& )` receives a signal but the parameter is unnamed and unused. Signal-informed stop widening (e.g., tighter stop when risk is elevated) is not implemented, and the unnamed parameter creates confusion about whether this was intentional.
+  - Acceptance criteria:
+    - [ ] Either name the parameter and document why it is intentionally unused (with a `(void)` suppress), or implement signal-aware stop adjustment as a separate TODO with a design note.
+    - [ ] No functional behavior change in this ticket.
+
+- [ ] **PORT-L2: `AlphaSignalReader::read()` does not auto-reconnect; `RegimeSignalReader::read()` does**
+  - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / LOW-2
+  - Files: `core/ipc/alpha_signal.hpp:67–69`, `core/ipc/regime_signal.hpp:62–65`
+  - Problem: If `/tmp/trt_ipc/trt_alpha.bin` appears after engine startup, alpha signals are never picked up without a full restart. The regime reader auto-reconnects. This asymmetry is undocumented and surprising.
+  - Acceptance criteria:
+    - [ ] `AlphaSignalReader::read()` attempts `open()` if `ptr_ == nullptr` (mirroring regime reader behavior), OR the asymmetry is explicitly documented with a rationale comment in both headers.
+    - [ ] Chosen behavior is consistent between both readers.
+
+- [ ] **PORT-L3: `intent_action()` returns `"reduce"` for both reducing longs and reducing shorts**
+  - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / LOW-3
+  - File: `core/engine/trading_engine_main.cpp:224–232`
+  - Problem: A negative `position_delta` maps to `"reduce"` whether the intent is closing a long, adding to a short, or reducing a short. Shadow-mode logs label a short-entry as `"reduce"`, breaking intent tracking in observability dashboards.
+  - Acceptance criteria:
+    - [ ] Action labels distinguish direction: `"reduce_long"` (selling from long) vs `"enter_short"` (initiating short from flat) vs `"reduce_short"` (buying back a short) vs `"enter_long"`.
+    - [ ] Labels require `current_position` context to determine; `intent_action` signature is updated accordingly, or a new helper is introduced.
+    - [ ] Shadow metrics and Grafana dashboards (if any) are updated to handle new label values.
+
 - [ ] **FUT-BN-10: Multi-Assets Mode and portfolio-margin compatibility review**
   - Scope: document compatibility matrix for one-way vs hedge mode, single-asset vs multi-assets mode, and future portfolio-margin migration.
   - Acceptance criteria:
-    - Supported combinations are explicitly documented with constraints.
-    - Unsupported account modes fail with clear startup diagnostics.
+    - [ ] Supported combinations are explicitly documented with constraints.
+    - [ ] Unsupported account modes fail with clear startup diagnostics.
 
-### RESEARCH
+---
+
+## RESEARCH
+
 - [ ] **FUT-R-1: Evaluate basis/term-structure alpha for hedge timing**
   - Scope: research signal utility from perp basis, funding regime, and spot-perp dislocation for inventory hedging.
   - Acceptance criteria:
-    - Offline report quantifies incremental alpha and drawdown impact.
-    - Candidate features and productionization risk are documented.
+    - [ ] Offline report quantifies incremental alpha and drawdown impact.
+    - [ ] Candidate features and productionization risk are documented.
 
 - [ ] **FUT-R-2: Research spot/futures coupling for hedging overlay (deferred)**
   - Scope: investigate later-phase coupling where spot and futures can be co-activated for hedge overlays (e.g., basis hedges, inventory neutralization).
   - Acceptance criteria:
-    - Research note defines candidate coupling architectures, risk controls, and failure modes.
-    - Backtest/replay quantifies whether hedge overlay improves drawdown/variance without degrading core alpha.
-    - Output includes go/no-go criteria before any production implementation task is created.
-
-- [ ] **FUT-BN-15: Wire futures risk gates into live submit path**
-  - Scope: use `GlobalRiskControls::commit_futures_order(...)` from `trading_engine_main.cpp` in `futures_only` mode, with a fully populated `FuturesRiskContext` from live connector/account data.
-  - Acceptance criteria:
-    - Futures submit path no longer uses generic `commit_order(...)` when `strategy_mode=futures_only`.
-    - Rejection reason codes for leverage, maintenance margin, mark/index divergence, and projected funding are observable in logs/metrics.
-    - Integration tests validate both hard rejection and funding-aware notional scaling behavior.
-
-- [ ] **FUT-BN-16: Use true futures mid for basis guard in intent engine**
-  - Scope: provide a real futures mid/mark source to `PortfolioIntentContext.futures_mid_price` in futures mode and verify basis divergence gating behavior.
-  - Acceptance criteria:
-    - `futures_mid_price` is sourced from futures market data (not spot fallback).
-    - `max_basis_divergence_bps` trigger behavior is deterministic in unit/integration tests.
-    - Portfolio-intent logs include both spot and futures mid values used in basis computation for auditability.
+    - [ ] Research note defines candidate coupling architectures, risk controls, and failure modes.
+    - [ ] Backtest/replay quantifies whether hedge overlay improves drawdown/variance without degrading core alpha.
+    - [ ] Output includes go/no-go criteria before any production implementation task is created.
