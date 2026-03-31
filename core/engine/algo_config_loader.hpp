@@ -118,6 +118,7 @@ namespace trading {
             apply_double(values, "min_entry_signal_bps", out.min_entry_signal_bps);
             apply_double(values, "alpha_exit_buffer_bps", out.alpha_exit_buffer_bps);
             apply_double(values, "negative_reversal_signal_bps", out.negative_reversal_signal_bps);
+            apply_double(values, "positive_reversal_signal_bps", out.positive_reversal_signal_bps);
             apply_double(values, "deadband_signal_bps", out.deadband_signal_bps);
             apply_double(values, "max_risk_score", out.max_risk_score);
             apply_double(values, "shock_enter_threshold", out.shock_enter_threshold);

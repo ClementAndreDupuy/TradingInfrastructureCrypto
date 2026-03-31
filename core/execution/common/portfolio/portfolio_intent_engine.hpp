@@ -19,6 +19,7 @@ namespace trading {
         ALPHA_NEGATIVE,
         ALPHA_DECAY,
         NEGATIVE_REVERSAL,
+        POSITIVE_REVERSAL,
         RISK_OFF,
         SHOCK_REGIME,
         ILLIQUID_REGIME,
@@ -34,6 +35,7 @@ namespace trading {
         double min_entry_signal_bps;
         double alpha_exit_buffer_bps;
         double negative_reversal_signal_bps;
+        double positive_reversal_signal_bps;
         double deadband_signal_bps;
         double max_risk_score;
         double shock_enter_threshold;
@@ -115,6 +117,8 @@ namespace trading {
 
             const bool risk_off = alpha_signal.risk_score >= cfg_.max_risk_score;
             const bool negative_reversal = alpha_signal.signal_bps <= cfg_.negative_reversal_signal_bps;
+            const bool positive_reversal = current_position < 0.0 &&
+                                           alpha_signal.signal_bps >= cfg_.positive_reversal_signal_bps;
             const bool shock_regime = shock_regime_active_;
             const bool illiquid_regime = illiquid_regime_active_;
             const bool stale_inventory = ledger.oldest_inventory_age_ms >= cfg_.stale_inventory_ms &&
@@ -130,6 +134,8 @@ namespace trading {
                 append_reason(out, PortfolioIntentReasonCode::RISK_OFF);
             if (negative_reversal)
                 append_reason(out, PortfolioIntentReasonCode::NEGATIVE_REVERSAL);
+            if (positive_reversal)
+                append_reason(out, PortfolioIntentReasonCode::POSITIVE_REVERSAL);
             if (shock_regime)
                 append_reason(out, PortfolioIntentReasonCode::SHOCK_REGIME);
             if (illiquid_regime)
@@ -143,7 +149,7 @@ namespace trading {
             if (enabled_venues > 0 && healthy_venues < enabled_venues)
                 append_reason(out, PortfolioIntentReasonCode::HEALTH_DEGRADED);
 
-            if (risk_off || negative_reversal || shock_regime || stale_signal || basis_too_wide) {
+            if (risk_off || negative_reversal || positive_reversal || shock_regime || stale_signal || basis_too_wide) {
                 out.flatten_now = std::abs(current_position) > 0.0;
                 out.max_shortfall_bps = expected_cost_bps + 2.5;
                 out.urgency = ShadowUrgency::AGGRESSIVE;
@@ -207,6 +213,8 @@ namespace trading {
                     return "alpha_decay";
                 case PortfolioIntentReasonCode::NEGATIVE_REVERSAL:
                     return "negative_reversal";
+                case PortfolioIntentReasonCode::POSITIVE_REVERSAL:
+                    return "positive_reversal";
                 case PortfolioIntentReasonCode::RISK_OFF:
                     return "risk_off";
                 case PortfolioIntentReasonCode::SHOCK_REGIME:
