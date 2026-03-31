@@ -200,6 +200,28 @@ TEST(AlphaSignalReader, FailOpenOnTsNsZero) {
     EXPECT_TRUE(reader.allows_mm());
 }
 
+TEST(AlphaSignalReader, WarnThrottledWhenIpcUnavailable) {
+    // Reader never opened — ptr_ is null, so allows_long/allows_short fail-open
+    // and should emit a throttled warn.
+    trading::AlphaSignalReader reader("/tmp/no_such_file_ipc_test.bin", 0.0, 1.0,
+                                     /*warn_throttle_ns=*/1'000'000'000LL);
+
+    // First call must fire the warn.
+    EXPECT_TRUE(reader.allows_long());
+    EXPECT_EQ(reader.ipc_warn_count(), 1u);
+
+    // Immediate second call is within the throttle window: warn must not fire again.
+    EXPECT_TRUE(reader.allows_short());
+    EXPECT_EQ(reader.ipc_warn_count(), 1u);
+
+    // With a zero throttle window every call fires.
+    trading::AlphaSignalReader reader2("/tmp/no_such_file_ipc_test.bin", 0.0, 1.0,
+                                      /*warn_throttle_ns=*/0LL);
+    EXPECT_TRUE(reader2.allows_long());
+    EXPECT_TRUE(reader2.allows_short());
+    EXPECT_EQ(reader2.ipc_warn_count(), 2u);
+}
+
 TEST(AlphaSignalReader, CloseIsIdempotent) {
     TempFile tmp;
     write_signal_file(tmp.path, 0, 1.0, 0.1, 1LL);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../common/logging.hpp"
+
 #include <atomic>
 #include <chrono>
 #include <cstring>
@@ -26,8 +28,10 @@ namespace trading {
         static constexpr const char *k_default_path = "/tmp/trt_ipc/trt_alpha.bin";
 
         explicit AlphaSignalReader(const std::string &path,
-                                   double signal_min_bps, double risk_max)
-            : path_(path), signal_min_bps_(signal_min_bps), risk_max_(risk_max) {
+                                   double signal_min_bps, double risk_max,
+                                   int64_t warn_throttle_ns = 10'000'000'000LL)
+            : path_(path), signal_min_bps_(signal_min_bps), risk_max_(risk_max),
+              warn_throttle_ns_(warn_throttle_ns) {
         }
 
         ~AlphaSignalReader() { close(); }
@@ -95,8 +99,14 @@ namespace trading {
         }
 
         bool allows_long() const noexcept {
-            if (!ptr_)
+            if (!ptr_) {
+                // Fail-open: allow trading when IPC is unavailable so that
+                // infrastructure failures do not halt order flow. The operator
+                // is warned via a throttled log message that signal gating is
+                // inactive for this reader.
+                maybe_warn_ipc_unavailable();
                 return true;
+            }
             AlphaSignal s = read();
             if (is_stale(s))
                 return true;
@@ -104,13 +114,21 @@ namespace trading {
         }
 
         bool allows_short() const noexcept {
-            if (!ptr_)
+            if (!ptr_) {
+                // Fail-open: allow trading when IPC is unavailable so that
+                // infrastructure failures do not halt order flow. The operator
+                // is warned via a throttled log message that signal gating is
+                // inactive for this reader.
+                maybe_warn_ipc_unavailable();
                 return true;
+            }
             AlphaSignal s = read();
             if (is_stale(s))
                 return true;
             return s.signal_bps <= -signal_min_bps_ && s.risk_score < risk_max_;
         }
+
+        uint64_t ipc_warn_count() const noexcept { return ipc_warn_count_; }
 
         bool allows_mm() const noexcept {
             if (!ptr_)
@@ -131,10 +149,22 @@ namespace trading {
             return s.ts_ns == 0 || (now_ns() - s.ts_ns) > STALE_NS;
         }
 
+        void maybe_warn_ipc_unavailable() const noexcept {
+            const int64_t now = now_ns();
+            if (now - last_warn_ns_ >= warn_throttle_ns_) {
+                last_warn_ns_ = now;
+                ++ipc_warn_count_;
+                LOG_WARN("alpha_signal_reader ipc_unavailable: signal gating inactive (fail-open)", "path", path_.c_str());
+            }
+        }
+
         std::string path_;
         double signal_min_bps_;
         double risk_max_;
-        int fd_;
-        const char *ptr_;
+        int64_t warn_throttle_ns_;
+        mutable int64_t last_warn_ns_ = 0;
+        mutable uint64_t ipc_warn_count_ = 0;
+        int fd_ = -1;
+        const char *ptr_ = nullptr;
     };
 }

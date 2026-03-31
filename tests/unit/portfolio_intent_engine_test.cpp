@@ -229,6 +229,40 @@ TEST(PortfolioIntentEngineTest, StaleInventoryWithLiveConfigTriggersReduceToFlat
     EXPECT_LT(intent.target_global_position, 0.40);
 }
 
+TEST(PortfolioIntentEngineTest, ShortEntryWithSufficientEdgeProducesNegativeTarget) {
+    PortfolioIntentEngine engine(make_cfg());
+    const auto venues = make_venues();
+    const auto alpha = make_alpha(-8.0);
+
+    const PortfolioIntent intent = engine.evaluate(alpha, make_regime(), make_ledger(), venues, make_ctx());
+
+    EXPECT_LT(intent.target_global_position, 0.0);
+    EXPECT_LT(intent.position_delta, 0.0);
+    EXPECT_EQ(intent.primary_reason(), PortfolioIntentReasonCode::ALPHA_NEGATIVE);
+}
+
+TEST(PortfolioIntentEngineTest, ShortSignalBelowCostProducesAlphaDecay) {
+    PortfolioIntentEngine engine(make_cfg());
+    const auto venues = make_venues();
+    const auto alpha = make_alpha(-3.0);
+
+    const PortfolioIntent intent = engine.evaluate(alpha, make_regime(), make_ledger(), venues, make_ctx());
+
+    EXPECT_NEAR(intent.target_global_position, 0.0, 1e-9);
+    EXPECT_EQ(intent.primary_reason(), PortfolioIntentReasonCode::ALPHA_DECAY);
+}
+
+TEST(PortfolioIntentEngineTest, LongSignalBelowCostProducesAlphaDecay) {
+    PortfolioIntentEngine engine(make_cfg());
+    const auto venues = make_venues();
+    const auto alpha = make_alpha(3.0);
+
+    const PortfolioIntent intent = engine.evaluate(alpha, make_regime(), make_ledger(), venues, make_ctx());
+
+    EXPECT_NEAR(intent.target_global_position, 0.0, 1e-9);
+    EXPECT_EQ(intent.primary_reason(), PortfolioIntentReasonCode::ALPHA_DECAY);
+}
+
 TEST(ParentOrderManagerTest, SmallerSameDirectionTargetCapsRemainingQty) {
     ParentOrderManager manager;
     const auto now = std::chrono::steady_clock::now();
