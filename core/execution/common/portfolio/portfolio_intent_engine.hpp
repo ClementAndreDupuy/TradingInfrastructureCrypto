@@ -48,7 +48,6 @@ namespace trading {
         double max_basis_divergence_bps;
         double stale_inventory_alpha_hold_bps;
         double health_reduce_ratio;
-        bool long_only;
     };
 
     struct PortfolioIntentContext {
@@ -159,7 +158,7 @@ namespace trading {
 
             double target = 0.0;
             const bool positive_entry = alpha_signal.signal_bps >= cfg_.min_entry_signal_bps && edge_positive;
-            const bool negative_entry = alpha_signal.signal_bps <= -cfg_.min_entry_signal_bps && !cfg_.long_only && edge_negative;
+            const bool negative_entry = alpha_signal.signal_bps <= -cfg_.min_entry_signal_bps && edge_negative;
             if (positive_entry || negative_entry) {
                 const double alpha_scale = std::clamp(
                     (std::abs(alpha_signal.signal_bps) - expected_cost_bps) /
@@ -188,9 +187,6 @@ namespace trading {
             if (illiquid_regime || (stale_inventory && !alpha_strong)) {
                 target = clamp_reduce_target(current_position, target);
             }
-
-            if (cfg_.long_only)
-                target = std::max(0.0, target);
 
             out.target_global_position = clamp_position(target);
             out.position_delta = out.target_global_position - current_position;
@@ -322,8 +318,7 @@ namespace trading {
         }
 
         [[nodiscard]] double clamp_position(double position) const noexcept {
-            const double min_position = cfg_.long_only ? 0.0 : -cfg_.max_position;
-            return std::clamp(position, min_position, cfg_.max_position);
+            return std::clamp(position, -cfg_.max_position, cfg_.max_position);
         }
 
         [[nodiscard]] static double clamp_reduce_target(double current, double target) noexcept {

@@ -25,7 +25,6 @@ PortfolioIntentConfig make_cfg() {
     cfg.max_basis_divergence_bps = 25.0;
     cfg.stale_inventory_alpha_hold_bps = 10.0;
     cfg.health_reduce_ratio = 0.50;
-    cfg.long_only = false;
     return cfg;
 }
 
@@ -177,7 +176,6 @@ TEST(PortfolioIntentEngineTest, LiveConfigRegimeThresholdsDoNotActivateAtLowProb
     cfg.max_basis_divergence_bps = 25.0;
     cfg.stale_inventory_alpha_hold_bps = 10.0;
     cfg.health_reduce_ratio = 0.50;
-    cfg.long_only = true;
 
     PortfolioIntentEngine engine(cfg);
     const auto venues = make_venues();
@@ -213,7 +211,6 @@ TEST(PortfolioIntentEngineTest, StaleInventoryWithLiveConfigTriggersReduceToFlat
     cfg.max_basis_divergence_bps = 25.0;
     cfg.stale_inventory_alpha_hold_bps = 3.0;
     cfg.health_reduce_ratio = 0.50;
-    cfg.long_only = true;
 
     PortfolioIntentEngine engine(cfg);
     const PositionLedgerSnapshot stale_ledger = make_ledger(0.40, 6000);

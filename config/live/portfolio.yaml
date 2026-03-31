@@ -12,7 +12,6 @@ regime_persistence_ticks: 3
 stale_inventory_ms: 5000
 stale_inventory_alpha_hold_bps: 10.0
 health_reduce_ratio: 0.50
-long_only: true
 
 deadband_signal_bps: 1.0
 stale_signal_ms: 1500

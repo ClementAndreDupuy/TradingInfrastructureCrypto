@@ -90,15 +90,6 @@
     - [ ] Deadband check occurs before reason-code appending, or the reason code is overridden to `ALPHA_DECAY` when `|signal| <= deadband_signal_bps`.
     - [ ] Unit test verifies that a signal within deadband always yields `ALPHA_DECAY` reason code regardless of sign.
 
-- [ ] **PORT-M2: `NeuralAlphaMarketMaker` posts ask (short-initiating) orders without checking `long_only`**
-  - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / MEDIUM-2
-  - File: `core/execution/market_maker.hpp:170–176`
-  - Problem: `post_ask` is gated only on `(net_pos - qty) >= -cfg_.max_position`. When `long_only = true` in live mode and `net_pos = 0`, this allows an ask that would push the position to `–qty`. The `PortfolioIntentEngine` would then attempt to flatten, creating a rapid order/cancel oscillation.
-  - Acceptance criteria:
-    - [ ] `long_only` flag added to `MarketMakerConfig`.
-    - [ ] `post_ask` gated on `!long_only || net_pos > 0` (only reduce existing longs, never initiate shorts, in long-only mode).
-    - [ ] Unit test verifies that when `long_only = true`, market maker never submits an ask that would result in a short position.
-
 - [ ] **PORT-M3: Three independent staleness thresholds with no unified configuration source**
   - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / MEDIUM-3
   - Files: `core/ipc/alpha_signal.hpp:23` (`STALE_NS = 2 s`), `config/live/portfolio.yaml:8` (`stale_signal_ms: 1500`), `core/execution/market_maker.hpp:42` (`cfg_.stale_ns`)
