@@ -152,6 +152,30 @@ def _count_columns_present(df: pl.DataFrame) -> tuple[list[str], list[str]]:
     ask_found = [column for column in ask_candidates if column in df.columns]
     return bid_found, ask_found
 
+def _order_count_activity(df: pl.DataFrame) -> dict[str, int | bool]:
+    bid_count_columns, ask_count_columns = _count_columns_present(df)
+    if not bid_count_columns or not ask_count_columns:
+        return {
+            "bid_columns": len(bid_count_columns),
+            "ask_columns": len(ask_count_columns),
+            "non_zero_bid_columns": 0,
+            "non_zero_ask_columns": 0,
+            "all_zero": True,
+        }
+    non_zero_bid = int((df.select([pl.col(column).abs().sum().alias(column) for column in bid_count_columns]).to_numpy() > 0).sum())
+    non_zero_ask = int((df.select([pl.col(column).abs().sum().alias(column) for column in ask_count_columns]).to_numpy() > 0).sum())
+    return {
+        "bid_columns": len(bid_count_columns),
+        "ask_columns": len(ask_count_columns),
+        "non_zero_bid_columns": non_zero_bid,
+        "non_zero_ask_columns": non_zero_ask,
+        "all_zero": non_zero_bid == 0 or non_zero_ask == 0,
+    }
+
+
+def _has_nonzero_order_counts(df: pl.DataFrame) -> bool:
+    return not bool(_order_count_activity(df)["all_zero"])
+
 def _validate_alpha_input_schema(df: pl.DataFrame) -> None:
     if not _has_dense_levels(df):
         raise RuntimeError(
@@ -165,8 +189,9 @@ def _validate_alpha_input_schema(df: pl.DataFrame) -> None:
         raise RuntimeError(
             "Dataset missing per-level order-count columns required for count-aware depth features (bid_oc_* or bid_order_count_*, ask_oc_* or ask_order_count_*)."
         )
-    non_zero_bid = int((df.select([pl.col(column).abs().sum().alias(column) for column in bid_count_columns]).to_numpy() > 0).sum())
-    non_zero_ask = int((df.select([pl.col(column).abs().sum().alias(column) for column in ask_count_columns]).to_numpy() > 0).sum())
+    count_activity = _order_count_activity(df)
+    non_zero_bid = int(count_activity["non_zero_bid_columns"])
+    non_zero_ask = int(count_activity["non_zero_ask_columns"])
     if non_zero_bid == 0 or non_zero_ask == 0:
         print(
             "[WARN] Order-count columns are present but contain only zeros; "
@@ -468,6 +493,25 @@ def _candidate_dicts(search_space: dict[str, list[Any]], max_trials: int) -> lis
     combos = [dict(zip(keys, combo)) for combo in islice(product(*values), max_trials)]
     return combos
 
+def _mean_component_losses(folds: list[dict[str, Any]]) -> dict[str, float]:
+    if not folds:
+        return {"loss_return": float("nan"), "loss_direction": float("nan"), "loss_risk": float("nan")}
+    components = ("loss_return", "loss_direction", "loss_risk")
+    aggregated: dict[str, list[float]] = {name: [] for name in components}
+    for fold in folds:
+        metrics = fold.get("best_metrics", fold.get("validation_metrics", fold.get("metrics", {})))
+        if not isinstance(metrics, Mapping):
+            continue
+        for name in components:
+            raw = metrics.get(name)
+            if raw is None:
+                continue
+            try:
+                aggregated[name].append(float(raw))
+            except (TypeError, ValueError):
+                continue
+    return {name: (float(np.mean(values)) if values else float("nan")) for name, values in aggregated.items()}
+
 def _auto_tune_trainer_config(
     df: pl.DataFrame,
     base_cfg: TrainerConfig,
@@ -504,7 +548,14 @@ def _auto_tune_trainer_config(
         candidate_cfg = TrainerConfig(**cfg_kwargs)
         folds = walk_forward_train(df, candidate_cfg)
         score = _mean_selection_score(folds)
-        print(f"[HPO] {model_name} trial {trial_idx}/{len(trials)} score={score:.6f} params={trial}")
+        component_losses = _mean_component_losses(folds)
+        print(
+            f"[HPO] {model_name} trial {trial_idx}/{len(trials)} score={score:.6f}"
+            f" loss_return={component_losses['loss_return']:.6f}"
+            f" loss_direction={component_losses['loss_direction']:.6f}"
+            f" loss_risk={component_losses['loss_risk']:.6f}"
+            f" params={trial}"
+        )
         if score < best_score:
             best_score = score
             best_cfg = TrainerConfig(**asdict(candidate_cfg) | {"verbose": base_cfg.verbose, "epochs": base_cfg.epochs})

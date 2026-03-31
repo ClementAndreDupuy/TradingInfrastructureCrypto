@@ -35,6 +35,8 @@ from ..pipeline import (
     _fetch_coinbase_l5,
     _fetch_kraken_l5,
     _fetch_okx_l5,
+    _has_nonzero_order_counts,
+    _order_count_activity,
     _selection_score,
     _validate_alpha_input_schema,
     collect_from_core_bridge,
@@ -191,6 +193,7 @@ class ShadowSessionConfig:
     regime_startup_warmup_s: int = _sess["regime_startup_warmup_s"]
     max_regime_switches_per_minute_for_retrain: float = _sess.get("max_regime_switches_per_minute_for_retrain", 6.0)
     retrain_hpo_score_explosion_factor: float = _sess.get("retrain_hpo_score_explosion_factor", 8.0)
+    max_illiquid_concentration_for_retrain: float = _sess.get("max_illiquid_concentration_for_retrain", 0.85)
     primary_w_return: float = _trainer_cfg["w_return"]
     primary_w_direction: float = _trainer_cfg["w_direction"]
     primary_w_risk: float = _trainer_cfg["w_risk"]
@@ -408,6 +411,16 @@ class NeuralAlphaShadowSession:
                 f"regime_switch_rate_high switches_per_minute={switches_per_minute:.4f} "
                 f"cap={self.cfg.max_regime_switches_per_minute_for_retrain:.4f}"
             )
+        train_window = max(self.cfg.seq_len * 4, self.cfg.continuous_train_window_ticks)
+        window_records = self._signal_records[-train_window:] if train_window > 0 else self._signal_records
+        if window_records:
+            illiquid_values = [float(record.get("p_illiquid", 0.0)) for record in window_records]
+            illiquid_concentration = float(np.mean(illiquid_values))
+            if illiquid_concentration > self.cfg.max_illiquid_concentration_for_retrain:
+                return False, (
+                    f"illiquid_concentration_high concentration={illiquid_concentration:.4f} "
+                    f"cap={self.cfg.max_illiquid_concentration_for_retrain:.4f}"
+                )
         return True, "ok"
     @staticmethod
     def _load_regime_artifact(path: str) -> Any:
@@ -611,6 +624,7 @@ class NeuralAlphaShadowSession:
         )
         if not fold_results:
             return
+        self._log_retrain_fold_diagnostics(fold_results, context="secondary")
         best = min(fold_results, key=_selection_score)
         state = best["model_state"]
         metrics = dict(best.get("metrics", {}))
@@ -707,6 +721,20 @@ class NeuralAlphaShadowSession:
                 continue
             values.append(float(np.corrcoef(pred_mid, label_mid)[0, 1]))
         return float(np.mean(values)) if values else 0.0
+    def _log_retrain_fold_diagnostics(self, fold_results: list[dict[str, Any]], context: str) -> None:
+        for fold in fold_results:
+            fold_id = int(fold.get("fold", 0) or 0)
+            risk_stats = fold.get("risk_stats", {})
+            if not isinstance(risk_stats, dict):
+                continue
+            print(
+                f"[{_utcnow()}] [Shadow] retrain diagnostics"
+                f" context={context}"
+                f" fold={fold_id}"
+                f" risk_pos={float(risk_stats.get('risk_pos', 0.0)):.1f}"
+                f" risk_neg={float(risk_stats.get('risk_neg', 0.0)):.1f}"
+                f" risk_pos_weight={float(risk_stats.get('risk_pos_weight', 0.0)):.6f}"
+            )
     def _train_regime_on_data(self, df: pl.DataFrame) -> None:
         regime_path = Path(self.cfg.regime_model_path)
         artifact, _ = train_regime_model_from_df(df, RegimeConfig())
@@ -740,6 +768,14 @@ class NeuralAlphaShadowSession:
     def train_on_recent(self, n_ticks: int) -> None:
         df = self._collect_training_ticks(n_ticks)
         _validate_alpha_input_schema(df)
+        if not _has_nonzero_order_counts(df):
+            count_activity = _order_count_activity(df)
+            print(
+                f"[{_utcnow()}] [Shadow] continuous retrain skipped — all-zero order-count window"
+                f" bid_non_zero={count_activity['non_zero_bid_columns']}"
+                f" ask_non_zero={count_activity['non_zero_ask_columns']}"
+            )
+            return
         resume_state = self._snapshot_current_state()
         previous_primary_loss = float(self._latest_primary_sanity.get("validation_loss", float("inf")))
         primary_cfg = _auto_tune_trainer_config(
@@ -751,6 +787,7 @@ class NeuralAlphaShadowSession:
         fold_results = walk_forward_train(df, primary_cfg)
         if not fold_results:
             return
+        self._log_retrain_fold_diagnostics(fold_results, context="primary")
         best = min(fold_results, key=_selection_score)
         best_primary_loss = float(best.get("best_selection_score", float("inf")))
         if np.isfinite(previous_primary_loss):

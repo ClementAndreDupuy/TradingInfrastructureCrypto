@@ -8,6 +8,7 @@ from research.neural_alpha.models.trainer import TrainerConfig
 from research.neural_alpha.pipeline import (
     _auto_tune_trainer_config,
     _candidate_dicts,
+    _has_nonzero_order_counts,
     _selection_score,
     _validate_alpha_input_schema,
 )
@@ -212,3 +213,57 @@ def test_validate_alpha_input_schema_rejects_missing_count_columns() -> None:
         rows.append(row)
     with pytest.raises(RuntimeError, match="order-count columns"):
         _validate_alpha_input_schema(pl.DataFrame(rows))
+
+
+def test_has_nonzero_order_counts_detects_all_zero_window() -> None:
+    rows = []
+    for idx in range(4):
+        row = {
+            "timestamp_ns": idx + 1,
+            "best_bid": 100.0,
+            "best_ask": 100.1,
+            "trade_direction": 1,
+        }
+        for level in range(1, 11):
+            row[f"bid_price_{level}"] = 100.0 - level * 0.01
+            row[f"ask_price_{level}"] = 100.1 + level * 0.01
+            row[f"bid_size_{level}"] = 1.0
+            row[f"ask_size_{level}"] = 1.0
+            row[f"bid_oc_{level}"] = 0
+            row[f"ask_oc_{level}"] = 0
+        rows.append(row)
+    assert _has_nonzero_order_counts(pl.DataFrame(rows)) is False
+
+
+def test_auto_tune_logs_component_losses(monkeypatch, capsys: pytest.CaptureFixture) -> None:
+    def fake_model_cfg() -> dict:
+        return {
+            "search": {
+                "enabled": True,
+                "tuning_epochs": 2,
+                "max_trials": 1,
+                "primary": {"lr": [2e-4]},
+            }
+        }
+
+    def fake_walk_forward_train(df: pl.DataFrame, cfg: TrainerConfig) -> list[dict]:
+        return [
+            {
+                "best_selection_score": 0.5,
+                "best_metrics": {"loss_return": 0.1, "loss_direction": 0.2, "loss_risk": 0.3},
+            }
+        ]
+
+    monkeypatch.setattr("research._config.model_cfg", fake_model_cfg)
+    monkeypatch.setattr("research.neural_alpha.models.trainer.walk_forward_train", fake_walk_forward_train)
+    base_cfg = TrainerConfig(epochs=4, verbose=True)
+    _auto_tune_trainer_config(
+        pl.DataFrame({"timestamp_ns": [1, 2, 3], "best_bid": [1.0, 1.0, 1.0], "best_ask": [1.1, 1.1, 1.1]}),
+        base_cfg,
+        secondary=False,
+        enabled=True,
+    )
+    out = capsys.readouterr().out
+    assert "loss_return=0.100000" in out
+    assert "loss_direction=0.200000" in out
+    assert "loss_risk=0.300000" in out

@@ -1024,6 +1024,39 @@ class TestShadowRetrainCadence:
         session._publisher.close()
         session._regime_publisher.close()
 
+    def test_continuous_retrain_skips_when_illiquid_concentration_exceeds_cap(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cfg = ShadowSessionConfig(
+            log_path=str(tmp_path / "shadow.jsonl"),
+            signal_file=str(tmp_path / "alpha_signal.bin"),
+            exchanges=["BINANCE"],
+            continuous_train_every_ticks=1,
+            min_continuous_train_interval_s=0,
+            max_illiquid_concentration_for_retrain=0.5,
+            seq_len=8,
+        )
+        session = NeuralAlphaShadowSession(cfg)
+        session._processed_ticks = 1
+        session._last_continuous_train_tick = 0
+        session._session_steady_start_ns = 0
+        session._last_continuous_train_steady_ns = 0
+        session._signal_records = [
+            {"event_index": 1, "session_elapsed_ns": 0, "exchange": "BINANCE", "timestamp_exchange_ns": 1, "timestamp_local_ns": 1, "mid_price": 100.0, "signal": 0.0, "ret_mid_bps": 0.0, "p_calm": 0.0, "p_trending": 0.0, "p_shock": 0.0, "p_illiquid": 1.0},
+            {"event_index": 2, "session_elapsed_ns": 30_000_000_000, "exchange": "BINANCE", "timestamp_exchange_ns": 2, "timestamp_local_ns": 2, "mid_price": 100.0, "signal": 0.0, "ret_mid_bps": 0.0, "p_calm": 0.0, "p_trending": 0.0, "p_shock": 0.0, "p_illiquid": 0.9},
+        ]
+        calls: list[int] = []
+        monkeypatch.setattr(session, "train_on_recent", lambda n_ticks: calls.append(n_ticks))
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session.time.monotonic_ns",
+            lambda: 700 * 1_000_000_000,
+        )
+        session._maybe_continuous_train()
+        assert calls == []
+        session._log_fp.close()
+        session._publisher.close()
+        session._regime_publisher.close()
+
 
 class TestShadowRetrainDiagnostics:
     """Verify that retrain failures emit full diagnostics and are counted by error class."""
@@ -1170,6 +1203,44 @@ class TestShadowRetrainDiagnostics:
         assert "primary retrain aborted — score explosion" in captured
         assert session._latest_primary_sanity["validation_loss"] == pytest.approx(2.0)
 
+        session._log_fp.close()
+        session._publisher.close()
+        session._regime_publisher.close()
+
+    def test_train_on_recent_skips_all_zero_order_count_windows(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        session = self._make_session(tmp_path)
+        monkeypatch.setattr(
+            session,
+            "_collect_training_ticks",
+            lambda n_ticks: pl.DataFrame(
+                [
+                    {
+                        "timestamp_ns": idx + 1,
+                        "best_bid": 100.0,
+                        "best_ask": 100.1,
+                        "trade_direction": 1,
+                        **{f"bid_price_{level}": 100.0 - level * 0.01 for level in range(1, 11)},
+                        **{f"ask_price_{level}": 100.1 + level * 0.01 for level in range(1, 11)},
+                        **{f"bid_size_{level}": 1.0 for level in range(1, 11)},
+                        **{f"ask_size_{level}": 1.0 for level in range(1, 11)},
+                        **{f"bid_oc_{level}": 0 for level in range(1, 11)},
+                        **{f"ask_oc_{level}": 0 for level in range(1, 11)},
+                    }
+                    for idx in range(80)
+                ]
+            ),
+        )
+        called = {"walk_forward": False}
+        monkeypatch.setattr(
+            "research.neural_alpha.runtime.shadow_session.walk_forward_train",
+            lambda df, cfg: called.__setitem__("walk_forward", True),
+        )
+        session.train_on_recent(80)
+        captured = capsys.readouterr().out
+        assert "all-zero order-count window" in captured
+        assert called["walk_forward"] is False
         session._log_fp.close()
         session._publisher.close()
         session._regime_publisher.close()
