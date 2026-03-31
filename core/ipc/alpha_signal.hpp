@@ -22,16 +22,16 @@ namespace trading {
     class AlphaSignalReader {
     public:
         static constexpr size_t FILE_SIZE = 48;
-        static constexpr int64_t STALE_NS = 2'000'000'000LL;
         static constexpr double DEFAULT_RISK = 0.5;
         static constexpr int k_max_retries = 16;
         static constexpr const char *k_default_path = "/tmp/trt_ipc/trt_alpha.bin";
 
         explicit AlphaSignalReader(const std::string &path,
                                    double signal_min_bps, double risk_max,
+                                   int64_t stale_ns = 2'000'000'000LL,
                                    int64_t warn_throttle_ns = 10'000'000'000LL)
             : path_(path), signal_min_bps_(signal_min_bps), risk_max_(risk_max),
-              warn_throttle_ns_(warn_throttle_ns) {
+              stale_ns_(stale_ns), warn_throttle_ns_(warn_throttle_ns) {
         }
 
         ~AlphaSignalReader() { close(); }
@@ -138,7 +138,7 @@ namespace trading {
         }
 
         bool is_stale(const AlphaSignal &s) const noexcept {
-            return s.ts_ns == 0 || (now_ns() - s.ts_ns) > STALE_NS;
+            return s.ts_ns == 0 || (now_ns() - s.ts_ns) > stale_ns_;
         }
 
         void maybe_warn_ipc_unavailable() const noexcept {
@@ -153,6 +153,7 @@ namespace trading {
         std::string path_;
         double signal_min_bps_;
         double risk_max_;
+        int64_t stale_ns_;
         int64_t warn_throttle_ns_;
         mutable int64_t last_warn_ns_ = 0;
         mutable uint64_t ipc_warn_count_ = 0;

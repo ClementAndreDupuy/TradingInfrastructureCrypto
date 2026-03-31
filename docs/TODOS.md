@@ -82,7 +82,7 @@
 
 ## MEDIUM
 
-- [ ] **PORT-M1: `ALPHA_NEGATIVE` reason code appended before deadband zero-out**
+- [x] **PORT-M1: `ALPHA_NEGATIVE` reason code appended before deadband zero-out**
   - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / MEDIUM-1
   - File: `core/execution/common/portfolio/portfolio_intent_engine.hpp:169–178`
   - Problem: The `ALPHA_NEGATIVE` (or `ALPHA_POSITIVE`) reason is appended before the deadband check clears the target to zero. A signal within the deadband that also exceeds the short-entry threshold emits `ALPHA_NEGATIVE` with zero position delta, misleading log and metric consumers.
@@ -90,7 +90,7 @@
     - [ ] Deadband check occurs before reason-code appending, or the reason code is overridden to `ALPHA_DECAY` when `|signal| <= deadband_signal_bps`.
     - [ ] Unit test verifies that a signal within deadband always yields `ALPHA_DECAY` reason code regardless of sign.
 
-- [ ] **PORT-M3: Three independent staleness thresholds with no unified configuration source**
+- [x] **PORT-M3: Three independent staleness thresholds with no unified configuration source**
   - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / MEDIUM-3
   - Files: `core/ipc/alpha_signal.hpp:23` (`STALE_NS = 2 s`), `config/live/portfolio.yaml:8` (`stale_signal_ms: 1500`), `core/execution/market_maker.hpp:42` (`cfg_.stale_ns`)
   - Problem: Three components each implement an independent staleness check with different values (2 000 ms, 1 500 ms, per-MM config). A signal aged 1 600 ms is stale to the intent engine but live to the routing gate, allowing an order to be routed on a signal the intent engine would have blocked.
@@ -100,7 +100,7 @@
     - [ ] All three consumers use the same runtime-configurable value. One config key (`stale_signal_ms`) governs all.
     - [ ] Unit tests for `AlphaSignalReader::allows_long()` and the intent engine `STALE_SIGNAL` path use identical thresholds.
 
-- [ ] **PORT-M4: Reconciliation resets inventory age for pre-existing positions**
+- [x] **PORT-M4: Reconciliation resets inventory age for pre-existing positions**
   - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / MEDIUM-4
   - File: `core/execution/common/portfolio/position_ledger.hpp:131–136`
   - Problem: On the first reconciliation after startup, any venue with a non-zero position that lacks `has_inventory_age` has `opened_at` set to `now()`, silently restarting the stale-inventory timer. A position held before a restart will not trigger a forced exit for `stale_inventory_ms` regardless of its true age.
@@ -109,7 +109,7 @@
     - [ ] If the snapshot does not carry age, a `LOG_WARN` is emitted noting that inventory age was reset for a non-zero position.
     - [ ] Unit test covers reconciliation of a pre-existing position: `has_inventory_age` is set and `opened_at` is not clamped to now when a valid age is available.
 
-- [ ] **PORT-M5: Use true futures mid price for basis guard in intent engine**
+- [x] **PORT-M5: Use true futures mid price for basis guard in intent engine**
   - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / MEDIUM-5 (also tracked as FUT-BN-16)
   - File: `core/engine/trading_engine_main.cpp:930`
   - Problem: `intent_ctx.futures_mid_price` is set to `binance_book.mid_price()` (spot) in futures mode, making `compute_basis_bps` return 0.0 always. The `max_basis_divergence_bps: 25.0` guard is permanently inactive in futures mode.

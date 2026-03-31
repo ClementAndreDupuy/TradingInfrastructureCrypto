@@ -62,6 +62,7 @@ namespace trading {
         double quantity = 0.0;
         double avg_entry_price = 0.0;
         double leverage = 0.0;
+        int64_t opened_at_ns = 0;
     };
 
     struct ReconciliationSnapshot {

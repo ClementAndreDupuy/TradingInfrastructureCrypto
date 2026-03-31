@@ -55,7 +55,7 @@ class NeuralAlphaMarketMaker {
                            CircuitBreaker* circuit_breaker,
                            const MarketMakerConfig& cfg)
         : om_(order_mgr), book_(book), kill_(kill), circuit_breaker_(circuit_breaker), cfg_(cfg),
-          alpha_reader_(cfg.alpha_shm_path, cfg.signal_min_bps, cfg.risk_max),
+          alpha_reader_(cfg.alpha_shm_path, cfg.signal_min_bps, cfg.risk_max, cfg.stale_ns),
           regime_reader_(cfg.regime_shm_path) {
 
         om_.on_fill = [this](const ManagedOrder& mo, const FillUpdate& u) { on_fill(mo, u); };

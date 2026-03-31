@@ -967,7 +967,7 @@ auto main(int argc, char **argv) -> int {
                 std::chrono::system_clock::now().time_since_epoch()).count();
             PortfolioIntentContext intent_ctx;
             intent_ctx.spot_mid_price = binance_book.mid_price();
-            intent_ctx.futures_mid_price = futures_only_mode ? binance_book.mid_price() : 0.0;
+            intent_ctx.futures_mid_price = futures_only_mode ? binance_futures.mark_price() : 0.0;
             intent_ctx.signal_age_ms = alpha_signal.ts_ns > 0 && now_epoch_ns > alpha_signal.ts_ns
                                             ? (now_epoch_ns - alpha_signal.ts_ns) / 1000000
                                             : 0;
@@ -1041,6 +1041,7 @@ auto main(int argc, char **argv) -> int {
                          "current_position", portfolio_snapshot.global_position, "target_position",
                          intent.target_global_position, "position_delta", intent.position_delta,
                          "inventory_age_ms", portfolio_snapshot.oldest_inventory_age_ms,
+                         "spot_mid", intent_ctx.spot_mid_price, "futures_mid", intent_ctx.futures_mid_price,
                          "expected_cost_bps", intent.expected_cost_bps, "basis_slippage_bps",
                          intent.basis_slippage_bps, "alpha_edge_bps", intent.alpha_edge_bps, "max_shortfall_bps",
                          intent.max_shortfall_bps, "flatten_now", intent.flatten_now ? 1 : 0,

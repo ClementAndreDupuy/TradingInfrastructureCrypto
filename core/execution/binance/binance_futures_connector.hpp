@@ -30,6 +30,9 @@ namespace trading {
         }
         ConnectorResult connect() override;
 
+        void set_mark_price(double price) noexcept { mark_price_ = price; }
+        [[nodiscard]] double mark_price() const noexcept { return mark_price_; }
+
     protected:
         ConnectorResult submit_to_venue(const Order &order, const std::string &idempotency_key,
                                         std::string &venue_order_id) override;
@@ -43,6 +46,7 @@ namespace trading {
     private:
         ConnectorResult get_symbol_filters(const std::string &symbol, BinanceFuturesSymbolFilters &filters);
 
+        double mark_price_ = 0.0;
         uint32_t recv_window_ms_;
         std::unordered_map<std::string, BinanceFuturesSymbolFilters> symbol_filters_;
     };
