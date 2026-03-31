@@ -157,6 +157,78 @@ TEST(PortfolioIntentEngineTest, TransitionClassesDeterministic) {
     EXPECT_GT(short_to_flat.position_delta, 0.0);
 }
 
+TEST(PortfolioIntentEngineTest, LiveConfigRegimeThresholdsDoNotActivateAtLowProbability) {
+    PortfolioIntentConfig cfg{};
+    cfg.max_position = 0.80;
+    cfg.min_entry_signal_bps = 3.0;
+    cfg.alpha_exit_buffer_bps = 0.75;
+    cfg.negative_reversal_signal_bps = -1.0;
+    cfg.deadband_signal_bps = 1.0;
+    cfg.max_risk_score = 0.65;
+    cfg.shock_enter_threshold = 0.60;
+    cfg.shock_exit_threshold = 0.45;
+    cfg.illiquid_enter_threshold = 0.55;
+    cfg.illiquid_exit_threshold = 0.40;
+    cfg.regime_persistence_ticks = 3;
+    cfg.stale_inventory_ms = 5000;
+    cfg.stale_signal_ms = 1500;
+    cfg.max_basis_divergence_bps = 25.0;
+    cfg.stale_inventory_alpha_hold_bps = 10.0;
+    cfg.health_reduce_ratio = 0.50;
+    cfg.long_only = true;
+
+    PortfolioIntentEngine engine(cfg);
+    const auto venues = make_venues();
+    const RegimeSignal regime = make_regime(0.05, 0.05);
+    const AlphaSignal alpha = make_alpha(8.0, 0.20, 0.80, 6);
+    const auto ctx = make_ctx(100.0, 100.0, 20);
+
+    const PortfolioIntent intent = engine.evaluate(alpha, regime, make_ledger(), venues, ctx);
+
+    for (size_t i = 0; i < intent.reason_count; ++i) {
+        EXPECT_NE(intent.reason_codes[i], PortfolioIntentReasonCode::SHOCK_REGIME);
+        EXPECT_NE(intent.reason_codes[i], PortfolioIntentReasonCode::ILLIQUID_REGIME);
+    }
+    EXPECT_GT(intent.target_global_position, 0.0);
+}
+
+TEST(PortfolioIntentEngineTest, StaleInventoryWithLiveConfigTriggersReduceToFlat) {
+    PortfolioIntentConfig cfg{};
+    cfg.max_position = 0.80;
+    cfg.min_entry_signal_bps = 3.0;
+    cfg.alpha_exit_buffer_bps = 0.75;
+    cfg.negative_reversal_signal_bps = -1.0;
+    cfg.deadband_signal_bps = 1.0;
+    cfg.max_risk_score = 0.65;
+    cfg.shock_enter_threshold = 0.60;
+    cfg.shock_exit_threshold = 0.45;
+    cfg.illiquid_enter_threshold = 0.55;
+    cfg.illiquid_exit_threshold = 0.40;
+    cfg.regime_persistence_ticks = 3;
+    cfg.stale_inventory_ms = 5000;
+    cfg.stale_signal_ms = 1500;
+    cfg.max_basis_divergence_bps = 25.0;
+    cfg.stale_inventory_alpha_hold_bps = 3.0;
+    cfg.health_reduce_ratio = 0.50;
+    cfg.long_only = true;
+
+    PortfolioIntentEngine engine(cfg);
+    const PositionLedgerSnapshot stale_ledger = make_ledger(0.40, 6000);
+
+    const PortfolioIntent intent = engine.evaluate(
+        make_alpha(5.0, 0.20, 0.80, 6), make_regime(0.05, 0.05),
+        stale_ledger, make_venues(), make_ctx(100.0, 100.0, 20));
+
+    bool has_stale_inventory = false;
+    for (size_t i = 0; i < intent.reason_count; ++i) {
+        if (intent.reason_codes[i] == PortfolioIntentReasonCode::STALE_INVENTORY)
+            has_stale_inventory = true;
+    }
+    EXPECT_TRUE(has_stale_inventory);
+    EXPECT_NE(intent.position_delta, 0.0);
+    EXPECT_LT(intent.target_global_position, 0.40);
+}
+
 TEST(ParentOrderManagerTest, SmallerSameDirectionTargetCapsRemainingQty) {
     ParentOrderManager manager;
     const auto now = std::chrono::steady_clock::now();

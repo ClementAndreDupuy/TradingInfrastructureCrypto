@@ -249,7 +249,8 @@ namespace {
                                        const BookManager &coinbase_book,
                                        const ReconciliationService &reconciliation, bool run_binance,
                                        bool run_kraken, bool run_okx,
-                                       bool run_coinbase) -> PositionLedgerSnapshot {
+                                       bool run_coinbase,
+                                       const PositionLedger &ledger) -> PositionLedgerSnapshot {
         PositionLedgerSnapshot snapshot;
         std::strncpy(snapshot.symbol, symbol.c_str(), sizeof(snapshot.symbol) - 1);
         snapshot.symbol[sizeof(snapshot.symbol) - 1] = '\0';
@@ -283,6 +284,8 @@ namespace {
         add_position(Exchange::KRAKEN, run_kraken);
         add_position(Exchange::OKX, run_okx);
         add_position(Exchange::COINBASE, run_coinbase);
+
+        snapshot.oldest_inventory_age_ms = ledger.snapshot().oldest_inventory_age_ms;
 
         return snapshot;
     }
@@ -331,11 +334,17 @@ auto main(int argc, char **argv) -> int {
                      routing_path.c_str());
         }
 
-        PortfolioIntentConfig portfolio_cfg;
+        PortfolioIntentConfig portfolio_cfg{};
         const std::string portfolio_path = "config/" + opts.mode + "/portfolio.yaml";
         if (!AlgoConfigLoader::load_portfolio(portfolio_path, portfolio_cfg)) {
             LOG_WARN("Portfolio config not loaded — using compiled-in defaults", "path",
                      portfolio_path.c_str());
+        }
+        if (portfolio_cfg.shock_enter_threshold <= 0.0 || portfolio_cfg.regime_persistence_ticks <= 0) {
+            LOG_ERROR("Portfolio config validation failed: shock_enter_threshold and regime_persistence_ticks must be non-zero",
+                      "shock_enter_threshold", portfolio_cfg.shock_enter_threshold,
+                      "regime_persistence_ticks", portfolio_cfg.regime_persistence_ticks);
+            return 2;
         }
 
         VenueQualityModel::Config vq_cfg;
@@ -532,6 +541,7 @@ auto main(int argc, char **argv) -> int {
         ShadowEngine shadow_engine(binance_book, kraken_book, okx_book, coinbase_book, shadow_cfg);
 
         ReconciliationService reconciliation;
+        PositionLedger live_position_ledger;
         if (run_binance && !reconciliation.register_connector(binance)) {
             LOG_WARN("Failed to register Binance connector with reconciliation service");
         }
@@ -544,6 +554,7 @@ auto main(int argc, char **argv) -> int {
         if (run_coinbase && !reconciliation.register_connector(coinbase)) {
             LOG_WARN("Failed to register Coinbase connector with reconciliation service");
         }
+        reconciliation.bind_position_ledger(&live_position_ledger);
 
         auto connect_if_needed = [](LiveConnectorBase &connector, bool enabled,
                                     ReconciliationService &reconciliation) -> bool {
@@ -915,7 +926,7 @@ auto main(int argc, char **argv) -> int {
                         : build_live_portfolio_snapshot(opts.symbol, binance_book, kraken_book,
                                                         okx_book, coinbase_book, reconciliation,
                                                         run_binance, run_kraken, run_okx,
-                                                        run_coinbase);
+                                                        run_coinbase, live_position_ledger);
             if (opts.mode == "shadow") {
                 std::strncpy(portfolio_snapshot.symbol, opts.symbol.c_str(),
                              sizeof(portfolio_snapshot.symbol) - 1);
@@ -1000,6 +1011,7 @@ auto main(int argc, char **argv) -> int {
                          "enabled_venues", static_cast<unsigned long long>(log_enabled_venues),
                          "current_position", portfolio_snapshot.global_position, "target_position",
                          intent.target_global_position, "position_delta", intent.position_delta,
+                         "inventory_age_ms", portfolio_snapshot.oldest_inventory_age_ms,
                          "expected_cost_bps", intent.expected_cost_bps, "basis_slippage_bps",
                          intent.basis_slippage_bps, "alpha_edge_bps", intent.alpha_edge_bps, "max_shortfall_bps",
                          intent.max_shortfall_bps, "flatten_now", intent.flatten_now ? 1 : 0,
