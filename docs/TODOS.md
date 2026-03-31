@@ -30,7 +30,7 @@
 
 ## HIGH
 
-- [ ] **PORT-H1: `edge_positive` gate not applied to short entries — misleading `ALPHA_NEGATIVE` reason code**
+- [x] **PORT-H1: `edge_positive` gate not applied to short entries — misleading `ALPHA_NEGATIVE` reason code**
   - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / HIGH-1
   - File: `core/execution/common/portfolio/portfolio_intent_engine.hpp:126, 154–175`
   - Problem: Long entry requires `signal_bps > expected_cost_bps` (`edge_positive`); short entry does not. When `|signal_bps| < expected_cost_bps` for a short, `alpha_scale` zeros out the magnitude (correct, no position taken), but `ALPHA_NEGATIVE` is still appended as the reason code. Consumers of logs and metrics will believe a short entry was warranted. For longs the equivalent condition correctly emits `ALPHA_DECAY`.
@@ -39,7 +39,7 @@
     - [ ] When `|signal| <= expected_cost` for a short, reason code is `ALPHA_DECAY`, not `ALPHA_NEGATIVE`.
     - [ ] Unit tests cover: (a) short entry with sufficient edge → `ALPHA_NEGATIVE` + negative target; (b) short signal below cost → `ALPHA_DECAY` + zero target; (c) symmetry with equivalent long cases.
 
-- [ ] **PORT-H2: `AlphaSignalReader` members `fd_` and `ptr_` not initialized in constructor**
+- [x] **PORT-H2: `AlphaSignalReader` members `fd_` and `ptr_` not initialized in constructor**
   - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / HIGH-2
   - File: `core/ipc/alpha_signal.hpp:28–31, 134–138`
   - Problem: Constructor initializes `path_`, `signal_min_bps_`, `risk_max_` but leaves `fd_` and `ptr_` uninitialized. The destructor calls `close()` which checks `fd_ >= 0` — undefined behaviour if `open()` was never called, potentially invoking `::close()` on a live file descriptor belonging to another component.
@@ -48,7 +48,7 @@
     - [ ] No other behavior changed.
     - [ ] Existing `AlphaSignalReader` unit/IPC tests continue to pass.
 
-- [ ] **PORT-H3: `allows_long()` / `allows_short()` fail-open with no observable warning when IPC unavailable**
+- [x] **PORT-H3: `allows_long()` / `allows_short()` fail-open with no observable warning when IPC unavailable**
   - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / HIGH-3
   - File: `core/ipc/alpha_signal.hpp:97–113`
   - Problem: When `ptr_ == nullptr` (shared-memory file absent or `open()` failed), both methods return `true`, allowing all trades without any signal gate. `SmartOrderRouter::route_with_alpha` relies on these gates. No log warning is emitted, so the operator has no indication that ungated order flow is occurring.

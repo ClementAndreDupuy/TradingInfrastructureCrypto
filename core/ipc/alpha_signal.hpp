@@ -100,10 +100,6 @@ namespace trading {
 
         bool allows_long() const noexcept {
             if (!ptr_) {
-                // Fail-open: allow trading when IPC is unavailable so that
-                // infrastructure failures do not halt order flow. The operator
-                // is warned via a throttled log message that signal gating is
-                // inactive for this reader.
                 maybe_warn_ipc_unavailable();
                 return true;
             }
@@ -115,10 +111,6 @@ namespace trading {
 
         bool allows_short() const noexcept {
             if (!ptr_) {
-                // Fail-open: allow trading when IPC is unavailable so that
-                // infrastructure failures do not halt order flow. The operator
-                // is warned via a throttled log message that signal gating is
-                // inactive for this reader.
                 maybe_warn_ipc_unavailable();
                 return true;
             }
