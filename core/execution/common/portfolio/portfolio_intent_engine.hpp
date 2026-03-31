@@ -124,6 +124,7 @@ namespace trading {
             const bool basis_too_wide = cfg_.max_basis_divergence_bps > 0.0 &&
                                         out.basis_slippage_bps > cfg_.max_basis_divergence_bps;
             const bool edge_positive = alpha_signal.signal_bps > expected_cost_bps;
+            const bool edge_negative = -alpha_signal.signal_bps > expected_cost_bps;
 
             if (risk_off)
                 append_reason(out, PortfolioIntentReasonCode::RISK_OFF);
@@ -152,7 +153,7 @@ namespace trading {
 
             double target = 0.0;
             const bool positive_entry = alpha_signal.signal_bps >= cfg_.min_entry_signal_bps && edge_positive;
-            const bool negative_entry = alpha_signal.signal_bps <= -cfg_.min_entry_signal_bps && !cfg_.long_only;
+            const bool negative_entry = alpha_signal.signal_bps <= -cfg_.min_entry_signal_bps && !cfg_.long_only && edge_negative;
             if (positive_entry || negative_entry) {
                 const double alpha_scale = std::clamp(
                     (std::abs(alpha_signal.signal_bps) - expected_cost_bps) /
