@@ -578,14 +578,8 @@ fi
 if [[ -n "$FUTURES_DEADBAND_SIGNAL_BPS" ]]; then
     PORTFOLIO_BASE_FILE="$REPO_ROOT/config/shadow/portfolio.yaml"
     PORTFOLIO_RUNTIME_FILE="$RUNTIME_MODE_DIR_PATH/portfolio.yaml"
-    awk -v deadband_signal_bps="$FUTURES_DEADBAND_SIGNAL_BPS" -v strategy_mode="$STRATEGY_MODE" '
+    awk -v deadband_signal_bps="$FUTURES_DEADBAND_SIGNAL_BPS" '
         /^deadband_signal_bps:/ { print "deadband_signal_bps: " deadband_signal_bps; next }
-        /^long_only:/ {
-            if (strategy_mode == "futures_only") {
-                print "long_only: false";
-                next
-            }
-        }
         { print }
     ' "$PORTFOLIO_BASE_FILE" > "$PORTFOLIO_RUNTIME_FILE"
 else

@@ -132,7 +132,6 @@ namespace trading {
             apply_double(values, "stale_inventory_alpha_hold_bps",
                          out.stale_inventory_alpha_hold_bps);
             apply_double(values, "health_reduce_ratio", out.health_reduce_ratio);
-            apply_bool(values, "long_only", out.long_only);
             return true;
         }
 
