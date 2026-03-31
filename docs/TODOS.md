@@ -1,8 +1,5 @@
 # Project TODOs
 
-> Completed items are archived in `docs/reports/TODOS_ARCHIVE_*.md`.  
-> Last cleaned: 2026-03-31 — portfolio long/short audit findings added.
-
 ---
 
 ## CRITICAL
