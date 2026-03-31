@@ -363,7 +363,7 @@ auto main(int argc, char **argv) -> int {
 
         KillSwitch kill_switch(risk_cfg.heartbeat_timeout_ns);
         CircuitBreaker circuit_breaker(risk_cfg.circuit_breaker, kill_switch);
-        GlobalRiskControls global_risk(risk_cfg.global_risk, kill_switch);
+        GlobalRiskControls global_risk(risk_cfg.global_risk, risk_cfg.futures_risk, kill_switch);
 
         setup_signal_handlers();
 
@@ -795,11 +795,40 @@ auto main(int argc, char **argv) -> int {
                             continue;
                         }
                     }
-                    if (global_risk.commit_order(child.exchange, child_order.symbol,
-                                                 signed_notional) != GlobalRiskCheckResult::OK) {
-                        LOG_WARN("global-risk blocked submit", "venue",
-                                 exchange_to_string(child.exchange));
-                        continue;
+                    if (futures_only_mode) {
+                        const auto binance_metrics =
+                            live_session_accounting.venue_metrics(Exchange::BINANCE);
+                        FuturesRiskContext futures_ctx;
+                        futures_ctx.collateral_notional =
+                            binance_metrics.free_collateral > 0.0
+                                ? binance_metrics.free_collateral
+                                : binance_metrics.start_equity;
+                        futures_ctx.current_abs_notional = global_risk.gross_notional();
+                        futures_ctx.maintenance_margin_ratio = 0.0;
+                        futures_ctx.mark_price = child_order.price;
+                        futures_ctx.index_price = binance_book.mid_price() > 0.0
+                                                      ? binance_book.mid_price()
+                                                      : child_order.price;
+                        futures_ctx.funding_rate_bps = 0.0;
+                        futures_ctx.hours_to_funding = 8.0;
+                        double scaled_notional = signed_notional;
+                        const GlobalRiskCheckResult futures_risk_result =
+                            global_risk.commit_futures_order(child.exchange, child_order.symbol,
+                                                             signed_notional, futures_ctx,
+                                                             scaled_notional);
+                        if (futures_risk_result != GlobalRiskCheckResult::OK) {
+                            LOG_WARN("global-futures-risk blocked submit", "venue",
+                                     exchange_to_string(child.exchange), "reason",
+                                     GlobalRiskControls::result_to_string(futures_risk_result));
+                            continue;
+                        }
+                    } else {
+                        if (global_risk.commit_order(child.exchange, child_order.symbol,
+                                                     signed_notional) != GlobalRiskCheckResult::OK) {
+                            LOG_WARN("global-risk blocked submit", "venue",
+                                     exchange_to_string(child.exchange));
+                            continue;
+                        }
                     }
 
                     if (circuit_breaker.check_drawdown(

@@ -1,7 +1,8 @@
 max_position: 0.80
 min_entry_signal_bps: 3.0
 alpha_exit_buffer_bps: 0.75
-negative_reversal_signal_bps: -1.0
+negative_reversal_signal_bps: -2.0
+positive_reversal_signal_bps: 2.0
 max_risk_score: 0.65
 shock_enter_threshold: 0.60
 shock_exit_threshold: 0.45

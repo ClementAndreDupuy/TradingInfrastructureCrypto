@@ -57,7 +57,7 @@
     - [ ] The decision to fail-open vs fail-closed is explicitly documented in a comment adjacent to the `if (!ptr_) return true` lines.
     - [ ] Unit test verifies the warning fires exactly once per throttle window when reader is not opened.
 
-- [ ] **PORT-H4: No symmetric `positive_reversal` exit for shorts; live/shadow reversal threshold mismatch**
+- [x] **PORT-H4: No symmetric `positive_reversal` exit for shorts; live/shadow reversal threshold mismatch**
   - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / HIGH-5
   - Files: `config/live/portfolio.yaml:4`, `config/shadow/portfolio.yaml:4`, `core/execution/common/portfolio/portfolio_intent_engine.hpp:117, 145`
   - Problem: Only `negative_reversal_signal_bps` exists; there is no `positive_reversal_signal_bps` to urgently exit a short when signal flips strongly bullish. Short exits in shadow mode depend on the `positive_entry` path flipping the target sign (which is functionally correct but lacks an explicit reason code and urgency guarantee). Additionally, the live threshold (`–1.0`) and shadow threshold (`–3.0`) differ substantially, creating a train/prod mismatch.
@@ -68,7 +68,7 @@
     - [ ] Live and shadow `negative_reversal_signal_bps` values are reconciled; any intentional divergence is documented with a comment in the YAML.
     - [ ] Unit tests cover `short → flatten` via positive reversal for both threshold-exactly-met and exceeded cases.
 
-- [ ] **PORT-H5: Wire futures risk gates (`commit_futures_order`) into live submit path**
+- [x] **PORT-H5: Wire futures risk gates (`commit_futures_order`) into live submit path**
   - Source: `AUDIT_PORTFOLIO_LONG_SHORT_2026-03-31.md` / HIGH-4 (also tracked as FUT-BN-15)
   - File: `core/engine/trading_engine_main.cpp:787–792`
   - Problem: In both spot and futures modes, order submission calls `global_risk.commit_order(...)`. The futures-specific `GlobalRiskControls::commit_futures_order(...)` — enforcing leverage caps, maintenance margin, and mark/index divergence — is never invoked. Futures risk constraints are fully implemented but unreachable.

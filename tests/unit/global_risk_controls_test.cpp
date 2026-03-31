@@ -182,4 +182,89 @@ TEST(GlobalRiskControlsTest, AppliesFundingScaleAndRejectsDivergence) {
               GlobalRiskCheckResult::FUTURES_FUNDING_COST_CAP);
 }
 
+TEST(GlobalRiskControlsTest, CommitFuturesOrderHardRejection) {
+    KillSwitch kill_switch;
+    GlobalRiskConfig cfg;
+    cfg.max_gross_notional = 100000.0;
+    cfg.max_net_notional = 100000.0;
+    cfg.max_symbol_concentration = 1.0;
+    cfg.max_venue_notional = 100000.0;
+    cfg.max_cross_venue_net_notional = 100000.0;
+    cfg.kill_on_breach = false;
+
+    FuturesRiskGateConfig futures_cfg;
+    futures_cfg.enabled = true;
+    futures_cfg.default_max_leverage = 5.0;
+    futures_cfg.max_maintenance_margin_ratio = 0.5;
+    futures_cfg.max_mark_index_divergence_bps = 20.0;
+    futures_cfg.max_projected_funding_cost_bps = 10.0;
+    futures_cfg.funding_cost_scale_start_bps = 4.0;
+    futures_cfg.min_funding_scale = 0.5;
+
+    GlobalRiskControls controls(cfg, futures_cfg, kill_switch);
+
+    FuturesRiskContext leverage_ctx;
+    leverage_ctx.collateral_notional = 1000.0;
+    leverage_ctx.current_abs_notional = 4950.0;
+    leverage_ctx.maintenance_margin_ratio = 0.1;
+    leverage_ctx.mark_price = 50000.0;
+    leverage_ctx.index_price = 50000.0;
+    leverage_ctx.funding_rate_bps = 1.0;
+    leverage_ctx.hours_to_funding = 8.0;
+
+    double scaled_notional = 0.0;
+    EXPECT_EQ(controls.commit_futures_order(Exchange::BINANCE, "BTCUSDT", 100.0, leverage_ctx,
+                                            scaled_notional),
+              GlobalRiskCheckResult::FUTURES_LEVERAGE_CAP);
+    EXPECT_DOUBLE_EQ(controls.gross_notional(), 0.0);
+
+    FuturesRiskContext divergence_ctx = leverage_ctx;
+    divergence_ctx.current_abs_notional = 0.0;
+    divergence_ctx.mark_price = 50200.0;
+    divergence_ctx.index_price = 50000.0;
+    EXPECT_EQ(controls.commit_futures_order(Exchange::BINANCE, "BTCUSDT", 100.0, divergence_ctx,
+                                            scaled_notional),
+              GlobalRiskCheckResult::FUTURES_MARK_INDEX_DIVERGENCE_CAP);
+    EXPECT_DOUBLE_EQ(controls.gross_notional(), 0.0);
+}
+
+TEST(GlobalRiskControlsTest, CommitFuturesOrderFundingAwareScaling) {
+    KillSwitch kill_switch;
+    GlobalRiskConfig cfg;
+    cfg.max_gross_notional = 100000.0;
+    cfg.max_net_notional = 100000.0;
+    cfg.max_symbol_concentration = 1.0;
+    cfg.max_venue_notional = 100000.0;
+    cfg.max_cross_venue_net_notional = 100000.0;
+    cfg.kill_on_breach = false;
+
+    FuturesRiskGateConfig futures_cfg;
+    futures_cfg.enabled = true;
+    futures_cfg.default_max_leverage = 20.0;
+    futures_cfg.max_maintenance_margin_ratio = 0.9;
+    futures_cfg.max_mark_index_divergence_bps = 50.0;
+    futures_cfg.funding_cost_scale_start_bps = 4.0;
+    futures_cfg.max_projected_funding_cost_bps = 10.0;
+    futures_cfg.min_funding_scale = 0.5;
+
+    GlobalRiskControls controls(cfg, futures_cfg, kill_switch);
+
+    FuturesRiskContext funding_ctx;
+    funding_ctx.collateral_notional = 2000.0;
+    funding_ctx.current_abs_notional = 0.0;
+    funding_ctx.maintenance_margin_ratio = 0.1;
+    funding_ctx.mark_price = 50000.0;
+    funding_ctx.index_price = 50000.0;
+    funding_ctx.funding_rate_bps = 6.0;
+    funding_ctx.hours_to_funding = 8.0;
+
+    double scaled_notional = 0.0;
+    const GlobalRiskCheckResult result = controls.commit_futures_order(
+        Exchange::BINANCE, "BTCUSDT", 100.0, funding_ctx, scaled_notional);
+    EXPECT_EQ(result, GlobalRiskCheckResult::OK);
+    EXPECT_LT(scaled_notional, 100.0);
+    EXPECT_GT(scaled_notional, 0.0);
+    EXPECT_GT(controls.gross_notional(), 0.0);
+}
+
 } // namespace

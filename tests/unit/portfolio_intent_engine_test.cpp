@@ -12,6 +12,7 @@ PortfolioIntentConfig make_cfg() {
     cfg.min_entry_signal_bps = 2.0;
     cfg.alpha_exit_buffer_bps = 0.75;
     cfg.negative_reversal_signal_bps = -8.0;
+    cfg.positive_reversal_signal_bps = 8.0;
     cfg.deadband_signal_bps = 1.0;
     cfg.max_risk_score = 0.65;
     cfg.shock_enter_threshold = 0.70;
@@ -162,7 +163,8 @@ TEST(PortfolioIntentEngineTest, LiveConfigRegimeThresholdsDoNotActivateAtLowProb
     cfg.max_position = 0.80;
     cfg.min_entry_signal_bps = 3.0;
     cfg.alpha_exit_buffer_bps = 0.75;
-    cfg.negative_reversal_signal_bps = -1.0;
+    cfg.negative_reversal_signal_bps = -2.0;
+    cfg.positive_reversal_signal_bps = 2.0;
     cfg.deadband_signal_bps = 1.0;
     cfg.max_risk_score = 0.65;
     cfg.shock_enter_threshold = 0.60;
@@ -197,7 +199,8 @@ TEST(PortfolioIntentEngineTest, StaleInventoryWithLiveConfigTriggersReduceToFlat
     cfg.max_position = 0.80;
     cfg.min_entry_signal_bps = 3.0;
     cfg.alpha_exit_buffer_bps = 0.75;
-    cfg.negative_reversal_signal_bps = -1.0;
+    cfg.negative_reversal_signal_bps = -2.0;
+    cfg.positive_reversal_signal_bps = 2.0;
     cfg.deadband_signal_bps = 1.0;
     cfg.max_risk_score = 0.65;
     cfg.shock_enter_threshold = 0.60;
@@ -261,6 +264,66 @@ TEST(PortfolioIntentEngineTest, LongSignalBelowCostProducesAlphaDecay) {
 
     EXPECT_NEAR(intent.target_global_position, 0.0, 1e-9);
     EXPECT_EQ(intent.primary_reason(), PortfolioIntentReasonCode::ALPHA_DECAY);
+}
+
+TEST(PortfolioIntentEngineTest, PositiveReversalFlattensShortAtThreshold) {
+    PortfolioIntentConfig cfg = make_cfg();
+    cfg.positive_reversal_signal_bps = 5.0;
+    PortfolioIntentEngine engine(cfg);
+
+    const PortfolioIntent intent = engine.evaluate(
+        make_alpha(5.0), make_regime(), make_ledger(-0.5), make_venues(), make_ctx());
+
+    EXPECT_TRUE(intent.flatten_now);
+    EXPECT_NEAR(intent.position_delta, 0.5, 1e-9);
+    EXPECT_EQ(intent.urgency, ShadowUrgency::AGGRESSIVE);
+    EXPECT_EQ(intent.primary_reason(), PortfolioIntentReasonCode::POSITIVE_REVERSAL);
+}
+
+TEST(PortfolioIntentEngineTest, PositiveReversalFlattensShortWhenExceeded) {
+    PortfolioIntentConfig cfg = make_cfg();
+    cfg.positive_reversal_signal_bps = 5.0;
+    PortfolioIntentEngine engine(cfg);
+
+    const PortfolioIntent intent = engine.evaluate(
+        make_alpha(9.0), make_regime(), make_ledger(-0.4), make_venues(), make_ctx());
+
+    EXPECT_TRUE(intent.flatten_now);
+    EXPECT_GT(intent.position_delta, 0.0);
+    EXPECT_EQ(intent.urgency, ShadowUrgency::AGGRESSIVE);
+    bool has_positive_reversal = false;
+    for (size_t i = 0; i < intent.reason_count; ++i) {
+        if (intent.reason_codes[i] == PortfolioIntentReasonCode::POSITIVE_REVERSAL)
+            has_positive_reversal = true;
+    }
+    EXPECT_TRUE(has_positive_reversal);
+}
+
+TEST(PortfolioIntentEngineTest, PositiveReversalDoesNotTriggerWhenFlat) {
+    PortfolioIntentConfig cfg = make_cfg();
+    cfg.positive_reversal_signal_bps = 5.0;
+    PortfolioIntentEngine engine(cfg);
+
+    const PortfolioIntent intent = engine.evaluate(
+        make_alpha(6.0), make_regime(), make_ledger(0.0), make_venues(), make_ctx());
+
+    for (size_t i = 0; i < intent.reason_count; ++i) {
+        EXPECT_NE(intent.reason_codes[i], PortfolioIntentReasonCode::POSITIVE_REVERSAL);
+    }
+    EXPECT_FALSE(intent.flatten_now);
+}
+
+TEST(PortfolioIntentEngineTest, PositiveReversalDoesNotTriggerForLong) {
+    PortfolioIntentConfig cfg = make_cfg();
+    cfg.positive_reversal_signal_bps = 5.0;
+    PortfolioIntentEngine engine(cfg);
+
+    const PortfolioIntent intent = engine.evaluate(
+        make_alpha(6.0), make_regime(), make_ledger(0.4), make_venues(), make_ctx());
+
+    for (size_t i = 0; i < intent.reason_count; ++i) {
+        EXPECT_NE(intent.reason_codes[i], PortfolioIntentReasonCode::POSITIVE_REVERSAL);
+    }
 }
 
 TEST(ParentOrderManagerTest, SmallerSameDirectionTargetCapsRemainingQty) {
