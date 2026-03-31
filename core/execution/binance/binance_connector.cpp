@@ -390,13 +390,23 @@ namespace trading {
                                                 "&signature=" +
                                                 hmac_sha256_hex_for_payload(account_payload),
                                                 binance_api_headers());
-        if (!account_response.ok())
+        if (!account_response.ok()) {
+            LOG_ERROR("[Binance] Reconciliation account fetch failed", "status",
+                      account_response.status, "body",
+                      account_response.body.substr(0, 256).c_str());
             return classify_order_response(account_response);
+        }
 
         const auto account_json = nlohmann::json::parse(account_response.body, nullptr, false);
-        const auto &balances = account_json["balances"];
-        if (!balances.is_array())
+        if (account_json.is_discarded()) {
+            LOG_ERROR("[Binance] Reconciliation account response JSON parse failed");
             return ConnectorResult::ERROR_UNKNOWN;
+        }
+        const auto &balances = account_json["balances"];
+        if (!balances.is_array()) {
+            LOG_ERROR("[Binance] Reconciliation account response missing balances array");
+            return ConnectorResult::ERROR_UNKNOWN;
+        }
 
         for (const auto &item: balances) {
             ReconciledBalance balance;
@@ -413,8 +423,12 @@ namespace trading {
                 http::get(api_url() + "/api/v3/openOrders?" + open_order_payload + "&signature=" +
                           hmac_sha256_hex_for_payload(open_order_payload),
                           binance_api_headers());
-        if (!open_order_response.ok())
+        if (!open_order_response.ok()) {
+            LOG_ERROR("[Binance] Reconciliation open orders fetch failed", "status",
+                      open_order_response.status, "body",
+                      open_order_response.body.substr(0, 256).c_str());
             return classify_order_response(open_order_response);
+        }
 
         std::set<std::string> symbols;
         venue_order_map().for_each_active([&](const VenueOrderEntry &entry) {
@@ -458,8 +472,12 @@ namespace trading {
                 trades_response.status == 501) {
                 continue;
             }
-            if (!trades_response.ok())
+            if (!trades_response.ok()) {
+                LOG_ERROR("[Binance] Reconciliation trades fetch failed", "symbol", symbol.c_str(),
+                          "status", trades_response.status, "body",
+                          trades_response.body.substr(0, 256).c_str());
                 return classify_order_response(trades_response);
+            }
 
             const auto trades_json = nlohmann::json::parse(trades_response.body, nullptr, false);
             if (!trades_json.is_array())

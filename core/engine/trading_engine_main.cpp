@@ -540,7 +540,11 @@ auto main(int argc, char **argv) -> int {
                 engine_cfg.shadow_queue_match_fraction_per_check;
         ShadowEngine shadow_engine(binance_book, kraken_book, okx_book, coinbase_book, shadow_cfg);
 
-        ReconciliationService reconciliation;
+        ReconciliationService::RemediationPolicy recon_policy{};
+        recon_policy.snapshot_failure_retry_budget = 3;
+        recon_policy.order_drift_retry_budget = 3;
+        recon_policy.fill_gap_retry_budget = 3;
+        ReconciliationService reconciliation({}, recon_policy);
         PositionLedger live_position_ledger;
         if (run_binance && !reconciliation.register_connector(binance)) {
             LOG_WARN("Failed to register Binance connector with reconciliation service");
@@ -572,7 +576,7 @@ auto main(int argc, char **argv) -> int {
             return res == ConnectorResult::OK;
         };
 
-        const bool run_reconciliation = (opts.mode != "shadow");
+        const bool run_reconciliation = (opts.mode.rfind("shadow", 0) != 0);
 
         bool any_reconnected = false;
         if (run_reconciliation) {
