@@ -335,7 +335,8 @@ namespace trading {
     auto OkxFeedHandler::process_snapshot(const nlohmann::json &json) -> Result {
         auto data_it = json.find("data");
         if (data_it == json.end() || !data_it->is_array() || data_it->empty()) {
-            return Result::SUCCESS;
+            trigger_resnapshot("OKX snapshot missing data");
+            return Result::ERROR_BOOK_CORRUPTED;
         }
 
         const auto &book = (*data_it)[0];
@@ -393,7 +394,7 @@ namespace trading {
         snap.asks = parse_levels(book.value("asks", nlohmann::json::array()));
 
         if (snap.bids.empty() || snap.asks.empty()) {
-            LOG_ERROR("[OKX] OKX WS snapshot has empty book", "symbol", symbol_.c_str());
+            trigger_resnapshot("OKX WS snapshot has empty book");
             return Result::ERROR_BOOK_CORRUPTED;
         }
 
@@ -472,6 +473,13 @@ namespace trading {
         auto json = nlohmann::json::parse(message, nullptr, false);
         if (json.is_discarded()) {
             return Result::SUCCESS;
+        }
+
+        auto event_it = json.find("event");
+        if (event_it != json.end() && event_it->is_string() &&
+            event_it->get<std::string>() == "error") {
+            trigger_resnapshot("OKX error event: " + json.value("msg", std::string("unknown")));
+            return Result::ERROR_CONNECTION_LOST;
         }
 
         auto arg_it = json.find("arg");

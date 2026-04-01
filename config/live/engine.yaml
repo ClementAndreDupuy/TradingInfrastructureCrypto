@@ -24,6 +24,7 @@ coinbase_ws_url: wss://advanced-trade-ws.coinbase.com
 
 binance_futures_enabled: false
 binance_futures_rest_url: https://fapi.binance.com
+binance_futures_ws_url: wss://fstream.binance.com
 binance_futures_recv_window_ms: 5000
 binance_futures_hedge_mode: false
 binance_futures_default_leverage_cap: 5.0
