@@ -452,6 +452,7 @@ namespace trading {
                                              const nlohmann::json &json) -> Result {
         auto data_it = json.find("data");
         if (data_it == json.end() || !data_it->is_array() || data_it->empty()) {
+            trigger_resnapshot("Kraken snapshot missing data");
             return Result::ERROR_BOOK_CORRUPTED;
         }
 
@@ -482,6 +483,7 @@ namespace trading {
         }
 
         if (snap.bids.empty() || snap.asks.empty()) {
+            trigger_resnapshot("Kraken snapshot has empty book");
             return Result::ERROR_BOOK_CORRUPTED;
         }
 

@@ -30,6 +30,7 @@ namespace trading {
     struct BinanceFuturesRuntimeConfig {
         bool enabled;
         std::string rest_url;
+        std::string ws_url;
         uint32_t recv_window_ms;
         bool hedge_mode;
         double default_leverage_cap;
@@ -204,6 +205,7 @@ namespace trading {
             apply_strategy_mode(values, "strategy_mode", out.strategy_mode);
             apply_bool(values, "binance_futures_enabled", out.binance_futures.enabled);
             apply_string(values, "binance_futures_rest_url", out.binance_futures.rest_url);
+            apply_string(values, "binance_futures_ws_url", out.binance_futures.ws_url);
             apply_uint32(values, "binance_futures_recv_window_ms",
                          out.binance_futures.recv_window_ms);
             apply_bool(values, "binance_futures_hedge_mode", out.binance_futures.hedge_mode);

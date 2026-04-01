@@ -15,6 +15,7 @@
 #include "venue_quality_runtime.hpp"
 #include "feed_bootstrap.hpp"
 #include "../feeds/binance/binance_feed_handler.hpp"
+#include "../feeds/binance/binance_futures_feed_handler.hpp"
 #include "../feeds/coinbase/coinbase_feed_handler.hpp"
 #include "../feeds/common/book_manager.hpp"
 #include "../feeds/kraken/kraken_feed_handler.hpp"
@@ -391,6 +392,7 @@ auto main(int argc, char **argv) -> int {
         OkxFeedHandler okx_feed(opts.symbol, engine_cfg.okx_rest_url, engine_cfg.okx_ws_url);
         CoinbaseFeedHandler coinbase_feed(opts.symbol, engine_cfg.coinbase_ws_url,
                                           engine_cfg.coinbase_rest_url);
+        std::unique_ptr<BinanceFuturesFeedHandler> binance_futures_feed;
 
         const double target_range_usd = risk_cfg.target_range_usd > 0.0 ? risk_cfg.target_range_usd : 50.0;
         const size_t max_book_levels = risk_cfg.max_book_levels > 0 ? risk_cfg.max_book_levels : 10000;
@@ -498,6 +500,11 @@ auto main(int argc, char **argv) -> int {
                     return 2;
                 }
             }
+            if (engine_cfg.binance_futures.ws_url.empty()) {
+                LOG_ERROR("Binance futures runtime config invalid", "key",
+                          "binance_futures_ws_url");
+                return 2;
+            }
             if (binance_api_key.empty() || binance_api_secret.empty()) {
                 LOG_ERROR("Binance credentials missing", "required_keys",
                           "BINANCE_API_KEY,BINANCE_API_SECRET");
@@ -515,6 +522,18 @@ auto main(int argc, char **argv) -> int {
             binance_api_key, binance_api_secret,
             opts.mode == "shadow" ? "mock://binance-futures" : engine_cfg.binance_futures.rest_url,
             engine_cfg.binance_futures.recv_window_ms, retry_policy);
+
+        if (binance_futures_enabled) {
+            const std::string futures_ws =
+                opts.mode == "shadow" ? std::string("wss://fstream.binance.com")
+                                      : engine_cfg.binance_futures.ws_url;
+            binance_futures_feed =
+                std::make_unique<BinanceFuturesFeedHandler>(opts.symbol, futures_ws);
+            binance_futures_feed->set_mark_price_callback(
+                [&binance_futures](double price) { binance_futures.set_mark_price(price); });
+            binance_futures_feed->start();
+        }
+
         KrakenConnector kraken(kraken_api_key, kraken_api_secret,
                                opts.mode == "shadow" ? "mock://kraken" : engine_cfg.kraken_rest_url,
                                retry_policy);
@@ -1140,6 +1159,9 @@ auto main(int argc, char **argv) -> int {
         }
         if (binance_futures_enabled) {
             binance_futures.disconnect();
+            if (binance_futures_feed) {
+                binance_futures_feed->stop();
+            }
         }
         if (run_kraken) {
             kraken.disconnect();
